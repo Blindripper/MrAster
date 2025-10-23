@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aster Bot Control Center</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="hero">
+    <div>
+      <h1>Aster Bot Control Center</h1>
+      <p>Steuere deine Trading-Instanz, beobachte Live-Logs und optimiere Parameter mit KI-Unterstützung.</p>
+    </div>
+    <div class="hero-actions">
+      <button id="btn-start" class="primary">Start</button>
+      <button id="btn-stop" class="ghost">Stop</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="card status">
+      <h2>Status</h2>
+      <div class="status-grid">
+        <div>
+          <span class="label">Zustand</span>
+          <span id="status-indicator" class="pill neutral">–</span>
+        </div>
+        <div>
+          <span class="label">PID</span>
+          <span id="status-pid">–</span>
+        </div>
+        <div>
+          <span class="label">Gestartet</span>
+          <span id="status-started">–</span>
+        </div>
+        <div>
+          <span class="label">Laufzeit</span>
+          <span id="status-uptime">–</span>
+        </div>
+      </div>
+      <div class="ai-hint" id="ai-hint">KI-Auswertung lädt…</div>
+    </section>
+
+    <section class="card config">
+      <div class="card-header">
+        <h2>ENV-Konfiguration</h2>
+        <button id="btn-save-config" class="primary subtle">Speichern</button>
+      </div>
+      <p class="card-subtitle">Passe alle relevanten <code>ASTER_*</code>-Parameter ohne Neustart des Servers an. Änderungen werden persistent gespeichert.</p>
+      <div id="env-settings" class="env-grid"></div>
+    </section>
+
+    <section class="card logs">
+      <div class="card-header">
+        <h2>Live-Logs</h2>
+        <label class="toggle"><input type="checkbox" id="autoscroll" checked /> Auto-Scroll</label>
+      </div>
+      <div id="log-stream" class="log-stream"></div>
+    </section>
+
+    <section class="card trades">
+      <div class="card-header">
+        <h2>Trade-Historie</h2>
+        <span id="trade-summary"></span>
+      </div>
+      <table class="trade-table">
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Side</th>
+            <th>Menge</th>
+            <th>Entry</th>
+            <th>Exit</th>
+            <th>PNL (USDT)</th>
+            <th>R</th>
+            <th>Geöffnet</th>
+            <th>Geschlossen</th>
+          </tr>
+        </thead>
+        <tbody id="trade-body">
+          <tr><td colspan="9" class="empty">Noch keine Trades.</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer>
+    <p>Made for Aster – adaptive Trading mit Transparenz. Nutze das Log &amp; die KI-Hinweise, um die Strategie kontinuierlich zu verbessern.</p>
+  </footer>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

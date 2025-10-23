@@ -1,0 +1,295 @@
+:root {
+  color-scheme: dark light;
+  --bg: #0f172a;
+  --bg-card: rgba(15, 23, 42, 0.85);
+  --bg-card-light: rgba(255, 255, 255, 0.82);
+  --border: rgba(148, 163, 184, 0.2);
+  --accent: #38bdf8;
+  --accent-strong: #0ea5e9;
+  --text: #e2e8f0;
+  --text-muted: #94a3b8;
+  --danger: #f87171;
+  --success: #34d399;
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(circle at 20% 20%, rgba(56, 189, 248, 0.18), transparent 55%),
+              radial-gradient(circle at 80% 0%, rgba(14, 165, 233, 0.25), transparent 45%),
+              var(--bg);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+}
+
+.hero {
+  padding: 2.5rem clamp(1.5rem, 5vw, 3.5rem);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 2rem;
+  background: linear-gradient(120deg, rgba(56, 189, 248, 0.25), transparent 50%);
+  border-bottom: 1px solid var(--border);
+}
+
+.hero h1 {
+  margin: 0 0 0.5rem;
+  font-size: clamp(2rem, 4vw, 2.8rem);
+}
+
+.hero p {
+  margin: 0;
+  color: var(--text-muted);
+  max-width: 48ch;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+button {
+  font: inherit;
+  padding: 0.75rem 1.4rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.2s ease;
+}
+
+button.primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #0f172a;
+  box-shadow: 0 10px 30px rgba(14, 165, 233, 0.3);
+}
+
+button.primary.subtle {
+  padding-inline: 1rem;
+  box-shadow: none;
+}
+
+button.ghost {
+  border-color: rgba(148, 163, 184, 0.35);
+  color: var(--text);
+  background: transparent;
+}
+
+button:hover {
+  transform: translateY(-2px);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 2rem;
+  padding: 2.5rem clamp(1.5rem, 5vw, 3.5rem);
+  flex: 1;
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 1.4rem;
+  padding: 1.8rem;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+.card h2 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.card-subtitle {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1rem 1.5rem;
+}
+
+.label {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin-bottom: 0.4rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  background: rgba(148, 163, 184, 0.2);
+  color: var(--text);
+}
+
+.pill.running {
+  background: rgba(52, 211, 153, 0.15);
+  color: var(--success);
+}
+
+.pill.stopped {
+  background: rgba(248, 113, 113, 0.15);
+  color: var(--danger);
+}
+
+.pill.neutral {
+  background: rgba(148, 163, 184, 0.2);
+}
+
+.ai-hint {
+  padding: 1rem 1.2rem;
+  border-radius: 1rem;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.env-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem 1.5rem;
+}
+
+.env-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.env-grid input {
+  padding: 0.7rem 0.9rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(15, 23, 42, 0.6);
+  color: var(--text);
+  font: inherit;
+}
+
+.env-grid input:focus {
+  outline: 2px solid rgba(56, 189, 248, 0.4);
+  border-color: transparent;
+}
+
+.log-stream {
+  background: rgba(2, 6, 23, 0.8);
+  border-radius: 1rem;
+  border: 1px solid rgba(15, 23, 42, 0.6);
+  height: 320px;
+  overflow: auto;
+  padding: 1rem;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: #cbd5f5;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.05);
+}
+
+.log-line {
+  margin: 0;
+  padding: 0.2rem 0.4rem;
+  border-radius: 0.5rem;
+  white-space: pre-wrap;
+}
+
+.log-line.system {
+  color: var(--accent);
+}
+
+.log-line.error {
+  color: var(--danger);
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.trade-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.trade-table th,
+.trade-table td {
+  padding: 0.75rem 0.9rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.trade-table th {
+  text-align: left;
+  color: var(--text-muted);
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.trade-table tbody tr:hover {
+  background: rgba(148, 163, 184, 0.05);
+}
+
+.trade-table td.profit {
+  color: var(--success);
+}
+
+.trade-table td.loss {
+  color: var(--danger);
+}
+
+.trade-table td.empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 2.5rem 1rem;
+}
+
+footer {
+  padding: 1.5rem clamp(1.5rem, 5vw, 3.5rem);
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 720px) {
+  .hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .hero-actions {
+    width: 100%;
+  }
+  button {
+    flex: 1;
+  }
+}
