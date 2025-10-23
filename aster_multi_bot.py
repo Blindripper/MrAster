@@ -70,6 +70,15 @@ SIZE_MULT_S = float(os.getenv("ASTER_SIZE_MULT_S", str(SIZE_MULT_BASE)))
 SIZE_MULT_M = float(os.getenv("ASTER_SIZE_MULT_M", str(1.4 * SIZE_MULT_BASE)))
 SIZE_MULT_L = float(os.getenv("ASTER_SIZE_MULT_L", str(1.9 * SIZE_MULT_BASE)))
 
+ALPHA_ENABLED = os.getenv("ASTER_ALPHA_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+ALPHA_THRESHOLD = float(os.getenv("ASTER_ALPHA_THRESHOLD", "0.55"))
+ALPHA_WARMUP = int(os.getenv("ASTER_ALPHA_WARMUP", "40"))
+ALPHA_LR = float(os.getenv("ASTER_ALPHA_LR", "0.05"))
+ALPHA_L2 = float(os.getenv("ASTER_ALPHA_L2", "0.0005"))
+ALPHA_MIN_CONF = float(os.getenv("ASTER_ALPHA_MIN_CONF", "0.2"))
+ALPHA_PROMOTE_DELTA = float(os.getenv("ASTER_ALPHA_PROMOTE_DELTA", "0.15"))
+ALPHA_REWARD_MARGIN = float(os.getenv("ASTER_ALPHA_REWARD_MARGIN", "0.05"))
+
 DEFAULT_NOTIONAL = float(os.getenv("ASTER_DEFAULT_NOTIONAL", "250"))
 RISK_PER_TRADE = float(os.getenv("ASTER_RISK_PER_TRADE", "0.006"))
 LEVERAGE = float(os.getenv("ASTER_LEVERAGE", "5"))
@@ -143,6 +152,54 @@ def atr_abs_from_klines(kl: List[List[float]], period: int = 14) -> float:
     if not trs:
         return 0.0
     return sum(trs[-period:]) / float(period)
+
+def adx_latest(kl: List[List[float]], period: int = 14) -> Tuple[float, float]:
+    """Return (adx_last, delta) for the most recent bar."""
+    n = len(kl)
+    if n <= period + 1:
+        return 25.0, 0.0
+    highs = [float(k[2]) for k in kl]
+    lows = [float(k[3]) for k in kl]
+    closes = [float(k[4]) for k in kl]
+    tr: List[float] = []
+    plus_dm: List[float] = []
+    minus_dm: List[float] = []
+    for i in range(1, n):
+        up = highs[i] - highs[i - 1]
+        down = lows[i - 1] - lows[i]
+        plus_dm.append(up if up > down and up > 0 else 0.0)
+        minus_dm.append(down if down > up and down > 0 else 0.0)
+        tr.append(max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])))
+    if len(tr) < period:
+        return 25.0, 0.0
+
+    def _dx_at(idx: int) -> float:
+        start = idx - period + 1
+        if start < 0:
+            start = 0
+        tr_sum = sum(tr[start: idx + 1])
+        if tr_sum <= 0:
+            return 0.0
+        plus_sum = sum(plus_dm[start: idx + 1])
+        minus_sum = sum(minus_dm[start: idx + 1])
+        plus_di = 100.0 * (plus_sum / tr_sum)
+        minus_di = 100.0 * (minus_sum / tr_sum)
+        denom = plus_di + minus_di
+        if denom <= 0:
+            return 0.0
+        return 100.0 * abs(plus_di - minus_di) / denom
+
+    dx_vals = [_dx_at(i) for i in range(period - 1, len(tr))]
+    if not dx_vals:
+        return 25.0, 0.0
+    last_slice = dx_vals[-period:] if len(dx_vals) >= period else dx_vals
+    adx_last = sum(last_slice) / float(len(last_slice))
+    if len(dx_vals) > period:
+        prev_slice = dx_vals[-2 * period: -period]
+        adx_prev = sum(prev_slice) / float(len(prev_slice)) if prev_slice else adx_last
+    else:
+        adx_prev = adx_last
+    return adx_last, adx_last - adx_prev
 
 def round_price(symbol: str, price: float, tick: float) -> float:
     if tick <= 0:
@@ -343,19 +400,38 @@ class Strategy:
         self._t24_ts = 0.0
         self._t24_ttl = 120
 
-    def _get_qv_score(self, symbol: str) -> float:
+    def _ticker_24(self, symbol: str) -> Optional[Dict[str, Any]]:
         now = time.time()
         try:
             if (now - self._t24_ts) > self._t24_ttl or not self._t24_cache:
                 data = self.exchange.get_ticker_24hr()
                 if isinstance(data, list):
                     self._t24_cache = {d.get("symbol"): d for d in data if isinstance(d, dict)}
+                elif isinstance(data, dict) and data.get("symbol"):
+                    self._t24_cache[data.get("symbol")] = data
                 self._t24_ts = now
-            rec = self._t24_cache.get(symbol) or self.exchange.get_ticker_24hr(symbol)
-            qvol = float(rec.get("quoteVolume", 0.0) or 0.0) if rec else 0.0
-            return min(2.0, qvol / max(self.min_quote_vol, 1e-9)) if qvol > 0 else 0.0
         except Exception:
-            return 0.0
+            self._t24_cache = {}
+            self._t24_ts = now
+        rec = self._t24_cache.get(symbol)
+        if rec is None:
+            try:
+                single = self.exchange.get_ticker_24hr(symbol)
+                if isinstance(single, dict):
+                    self._t24_cache[symbol] = single
+                    rec = single
+            except Exception:
+                rec = None
+        return rec
+
+    def _get_qv_score(self, symbol: str) -> Tuple[float, Optional[Dict[str, Any]]]:
+        rec = self._ticker_24(symbol)
+        try:
+            qvol = float(rec.get("quoteVolume", 0.0) or 0.0) if rec else 0.0
+        except Exception:
+            qvol = 0.0
+        score = min(2.5, qvol / max(self.min_quote_vol, 1e-9)) if qvol > 0 else 0.0
+        return score, rec
 
     def _skip(self, reason: str, symbol: str, extra: Dict[str, Any] = None):
         if extra:
@@ -409,6 +485,9 @@ class Strategy:
         cross_dn = ema_fast[-2] > ema_slow[-2] and ema_fast[-1] < ema_slow[-1]
         rsi14 = rsi(closes, 14)
 
+        adx_val, adx_delta = adx_latest(kl, 14)
+        slope_fast = (ema_fast[-1] - ema_fast[-5]) / max(abs(ema_fast[-5]), 1e-9)
+
         htf_trend_up = ema_htf[-1] > ema_htf[-5]
         htf_trend_down = ema_htf[-1] < ema_htf[-5]
 
@@ -429,21 +508,29 @@ class Strategy:
             return self._skip("no_cross", symbol)
 
         slope_htf = (ema_htf[-1] - ema_htf[-5]) / max(1e-9, ema_htf[-5])
-        expected_R = abs(slope_htf) * 20.0
+        trend_strength = 0.5 + max(adx_val - 20.0, 0.0) / 50.0
+        expected_R = abs(slope_htf) * 20.0 * trend_strength
         if expected_R < MIN_EDGE_R:
             return self._skip("edge_r", symbol, {"expR": f"{expected_R:.3f}", "minR": f"{MIN_EDGE_R:.3f}"})
 
-        qv_score = self._get_qv_score(symbol)
+        qv_score, t24 = self._get_qv_score(symbol)
+        funding = 0.0
+        if isinstance(t24, dict):
+            try:
+                funding = float(t24.get("lastFundingRate", 0.0) or 0.0)
+            except Exception:
+                funding = 0.0
+
         ctx: Dict[str, float] = {
-            "adx": 0.0,
+            "adx": float(adx_val),
             "atr_pct": atrp,
             "slope_htf": slope_htf,
             "rsi": float(rsi14[-1]),
-            "funding": 0.0,
+            "funding": float(funding),
             "qv_score": float(qv_score),
             "trend": 1.0 if sig == "BUY" else -1.0,
-            "regime_adx": 0.0,
-            "regime_slope": 0.0,
+            "regime_adx": float(max(min(adx_delta / 100.0, 2.0), -2.0)),
+            "regime_slope": float(max(min(slope_fast, 2.0), -2.0)),
             "spread_bps": float(spread_bps),
         }
         return sig, float(atr), ctx, float(mid or last)
@@ -459,6 +546,11 @@ class TradeManager:
         self.state.setdefault("fail_skip_until", {})
 
     def save(self) -> None:
+        if self.policy and BANDIT_ENABLED:
+            try:
+                self.state["policy"] = self.policy.to_dict()
+            except Exception as e:
+                log.debug(f"policy serialize fail: {e}")
         try:
             with open(STATE_FILE, "w") as f:
                 json.dump(self.state, f, indent=2)
@@ -513,7 +605,7 @@ class TradeManager:
             r_mult = float(prof / risk)
             if self.policy and BANDIT_ENABLED:
                 try:
-                    self.policy.note_exit(symbol, pnl_r=r_mult)
+                    self.policy.note_exit(symbol, pnl_r=r_mult, ctx=rec.get("ctx"), size_bucket=rec.get("bucket"))
                 except Exception as e:
                     log.debug(f"policy note_exit fail: {e}")
             to_del.append(sym)
@@ -612,18 +704,42 @@ class Bot:
         self.universe = SymbolUniverse(self.exchange, QUOTE, UNIVERSE_MAX, EXCLUDE, UNIVERSE_ROTATE, include=INCLUDE)
         self.risk = RiskManager(self.exchange, DEFAULT_NOTIONAL)
         self.risk.load_filters()
-        self.policy: Optional[BanditPolicy] = None
-        if BANDIT_ENABLED:
-            try:
-                self.policy = BanditPolicy()
-            except Exception as e:
-                log.debug(f"ML policy init failed: {e}")
         self.state = {}
         try:
             if os.path.exists(STATE_FILE):
                 self.state = json.load(open(STATE_FILE, "r"))
         except Exception:
             self.state = {}
+        self.policy: Optional[BanditPolicy] = None
+        if BANDIT_ENABLED:
+            pol_state = self.state.get("policy") if isinstance(self.state, dict) else None
+            try:
+                if pol_state:
+                    self.policy = BanditPolicy.from_dict(
+                        pol_state,
+                        alpha_enabled=ALPHA_ENABLED,
+                        alpha_threshold=ALPHA_THRESHOLD,
+                        alpha_warmup=ALPHA_WARMUP,
+                        alpha_lr=ALPHA_LR,
+                        alpha_l2=ALPHA_L2,
+                        alpha_min_conf=ALPHA_MIN_CONF,
+                        alpha_promote_delta=ALPHA_PROMOTE_DELTA,
+                        alpha_reward_margin=ALPHA_REWARD_MARGIN,
+                    )
+                else:
+                    self.policy = BanditPolicy(
+                        alpha_enabled=ALPHA_ENABLED,
+                        alpha_threshold=ALPHA_THRESHOLD,
+                        alpha_warmup=ALPHA_WARMUP,
+                        alpha_lr=ALPHA_LR,
+                        alpha_l2=ALPHA_L2,
+                        alpha_min_conf=ALPHA_MIN_CONF,
+                        alpha_promote_delta=ALPHA_PROMOTE_DELTA,
+                        alpha_reward_margin=ALPHA_REWARD_MARGIN,
+                    )
+            except Exception as e:
+                log.debug(f"ML policy init failed: {e}")
+                self.policy = None
         self.guard = BracketGuard(
             base_url=BASE,
             api_key=API_KEY,
@@ -643,6 +759,15 @@ class Bot:
         return {"S": SIZE_MULT_S, "M": SIZE_MULT_M, "L": SIZE_MULT_L}.get(bucket, SIZE_MULT_S)
 
     def handle_symbol(self, symbol: str, pos_map: Dict[str, float]):
+        fail_until = self.state.setdefault("fail_skip_until", {}).get(symbol)
+        if fail_until and time.time() < fail_until:
+            return
+        elif fail_until and time.time() >= fail_until:
+            try:
+                self.state["fail_skip_until"].pop(symbol, None)
+            except Exception:
+                pass
+
         # bereits offene Position?
         amt = float(pos_map.get(symbol, 0.0) or 0.0)
         if abs(amt) > 1e-12:
@@ -655,15 +780,25 @@ class Bot:
         # Policy: Gate + Size
         size_mult = SIZE_MULT_S
         bucket = "S"
+        alpha_prob = None
+        alpha_conf = None
         if BANDIT_ENABLED and self.policy:
             try:
                 decision, extras = self.policy.decide(ctx)  # "TAKE"/"SKIP" + {"size_bucket": "..."}
-                if decision != "TAKE":
-                    return
                 bucket = extras.get("size_bucket", "S")
                 size_mult = self._size_mult_from_bucket(bucket)
+                alpha_prob = extras.get("alpha_prob")
+                alpha_conf = extras.get("alpha_conf")
+                if decision != "TAKE":
+                    if alpha_prob is not None:
+                        log.debug(f"policy skip {symbol}: alpha={alpha_prob:.3f} conf={alpha_conf or 0.0:.2f}")
+                    return
             except Exception as e:
                 log.debug(f"policy decide fail: {e}")
+
+        if alpha_prob is not None:
+            ctx["alpha_prob"] = float(alpha_prob)
+            ctx["alpha_conf"] = float(alpha_conf or 0.0)
 
         # Entry/SL/TP
         try:
@@ -700,7 +835,10 @@ class Bot:
             if not ok:
                 log.warning(f"Bracket für {symbol} nicht vollständig gesetzt.")
             self.trade_mgr.note_entry(symbol, px, sl, tp, sig, float(q_str), ctx, bucket, atr_abs)
-            log.info(f"ENTRY {symbol} {sig} qty={q_str} px≈{px:.6f} SL={sl:.6f} TP={tp:.6f} bucket={bucket}")
+            alpha_msg = ""
+            if alpha_prob is not None:
+                alpha_msg = f" alpha={alpha_prob:.3f}/{(alpha_conf or 0.0):.2f}"
+            log.info(f"ENTRY {symbol} {sig} qty={q_str} px≈{px:.6f} SL={sl:.6f} TP={tp:.6f} bucket={bucket}{alpha_msg}")
         except Exception as e:
             log.debug(f"entry fail {symbol}: {e}")
             self.state.setdefault("fail_skip_until", {})[symbol] = time.time() + 60
