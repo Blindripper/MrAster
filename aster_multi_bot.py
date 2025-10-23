@@ -457,6 +457,11 @@ class TradeManager:
         self.state.setdefault("live_trades", {})
         self.state.setdefault("fast_tp_cooldown", {})
         self.state.setdefault("fail_skip_until", {})
+        self.state.setdefault("trade_history", [])
+        try:
+            self.history_max = int(os.getenv("ASTER_HISTORY_MAX", "250"))
+        except Exception:
+            self.history_max = 250
 
     def save(self) -> None:
         try:
@@ -475,6 +480,7 @@ class TradeManager:
             "ctx": dict(ctx),
             "bucket": bucket,
             "atr_abs": float(atr_abs),
+            "opened_at": time.time(),
         }
         self.save()
         if self.policy and BANDIT_ENABLED:
@@ -495,6 +501,7 @@ class TradeManager:
             pos_map = {}
 
         to_del: List[str] = []
+        history_added = False
         for sym, rec in live.items():
             amt = pos_map.get(sym, 0.0)
             if abs(amt) > 1e-12:
@@ -516,11 +523,33 @@ class TradeManager:
                     self.policy.note_exit(symbol, pnl_r=r_mult)
                 except Exception as e:
                     log.debug(f"policy note_exit fail: {e}")
+            hist = self.state.setdefault("trade_history", [])
+            closed_at = time.time()
+            opened_at = float(rec.get("opened_at", closed_at) or closed_at)
+            hist.append({
+                "symbol": sym,
+                "side": side,
+                "qty": float(qty),
+                "entry": float(entry),
+                "exit": float(exit_px),
+                "pnl": float(prof),
+                "pnl_r": float(r_mult),
+                "opened_at": float(opened_at),
+                "closed_at": float(closed_at),
+                "bucket": rec.get("bucket"),
+                "context": rec.get("ctx", {}),
+            })
+            if len(hist) > max(10, self.history_max):
+                del hist[: len(hist) - self.history_max]
+            log.info(
+                f"EXIT {sym} {side} qty={qty:.6f} exit≈{exit_px:.6f} PNL={prof:.2f}USDT R={r_mult:.2f}"
+            )
+            history_added = True
             to_del.append(sym)
 
         for sym in to_del:
             self.state["live_trades"].pop(sym, None)
-        if to_del:
+        if to_del or history_added:
             self.save()
 
 # ========= FastTP =========

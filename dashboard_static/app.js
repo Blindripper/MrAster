@@ -1,0 +1,248 @@
+const envContainer = document.getElementById('env-settings');
+const btnSaveConfig = document.getElementById('btn-save-config');
+const btnStart = document.getElementById('btn-start');
+const btnStop = document.getElementById('btn-stop');
+const statusIndicator = document.getElementById('status-indicator');
+const statusPid = document.getElementById('status-pid');
+const statusStarted = document.getElementById('status-started');
+const statusUptime = document.getElementById('status-uptime');
+const logStream = document.getElementById('log-stream');
+const autoScrollToggle = document.getElementById('autoscroll');
+const tradeBody = document.getElementById('trade-body');
+const tradeSummary = document.getElementById('trade-summary');
+const aiHint = document.getElementById('ai-hint');
+
+let currentConfig = {};
+let reconnectTimer = null;
+
+function renderConfig(env) {
+  envContainer.innerHTML = '';
+  const entries = Object.entries(env || {}).sort(([a], [b]) => a.localeCompare(b));
+  for (const [key, value] of entries) {
+    const label = document.createElement('label');
+    label.dataset.key = key;
+    const span = document.createElement('span');
+    span.textContent = key;
+    const input = document.createElement('input');
+    input.value = value ?? '';
+    input.dataset.key = key;
+    input.placeholder = key;
+    label.append(span, input);
+    envContainer.append(label);
+  }
+}
+
+async function loadConfig() {
+  const res = await fetch('/api/config');
+  if (!res.ok) throw new Error('Config konnte nicht geladen werden');
+  currentConfig = await res.json();
+  renderConfig(currentConfig.env);
+}
+
+function gatherConfigPayload() {
+  const payload = {};
+  envContainer.querySelectorAll('input[data-key]').forEach((input) => {
+    payload[input.dataset.key] = input.value.trim();
+  });
+  return payload;
+}
+
+async function saveConfig() {
+  const payload = gatherConfigPayload();
+  btnSaveConfig.disabled = true;
+  btnSaveConfig.textContent = 'Speichern…';
+  try {
+    const res = await fetch('/api/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ env: payload }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || 'Fehler beim Speichern');
+    }
+    currentConfig = await res.json();
+    btnSaveConfig.textContent = 'Gespeichert ✓';
+    setTimeout(() => (btnSaveConfig.textContent = 'Speichern'), 1500);
+  } catch (err) {
+    btnSaveConfig.textContent = 'Fehler';
+    alert(err.message);
+    setTimeout(() => (btnSaveConfig.textContent = 'Speichern'), 2000);
+  } finally {
+    btnSaveConfig.disabled = false;
+  }
+}
+
+function formatDuration(seconds) {
+  if (seconds == null) return '–';
+  const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+  const m = Math.floor((seconds / 60) % 60).toString().padStart(2, '0');
+  const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
+  return `${h}:${m}:${s}`;
+}
+
+function formatNumber(num, digits = 2) {
+  if (num === undefined || num === null || Number.isNaN(num)) return '–';
+  return Number(num).toFixed(digits);
+}
+
+async function updateStatus() {
+  try {
+    const res = await fetch('/api/bot/status');
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+    const running = data.running;
+    statusIndicator.textContent = running ? 'Läuft' : 'Gestoppt';
+    statusIndicator.className = `pill ${running ? 'running' : 'stopped'}`;
+    statusPid.textContent = data.pid ?? '–';
+    statusStarted.textContent = data.started_at ? new Date(data.started_at * 1000).toLocaleString() : '–';
+    statusUptime.textContent = running ? formatDuration(data.uptime_s) : '–';
+    btnStart.disabled = running;
+    btnStop.disabled = !running;
+  } catch {
+    statusIndicator.textContent = 'Offline';
+    statusIndicator.className = 'pill stopped';
+    statusPid.textContent = '–';
+    statusStarted.textContent = '–';
+    statusUptime.textContent = '–';
+  }
+}
+
+function appendLogLine({ line, level, ts }) {
+  const el = document.createElement('div');
+  el.className = `log-line ${level || ''}`.trim();
+  const time = ts ? new Date(ts * 1000).toLocaleTimeString() : '';
+  el.textContent = time ? `[${time}] ${line}` : line;
+  logStream.append(el);
+  while (logStream.children.length > 500) {
+    logStream.removeChild(logStream.firstChild);
+  }
+  if (autoScrollToggle.checked) {
+    logStream.scrollTop = logStream.scrollHeight;
+  }
+}
+
+function connectLogs() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+  const socket = new WebSocket(`${protocol}://${location.host}/ws/logs`);
+  socket.addEventListener('message', (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === 'log') {
+        appendLogLine(data);
+      }
+    } catch (err) {
+      console.error('WebSocket parse error', err);
+    }
+  });
+  socket.addEventListener('close', () => {
+    reconnectTimer = setTimeout(connectLogs, 2000);
+  });
+  socket.addEventListener('error', () => {
+    socket.close();
+  });
+}
+
+function renderTradeHistory(history) {
+  tradeBody.innerHTML = '';
+  if (!history || history.length === 0) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = 9;
+    cell.textContent = 'Noch keine Trades.';
+    cell.className = 'empty';
+    row.append(cell);
+    tradeBody.append(row);
+    return;
+  }
+  for (const trade of history) {
+    const row = document.createElement('tr');
+    const pnl = Number(trade.pnl ?? 0);
+    const pnlClass = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : '';
+    row.innerHTML = `
+      <td>${trade.symbol}</td>
+      <td>${trade.side}</td>
+      <td>${formatNumber(trade.qty, 4)}</td>
+      <td>${formatNumber(trade.entry, 4)}</td>
+      <td>${formatNumber(trade.exit, 4)}</td>
+      <td class="${pnlClass}">${formatNumber(pnl, 2)}</td>
+      <td>${formatNumber(trade.pnl_r, 2)}</td>
+      <td>${trade.opened_at_iso ? new Date(trade.opened_at_iso).toLocaleTimeString() : '–'}</td>
+      <td>${trade.closed_at_iso ? new Date(trade.closed_at_iso).toLocaleTimeString() : '–'}</td>
+    `;
+    tradeBody.append(row);
+  }
+}
+
+function renderTradeSummary(stats) {
+  if (!stats) {
+    tradeSummary.textContent = '';
+    aiHint.textContent = 'Keine Daten verfügbar.';
+    return;
+  }
+  const avgR = stats.count ? stats.total_r / stats.count : 0;
+  tradeSummary.textContent = `${stats.count} Trades • Gesamt PNL ${formatNumber(stats.total_pnl, 2)} USDT • Winrate ${(stats.win_rate * 100).toFixed(1)}% • Ø R ${formatNumber(avgR, 2)}`;
+  aiHint.textContent = stats.ai_hint;
+}
+
+async function loadTrades() {
+  try {
+    const res = await fetch('/api/trades');
+    if (!res.ok) throw new Error('Trades konnten nicht geladen werden');
+    const data = await res.json();
+    renderTradeHistory(data.history);
+    renderTradeSummary(data.stats);
+  } catch (err) {
+    console.warn(err);
+  }
+}
+
+async function startBot() {
+  btnStart.disabled = true;
+  try {
+    const res = await fetch('/api/bot/start', { method: 'POST' });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || 'Bot konnte nicht gestartet werden');
+    }
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    await updateStatus();
+  }
+}
+
+async function stopBot() {
+  btnStop.disabled = true;
+  try {
+    await fetch('/api/bot/stop', { method: 'POST' });
+  } finally {
+    await updateStatus();
+  }
+}
+
+btnSaveConfig.addEventListener('click', saveConfig);
+btnStart.addEventListener('click', startBot);
+btnStop.addEventListener('click', stopBot);
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    updateStatus();
+    loadTrades();
+  }
+});
+
+async function init() {
+  await loadConfig();
+  await updateStatus();
+  await loadTrades();
+  connectLogs();
+  setInterval(updateStatus, 5000);
+  setInterval(loadTrades, 8000);
+}
+
+init().catch((err) => console.error(err));
