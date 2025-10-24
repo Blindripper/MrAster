@@ -638,6 +638,27 @@ input[type='range']::-moz-range-track {
   color: var(--text-muted);
 }
 
+.trade-table-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.trade-table-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.trade-table-group-title {
+  margin: 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding-left: 0.35rem;
+}
+
 .trade-table-wrapper {
   position: relative;
   border-radius: 1.2rem;
@@ -781,12 +802,16 @@ input[type='range']::-moz-range-track {
     width: 100%;
   }
 
+  .trade-table-stack {
+    gap: 1.25rem;
+  }
+
   .trade-table-wrapper {
-    overflow-x: auto;
+    overflow: visible;
   }
 
   .trade-table {
-    min-width: 620px;
+    min-width: 0;
   }
 }
 

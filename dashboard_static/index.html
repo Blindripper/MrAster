@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Aster Bot Control Center</title>
+  <title>MrAster - your Aster Bot Control Center</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
   <header class="hero">
     <div>
-      <h1>Aster Bot Control Center</h1>
+      <h1>MrAster - your Aster Bot Control Center</h1>
       <p>Orchestrate your trading stack, follow live telemetry, and tune parameters with AI-assisted insights.</p>
     </div>
     <div class="hero-actions">
@@ -160,25 +160,75 @@
         </div>
         <div class="trade-overview" id="trade-summary"></div>
       </div>
-      <div class="trade-table-wrapper">
-        <table class="trade-table">
-          <thead>
-            <tr>
-              <th>Symbol</th>
-              <th>Side</th>
-              <th>Size</th>
-              <th>Entry</th>
-              <th>Exit</th>
-              <th>PNL (USDT)</th>
-              <th>R</th>
-              <th>Opened</th>
-              <th>Closed</th>
-            </tr>
-          </thead>
-          <tbody id="trade-body">
-            <tr><td colspan="9" class="empty">No trades yet.</td></tr>
-          </tbody>
-        </table>
+      <div class="trade-table-stack">
+        <div class="trade-table-group">
+          <h3 class="trade-table-group-title">Position</h3>
+          <div class="trade-table-wrapper">
+            <table class="trade-table">
+              <thead>
+                <tr>
+                  <th>Symbol</th>
+                  <th>Side</th>
+                  <th>Size</th>
+                </tr>
+              </thead>
+              <tbody id="trade-body-position">
+                <tr><td colspan="3" class="empty">No trades yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="trade-table-group">
+          <h3 class="trade-table-group-title">Pricing</h3>
+          <div class="trade-table-wrapper">
+            <table class="trade-table">
+              <thead>
+                <tr>
+                  <th>Entry</th>
+                  <th>Exit</th>
+                </tr>
+              </thead>
+              <tbody id="trade-body-pricing">
+                <tr><td colspan="2" class="empty">No trades yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="trade-table-group">
+          <h3 class="trade-table-group-title">Performance</h3>
+          <div class="trade-table-wrapper">
+            <table class="trade-table">
+              <thead>
+                <tr>
+                  <th>PNL (USDT)</th>
+                  <th>R</th>
+                </tr>
+              </thead>
+              <tbody id="trade-body-performance">
+                <tr><td colspan="2" class="empty">No trades yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="trade-table-group">
+          <h3 class="trade-table-group-title">Timing</h3>
+          <div class="trade-table-wrapper">
+            <table class="trade-table">
+              <thead>
+                <tr>
+                  <th>Opened</th>
+                  <th>Closed</th>
+                </tr>
+              </thead>
+              <tbody id="trade-body-timing">
+                <tr><td colspan="2" class="empty">No trades yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </section>
   </main>

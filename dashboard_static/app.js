@@ -11,7 +11,10 @@ const statusUptime = document.getElementById('status-uptime');
 const logStream = document.getElementById('log-stream');
 const compactLogStream = document.getElementById('log-brief');
 const autoScrollToggle = document.getElementById('autoscroll');
-const tradeBody = document.getElementById('trade-body');
+const tradeBodyPosition = document.getElementById('trade-body-position');
+const tradeBodyPricing = document.getElementById('trade-body-pricing');
+const tradeBodyPerformance = document.getElementById('trade-body-performance');
+const tradeBodyTiming = document.getElementById('trade-body-timing');
 const tradeSummary = document.getElementById('trade-summary');
 const aiHint = document.getElementById('ai-hint');
 const pnlChartCanvas = document.getElementById('pnl-chart');
@@ -311,19 +314,56 @@ function createTradeCell(label, { text, node, className }) {
 }
 
 function renderTradeHistory(history) {
-  tradeBody.innerHTML = '';
+  const groups = [
+    {
+      body: tradeBodyPosition,
+      columns: ['symbol', 'side', 'size'],
+    },
+    {
+      body: tradeBodyPricing,
+      columns: ['entry', 'exit'],
+    },
+    {
+      body: tradeBodyPerformance,
+      columns: ['pnl', 'r'],
+    },
+    {
+      body: tradeBodyTiming,
+      columns: ['opened', 'closed'],
+    },
+  ];
+
+  groups.forEach((group) => {
+    if (group.body) {
+      group.body.innerHTML = '';
+    }
+  });
+
   if (!history || history.length === 0) {
-    const row = document.createElement('tr');
+    const placeholder = document.createElement('tr');
     const cell = document.createElement('td');
-    cell.colSpan = 9;
+    cell.colSpan = 3;
     cell.textContent = 'No trades yet.';
     cell.className = 'empty';
-    row.append(cell);
-    tradeBody.append(row);
+    placeholder.append(cell);
+    if (tradeBodyPosition) {
+      tradeBodyPosition.append(placeholder);
+    }
+    groups
+      .filter((group) => group.body && group.body !== tradeBodyPosition)
+      .forEach((group) => {
+        const row = document.createElement('tr');
+        const filler = document.createElement('td');
+        filler.colSpan = group.columns.length;
+        filler.className = 'empty';
+        filler.textContent = 'Awaiting trade data…';
+        row.append(filler);
+        group.body.append(row);
+      });
     return;
   }
+
   for (const trade of history) {
-    const row = document.createElement('tr');
     const pnl = Number(trade.pnl ?? 0);
     const pnlClass = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : '';
     const pnlValue = `${pnl > 0 ? '+' : ''}${formatNumber(pnl, 2)}`;
@@ -335,24 +375,37 @@ function renderTradeHistory(history) {
     sideBadge.className = `side-badge ${side}`.trim();
     sideBadge.textContent = sideLabel;
 
-    row.append(
-      createTradeCell('Symbol', { text: trade.symbol || '–', className: 'symbol' }),
-      createTradeCell('Side', { node: sideBadge }),
-      createTradeCell('Size', { text: formatNumber(trade.qty, 4), className: 'numeric' }),
-      createTradeCell('Entry', { text: formatNumber(trade.entry, 4), className: 'numeric' }),
-      createTradeCell('Exit', { text: formatNumber(trade.exit, 4), className: 'numeric' }),
-      createTradeCell('PNL (USDT)', {
-        text: pnlValue,
-        className: ['numeric', pnlClass].filter(Boolean).join(' '),
-      }),
-      createTradeCell('R', {
-        text: formatNumber(pnlR, 2),
-        className: ['numeric', pnlRClass].filter(Boolean).join(' '),
-      }),
-      createTradeCell('Opened', { text: formatTimestamp(trade.opened_at_iso) }),
-      createTradeCell('Closed', { text: formatTimestamp(trade.closed_at_iso) })
-    );
-    tradeBody.append(row);
+    const columnRenderers = {
+      symbol: () => createTradeCell('Symbol', { text: trade.symbol || '–', className: 'symbol' }),
+      side: () => createTradeCell('Side', { node: sideBadge }),
+      size: () => createTradeCell('Size', { text: formatNumber(trade.qty, 4), className: 'numeric' }),
+      entry: () => createTradeCell('Entry', { text: formatNumber(trade.entry, 4), className: 'numeric' }),
+      exit: () => createTradeCell('Exit', { text: formatNumber(trade.exit, 4), className: 'numeric' }),
+      pnl: () =>
+        createTradeCell('PNL (USDT)', {
+          text: pnlValue,
+          className: ['numeric', pnlClass].filter(Boolean).join(' '),
+        }),
+      r: () =>
+        createTradeCell('R', {
+          text: formatNumber(pnlR, 2),
+          className: ['numeric', pnlRClass].filter(Boolean).join(' '),
+        }),
+      opened: () => createTradeCell('Opened', { text: formatTimestamp(trade.opened_at_iso) }),
+      closed: () => createTradeCell('Closed', { text: formatTimestamp(trade.closed_at_iso) }),
+    };
+
+    groups.forEach((group) => {
+      if (!group.body) return;
+      const row = document.createElement('tr');
+      group.columns.forEach((key) => {
+        const renderer = columnRenderers[key];
+        if (renderer) {
+          row.append(renderer());
+        }
+      });
+      group.body.append(row);
+    });
   }
 }
 
