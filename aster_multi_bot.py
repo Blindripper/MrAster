@@ -24,6 +24,7 @@ import hmac
 import hashlib
 import logging
 import signal
+from urllib.parse import urlencode
 from typing import Dict, List, Tuple, Optional, Any
 
 import requests
@@ -300,7 +301,8 @@ class Exchange:
         p = dict(params or {})
         p["timestamp"] = self._ts()
         p["recvWindow"] = self.recv_window
-        qs = "&".join(f"{k}={p[k]}" for k in sorted(p))
+        ordered = [(k, p[k]) for k in sorted(p)]
+        qs = urlencode(ordered, doseq=True)
         sig = self._sign(qs)
         url = f"{self.base}{path}?{qs}&signature={sig}"
         req = {"get": self.s.get, "post": self.s.post, "delete": self.s.delete}[method.lower()]
