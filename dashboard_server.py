@@ -483,6 +483,27 @@ def _compute_stats(history: List[Dict[str, Any]]) -> TradeStats:
     )
 
 
+def _decision_summary(state: Dict[str, Any]) -> Dict[str, Any]:
+    stats = state.get("decision_stats") or {}
+    taken = int(stats.get("taken", 0) or 0)
+    taken_by_bucket = {
+        str(key): int(value or 0)
+        for key, value in (stats.get("taken_by_bucket") or {}).items()
+    }
+    rejected_raw = stats.get("rejected") or {}
+    rejected = {str(key): int(value or 0) for key, value in rejected_raw.items()}
+    rejected_total = int(stats.get("rejected_total", 0) or 0)
+    if rejected_total <= 0:
+        rejected_total = sum(rejected.values())
+    return {
+        "taken": taken,
+        "taken_by_bucket": taken_by_bucket,
+        "rejected": rejected,
+        "rejected_total": rejected_total,
+        "last_updated": stats.get("last_updated"),
+    }
+
+
 @app.get("/api/trades")
 async def trades() -> Dict[str, Any]:
     state = _read_state()
@@ -492,10 +513,12 @@ async def trades() -> Dict[str, Any]:
         item["closed_at_iso"] = _format_ts(item.get("closed_at"))
     open_trades = state.get("live_trades", {})
     stats = _compute_stats(history)
+    decision_stats = _decision_summary(state)
     return {
         "open": open_trades,
         "history": history[::-1],
         "stats": stats.dict(),
+        "decision_stats": decision_stats,
     }
 
 

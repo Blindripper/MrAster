@@ -41,6 +41,18 @@
         </div>
       </div>
       <div class="ai-hint" id="ai-hint">Loading AI analysis…</div>
+      <div class="status-stats">
+        <div class="status-stats-header">
+          <span class="label">Trade decisions</span>
+          <div class="decision-summary" id="decision-summary">
+            <span class="decision-metric" data-metric="taken">Accepted: <strong>0</strong></span>
+            <span class="decision-metric" data-metric="skipped">Skipped: <strong>0</strong></span>
+          </div>
+        </div>
+        <ul class="decision-reasons" id="decision-reasons">
+          <li class="empty">No trade decisions yet.</li>
+        </ul>
+      </div>
     </section>
 
     <section class="card credentials" data-normal-only>
@@ -127,6 +139,7 @@
           <h2>Activity feed</h2>
           <p class="card-subtitle">Key fills, warnings, and high-signal events.</p>
         </div>
+        <label class="toggle"><input type="checkbox" id="autoscroll-normal" data-autoscroll checked /> Auto-scroll</label>
       </div>
       <div id="log-brief" class="log-stream compact"></div>
     </section>
@@ -134,7 +147,7 @@
     <section class="card logs" data-pro-only>
       <div class="card-header">
         <h2>Debug live logs</h2>
-        <label class="toggle"><input type="checkbox" id="autoscroll" checked /> Auto-scroll</label>
+        <label class="toggle"><input type="checkbox" id="autoscroll-pro" data-autoscroll checked /> Auto-scroll</label>
       </div>
       <div id="log-stream" class="log-stream"></div>
     </section>

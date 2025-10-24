@@ -10,7 +10,7 @@ const statusStarted = document.getElementById('status-started');
 const statusUptime = document.getElementById('status-uptime');
 const logStream = document.getElementById('log-stream');
 const compactLogStream = document.getElementById('log-brief');
-const autoScrollToggle = document.getElementById('autoscroll');
+const autoScrollToggles = document.querySelectorAll('input[data-autoscroll]');
 const tradeBodyPosition = document.getElementById('trade-body-position');
 const tradeBodyPricing = document.getElementById('trade-body-pricing');
 const tradeBodyPerformance = document.getElementById('trade-body-performance');
@@ -27,12 +27,15 @@ const riskValue = document.getElementById('risk-value');
 const leverageValue = document.getElementById('leverage-value');
 const inputApiKey = document.getElementById('input-api-key');
 const inputApiSecret = document.getElementById('input-api-secret');
+const decisionSummary = document.getElementById('decision-summary');
+const decisionReasons = document.getElementById('decision-reasons');
 
 let currentConfig = {};
 let reconnectTimer = null;
 let pnlChart = null;
 let proMode = false;
 let selectedPreset = 'mid';
+let autoScrollEnabled = true;
 
 const PRESETS = {
   low: {
@@ -53,6 +56,29 @@ const PRESETS = {
     risk: 2.0,
     leverage: 4,
   },
+};
+
+const DECISION_REASON_LABELS = {
+  spread: 'Spread too wide',
+  wicky: 'Wicks too volatile',
+  no_cross: 'Signal not confirmed',
+  few_klines: 'Not enough recent candles',
+  edge_r: 'Expected edge too small',
+  klines_err: 'Market data unavailable',
+  funding_long: 'Funding too expensive for longs',
+  funding_short: 'Funding too expensive for shorts',
+  policy_filter: 'AI filter rejected the setup',
+  position_size: 'Position size below minimum',
+  order_failed: 'Order could not be placed',
+};
+
+const FRIENDLY_LEVEL_LABELS = {
+  success: 'Trade',
+  info: 'Update',
+  warning: 'Heads-up',
+  error: 'Issue',
+  system: 'System',
+  debug: 'Detail',
 };
 
 function configureChartDefaults() {
@@ -206,6 +232,266 @@ function formatTimestamp(value) {
   });
 }
 
+function friendlyReason(reason) {
+  if (!reason) return 'Other';
+  const key = reason.toString().toLowerCase();
+  if (DECISION_REASON_LABELS[key]) {
+    return DECISION_REASON_LABELS[key];
+  }
+  return key
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+    .trim()
+    || 'Other';
+}
+
+function parseStructuredLog(line, fallbackLevel = 'info') {
+  const raw = (line ?? '').toString();
+  const trimmed = raw.trim();
+  const match = trimmed.match(
+    /^(\d{4}-\d{2}-\d{2}[^│]*?)\s*│\s*([A-Z]+)\s*│\s*([^│]+)\s*│\s*(.*)$/,
+  );
+  if (match) {
+    return {
+      raw: trimmed,
+      timestamp: match[1]?.trim() || null,
+      level: match[2]?.trim().toLowerCase() || fallbackLevel,
+      logger: match[3]?.trim() || null,
+      message: match[4]?.trim() || '',
+    };
+  }
+  return {
+    raw: trimmed,
+    level: (fallbackLevel || 'info').toLowerCase(),
+    message: trimmed,
+  };
+}
+
+function toTitleWords(value) {
+  return (value || '')
+    .toString()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+    .trim();
+}
+
+function formatExtraDetails(raw) {
+  if (!raw) return '';
+  const normalized = raw.replace(/[{}]/g, '').trim();
+  const pairs = [];
+  const quotedPairs = normalized.matchAll(/'([^']+)'\s*:\s*'([^']+)'/g);
+  for (const match of quotedPairs) {
+    const [, key, value] = match;
+    pairs.push([key, value]);
+  }
+  if (!pairs.length) {
+    const simplePairs = normalized.matchAll(/([A-Za-z_]+)=([\d.+-]+)/g);
+    for (const match of simplePairs) {
+      const [, key, value] = match;
+      pairs.push([key, value]);
+    }
+  }
+  if (!pairs.length) return '';
+  return pairs
+    .map(([key, value]) => `${toTitleWords(key)} ${value}`)
+    .join(' • ');
+}
+
+function humanizeLogLine(line, fallbackLevel = 'info') {
+  const parsed = parseStructuredLog(line, fallbackLevel);
+  const baseLevel = (parsed.level || fallbackLevel || 'info').toLowerCase();
+  let severity = baseLevel;
+  let label = FRIENDLY_LEVEL_LABELS[severity] || severity.toUpperCase();
+  let relevant = severity !== 'debug';
+  let text = parsed.message || parsed.raw;
+
+  const bucketLabels = { S: 'small', M: 'medium', L: 'large' };
+  const entryMatch = parsed.message?.match(
+    /^ENTRY (\S+) (BUY|SELL) qty=([\d.]+) px≈([\d.]+) SL=([\d.]+) TP=([\d.]+) bucket=([A-Z])(?:\s+alpha=([\d.]+)\/([\d.]+))?/,
+  );
+  if (entryMatch) {
+    const [, symbol, side, qtyStr, pxStr, slStr, tpStr, bucket, alphaProb, alphaConf] = entryMatch;
+    const qtyNum = Number(qtyStr);
+    const qty = Number.isFinite(qtyNum)
+      ? qtyNum.toFixed(qtyNum >= 1 ? 2 : 4)
+      : qtyStr;
+    const price = formatNumber(pxStr, 4);
+    const sl = formatNumber(slStr, 4);
+    const tp = formatNumber(tpStr, 4);
+    const direction = side === 'BUY' ? 'long' : 'short';
+    const bucketLabel = bucketLabels[bucket] || bucket;
+    const extras = [`SL ${sl}`, `TP ${tp}`, `Size ${bucketLabel}`];
+    if (alphaProb) {
+      const prob = formatNumber(alphaProb, 2);
+      if (prob !== '–') {
+        extras.push(`AI ${prob} prob`);
+      }
+      const conf = formatNumber(alphaConf, 2);
+      if (conf !== '–') {
+        extras.push(`conf ${conf}`);
+      }
+    }
+    text = `Opened ${direction} on ${symbol} at ~${price} (${qty} units). ${extras.join(', ')}.`;
+    label = 'Trade placed';
+    severity = 'success';
+    relevant = true;
+    return { text, label, severity, relevant, parsed };
+  }
+
+  const exitMatch = parsed.message?.match(
+    /^EXIT (\S+) (BUY|SELL) qty=([\d.]+) exit≈([\d.]+) PNL=([\-\d.]+)USDT R=([\-\d.]+)/,
+  );
+  if (exitMatch) {
+    const [, symbol, side, qtyStr, exitStr, pnlStr, rStr] = exitMatch;
+    const exitPrice = formatNumber(exitStr, 4);
+    const pnl = Number(pnlStr);
+    const pnlText = Number.isFinite(pnl) ? `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} USDT` : `${pnlStr} USDT`;
+    const r = Number(rStr);
+    const rText = Number.isFinite(r) ? r.toFixed(2) : rStr;
+    const direction = side === 'BUY' ? 'long' : 'short';
+    text = `Closed ${direction} on ${symbol} at ~${exitPrice} for ${pnlText} (${rText} R).`;
+    label = pnl >= 0 ? 'Trade win' : 'Trade loss';
+    severity = pnl >= 0 ? 'success' : 'warning';
+    relevant = true;
+    return { text, label, severity, relevant, parsed };
+  }
+
+  const skipMatch = parsed.message?.match(/^SKIP (\S+): ([\w_]+)(.*)$/);
+  if (skipMatch) {
+    const [, symbol, reason, extraRaw] = skipMatch;
+    const detail = formatExtraDetails(extraRaw);
+    const reasonLabel = friendlyReason(reason);
+    text = `Skipped ${symbol} — ${reasonLabel}${detail ? ` (${detail})` : ''}.`;
+    label = 'Skipped trade';
+    severity = 'warning';
+    relevant = true;
+    return { text, label, severity, relevant, parsed, reason };
+  }
+
+  const policyMatch = parsed.message?.match(/^policy skip (\S+):\s*alpha=([\d.]+)\s+conf=([\d.]+)/i);
+  if (policyMatch) {
+    const [, symbol, alpha, conf] = policyMatch;
+    const alphaText = Number.isFinite(Number(alpha)) ? Number(alpha).toFixed(2) : alpha;
+    const confText = Number.isFinite(Number(conf)) ? Number(conf).toFixed(2) : conf;
+    text = `AI filter skipped ${symbol} (alpha ${alphaText}, confidence ${confText}).`;
+    label = 'AI filter';
+    severity = 'warning';
+    relevant = true;
+    return { text, label, severity, relevant, parsed, reason: 'policy_filter' };
+  }
+
+  const entryFailMatch = parsed.message?.match(/^entry fail (\S+):\s*(.*)$/i);
+  if (entryFailMatch) {
+    const [, symbol, detail] = entryFailMatch;
+    text = `Order for ${symbol} failed${detail ? `: ${detail}` : '.'}`;
+    label = 'Order issue';
+    severity = 'error';
+    relevant = true;
+    return { text, label, severity, relevant, parsed, reason: 'order_failed' };
+  }
+
+  const fasttpOkMatch = parsed.message?.match(/^FASTTP (\S+) .*→ exit ([\d.]+)/);
+  if (fasttpOkMatch) {
+    const [, symbol] = fasttpOkMatch;
+    text = `Fast take-profit tightened for ${symbol} after a quick move.`;
+    label = 'Fast TP';
+    severity = 'info';
+    relevant = true;
+    return { text, label, severity, relevant, parsed };
+  }
+
+  const fasttpErrMatch = parsed.message?.match(/^FASTTP (\S+) replace error: (.*)$/);
+  if (fasttpErrMatch) {
+    const [, symbol, detail] = fasttpErrMatch;
+    text = `Fast TP adjustment failed for ${symbol}: ${detail}`;
+    label = 'Fast TP';
+    severity = 'warning';
+    relevant = true;
+    return { text, label, severity, relevant, parsed };
+  }
+
+  const startMatch = parsed.message?.match(/^Starting bot \(mode=(\w+), loop=(\w+)\)/);
+  if (startMatch) {
+    const [, mode, loop] = startMatch;
+    const modeLabel = mode === 'PAPER' ? 'paper' : mode?.toLowerCase() || 'live';
+    const loopLabel = loop?.toLowerCase() === 'true' ? 'continuous' : 'single-run';
+    text = `Bot starting in ${modeLabel} mode (${loopLabel}).`;
+    label = 'Bot status';
+    severity = 'system';
+    relevant = true;
+    return { text, label, severity, relevant, parsed };
+  }
+
+  const stopMatch = parsed.message?.match(/^Bot stopped\. Safe to exit\.?$/);
+  if (stopMatch) {
+    text = 'Bot stopped safely. You can close the session.';
+    label = 'Bot status';
+    severity = 'system';
+    relevant = true;
+    return { text, label, severity, relevant, parsed };
+  }
+
+  const launchMatch = parsed.message?.match(/^Launching bot:/);
+  if (launchMatch) {
+    text = 'Launching the trading bot with your current settings.';
+    label = 'Bot status';
+    severity = 'system';
+    relevant = true;
+    return { text, label, severity, relevant, parsed };
+  }
+
+  const configMatch = parsed.message?.match(/^Configuration updated$/);
+  if (configMatch) {
+    text = 'Configuration saved successfully.';
+    label = 'Settings';
+    severity = 'system';
+    relevant = true;
+    return { text, label, severity, relevant, parsed };
+  }
+
+  const cycleMatch = parsed.message?.match(/^Cycle finished in ([\d.]+)s\./);
+  if (cycleMatch) {
+    const [, seconds] = cycleMatch;
+    const duration = Number(seconds);
+    const durationText = Number.isFinite(duration) ? `${duration.toFixed(1)}s` : `${seconds}s`;
+    text = `Scan finished in ${durationText}.`;
+    label = 'Scan complete';
+    severity = 'info';
+    relevant = false;
+    return { text, label, severity, relevant, parsed };
+  }
+
+  const scanningMatch = parsed.message?.match(/^Scanning (\d+) symbols?(?::\s*(.*))?/);
+  if (scanningMatch) {
+    const [, count, list] = scanningMatch;
+    const preview = list ? list.split(',').slice(0, 3).join(', ').trim() : '';
+    text = `Reviewing ${count} markets${preview ? ` (e.g. ${preview})` : ''}.`;
+    label = 'Scan';
+    severity = 'info';
+    relevant = false;
+    return { text, label, severity, relevant, parsed };
+  }
+
+  const shutdownMatch = parsed.message?.match(/^Shutdown signal received/);
+  if (shutdownMatch) {
+    text = 'Shutdown signal received — finishing the current cycle.';
+    label = 'Bot status';
+    severity = 'system';
+    relevant = true;
+    return { text, label, severity, relevant, parsed };
+  }
+
+  if (!text) {
+    text = parsed.raw || '';
+  }
+
+  if (parsed.level === 'error') {
+    relevant = true;
+  }
+
+  return { text, label, severity, relevant, parsed };
+}
+
 async function updateStatus() {
   try {
     const res = await fetch('/api/bot/status');
@@ -230,8 +516,10 @@ async function updateStatus() {
 
 function appendLogLine({ line, level, ts }) {
   const normalizedLevel = (level || 'info').toLowerCase();
+  const parsed = parseStructuredLog(line, normalizedLevel);
+  const derivedLevel = (parsed.level || normalizedLevel).toLowerCase();
   const el = document.createElement('div');
-  el.className = `log-line ${normalizedLevel}`.trim();
+  el.className = `log-line ${derivedLevel}`.trim();
 
   const meta = document.createElement('div');
   meta.className = 'log-meta';
@@ -252,23 +540,23 @@ function appendLogLine({ line, level, ts }) {
     debug: 'Debug',
     info: 'Info',
   };
-  label.textContent = labelMap[normalizedLevel] || normalizedLevel.toUpperCase();
+  label.textContent = labelMap[derivedLevel] || derivedLevel.toUpperCase();
   meta.append(label);
 
   const message = document.createElement('div');
   message.className = 'log-message';
-  message.textContent = line;
+  message.textContent = parsed.raw ?? line;
 
   el.append(meta, message);
   logStream.append(el);
   while (logStream.children.length > 500) {
     logStream.removeChild(logStream.firstChild);
   }
-  if (!autoScrollToggle || autoScrollToggle.checked) {
+  if (autoScrollEnabled) {
     logStream.scrollTop = logStream.scrollHeight;
   }
 
-  appendCompactLog({ line, level: normalizedLevel, ts });
+  appendCompactLog({ line: parsed.raw ?? line, level: derivedLevel, ts });
 }
 
 function connectLogs() {
@@ -454,6 +742,61 @@ function renderTradeSummary(stats) {
   aiHint.textContent = stats.ai_hint;
 }
 
+function renderDecisionStats(stats) {
+  if (!decisionSummary || !decisionReasons) return;
+  const takenMetric = decisionSummary.querySelector('[data-metric="taken"] strong');
+  const skippedMetric = decisionSummary.querySelector('[data-metric="skipped"] strong');
+  const taken = Number(stats?.taken ?? 0);
+  const rejectedCounts = stats?.rejected && typeof stats.rejected === 'object' ? stats.rejected : {};
+  const rejectedTotalRaw = Number(stats?.rejected_total ?? 0);
+  const rejectedTotal = Number.isFinite(rejectedTotalRaw) && rejectedTotalRaw > 0
+    ? rejectedTotalRaw
+    : Object.values(rejectedCounts).reduce((acc, value) => acc + Number(value ?? 0), 0);
+
+  if (takenMetric) {
+    takenMetric.textContent = taken.toString();
+  }
+  if (skippedMetric) {
+    skippedMetric.textContent = rejectedTotal.toString();
+  }
+
+  decisionReasons.innerHTML = '';
+
+  const items = Object.entries(rejectedCounts)
+    .map(([reason, count]) => ({
+      reason,
+      count: Number(count ?? 0),
+      label: friendlyReason(reason),
+    }))
+    .filter((item) => item.count > 0);
+
+  if (!items.length) {
+    const li = document.createElement('li');
+    li.className = 'empty';
+    li.textContent = taken > 0 ? 'No skipped trades recorded.' : 'No trade decisions yet.';
+    decisionReasons.append(li);
+    return;
+  }
+
+  items.sort((a, b) => {
+    if (b.count !== a.count) return b.count - a.count;
+    return a.label.localeCompare(b.label);
+  });
+
+  for (const item of items) {
+    const li = document.createElement('li');
+    li.dataset.reason = item.reason;
+    const labelEl = document.createElement('span');
+    labelEl.className = 'reason-label';
+    labelEl.textContent = item.label;
+    const countEl = document.createElement('span');
+    countEl.className = 'reason-count';
+    countEl.textContent = item.count.toString();
+    li.append(labelEl, countEl);
+    decisionReasons.append(li);
+  }
+}
+
 function renderPnlChart(history) {
   if (!pnlChartCanvas || typeof Chart === 'undefined') return;
 
@@ -587,11 +930,12 @@ function renderPnlChart(history) {
 
 function appendCompactLog({ line, level, ts }) {
   if (!compactLogStream) return;
-  const allowed = new Set(['error', 'warning', 'system', 'info']);
-  if (!allowed.has(level)) return;
+  const friendly = humanizeLogLine(line, level);
+  if (!friendly || !friendly.relevant) return;
 
+  const severity = (friendly.severity || level || 'info').toLowerCase();
   const el = document.createElement('div');
-  el.className = `log-line ${level}`.trim();
+  el.className = `log-line ${severity}`.trim();
 
   const meta = document.createElement('div');
   meta.className = 'log-meta';
@@ -605,12 +949,12 @@ function appendCompactLog({ line, level, ts }) {
 
   const label = document.createElement('span');
   label.className = 'log-level';
-  label.textContent = level.toUpperCase();
+  label.textContent = friendly.label || FRIENDLY_LEVEL_LABELS[severity] || severity.toUpperCase();
   meta.append(label);
 
   const message = document.createElement('div');
   message.className = 'log-message';
-  message.textContent = line;
+  message.textContent = friendly.text || line;
 
   el.append(meta, message);
   compactLogStream.append(el);
@@ -618,7 +962,9 @@ function appendCompactLog({ line, level, ts }) {
   while (compactLogStream.children.length > 150) {
     compactLogStream.removeChild(compactLogStream.firstChild);
   }
-  compactLogStream.scrollTop = compactLogStream.scrollHeight;
+  if (autoScrollEnabled) {
+    compactLogStream.scrollTop = compactLogStream.scrollHeight;
+  }
 }
 
 function setRangeBackground(slider) {
@@ -694,6 +1040,7 @@ async function loadTrades() {
     const data = await res.json();
     renderTradeHistory(data.history);
     renderTradeSummary(data.stats);
+    renderDecisionStats(data.decision_stats);
     renderPnlChart(data.history);
   } catch (err) {
     console.warn(err);
@@ -744,6 +1091,24 @@ riskSlider?.addEventListener('input', updateRiskValue);
 riskSlider?.addEventListener('change', updateRiskValue);
 leverageSlider?.addEventListener('input', updateLeverageValue);
 leverageSlider?.addEventListener('change', updateLeverageValue);
+
+if (autoScrollToggles.length > 0) {
+  const initial = autoScrollToggles[0].checked;
+  autoScrollEnabled = initial;
+  autoScrollToggles.forEach((toggle) => {
+    toggle.checked = initial;
+    toggle.addEventListener('change', () => {
+      autoScrollEnabled = toggle.checked;
+      autoScrollToggles.forEach((peer) => {
+        if (peer !== toggle) {
+          peer.checked = autoScrollEnabled;
+        }
+      });
+    });
+  });
+} else {
+  autoScrollEnabled = true;
+}
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
