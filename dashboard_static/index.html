@@ -20,108 +20,116 @@
   </div>
 
   <header class="hero">
-    <div>
-      <h1>MrAster - your Aster Bot Control Center</h1>
-      <p>Orchestrate your trading stack, follow live telemetry, and tune parameters with AI-assisted insights.</p>
-    </div>
-    <div class="hero-actions">
-      <div class="hero-credentials" role="group" aria-label="Exchange credentials">
-        <div class="hero-credentials-title">Exchange credentials</div>
-        <label class="hero-credential">
-          <span>ASTER_API_KEY</span>
-          <input id="input-api-key" type="text" autocomplete="off" placeholder="Enter API key" />
-        </label>
-        <label class="hero-credential">
-          <span>ASTER_API_SECRET</span>
-          <input id="input-api-secret" type="password" autocomplete="off" placeholder="Enter API secret" />
-        </label>
-        <div class="hero-credentials-actions">
-          <button id="btn-start" class="primary">Start</button>
-          <button id="btn-stop" class="ghost">Stop</button>
-          <button id="btn-save-credentials" class="primary subtle">Save</button>
+    <div class="hero-inner">
+      <div class="hero-header">
+        <div class="hero-title">
+          <h1>MrAster - your Aster Bot Control Center</h1>
+          <p>Orchestrate your trading stack, follow live telemetry, and tune parameters with AI-assisted insights.</p>
+        </div>
+        <div class="hero-mode-panel" role="group" aria-label="Select mode">
+          <span class="hero-mode-label">Mode</span>
+          <div class="hero-mode-toggle">
+            <button class="mode-button active" data-mode-select="standard" aria-pressed="true">Standard</button>
+            <button class="mode-button" data-mode-select="pro" aria-pressed="false">Pro</button>
+            <button class="mode-button mode-highlight" data-mode-select="ai" aria-pressed="false">AI</button>
+          </div>
         </div>
       </div>
-      <div class="hero-mode-toggle" role="group" aria-label="Select mode">
-        <button class="mode-button active" data-mode-select="standard" aria-pressed="true">Standard</button>
-        <button class="mode-button" data-mode-select="pro" aria-pressed="false">Pro</button>
-        <button class="mode-button" data-mode-select="ai" aria-pressed="false">AI</button>
+
+      <div class="hero-overview-grid">
+        <section class="card status" aria-label="Bot status overview">
+          <h2>Status</h2>
+          <div class="status-grid">
+            <div>
+              <span class="label">State</span>
+              <span id="status-indicator" class="pill neutral">–</span>
+            </div>
+            <div>
+              <span class="label">PID</span>
+              <span id="status-pid">–</span>
+            </div>
+            <div>
+              <span class="label">Started</span>
+              <span id="status-started">–</span>
+            </div>
+            <div>
+              <span class="label">Uptime</span>
+              <span id="status-uptime">–</span>
+            </div>
+          </div>
+          <div class="ai-budget" id="ai-budget" data-ai-only>
+            <div class="ai-budget-header">
+              <span class="label">AI budget (daily)</span>
+              <span class="ai-budget-mode" id="ai-budget-mode">Standard</span>
+            </div>
+            <div class="ai-budget-bar">
+              <div class="ai-budget-fill" id="ai-budget-fill" style="width: 0%"></div>
+            </div>
+            <div class="ai-budget-meta" id="ai-budget-meta">Budget not configured.</div>
+          </div>
+          <div class="status-stats">
+            <div class="status-stats-header">
+              <span class="label">Trade decisions</span>
+              <div class="decision-summary" id="decision-summary">
+                <span class="decision-metric" data-metric="taken">Accepted: <strong>0</strong></span>
+                <span class="decision-metric" data-metric="skipped">Skipped: <strong>0</strong></span>
+              </div>
+            </div>
+            <ul class="decision-reasons" id="decision-reasons">
+              <li class="empty">No trade decisions yet.</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="card hero-credentials" role="group" aria-label="Exchange credentials">
+          <div class="hero-credentials-title">Exchange credentials</div>
+          <label class="hero-credential">
+            <span>ASTER_API_KEY</span>
+            <input id="input-api-key" type="text" autocomplete="off" placeholder="Enter API key" />
+          </label>
+          <label class="hero-credential">
+            <span>ASTER_API_SECRET</span>
+            <input id="input-api-secret" type="password" autocomplete="off" placeholder="Enter API secret" />
+          </label>
+          <div class="hero-credentials-actions">
+            <button id="btn-start" class="primary">Start</button>
+            <button id="btn-stop" class="ghost">Stop</button>
+            <button id="btn-save-credentials" class="primary subtle">Save</button>
+          </div>
+        </section>
+
+        <section class="card trades hero-overview-card" aria-label="Recent trade history">
+          <div class="card-header trade-header">
+            <div class="trade-title">
+              <h2>Trade history</h2>
+              <p class="card-subtitle">Latest fills and realized performance at a glance.</p>
+            </div>
+            <div class="trade-overview" id="trade-summary"></div>
+          </div>
+          <div class="trade-history">
+            <div id="trade-list" class="trade-list">
+              <div class="trade-empty">No trades yet.</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card pnl-card hero-overview-card" aria-label="Performance overview">
+          <div class="card-header">
+            <div>
+              <h2>Performance overview</h2>
+              <p class="card-subtitle">Cumulative realized PNL across your recorded trades.</p>
+            </div>
+          </div>
+          <div class="pnl-chart-wrapper">
+            <canvas id="pnl-chart" aria-label="Cumulative PNL chart" style="display: none;"></canvas>
+            <div id="pnl-empty" class="empty-state">No PNL data yet. Execute trades to populate the performance graph.</div>
+          </div>
+        </section>
       </div>
     </div>
   </header>
 
   <main class="layout">
-    <section class="card status">
-      <h2>Status</h2>
-      <div class="status-grid">
-        <div>
-          <span class="label">State</span>
-          <span id="status-indicator" class="pill neutral">–</span>
-        </div>
-        <div>
-          <span class="label">PID</span>
-          <span id="status-pid">–</span>
-        </div>
-        <div>
-          <span class="label">Started</span>
-          <span id="status-started">–</span>
-        </div>
-        <div>
-          <span class="label">Uptime</span>
-          <span id="status-uptime">–</span>
-        </div>
-      </div>
-      <div class="ai-budget" id="ai-budget" data-ai-only>
-        <div class="ai-budget-header">
-          <span class="label">AI budget (daily)</span>
-          <span class="ai-budget-mode" id="ai-budget-mode">Standard</span>
-        </div>
-        <div class="ai-budget-bar">
-          <div class="ai-budget-fill" id="ai-budget-fill" style="width: 0%"></div>
-        </div>
-        <div class="ai-budget-meta" id="ai-budget-meta">Budget not configured.</div>
-      </div>
-      <div class="status-stats">
-        <div class="status-stats-header">
-          <span class="label">Trade decisions</span>
-          <div class="decision-summary" id="decision-summary">
-            <span class="decision-metric" data-metric="taken">Accepted: <strong>0</strong></span>
-            <span class="decision-metric" data-metric="skipped">Skipped: <strong>0</strong></span>
-          </div>
-        </div>
-        <ul class="decision-reasons" id="decision-reasons">
-          <li class="empty">No trade decisions yet.</li>
-        </ul>
-      </div>
-    </section>
-
-    <section class="card trades">
-      <div class="card-header trade-header">
-        <div class="trade-title">
-          <h2>Trade history</h2>
-          <p class="card-subtitle">Latest fills and realized performance at a glance.</p>
-        </div>
-        <div class="trade-overview" id="trade-summary"></div>
-      </div>
-      <div class="trade-history">
-        <div id="trade-list" class="trade-list">
-          <div class="trade-empty">No trades yet.</div>
-        </div>
-      </div>
-    </section>
-
-    <section class="card pnl-card">
-      <div class="card-header">
-        <div>
-          <h2>Performance overview</h2>
-          <p class="card-subtitle">Cumulative realized PNL across your recorded trades.</p>
-        </div>
-      </div>
-      <div class="pnl-chart-wrapper">
-        <canvas id="pnl-chart" aria-label="Cumulative PNL chart" style="display: none;"></canvas>
-        <div id="pnl-empty" class="empty-state">No PNL data yet. Execute trades to populate the performance graph.</div>
-      </div>
-    </section>
-
     <section class="card ai-mode-window" data-ai-only>
       <div class="ai-mode-window-header">
         <span class="ai-mode-label">AI ACTIVITY</span>
