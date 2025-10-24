@@ -184,14 +184,28 @@ def _resolve_python() -> str:
     return candidate
 
 
+def _expand_token(token: str) -> str:
+    expanded = os.path.expandvars(token)
+    expanded = os.path.expanduser(expanded)
+    return expanded
+
+
 def _split_command_tokens(raw: Any) -> List[str]:
     """Normalise the configured bot command into a token list."""
 
-    if isinstance(raw, (list, tuple)):
-        tokens = [str(part).strip() for part in raw if str(part).strip()]
+    def _prepare(parts: List[Any]) -> List[str]:
+        tokens = []
+        for part in parts:
+            text = str(part).strip()
+            if not text:
+                continue
+            tokens.append(_expand_token(text))
         if tokens:
             return tokens
         raise FileNotFoundError("Bot command is empty")
+
+    if isinstance(raw, (list, tuple)):
+        return _prepare(list(raw))
 
     value = str(raw or "").strip()
     if not value:
@@ -204,12 +218,11 @@ def _split_command_tokens(raw: Any) -> List[str]:
         except json.JSONDecodeError:
             parsed = None
         if isinstance(parsed, list):
-            tokens = [str(part).strip() for part in parsed if str(part).strip()]
-            if tokens:
-                return tokens
-            raise FileNotFoundError("Bot command is empty")
+            return _prepare(parsed)
+        # Fall back to treating the value as a raw string when JSON parsing
+        # fails so users can keep shell commands containing brackets.
 
-    return shlex.split(value)
+    return [_expand_token(part) for part in shlex.split(value)]
 
 
 def _should_use_shell(raw: Any) -> Optional[str]:
