@@ -90,15 +90,32 @@ The optional reinforcement-learning layer lives in `ml_policy.py` and is switche
 3. Open your browser: `http://localhost:8000`
 4. Stream logs live (`/ws/logs`), edit configuration, and manage the bot process via the action buttons.
 
-### Dashboard modes and presets
+### Dashboard modes
 
-The control center now ships with two personas:
+The dashboard exposes three tailored personas so every operator can match the interface to their preferred workflow.
 
-* **Default mode (presets):** Designed for quick launches. Pick between **Low**, **Mid**, and **High** trading intensity and adjust two guardrails:
-  * **Risk per trade** – percentage of account equity allocated to a single position. The slider ranges from 0.25% to 5%.
-  * **Leverage** – capped at **5×** to prevent excessive exposure. Use the slider to align with your exchange limit.
-  The activity feed card shows a curated subset of live events (fills, warnings, and notices) so newcomers can stay focused on what matters.
-* **Pro-Mode:** Toggle the switch in the header to reveal the full environment editor and the verbose debug log stream. All `ASTER_*` variables can be changed live; the save action writes them to `dashboard_config.json` so subsequent launches reuse them.
+#### Standard Mode (presets)
+
+Designed for quick launches. Pick between **Low**, **Mid**, and **High** trading intensity and adjust two guardrails:
+
+* **Risk per trade** – percentage of account equity allocated to a single position. The slider ranges from 0.25% to 5%.
+* **Leverage** – capped at **5×** to prevent excessive exposure. Use the slider to align with your exchange limit.
+
+The activity feed card shows a curated subset of live events (fills, warnings, and notices) so newcomers can stay focused on what matters.
+
+#### Pro mode
+
+Toggle the switch in the header to reveal the full environment editor and the verbose debug log stream. All `ASTER_*` variables can be changed live; the save action writes them to `dashboard_config.json` so subsequent launches reuse them.
+
+#### AI mode
+
+Enable the **AI** persona to hand over signal triage and sizing to the built-in `AITradeAdvisor`. Once active, the bot:
+
+* Streams a dedicated AI activity feed that explains current market hypotheses, rejected setups, and live adjustments.
+* Exposes configuration inputs for `ASTER_OPENAI_API_KEY`, `ASTER_AI_MODEL`, and daily budget guardrails (`ASTER_AI_DAILY_BUDGET_USD`, `ASTER_AI_STRICT_BUDGET`).
+* Applies AI guidance when vetting trades, including zero-sizing risky signals, tuning leverage and FastTP parameters, and respecting the sentinel news filter (`ASTER_AI_SENTINEL_*`).
+
+Set a daily spend limit to keep LLM usage within bounds; the budget tracker will automatically pause remote calls once the cap is reached.
 
 ### Dashboard environment configuration reference
 
