@@ -515,7 +515,7 @@ button:focus-visible {
 }
 
 .ai-mode-window {
-  grid-column: 5 / span 8;
+  grid-column: 5 / span 4;
   align-self: stretch;
 }
 
@@ -996,7 +996,7 @@ body.ai-mode .status .decision-metric {
 
 .ai-mode-window {
   gap: 1.5rem;
-  min-height: 320px;
+  min-height: 360px;
   height: 100%;
   background: radial-gradient(circle at 15% 10%, rgba(240, 169, 75, 0.18), transparent 55%),
               radial-gradient(circle at 85% 0%, rgba(80, 75, 241, 0.16), transparent 60%),
