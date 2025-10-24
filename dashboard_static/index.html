@@ -28,6 +28,18 @@
         <button id="btn-start" class="primary">Start</button>
         <button id="btn-stop" class="ghost">Stop</button>
       </div>
+      <div class="hero-credentials" role="group" aria-label="Exchange credentials">
+        <div class="hero-credentials-title">Exchange credentials</div>
+        <label class="hero-credential">
+          <span>ASTER_API_KEY</span>
+          <input id="input-api-key" type="text" autocomplete="off" placeholder="Enter API key" />
+        </label>
+        <label class="hero-credential">
+          <span>ASTER_API_SECRET</span>
+          <input id="input-api-secret" type="password" autocomplete="off" placeholder="Enter API secret" />
+        </label>
+        <button id="btn-save-credentials" class="primary subtle">Save</button>
+      </div>
       <div class="hero-mode-toggle" role="group" aria-label="Select mode">
         <button class="mode-button active" data-mode-select="standard" aria-pressed="true">Standard</button>
         <button class="mode-button" data-mode-select="pro" aria-pressed="false">Pro</button>
@@ -57,7 +69,7 @@
           <span id="status-uptime">–</span>
         </div>
       </div>
-      <div class="ai-budget" id="ai-budget">
+      <div class="ai-budget" id="ai-budget" data-ai-only>
         <div class="ai-budget-header">
           <span class="label">AI budget (daily)</span>
           <span class="ai-budget-mode" id="ai-budget-mode">Standard</span>
@@ -81,6 +93,21 @@
       </div>
     </section>
 
+    <section class="card trades">
+      <div class="card-header trade-header">
+        <div class="trade-title">
+          <h2>Trade history</h2>
+          <p class="card-subtitle">Latest fills and realized performance at a glance.</p>
+        </div>
+        <div class="trade-overview" id="trade-summary"></div>
+      </div>
+      <div class="trade-history">
+        <div id="trade-list" class="trade-list">
+          <div class="trade-empty">No trades yet.</div>
+        </div>
+      </div>
+    </section>
+
     <section class="card pnl-card">
       <div class="card-header">
         <div>
@@ -91,6 +118,19 @@
       <div class="pnl-chart-wrapper">
         <canvas id="pnl-chart" aria-label="Cumulative PNL chart" style="display: none;"></canvas>
         <div id="pnl-empty" class="empty-state">No PNL data yet. Execute trades to populate the performance graph.</div>
+      </div>
+    </section>
+
+    <section class="card ai-mode-window" data-ai-only>
+      <div class="ai-mode-window-header">
+        <span class="ai-mode-label">AI ACTIVITY</span>
+        <div class="ai-mode-window-title">
+          <h2>Autonomous strategy cockpit</h2>
+          <p class="ai-mode-window-subtitle">Verfolge in Echtzeit, welche Marktbeobachtungen, Hypothesen und Entscheidungen die AI aktuell vorbereitet. Der Stream wird laufend aktualisiert.</p>
+        </div>
+      </div>
+      <div class="ai-mode-window-body">
+        <div class="ai-hint" id="ai-hint">Loading AI analysis…</div>
       </div>
     </section>
 
@@ -197,27 +237,6 @@
       <div id="env-settings" class="env-grid"></div>
     </section>
 
-    <section class="card credentials" data-normal-only>
-      <div class="card-header">
-        <div>
-          <h2>Exchange credentials</h2>
-          <p class="card-subtitle">Provide your Aster API key and secret to enable live execution.</p>
-        </div>
-        <button id="btn-save-credentials" class="primary subtle">Save</button>
-      </div>
-      <div class="credentials-grid">
-        <label>
-          <span>ASTER_API_KEY</span>
-          <input id="input-api-key" type="text" autocomplete="off" placeholder="Enter API key" />
-        </label>
-        <label>
-          <span>ASTER_API_SECRET</span>
-          <input id="input-api-secret" type="password" autocomplete="off" placeholder="Enter API secret" />
-        </label>
-      </div>
-      <p class="credentials-hint">Need advanced environment variables? Switch to Pro-Mode for the full configuration editor.</p>
-    </section>
-
     <section class="card logs compact" data-normal-only data-hide-when-ai>
       <div class="card-header">
         <div>
@@ -235,35 +254,6 @@
         <label class="toggle"><input type="checkbox" id="autoscroll-pro" data-autoscroll checked /> Auto-scroll</label>
       </div>
       <div id="log-stream" class="log-stream"></div>
-    </section>
-
-    <section class="card ai-mode-window" data-ai-only>
-      <div class="ai-mode-window-header">
-        <span class="ai-mode-label">AI ACTIVITY</span>
-        <div class="ai-mode-window-title">
-          <h2>Autonomous strategy cockpit</h2>
-          <p class="ai-mode-window-subtitle">Verfolge in Echtzeit, welche Marktbeobachtungen, Hypothesen und Entscheidungen die AI aktuell vorbereitet. Der Stream wird laufend aktualisiert.</p>
-        </div>
-      </div>
-      <div class="ai-mode-window-body">
-        <div class="ai-hint" id="ai-hint">Loading AI analysis…</div>
-      </div>
-    </section>
-
-
-    <section class="card trades">
-      <div class="card-header trade-header">
-        <div class="trade-title">
-          <h2>Trade history</h2>
-          <p class="card-subtitle">Latest fills and realized performance at a glance.</p>
-        </div>
-        <div class="trade-overview" id="trade-summary"></div>
-      </div>
-      <div class="trade-history">
-        <div id="trade-list" class="trade-list">
-          <div class="trade-empty">No trades yet.</div>
-        </div>
-      </div>
     </section>
   </main>
 
