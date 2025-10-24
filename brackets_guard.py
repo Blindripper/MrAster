@@ -179,7 +179,16 @@ class BracketGuard:
         return px
 
     # ------------------------------- Low-level Place --------------------------
-    def place_sl(self, symbol: str, side: str, qty: float, stop_price: float, ref: Optional[float] = None, safety_ticks: int = 1) -> dict:
+    def place_sl(
+        self,
+        symbol: str,
+        side: str,
+        qty: float,
+        stop_price: float,
+        ref: Optional[float] = None,
+        safety_ticks: int = 1,
+        position_side: Optional[str] = None,
+    ) -> dict:
         """
         SL für eine bestehende Position platzieren (closePosition=True).
         Für Long (BUY) → SL ist SELL STOP_MARKET; für Short → BUY STOP_MARKET.
@@ -196,9 +205,20 @@ class BracketGuard:
             "reduceOnly": "true",
             "stopPrice": f"{px:.12f}".rstrip("0").rstrip("."),
         }
+        if position_side:
+            params["positionSide"] = position_side
         return self.ex.place_order(**params)
 
-    def place_tp(self, symbol: str, side: str, qty: float, take_profit_price: float, ref: Optional[float] = None, safety_ticks: int = 1) -> dict:
+    def place_tp(
+        self,
+        symbol: str,
+        side: str,
+        qty: float,
+        take_profit_price: float,
+        ref: Optional[float] = None,
+        safety_ticks: int = 1,
+        position_side: Optional[str] = None,
+    ) -> dict:
         """
         TP für eine bestehende Position platzieren (closePosition=True).
         Für Long (BUY) → TP ist SELL TAKE_PROFIT_MARKET; für Short → BUY TAKE_PROFIT_MARKET.
@@ -215,6 +235,8 @@ class BracketGuard:
             "reduceOnly": "true",
             "stopPrice": f"{px:.12f}".rstrip("0").rstrip("."),
         }
+        if position_side:
+            params["positionSide"] = position_side
         return self.ex.place_order(**params)
 
     # ------------------------------- Helpers ---------------------------------
@@ -249,14 +271,32 @@ class BracketGuard:
             msg = str(e)
         self.log.debug(f"BRACKET {kind} place fail {symbol}: {msg}")
 
-    def _place_with_retry(self, fn, symbol: str, side: str, qty: float, price: float, ref: Optional[float], kind: str):
+    def _place_with_retry(
+        self,
+        fn,
+        symbol: str,
+        side: str,
+        qty: float,
+        price: float,
+        ref: Optional[float],
+        kind: str,
+        position_side: Optional[str] = None,
+    ):
         try:
-            fn(symbol, side, abs(qty), price, ref=ref, safety_ticks=1)
+            fn(symbol, side, abs(qty), price, ref=ref, safety_ticks=1, position_side=position_side)
             return
         except requests.HTTPError as e:
             if self._is_immediate_trigger_error(e):
                 try:
-                    fn(symbol, side, abs(qty), price, ref=ref, safety_ticks=4)  # +4 Ticks
+                    fn(
+                        symbol,
+                        side,
+                        abs(qty),
+                        price,
+                        ref=ref,
+                        safety_ticks=4,
+                        position_side=position_side,
+                    )  # +4 Ticks
                     return
                 except Exception as e2:
                     self._log_http_fail(kind, symbol, e2)
@@ -276,39 +316,79 @@ class BracketGuard:
                 tp = o
         return stop, tp
 
-    def _position_side_amt(self, symbol: str) -> Tuple[str, float]:
+    def _position_snapshot(self, symbol: str) -> List[Tuple[str, float]]:
         try:
             pos = self.ex.get_position_risk()
+            out: List[Tuple[str, float]] = []
             for p in pos or []:
-                if p.get("symbol") == symbol:
-                    amt = float(p.get("positionAmt", "0") or 0.0)
-                    if amt > 0: return "BUY", amt
-                    if amt < 0: return "SELL", amt
-                    break
+                if p.get("symbol") != symbol:
+                    continue
+                pos_side = str(p.get("positionSide", "") or "BOTH").upper()
+                amt = float(p.get("positionAmt", "0") or 0.0)
+                out.append((pos_side, amt))
+            return out
+        except Exception:
+            return []
+
+    def _position_side_amt(self, symbol: str) -> Tuple[str, float, str]:
+        try:
+            pos = self._position_snapshot(symbol)
+            fallback: Tuple[str, float, str] = ("BUY", 0.0, "BOTH")
+            for pos_side, amt in pos:
+                if pos_side == "BOTH":
+                    if amt > 0:
+                        return "BUY", amt, "BOTH"
+                    if amt < 0:
+                        return "SELL", amt, "BOTH"
+                    fallback = ("BUY", 0.0, "BOTH")
+                elif pos_side == "LONG":
+                    if amt != 0:
+                        return "BUY", amt, "LONG"
+                    fallback = ("BUY", 0.0, "LONG")
+                elif pos_side == "SHORT":
+                    if amt != 0:
+                        return "SELL", amt, "SHORT"
+                    fallback = ("SELL", 0.0, "SHORT")
+            return fallback
         except Exception:
             pass
-        return "BUY", 0.0
+        return "BUY", 0.0, "BOTH"
 
-    def _decide_exit_kind(self, symbol: str, new_price: float) -> str:
+    def _position_side_param(self, symbol: str, side: str) -> Optional[str]:
+        desired = "LONG" if side == "BUY" else "SHORT"
+        try:
+            pos = self._position_snapshot(symbol)
+            fallback = None
+            for pos_side, _ in pos:
+                if pos_side == desired:
+                    return desired
+                if pos_side == "BOTH":
+                    fallback = "BOTH"
+            return fallback
+        except Exception:
+            return None
+
+    def _decide_exit_kind(self, symbol: str, new_price: float, side: Optional[str] = None) -> str:
         """
         Grobe Heuristik: wenn neuer Preis auf der SL-Seite vom Referenzpreis liegt → STOP, sonst TP.
         """
         ref = self._ref_price(symbol)
         if not ref or ref <= 0:
             return "TP"
-        side, _ = self._position_side_amt(symbol)
+        if side is None:
+            side, _, _ = self._position_side_amt(symbol)
         if side == "BUY":
             return "STOP" if new_price < ref else "TP"
         else:
             return "STOP" if new_price > ref else "TP"
 
     def replace_exit(self, symbol: str, quantity: float, new_price: float, side: Optional[str] = None) -> None:
-        side_inferred, amt = self._position_side_amt(symbol)
+        side_inferred, amt, pos_side = self._position_side_amt(symbol)
         if abs(amt) <= 0.0:
             return
         side = side or side_inferred
         ref = self._ref_price(symbol)
-        kind = self._decide_exit_kind(symbol, new_price)
+        kind = self._decide_exit_kind(symbol, new_price, side)
         orders = self.get_open_orders(symbol)
         stop, tp = self._classify_orders(orders)
         try:
@@ -316,12 +396,30 @@ class BracketGuard:
                 if stop is not None:
                     try: self.cancel_order(symbol, int(stop.get("orderId")))
                     except Exception: pass
-                self._place_with_retry(self.place_sl, symbol, side, abs(amt), new_price, ref, "STOP")
+                self._place_with_retry(
+                    self.place_sl,
+                    symbol,
+                    side,
+                    abs(amt),
+                    new_price,
+                    ref,
+                    "STOP",
+                    position_side=pos_side,
+                )
             else:
                 if tp is not None:
                     try: self.cancel_order(symbol, int(tp.get("orderId")))
                     except Exception: pass
-                self._place_with_retry(self.place_tp, symbol, side, abs(amt), new_price, ref, "TP")
+                self._place_with_retry(
+                    self.place_tp,
+                    symbol,
+                    side,
+                    abs(amt),
+                    new_price,
+                    ref,
+                    "TP",
+                    position_side=pos_side,
+                )
         except Exception as e:
             self.log.debug(f"BRACKET replace_exit fail {symbol}: {e}")
 
@@ -367,16 +465,36 @@ class BracketGuard:
         if tp_price is not None:
             tp_price = self._round_trigger(symbol, side, "TP", float(tp_price), ref, safety_ticks=3)
 
+        position_side = self._position_side_param(symbol, side)
+
         ok = True
         try:
             if not stop and sl_price is not None:
-                self._place_with_retry(self.place_sl, symbol, side, abs(quantity or 0.0), sl_price, ref, "STOP")
+                self._place_with_retry(
+                    self.place_sl,
+                    symbol,
+                    side,
+                    abs(quantity or 0.0),
+                    sl_price,
+                    ref,
+                    "STOP",
+                    position_side=position_side,
+                )
         except Exception as e:
             self.log.debug(f"ensure_after_entry STOP fail {symbol}: {e}")
             ok = False
         try:
             if not tp and tp_price is not None:
-                self._place_with_retry(self.place_tp, symbol, side, abs(quantity or 0.0), tp_price, ref, "TP")
+                self._place_with_retry(
+                    self.place_tp,
+                    symbol,
+                    side,
+                    abs(quantity or 0.0),
+                    tp_price,
+                    ref,
+                    "TP",
+                    position_side=position_side,
+                )
         except Exception as e:
             self.log.debug(f"ensure_after_entry TP fail {symbol}: {e}")
             ok = False
