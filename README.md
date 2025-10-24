@@ -1,91 +1,91 @@
 # MrAster Trading Bot
 
-MrAster ist ein Python-basiertes Trading-Toolkit für Perpetual Futures auf Binance-kompatiblen Börsen. Das Projekt umfasst:
+MrAster is a Python trading toolkit tailored for perpetual futures on Binance-compatible exchanges. The repository contains the following core pieces:
 
-* `aster_multi_bot.py` – der Hauptbot mit Signal-Logik, Bandit-Policy und automatischer Bracket-Order-Verwaltung.
-* `brackets_guard.py` – robuster Guard, der Stop-/Take-Profit-Orders repariert.
-* `dashboard_server.py` + `dashboard_static/` – ein FastAPI-Dashboard zur Bot-Steuerung samt Log-Streaming.
+* `aster_multi_bot.py` – the main trading bot with signal logic, multi-armed bandit policy, and automated bracket-order handling.
+* `brackets_guard.py` – a resilient guard process that repairs stop-loss and take-profit orders.
+* `dashboard_server.py` + `dashboard_static/` – a FastAPI-powered dashboard for bot control, configuration, and log streaming.
 
-## Neueste Optimierungen
+## Recent improvements
 
-* **HTTP-Stabilisierung:** Konfigurierbare Retries (`ASTER_HTTP_RETRIES`, `ASTER_HTTP_BACKOFF`, `ASTER_HTTP_TIMEOUT`) schützen vor transienten API-Fehlern.
-* **Kline-Caching:** Mehrfach genutzte Kursdaten werden für `ASTER_KLINE_CACHE_SEC` Sekunden geteilt und auf Ausfälle mit Fallbacks abgesichert.
-* **Requirements-Datei:** Vereinfachte Installation aller Abhängigkeiten über `requirements.txt`.
+* **HTTP hardening:** Configurable retries (`ASTER_HTTP_RETRIES`, `ASTER_HTTP_BACKOFF`, `ASTER_HTTP_TIMEOUT`) provide protection against transient REST failures.
+* **Kline caching:** Frequently reused market data is cached for `ASTER_KLINE_CACHE_SEC` seconds with graceful fallbacks if the upstream API is unavailable.
+* **Requirements file:** Installing all dependencies is now a single `pip install -r requirements.txt` away.
 
-## Voraussetzungen
+## Prerequisites
 
-* Python ≥ 3.10 (empfohlen)
-* Ein Binance- oder AsterDex-kompatibler Futures-Account (für Live-Betrieb)
-* Optional: Zugangsdaten mit Leserechten für Papiermodus nicht notwendig
+* Python ≥ 3.10 (recommended)
+* A Binance or AsterDex compatible futures account for live trading
+* Optional: paper-trading mode can run without exchange credentials
 
 ## Installation
 
 ```bash
-# Repository klonen
+# Clone the repository
 git clone https://example.com/MrAster.git
 cd MrAster
 
-# Virtuelle Umgebung anlegen
+# Create a virtual environment
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
-# Abhängigkeiten installieren
+# Install dependencies
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-## Konfiguration
+## Configuration
 
-Der Bot wird über Umgebungsvariablen gesteuert. Die wichtigsten Parameter:
+The bot is controlled via environment variables. Key parameters include:
 
-| Variable | Bedeutung | Standard |
+| Variable | Description | Default |
 | --- | --- | --- |
-| `ASTER_API_KEY` / `ASTER_API_SECRET` | Börsen-API-Zugang | leer |
-| `ASTER_EXCHANGE_BASE` | REST-Endpunkt (z. B. `https://fapi.binance.com`) | `https://fapi.asterdex.com` |
-| `ASTER_PAPER` | Papierhandel aktivieren (`true`/`false`) | `false` |
-| `ASTER_RUN_ONCE` | Nur einen Scan durchführen | `false` |
-| `ASTER_LOGLEVEL` | Log-Level (`DEBUG`, `INFO`, …) | `INFO` |
-| `ASTER_HTTP_RETRIES` | Zusätzliche HTTP-Versuche bei Fehlern | `2` |
-| `ASTER_HTTP_BACKOFF` | Basis-Verzögerung (Sekunden) für Retries | `0.6` |
-| `ASTER_HTTP_TIMEOUT` | Request-Timeout in Sekunden | `20` |
-| `ASTER_KLINE_CACHE_SEC` | Lebensdauer des Kline-Caches | `45` |
+| `ASTER_API_KEY` / `ASTER_API_SECRET` | Exchange API credentials | empty |
+| `ASTER_EXCHANGE_BASE` | REST endpoint (e.g. `https://fapi.binance.com`) | `https://fapi.asterdex.com` |
+| `ASTER_PAPER` | Enable paper trading (`true`/`false`) | `false` |
+| `ASTER_RUN_ONCE` | Run a single scan cycle | `false` |
+| `ASTER_LOGLEVEL` | Log level (`DEBUG`, `INFO`, …) | `INFO` |
+| `ASTER_HTTP_RETRIES` | Additional HTTP attempts after failures | `2` |
+| `ASTER_HTTP_BACKOFF` | Base delay (seconds) for retries | `0.6` |
+| `ASTER_HTTP_TIMEOUT` | Request timeout in seconds | `20` |
+| `ASTER_KLINE_CACHE_SEC` | Lifetime of the kline cache | `45` |
 
-Weitere Strategie-Parameter (RSI-Limits, ATR-Multiplikatoren, Positionsgrößen, Universum usw.) lassen sich ebenfalls per ENV setzen; siehe Kopfsektion von `aster_multi_bot.py` bzw. das Dashboard (`/api/config`).
+Strategy parameters (RSI limits, ATR multipliers, position sizing, trading universe, and more) can also be configured through environment variables. Check the top section of `aster_multi_bot.py` or the dashboard (`/api/config`) for the full list.
 
-Zum lokalen Arbeiten kann eine `.env`-Datei genutzt werden (z. B. via `python-dotenv` oder manuelles Exportieren vor dem Start).
+For local development you can load a `.env` file (via `python-dotenv` or manual exports before launching the bot).
 
-## Bot starten
+## Running the bot
 
 ```bash
-# Papiermodus aktivieren, dann Bot starten
+# Enable paper mode, then launch the bot
 export ASTER_PAPER=true
 python aster_multi_bot.py
 ```
 
-*Mit `CTRL+C` (oder SIGTERM) wird der aktuelle Scan sauber beendet.*
+*Press `CTRL+C` (or send SIGTERM) to gracefully finish the current scan cycle.*
 
-Ein einzelner Analysezyklus lässt sich mit `ASTER_RUN_ONCE=true` ausführen. Der Bot speichert seinen Zustand in `aster_state.json` (Trades, Policy, FastTP-Cooldowns).
+You can execute a single analysis pass by setting `ASTER_RUN_ONCE=true`. Runtime state (trades, policy, FastTP cooldowns) is persisted in `aster_state.json`.
 
-## Dashboard verwenden
+## Using the dashboard
 
-1. Sicherstellen, dass die Abhängigkeiten installiert sind (`fastapi`, `uvicorn`).
-2. Dashboard starten:
+1. Ensure dashboard dependencies (`fastapi`, `uvicorn`) are installed.
+2. Start the dashboard:
 
    ```bash
    python dashboard_server.py
-   # oder mit Reload:
+   # or with reload support:
    uvicorn dashboard_server:app --host 0.0.0.0 --port 8000
    ```
 
-3. Browser öffnen: `http://localhost:8000`
-4. Logs live verfolgen (`/ws/logs`), Konfiguration bearbeiten und Bot-Prozess über die Buttons starten/stoppen.
+3. Open your browser: `http://localhost:8000`
+4. Stream logs live (`/ws/logs`), edit configuration, and manage the bot process via the action buttons.
 
-Das Dashboard legt `dashboard_config.json` an und schreibt geänderte ENV-Werte zurück. Trades, offene Positionen und AI-Hints basieren auf `aster_state.json`.
+The dashboard creates `dashboard_config.json` and writes changed environment values back to disk. Trades, open positions, and AI hints are driven by `aster_state.json`.
 
-## Sicherheit & Hinweise
+## Safety & disclaimers
 
-* Live-Handel birgt finanzielle Risiken. Teste jede Änderung zunächst im Papiermodus.
-* API-Schlüssel niemals im Repo oder in öffentlichen Tickets teilen.
-* Durch das neue Caching können historische Daten beim API-Ausfall weiterverwendet werden – prüfe daher regelmäßig, ob die Kurse aktuell sind.
+* Live trading involves substantial financial risk—thoroughly test every change in paper mode first.
+* Never commit API keys to the repository or expose them publicly.
+* Because of the caching layer, historical data can survive short exchange outages. Double-check that the prices you trade on are still current.
 
-Viel Erfolg beim Trading! Beiträge und Issues sind willkommen.
+Good luck and happy trading! Contributions and issues are welcome.
