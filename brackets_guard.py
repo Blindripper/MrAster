@@ -151,6 +151,29 @@ class BracketGuard:
             pass
         return 0.0
 
+    @staticmethod
+    def _format_decimal(value: float) -> str:
+        s = f"{float(value):.12f}".rstrip("0").rstrip(".")
+        return s or "0"
+
+    def _build_bracket_payload(
+        self,
+        kind: str,
+        side: str,
+        price: float,
+        position_side: Optional[str] = None,
+    ) -> str:
+        payload = {
+            "type": "STOP_MARKET" if kind.upper() == "STOP" else "TAKE_PROFIT_MARKET",
+            "stopPrice": self._format_decimal(price),
+            "workingType": self.working_type,
+            "reduceOnly": True,
+            "closePosition": True,
+        }
+        if position_side:
+            payload["positionSide"] = position_side
+        return json.dumps(payload, separators=(",", ":"))
+
     def _round_trigger(self, symbol: str, side: str, kind: str, price: float, ref: Optional[float], safety_ticks: int = 1) -> float:
         """
         kind: "STOP" oder "TP"; side: "BUY" (long) / "SELL" (short)
@@ -203,8 +226,10 @@ class BracketGuard:
             "workingType": self.working_type,
             "closePosition": "true",
             "reduceOnly": "true",
-            "stopPrice": f"{px:.12f}".rstrip("0").rstrip("."),
+            "stopPrice": self._format_decimal(px),
         }
+        params["stopLossPrice"] = self._format_decimal(px)
+        params["stopLoss"] = self._build_bracket_payload("STOP", side, px, position_side=position_side)
         if position_side:
             params["positionSide"] = position_side
         return self.ex.place_order(**params)
@@ -233,8 +258,10 @@ class BracketGuard:
             "workingType": self.working_type,
             "closePosition": "true",
             "reduceOnly": "true",
-            "stopPrice": f"{px:.12f}".rstrip("0").rstrip("."),
+            "stopPrice": self._format_decimal(px),
         }
+        params["takeProfitPrice"] = self._format_decimal(px)
+        params["takeProfit"] = self._build_bracket_payload("TP", side, px, position_side=position_side)
         if position_side:
             params["positionSide"] = position_side
         return self.ex.place_order(**params)
