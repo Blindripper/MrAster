@@ -185,12 +185,17 @@ def _resolve_python() -> str:
 
 def _resolve_bot_script(env_cfg: Dict[str, str]) -> Path:
     script_value = env_cfg.get("ASTER_BOT_SCRIPT", "aster_multi_bot.py")
+    if not script_value or not str(script_value).strip():
+        script_value = "aster_multi_bot.py"
+
     script_path = Path(script_value)
     if not script_path.is_absolute():
         script_path = ROOT_DIR / script_path
+
     script_path = script_path.resolve()
-    if not script_path.exists():
+    if not script_path.exists() or not script_path.is_file():
         raise FileNotFoundError(f"Bot script not found: {script_path}")
+
     return script_path
 
 
