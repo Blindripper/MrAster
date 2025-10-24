@@ -86,6 +86,19 @@ function formatNumber(num, digits = 2) {
   return Number(num).toFixed(digits);
 }
 
+function formatTimestamp(value) {
+  if (!value) return '–';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '–';
+  return date.toLocaleString(undefined, {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
 async function updateStatus() {
   try {
     const res = await fetch('/api/bot/status');
@@ -189,30 +202,69 @@ function renderTradeHistory(history) {
   for (const trade of history) {
     const row = document.createElement('tr');
     const pnl = Number(trade.pnl ?? 0);
-    const pnlClass = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : '';
+    const pnlClass = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'neutral';
+    const pnlValue = `${pnl > 0 ? '+' : ''}${formatNumber(pnl, 2)}`;
+    const pnlR = Number(trade.pnl_r ?? 0);
+    const pnlRClass = pnlR > 0 ? 'profit' : pnlR < 0 ? 'loss' : 'neutral';
+    const side = (trade.side || '').toString().toLowerCase();
+    const sideLabel = trade.side ? trade.side.toUpperCase() : '–';
     row.innerHTML = `
-      <td>${trade.symbol}</td>
-      <td>${trade.side}</td>
-      <td>${formatNumber(trade.qty, 4)}</td>
-      <td>${formatNumber(trade.entry, 4)}</td>
-      <td>${formatNumber(trade.exit, 4)}</td>
-      <td class="${pnlClass}">${formatNumber(pnl, 2)}</td>
-      <td>${formatNumber(trade.pnl_r, 2)}</td>
-      <td>${trade.opened_at_iso ? new Date(trade.opened_at_iso).toLocaleTimeString() : '–'}</td>
-      <td>${trade.closed_at_iso ? new Date(trade.closed_at_iso).toLocaleTimeString() : '–'}</td>
+      <td class="symbol">${trade.symbol || '–'}</td>
+      <td><span class="side-badge ${side}">${sideLabel}</span></td>
+      <td class="numeric">${formatNumber(trade.qty, 4)}</td>
+      <td class="numeric">${formatNumber(trade.entry, 4)}</td>
+      <td class="numeric">${formatNumber(trade.exit, 4)}</td>
+      <td class="numeric ${pnlClass}">${pnlValue}</td>
+      <td class="numeric ${pnlRClass}">${formatNumber(pnlR, 2)}</td>
+      <td>${formatTimestamp(trade.opened_at_iso)}</td>
+      <td>${formatTimestamp(trade.closed_at_iso)}</td>
     `;
     tradeBody.append(row);
   }
 }
 
 function renderTradeSummary(stats) {
+  tradeSummary.innerHTML = '';
   if (!stats) {
-    tradeSummary.textContent = '';
+    const placeholder = document.createElement('div');
+    placeholder.className = 'trade-metric muted';
+    placeholder.innerHTML = `<span class="metric-label">Performance</span><span class="metric-value">No data yet</span>`;
+    tradeSummary.append(placeholder);
     aiHint.textContent = 'No data available.';
     return;
   }
   const avgR = stats.count ? stats.total_r / stats.count : 0;
-  tradeSummary.textContent = `${stats.count} trades • Total PNL ${formatNumber(stats.total_pnl, 2)} USDT • Win rate ${(stats.win_rate * 100).toFixed(1)}% • Avg R ${formatNumber(avgR, 2)}`;
+  const metrics = [
+    {
+      label: 'Trades',
+      value: stats.count ?? 0,
+      tone: 'neutral',
+    },
+    {
+      label: 'Total PNL',
+      value: `${stats.total_pnl > 0 ? '+' : ''}${formatNumber(stats.total_pnl, 2)} USDT`,
+      tone: stats.total_pnl > 0 ? 'profit' : stats.total_pnl < 0 ? 'loss' : 'neutral',
+    },
+    {
+      label: 'Win rate',
+      value: `${((stats.win_rate ?? 0) * 100).toFixed(1)}%`,
+      tone: 'neutral',
+    },
+    {
+      label: 'Avg R',
+      value: formatNumber(avgR, 2),
+      tone: avgR > 0 ? 'profit' : avgR < 0 ? 'loss' : 'neutral',
+    },
+  ];
+  for (const metric of metrics) {
+    const el = document.createElement('div');
+    el.className = `trade-metric ${metric.tone}`;
+    el.innerHTML = `
+      <span class="metric-label">${metric.label}</span>
+      <span class="metric-value">${metric.value}</span>
+    `;
+    tradeSummary.append(el);
+  }
   aiHint.textContent = stats.ai_hint;
 }
 
