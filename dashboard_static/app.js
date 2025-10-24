@@ -206,6 +206,23 @@ function connectLogs() {
   });
 }
 
+function createTradeCell(label, { text, node, className }) {
+  const cell = document.createElement('td');
+  cell.dataset.label = label;
+  if (className) {
+    className
+      .split(' ')
+      .filter(Boolean)
+      .forEach((cls) => cell.classList.add(cls));
+  }
+  if (node) {
+    cell.append(node);
+  } else {
+    cell.textContent = text ?? '–';
+  }
+  return cell;
+}
+
 function renderTradeHistory(history) {
   tradeBody.innerHTML = '';
   if (!history || history.length === 0) {
@@ -221,23 +238,33 @@ function renderTradeHistory(history) {
   for (const trade of history) {
     const row = document.createElement('tr');
     const pnl = Number(trade.pnl ?? 0);
-    const pnlClass = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'neutral';
+    const pnlClass = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : '';
     const pnlValue = `${pnl > 0 ? '+' : ''}${formatNumber(pnl, 2)}`;
     const pnlR = Number(trade.pnl_r ?? 0);
-    const pnlRClass = pnlR > 0 ? 'profit' : pnlR < 0 ? 'loss' : 'neutral';
+    const pnlRClass = pnlR > 0 ? 'profit' : pnlR < 0 ? 'loss' : '';
     const side = (trade.side || '').toString().toLowerCase();
     const sideLabel = trade.side ? trade.side.toUpperCase() : '–';
-    row.innerHTML = `
-      <td class="symbol">${trade.symbol || '–'}</td>
-      <td><span class="side-badge ${side}">${sideLabel}</span></td>
-      <td class="numeric">${formatNumber(trade.qty, 4)}</td>
-      <td class="numeric">${formatNumber(trade.entry, 4)}</td>
-      <td class="numeric">${formatNumber(trade.exit, 4)}</td>
-      <td class="numeric ${pnlClass}">${pnlValue}</td>
-      <td class="numeric ${pnlRClass}">${formatNumber(pnlR, 2)}</td>
-      <td>${formatTimestamp(trade.opened_at_iso)}</td>
-      <td>${formatTimestamp(trade.closed_at_iso)}</td>
-    `;
+    const sideBadge = document.createElement('span');
+    sideBadge.className = `side-badge ${side}`.trim();
+    sideBadge.textContent = sideLabel;
+
+    row.append(
+      createTradeCell('Symbol', { text: trade.symbol || '–', className: 'symbol' }),
+      createTradeCell('Side', { node: sideBadge }),
+      createTradeCell('Size', { text: formatNumber(trade.qty, 4), className: 'numeric' }),
+      createTradeCell('Entry', { text: formatNumber(trade.entry, 4), className: 'numeric' }),
+      createTradeCell('Exit', { text: formatNumber(trade.exit, 4), className: 'numeric' }),
+      createTradeCell('PNL (USDT)', {
+        text: pnlValue,
+        className: ['numeric', pnlClass].filter(Boolean).join(' '),
+      }),
+      createTradeCell('R', {
+        text: formatNumber(pnlR, 2),
+        className: ['numeric', pnlRClass].filter(Boolean).join(' '),
+      }),
+      createTradeCell('Opened', { text: formatTimestamp(trade.opened_at_iso) }),
+      createTradeCell('Closed', { text: formatTimestamp(trade.closed_at_iso) })
+    );
     tradeBody.append(row);
   }
 }
