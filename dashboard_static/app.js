@@ -27,6 +27,9 @@ const inputApiSecret = document.getElementById('input-api-secret');
 const decisionSummary = document.getElementById('decision-summary');
 const decisionReasons = document.getElementById('decision-reasons');
 const btnApplyPreset = document.getElementById('btn-apply-preset');
+const tickerContainer = document.getElementById('market-ticker');
+const tickerTrack = document.getElementById('ticker-track');
+const tickerEmpty = document.getElementById('ticker-empty');
 
 let currentConfig = {};
 let reconnectTimer = null;
@@ -35,6 +38,7 @@ let proMode = false;
 let selectedPreset = 'mid';
 let autoScrollEnabled = true;
 let quickConfigPristine = true;
+let mostTradedTimer = null;
 
 const PRESETS = {
   low: {
@@ -318,6 +322,238 @@ function formatDuration(seconds) {
 function formatNumber(num, digits = 2) {
   if (num === undefined || num === null || Number.isNaN(num)) return '–';
   return Number(num).toFixed(digits);
+}
+
+function formatPriceDisplay(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return '–';
+  if (numeric >= 10000) {
+    return numeric.toLocaleString(undefined, {
+      maximumFractionDigits: 0,
+    });
+  }
+  if (numeric >= 100) {
+    return numeric.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+  if (numeric >= 1) {
+    return numeric.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+  if (numeric >= 0.1) {
+    return numeric.toLocaleString(undefined, {
+      minimumFractionDigits: 3,
+      maximumFractionDigits: 3,
+    });
+  }
+  if (numeric >= 0.01) {
+    return numeric.toLocaleString(undefined, {
+      minimumFractionDigits: 4,
+      maximumFractionDigits: 4,
+    });
+  }
+  return numeric.toLocaleString(undefined, {
+    minimumFractionDigits: 6,
+    maximumFractionDigits: 6,
+  });
+}
+
+function formatVolumeDisplay(value, quote = 'USDT') {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return `24h Vol –`;
+  const abs = Math.abs(numeric);
+  let scaled = abs;
+  let suffix = '';
+  if (abs >= 1e12) {
+    scaled = abs / 1e12;
+    suffix = 'T';
+  } else if (abs >= 1e9) {
+    scaled = abs / 1e9;
+    suffix = 'B';
+  } else if (abs >= 1e6) {
+    scaled = abs / 1e6;
+    suffix = 'M';
+  } else if (abs >= 1e3) {
+    scaled = abs / 1e3;
+    suffix = 'K';
+  }
+  const digits = scaled >= 100 ? 0 : scaled >= 10 ? 1 : 2;
+  return `24h Vol ${scaled.toFixed(digits)}${suffix} ${quote || 'USDT'}`;
+}
+
+function handleTickerLogoError(event) {
+  const img = event.currentTarget;
+  if (!img) return;
+  const raw = (img.dataset.fallbacks || '').split('|').filter(Boolean);
+  if (raw.length === 0) {
+    img.removeEventListener('error', handleTickerLogoError);
+    const wrapper = img.parentElement;
+    if (wrapper) {
+      const symbol = (wrapper.dataset.symbol || '?').toString().slice(0, 3).toUpperCase();
+      wrapper.innerHTML = '';
+      const placeholder = document.createElement('span');
+      placeholder.className = 'ticker-logo-placeholder';
+      placeholder.textContent = symbol;
+      wrapper.appendChild(placeholder);
+    }
+    return;
+  }
+  const [next, ...rest] = raw;
+  img.dataset.fallbacks = rest.join('|');
+  img.src = next;
+}
+
+function buildTickerLogo(asset) {
+  const wrapper = document.createElement('span');
+  wrapper.className = 'ticker-logo';
+  wrapper.dataset.symbol = (asset.base || asset.symbol || '?').toString().toUpperCase();
+  const sources = [];
+  const seen = new Set();
+  [asset.logo, ...(asset.logo_fallbacks || []), ...(asset.logo_candidates || [])].forEach((url) => {
+    const normalized = (url || '').toString().trim();
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    sources.push(normalized);
+  });
+
+  if (sources.length === 0) {
+    const placeholder = document.createElement('span');
+    placeholder.className = 'ticker-logo-placeholder';
+    placeholder.textContent = wrapper.dataset.symbol.slice(0, 3);
+    wrapper.appendChild(placeholder);
+    return wrapper;
+  }
+
+  const img = document.createElement('img');
+  img.src = sources.shift();
+  img.alt = `${asset.base || asset.symbol || ''} logo`;
+  img.loading = 'lazy';
+  img.decoding = 'async';
+  img.referrerPolicy = 'no-referrer';
+  img.dataset.fallbacks = sources.join('|');
+  img.addEventListener('error', handleTickerLogoError);
+  wrapper.appendChild(img);
+  return wrapper;
+}
+
+function createTickerItem(asset) {
+  const item = document.createElement('div');
+  item.className = 'ticker-item';
+  item.setAttribute('role', 'listitem');
+
+  const logo = buildTickerLogo(asset);
+
+  const meta = document.createElement('div');
+  meta.className = 'ticker-meta';
+
+  const symbol = document.createElement('span');
+  symbol.className = 'ticker-symbol';
+  symbol.textContent = (asset.base || asset.symbol || '').toString().toUpperCase();
+
+  const price = document.createElement('span');
+  price.className = 'ticker-price';
+  price.textContent = formatPriceDisplay(asset.price);
+
+  meta.append(symbol, price);
+
+  const stats = document.createElement('div');
+  stats.className = 'ticker-stats';
+
+  const volume = document.createElement('span');
+  volume.className = 'ticker-volume';
+  volume.textContent = formatVolumeDisplay(asset.volume_quote, asset.quote);
+
+  const changeValue = Number(asset.change_15m ?? 0);
+  const change = document.createElement('span');
+  change.className = `ticker-change ${changeValue >= 0 ? 'positive' : 'negative'}`;
+  const arrow = document.createElement('span');
+  arrow.className = 'arrow';
+  arrow.textContent = changeValue >= 0 ? '▲' : '▼';
+  const percent = document.createElement('span');
+  percent.className = 'value';
+  const digits = Math.abs(changeValue) >= 1 ? 1 : 2;
+  percent.textContent = `${Math.abs(changeValue).toFixed(digits)}%`;
+  change.append(arrow, percent);
+
+  stats.append(volume, change);
+
+  item.append(logo, meta, stats);
+  return item;
+}
+
+function computeTickerMetrics(assets) {
+  if (!tickerTrack || !Array.isArray(assets) || assets.length === 0) return;
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      const baseCount = assets.length;
+      const children = Array.from(tickerTrack.children).slice(0, baseCount);
+      if (children.length === 0) return;
+      const styles = window.getComputedStyle(tickerTrack);
+      const gap = parseFloat(styles.columnGap || styles.gap || '0');
+      const totalWidth = children.reduce((sum, child) => sum + child.getBoundingClientRect().width, 0);
+      const translate = Math.ceil(totalWidth + gap * Math.max(0, children.length - 1));
+      tickerTrack.style.setProperty('--ticker-translate', `${translate}px`);
+      const duration = Math.max(20, translate / 35);
+      tickerTrack.style.setProperty('--ticker-duration', `${duration}s`);
+    });
+  });
+}
+
+function renderMostTradedTicker(assets, { error } = {}) {
+  if (!tickerContainer || !tickerTrack) return;
+  tickerTrack.innerHTML = '';
+  tickerTrack.style.removeProperty('--ticker-translate');
+  tickerTrack.style.removeProperty('--ticker-duration');
+
+  const hasAssets = Array.isArray(assets) && assets.length > 0;
+  tickerContainer.classList.toggle('has-data', hasAssets);
+
+  if (!hasAssets) {
+    if (tickerEmpty) {
+      tickerEmpty.textContent = error || 'No market data available right now.';
+    }
+    return;
+  }
+
+  if (tickerEmpty) {
+    tickerEmpty.textContent = '';
+  }
+
+  const fragment = document.createDocumentFragment();
+  const doubled = assets.concat(assets);
+  doubled.forEach((asset, index) => {
+    const node = createTickerItem(asset);
+    if (index >= assets.length) {
+      node.classList.add('ticker-item-duplicate');
+      node.setAttribute('aria-hidden', 'true');
+    }
+    fragment.appendChild(node);
+  });
+  tickerTrack.appendChild(fragment);
+  computeTickerMetrics(assets);
+}
+
+async function loadMostTradedCoins() {
+  if (!tickerContainer) return;
+  try {
+    if (tickerEmpty) {
+      tickerEmpty.textContent = 'Gathering market leaders…';
+    }
+    const res = await fetch('/api/markets/most-traded');
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      throw new Error(payload.detail || 'Unable to load market data');
+    }
+    const data = await res.json();
+    renderMostTradedTicker(data.assets || []);
+  } catch (err) {
+    console.warn(err);
+    renderMostTradedTicker([], { error: 'Unable to load market data.' });
+  }
 }
 
 function formatTimestamp(value) {
@@ -1454,6 +1690,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
     updateStatus();
     loadTrades();
+    loadMostTradedCoins();
   }
 });
 
@@ -1462,10 +1699,17 @@ async function init() {
   await loadConfig();
   await updateStatus();
   await loadTrades();
+  await loadMostTradedCoins();
   setProMode(false);
   connectLogs();
   setInterval(updateStatus, 5000);
   setInterval(loadTrades, 8000);
+  if (tickerContainer) {
+    if (mostTradedTimer) {
+      clearInterval(mostTradedTimer);
+    }
+    mostTradedTimer = setInterval(loadMostTradedCoins, 60000);
+  }
 }
 
 init().catch((err) => console.error(err));
