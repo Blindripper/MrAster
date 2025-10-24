@@ -3,8 +3,6 @@ const btnSaveConfig = document.getElementById('btn-save-config');
 const btnSaveCredentials = document.getElementById('btn-save-credentials');
 const btnStart = document.getElementById('btn-start');
 const btnStop = document.getElementById('btn-stop');
-const btnAiMode = document.getElementById('btn-ai-mode');
-const btnProMode = document.getElementById('btn-pro-mode');
 const btnSaveAi = document.getElementById('btn-save-ai');
 const statusIndicator = document.getElementById('status-indicator');
 const statusPid = document.getElementById('status-pid');
@@ -39,6 +37,7 @@ const aiBudgetCard = document.getElementById('ai-budget');
 const aiBudgetModeLabel = document.getElementById('ai-budget-mode');
 const aiBudgetMeta = document.getElementById('ai-budget-meta');
 const aiBudgetFill = document.getElementById('ai-budget-fill');
+const modeButtons = document.querySelectorAll('[data-mode-select]');
 
 let currentConfig = {};
 let reconnectTimer = null;
@@ -50,6 +49,38 @@ let autoScrollEnabled = true;
 let quickConfigPristine = true;
 let mostTradedTimer = null;
 let lastAiBudget = null;
+
+function getCurrentMode() {
+  if (aiMode) return 'ai';
+  if (proMode) return 'pro';
+  return 'standard';
+}
+
+function updateModeButtons() {
+  const active = getCurrentMode();
+  modeButtons.forEach((button) => {
+    const isActive = button.dataset.modeSelect === active;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+}
+
+function updateAiBudgetModeLabel() {
+  if (!aiBudgetModeLabel) return;
+  const active = getCurrentMode();
+  if (active === 'ai') {
+    aiBudgetModeLabel.textContent = 'AI-Mode';
+  } else if (active === 'pro') {
+    aiBudgetModeLabel.textContent = 'Pro-Mode';
+  } else {
+    aiBudgetModeLabel.textContent = 'Standard';
+  }
+}
+
+function syncModeUi() {
+  updateModeButtons();
+  updateAiBudgetModeLabel();
+}
 
 const PRESETS = {
   low: {
@@ -1328,7 +1359,7 @@ function renderAiBudget(budget) {
   if (!aiBudgetCard || !aiBudgetModeLabel || !aiBudgetMeta || !aiBudgetFill) return;
   lastAiBudget = budget || null;
   aiBudgetCard.classList.toggle('active', aiMode);
-  aiBudgetModeLabel.textContent = aiMode ? 'AI-Mode' : 'Standard';
+  updateAiBudgetModeLabel();
   if (!aiMode) {
     aiBudgetFill.style.width = '0%';
     aiBudgetMeta.textContent = 'AI-Mode disabled.';
@@ -1816,14 +1847,7 @@ async function setAiMode(state, options = {}) {
   const previous = aiMode;
   aiMode = Boolean(state);
   document.body.classList.toggle('ai-mode', aiMode);
-  if (btnAiMode) {
-    btnAiMode.textContent = aiMode ? 'Exit AI-Mode' : 'AI-Mode';
-    btnAiMode.classList.toggle('active', aiMode);
-    btnAiMode.setAttribute('aria-pressed', aiMode ? 'true' : 'false');
-  }
-  if (aiBudgetModeLabel) {
-    aiBudgetModeLabel.textContent = aiMode ? 'AI-Mode' : 'Standard';
-  }
+  syncModeUi();
   renderAiBudget(lastAiBudget);
   if (!persist) {
     return;
@@ -1847,33 +1871,54 @@ async function setAiMode(state, options = {}) {
     alert(err.message);
     aiMode = previous;
     document.body.classList.toggle('ai-mode', aiMode);
-    if (btnAiMode) {
-      btnAiMode.textContent = aiMode ? 'Exit AI-Mode' : 'AI-Mode';
-      btnAiMode.classList.toggle('active', aiMode);
-      btnAiMode.setAttribute('aria-pressed', aiMode ? 'true' : 'false');
-    }
-    if (aiBudgetModeLabel) {
-      aiBudgetModeLabel.textContent = aiMode ? 'AI-Mode' : 'Standard';
-    }
-    if (lastAiBudget) {
-      renderAiBudget(lastAiBudget);
-    }
+    syncModeUi();
+    renderAiBudget(lastAiBudget);
   }
 }
 
 async function syncAiModeFromEnv(env) {
   const raw = (env?.ASTER_MODE || '').toString().toLowerCase();
-  await setAiMode(raw === 'ai', { persist: false });
+  if (raw === 'ai') {
+    await selectMode('ai', { persist: false });
+  } else {
+    await selectMode('standard', { persist: false });
+  }
 }
 
 function setProMode(state) {
-  proMode = state;
+  proMode = Boolean(state);
   document.body.classList.toggle('pro-mode', proMode);
-  if (btnProMode) {
-    btnProMode.textContent = proMode ? 'Exit Pro-Mode' : 'Pro-Mode';
-    btnProMode.classList.toggle('active', proMode);
-    btnProMode.setAttribute('aria-pressed', proMode ? 'true' : 'false');
+  syncModeUi();
+}
+
+async function selectMode(mode, options = {}) {
+  const { persist = false } = options;
+  const target = (mode || '').toString().toLowerCase();
+  const current = getCurrentMode();
+  if (!['standard', 'pro', 'ai'].includes(target) || target === current) {
+    return;
   }
+
+  if (target === 'ai') {
+    if (proMode) {
+      setProMode(false);
+    }
+    await setAiMode(true, { persist });
+  } else if (target === 'pro') {
+    if (aiMode || persist) {
+      await setAiMode(false, { persist });
+    }
+    if (aiMode) {
+      syncModeUi();
+      return;
+    }
+    setProMode(true);
+  } else {
+    await setAiMode(false, { persist });
+    setProMode(false);
+  }
+
+  syncModeUi();
 }
 
 async function loadTrades() {
@@ -1919,12 +1964,22 @@ btnSaveConfig.addEventListener('click', saveConfig);
 btnSaveCredentials?.addEventListener('click', saveCredentials);
 btnStart.addEventListener('click', startBot);
 btnStop.addEventListener('click', stopBot);
-btnAiMode?.addEventListener('click', () => {
-  setAiMode(!aiMode, { persist: true }).catch(() => {});
-});
-btnProMode?.addEventListener('click', () => setProMode(!proMode));
 btnSaveAi?.addEventListener('click', saveAiConfig);
 btnApplyPreset?.addEventListener('click', saveQuickSetup);
+
+modeButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    selectMode(button.dataset.modeSelect, { persist: true }).catch(() => {});
+  });
+  button.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      selectMode(button.dataset.modeSelect, { persist: true }).catch(() => {});
+    }
+  });
+});
+
+syncModeUi();
 
 presetButtons.forEach((button) => {
   button.addEventListener('click', () => applyPreset(button.dataset.preset));
