@@ -25,7 +25,7 @@ import hashlib
 import logging
 import signal
 from urllib.parse import urlencode
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, List, Tuple, Optional, Any, Callable
 
 import requests
 
@@ -445,8 +445,9 @@ class RiskManager:
 
 # ========= Strategy =========
 class Strategy:
-    def __init__(self, exchange: Exchange):
+    def __init__(self, exchange: Exchange, decision_tracker: Optional["DecisionTracker"] = None):
         self.exchange = exchange
+        self.decision_tracker = decision_tracker
         self.min_quote_vol = MIN_QUOTE_VOL
         self.spread_bps_max = SPREAD_BPS_MAX
         self.wickiness_max = WICKINESS_MAX
@@ -529,6 +530,8 @@ class Strategy:
             log.debug(f"SKIP {symbol}: {reason} {extra}")
         else:
             log.debug(f"SKIP {symbol}: {reason}")
+        if self.decision_tracker:
+            self.decision_tracker.record_rejection(reason)
         return "NONE", 0.0, {}, 0.0
 
     def compute_signal(self, symbol: str) -> Tuple[str, float, Dict[str, float], float]:
@@ -749,6 +752,59 @@ class TradeManager:
         if to_del or history_added:
             self.save()
 
+# ========= Decisions =========
+class DecisionTracker:
+    def __init__(self, state: Dict[str, Any], save_cb: Optional[Callable[[], None]] = None):
+        self.state = state
+        self._save_cb = save_cb
+        self._last_persist = 0.0
+        self._persist_interval = 15.0
+
+    def _ensure(self) -> Dict[str, Any]:
+        stats = self.state.setdefault("decision_stats", {})
+        stats.setdefault("taken", 0)
+        stats.setdefault("rejected_total", 0)
+        stats.setdefault("taken_by_bucket", {})
+        stats.setdefault("rejected", {})
+        return stats
+
+    def _persist(self, force: bool = False) -> None:
+        if not self._save_cb:
+            return
+        now = time.time()
+        if not force and (now - self._last_persist) < self._persist_interval:
+            return
+        self._last_persist = now
+        try:
+            self._save_cb()
+        except Exception as exc:
+            log.debug(f"decision stats save failed: {exc}")
+
+    def record_acceptance(
+        self, bucket: Optional[str] = None, persist: bool = True, force: bool = False
+    ) -> None:
+        stats = self._ensure()
+        stats["taken"] = int(stats.get("taken", 0) or 0) + 1
+        if bucket:
+            bucket_key = str(bucket)
+            bucket_map = stats.setdefault("taken_by_bucket", {})
+            bucket_map[bucket_key] = int(bucket_map.get(bucket_key, 0) or 0) + 1
+        stats["last_updated"] = time.time()
+        self.state["decision_stats"] = stats
+        if persist:
+            self._persist(force=force)
+
+    def record_rejection(self, reason: str, persist: bool = True, force: bool = False) -> None:
+        stats = self._ensure()
+        reason_key = str(reason or "unknown")
+        rejected = stats.setdefault("rejected", {})
+        rejected[reason_key] = int(rejected.get(reason_key, 0) or 0) + 1
+        stats["rejected_total"] = int(stats.get("rejected_total", 0) or 0) + 1
+        stats["last_updated"] = time.time()
+        self.state["decision_stats"] = stats
+        if persist:
+            self._persist(force=force)
+
 # ========= FastTP =========
 class FastTP:
     def __init__(self, exchange: Exchange, guard: BracketGuard, state: Dict[str, Any]):
@@ -884,7 +940,8 @@ class Bot:
         )
         self.trade_mgr = TradeManager(self.exchange, self.policy, self.state)
         self.fasttp = FastTP(self.exchange, self.guard, self.state)
-        self._strategy = Strategy(self.exchange)
+        self.decision_tracker = DecisionTracker(self.state, self.trade_mgr.save)
+        self._strategy = Strategy(self.exchange, decision_tracker=self.decision_tracker)
 
     @property
     def strategy(self) -> Strategy:
@@ -927,6 +984,8 @@ class Bot:
                 if decision != "TAKE":
                     if alpha_prob is not None:
                         log.debug(f"policy skip {symbol}: alpha={alpha_prob:.3f} conf={alpha_conf or 0.0:.2f}")
+                    if self.decision_tracker:
+                        self.decision_tracker.record_rejection("policy_filter")
                     return
             except Exception as e:
                 log.debug(f"policy decide fail: {e}")
@@ -954,6 +1013,8 @@ class Bot:
 
         qty = self.risk.compute_qty(symbol, px, sl, size_mult)
         if qty <= 0:
+            if self.decision_tracker:
+                self.decision_tracker.record_rejection("position_size")
             return
 
         step = float(self.risk.symbol_filters.get(symbol, {}).get("stepSize", 0.0001) or 0.0001)
@@ -974,6 +1035,8 @@ class Bot:
                 ok = self.guard.ensure_after_entry(symbol, sig, sl, tp)
             if not ok:
                 log.warning(f"Bracket orders for {symbol} could not be fully created.")
+            if self.decision_tracker:
+                self.decision_tracker.record_acceptance(bucket, persist=False)
             self.trade_mgr.note_entry(symbol, px, sl, tp, sig, float(q_str), ctx, bucket, atr_abs)
             alpha_msg = ""
             if alpha_prob is not None:
@@ -981,6 +1044,8 @@ class Bot:
             log.info(f"ENTRY {symbol} {sig} qty={q_str} px≈{px:.6f} SL={sl:.6f} TP={tp:.6f} bucket={bucket}{alpha_msg}")
         except Exception as e:
             log.debug(f"entry fail {symbol}: {e}")
+            if self.decision_tracker:
+                self.decision_tracker.record_rejection("order_failed", force=True)
             self.state.setdefault("fail_skip_until", {})[symbol] = time.time() + 60
 
     def run_once(self):
