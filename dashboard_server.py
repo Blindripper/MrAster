@@ -187,6 +187,15 @@ def _resolve_python() -> str:
 def _resolve_command_tokens(raw: Any) -> List[str]:
     """Normalise the configured bot command into a token list."""
 
+    def _looks_like_windows_path(value: str) -> bool:
+        if not value:
+            return False
+        if value.startswith("\\\\"):
+            return True
+        if len(value) >= 3 and value[1] == ":" and value[0].isalpha() and value[2] in {"\\", "/"}:
+            return True
+        return False
+
     if isinstance(raw, (list, tuple)):
         tokens = [str(part).strip() for part in raw if str(part).strip()]
         if tokens:
@@ -209,7 +218,22 @@ def _resolve_command_tokens(raw: Any) -> List[str]:
                 return tokens
             raise FileNotFoundError("Bot command is empty")
 
-    return shlex.split(value)
+    tokens = shlex.split(value)
+    if len(tokens) <= 1:
+        return tokens
+
+    if _looks_like_windows_path(value):
+        return [value]
+
+    candidate = Path(value)
+    if candidate.exists():
+        return [value]
+
+    repo_candidate = ROOT_DIR / value
+    if repo_candidate.exists():
+        return [value]
+
+    return tokens
 
 
 def _resolve_bot_command(env_cfg: Dict[str, str]) -> List[str]:
