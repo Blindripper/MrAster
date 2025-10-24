@@ -1,5 +1,6 @@
 const envContainer = document.getElementById('env-settings');
 const btnSaveConfig = document.getElementById('btn-save-config');
+const btnSaveCredentials = document.getElementById('btn-save-credentials');
 const btnStart = document.getElementById('btn-start');
 const btnStop = document.getElementById('btn-stop');
 const btnProMode = document.getElementById('btn-pro-mode');
@@ -21,6 +22,8 @@ const riskSlider = document.getElementById('risk-slider');
 const leverageSlider = document.getElementById('leverage-slider');
 const riskValue = document.getElementById('risk-value');
 const leverageValue = document.getElementById('leverage-value');
+const inputApiKey = document.getElementById('input-api-key');
+const inputApiSecret = document.getElementById('input-api-secret');
 
 let currentConfig = {};
 let reconnectTimer = null;
@@ -82,11 +85,21 @@ function renderConfig(env) {
   }
 }
 
+function renderCredentials(env) {
+  if (inputApiKey) {
+    inputApiKey.value = env?.ASTER_API_KEY ?? '';
+  }
+  if (inputApiSecret) {
+    inputApiSecret.value = env?.ASTER_API_SECRET ?? '';
+  }
+}
+
 async function loadConfig() {
   const res = await fetch('/api/config');
   if (!res.ok) throw new Error('Unable to load configuration');
   currentConfig = await res.json();
   renderConfig(currentConfig.env);
+  renderCredentials(currentConfig.env);
 }
 
 function gatherConfigPayload() {
@@ -94,6 +107,17 @@ function gatherConfigPayload() {
   envContainer.querySelectorAll('input[data-key]').forEach((input) => {
     payload[input.dataset.key] = input.value.trim();
   });
+  return payload;
+}
+
+function gatherCredentialPayload() {
+  const payload = {};
+  if (inputApiKey) {
+    payload.ASTER_API_KEY = inputApiKey.value.trim();
+  }
+  if (inputApiSecret) {
+    payload.ASTER_API_SECRET = inputApiSecret.value.trim();
+  }
   return payload;
 }
 
@@ -112,6 +136,7 @@ async function saveConfig() {
       throw new Error(data.detail || 'Saving configuration failed');
     }
     currentConfig = await res.json();
+    renderCredentials(currentConfig.env);
     btnSaveConfig.textContent = 'Saved ✓';
     setTimeout(() => (btnSaveConfig.textContent = 'Save'), 1500);
   } catch (err) {
@@ -120,6 +145,35 @@ async function saveConfig() {
     setTimeout(() => (btnSaveConfig.textContent = 'Save'), 2000);
   } finally {
     btnSaveConfig.disabled = false;
+  }
+}
+
+async function saveCredentials() {
+  const payload = gatherCredentialPayload();
+  if (!btnSaveCredentials) return;
+  btnSaveCredentials.disabled = true;
+  btnSaveCredentials.textContent = 'Saving…';
+  try {
+    const res = await fetch('/api/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ env: payload }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || 'Saving credentials failed');
+    }
+    currentConfig = await res.json();
+    renderCredentials(currentConfig.env);
+    renderConfig(currentConfig.env);
+    btnSaveCredentials.textContent = 'Saved ✓';
+    setTimeout(() => (btnSaveCredentials.textContent = 'Save'), 1500);
+  } catch (err) {
+    btnSaveCredentials.textContent = 'Error';
+    alert(err.message);
+    setTimeout(() => (btnSaveCredentials.textContent = 'Save'), 2000);
+  } finally {
+    btnSaveCredentials.disabled = false;
   }
 }
 
@@ -618,6 +672,7 @@ async function stopBot() {
 }
 
 btnSaveConfig.addEventListener('click', saveConfig);
+btnSaveCredentials?.addEventListener('click', saveCredentials);
 btnStart.addEventListener('click', startBot);
 btnStop.addEventListener('click', stopBot);
 btnProMode?.addEventListener('click', () => setProMode(!proMode));

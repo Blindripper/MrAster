@@ -390,6 +390,44 @@ input[type='range']::-moz-range-track {
   line-height: 1.5;
 }
 
+.credentials-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem 1.4rem;
+}
+
+.credentials-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.credentials-grid input {
+  padding: 0.75rem 1rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(255, 232, 168, 0.2);
+  background: rgba(26, 27, 40, 0.65);
+  color: var(--text);
+  font: inherit;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.credentials-grid input:focus {
+  outline: none;
+  border-color: rgba(240, 169, 75, 0.55);
+  box-shadow: 0 0 0 3px rgba(240, 169, 75, 0.18);
+}
+
+.credentials-hint {
+  margin: -0.4rem 0 0;
+  color: var(--text-subtle);
+  font-size: 0.9rem;
+}
+
 .env-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
