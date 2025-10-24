@@ -2,21 +2,52 @@ const envContainer = document.getElementById('env-settings');
 const btnSaveConfig = document.getElementById('btn-save-config');
 const btnStart = document.getElementById('btn-start');
 const btnStop = document.getElementById('btn-stop');
+const btnProMode = document.getElementById('btn-pro-mode');
 const statusIndicator = document.getElementById('status-indicator');
 const statusPid = document.getElementById('status-pid');
 const statusStarted = document.getElementById('status-started');
 const statusUptime = document.getElementById('status-uptime');
 const logStream = document.getElementById('log-stream');
+const compactLogStream = document.getElementById('log-brief');
 const autoScrollToggle = document.getElementById('autoscroll');
 const tradeBody = document.getElementById('trade-body');
 const tradeSummary = document.getElementById('trade-summary');
 const aiHint = document.getElementById('ai-hint');
 const pnlChartCanvas = document.getElementById('pnl-chart');
 const pnlEmptyState = document.getElementById('pnl-empty');
+const presetButtons = document.querySelectorAll('.preset[data-preset]');
+const presetDescription = document.getElementById('preset-description');
+const riskSlider = document.getElementById('risk-slider');
+const leverageSlider = document.getElementById('leverage-slider');
+const riskValue = document.getElementById('risk-value');
+const leverageValue = document.getElementById('leverage-value');
 
 let currentConfig = {};
 let reconnectTimer = null;
 let pnlChart = null;
+let proMode = false;
+let selectedPreset = 'mid';
+
+const PRESETS = {
+  low: {
+    label: 'Low',
+    summary: 'Capital preservation first: slower signal intake, narrower exposure, and conservative scaling.',
+    risk: 0.5,
+    leverage: 1,
+  },
+  mid: {
+    label: 'Mid',
+    summary: 'Balanced cadence with moderate risk and leverage designed for steady account growth.',
+    risk: 1.0,
+    leverage: 2,
+  },
+  high: {
+    label: 'High',
+    summary: 'High-frequency execution with wider risk budgets and leverage up to the aggressive limit.',
+    risk: 2.0,
+    leverage: 4,
+  },
+};
 
 function configureChartDefaults() {
   if (typeof Chart === 'undefined') return;
@@ -176,9 +207,11 @@ function appendLogLine({ line, level, ts }) {
   while (logStream.children.length > 500) {
     logStream.removeChild(logStream.firstChild);
   }
-  if (autoScrollToggle.checked) {
+  if (!autoScrollToggle || autoScrollToggle.checked) {
     logStream.scrollTop = logStream.scrollHeight;
   }
+
+  appendCompactLog({ line, level: normalizedLevel, ts });
 }
 
 function connectLogs() {
@@ -445,6 +478,108 @@ function renderPnlChart(history) {
   }
 }
 
+function appendCompactLog({ line, level, ts }) {
+  if (!compactLogStream) return;
+  const allowed = new Set(['error', 'warning', 'system', 'info']);
+  if (!allowed.has(level)) return;
+
+  const el = document.createElement('div');
+  el.className = `log-line ${level}`.trim();
+
+  const meta = document.createElement('div');
+  meta.className = 'log-meta';
+
+  if (ts) {
+    const time = document.createElement('span');
+    time.className = 'log-time';
+    time.textContent = new Date(ts * 1000).toLocaleTimeString();
+    meta.append(time);
+  }
+
+  const label = document.createElement('span');
+  label.className = 'log-level';
+  label.textContent = level.toUpperCase();
+  meta.append(label);
+
+  const message = document.createElement('div');
+  message.className = 'log-message';
+  message.textContent = line;
+
+  el.append(meta, message);
+  compactLogStream.append(el);
+
+  while (compactLogStream.children.length > 150) {
+    compactLogStream.removeChild(compactLogStream.firstChild);
+  }
+  compactLogStream.scrollTop = compactLogStream.scrollHeight;
+}
+
+function setRangeBackground(slider) {
+  if (!slider) return;
+  const min = Number(slider.min);
+  const max = Number(slider.max);
+  const value = Number(slider.value);
+  if (Number.isNaN(min) || Number.isNaN(max) || Number.isNaN(value)) return;
+  const percent = ((value - min) / (max - min)) * 100;
+  slider.style.background = `linear-gradient(90deg, var(--accent-strong) ${percent}%, rgba(22, 24, 34, 0.85) ${percent}%)`;
+}
+
+function formatRisk(value) {
+  const numeric = Number(value);
+  if (Number.isNaN(numeric)) return '–';
+  if (numeric >= 1) return `${numeric.toFixed(1)}%`;
+  return `${numeric.toFixed(2)}%`;
+}
+
+function updateRiskValue() {
+  if (!riskSlider || !riskValue) return;
+  riskValue.textContent = formatRisk(riskSlider.value);
+  setRangeBackground(riskSlider);
+}
+
+function updateLeverageValue() {
+  if (!leverageSlider || !leverageValue) return;
+  const numeric = Number(leverageSlider.value);
+  leverageValue.textContent = `${numeric.toFixed(0)}×`;
+  setRangeBackground(leverageSlider);
+}
+
+function applyPreset(key) {
+  const preset = PRESETS[key];
+  if (!preset) return;
+  selectedPreset = key;
+  presetButtons.forEach((button) => {
+    const active = button.dataset.preset === key;
+    button.classList.toggle('active', active);
+    if (active) {
+      button.setAttribute('aria-pressed', 'true');
+    } else {
+      button.setAttribute('aria-pressed', 'false');
+    }
+  });
+  if (presetDescription) {
+    presetDescription.textContent = `${preset.label} preset: ${preset.summary}`;
+  }
+  if (riskSlider) {
+    riskSlider.value = preset.risk.toString();
+  }
+  if (leverageSlider) {
+    leverageSlider.value = preset.leverage.toString();
+  }
+  updateRiskValue();
+  updateLeverageValue();
+}
+
+function setProMode(state) {
+  proMode = state;
+  document.body.classList.toggle('pro-mode', proMode);
+  if (btnProMode) {
+    btnProMode.textContent = proMode ? 'Exit Pro-Mode' : 'Pro-Mode';
+    btnProMode.classList.toggle('active', proMode);
+    btnProMode.setAttribute('aria-pressed', proMode ? 'true' : 'false');
+  }
+}
+
 async function loadTrades() {
   try {
     const res = await fetch('/api/trades');
@@ -485,6 +620,22 @@ async function stopBot() {
 btnSaveConfig.addEventListener('click', saveConfig);
 btnStart.addEventListener('click', startBot);
 btnStop.addEventListener('click', stopBot);
+btnProMode?.addEventListener('click', () => setProMode(!proMode));
+
+presetButtons.forEach((button) => {
+  button.addEventListener('click', () => applyPreset(button.dataset.preset));
+  button.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      applyPreset(button.dataset.preset);
+    }
+  });
+});
+
+riskSlider?.addEventListener('input', updateRiskValue);
+riskSlider?.addEventListener('change', updateRiskValue);
+leverageSlider?.addEventListener('input', updateLeverageValue);
+leverageSlider?.addEventListener('change', updateLeverageValue);
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
@@ -498,6 +649,8 @@ async function init() {
   await loadConfig();
   await updateStatus();
   await loadTrades();
+  applyPreset(selectedPreset);
+  setProMode(false);
   connectLogs();
   setInterval(updateStatus, 5000);
   setInterval(loadTrades, 8000);

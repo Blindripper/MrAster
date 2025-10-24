@@ -15,6 +15,7 @@
     <div class="hero-actions">
       <button id="btn-start" class="primary">Start</button>
       <button id="btn-stop" class="ghost">Stop</button>
+      <button id="btn-pro-mode" class="ghost pro-toggle">Pro-Mode</button>
     </div>
   </header>
 
@@ -42,7 +43,55 @@
       <div class="ai-hint" id="ai-hint">Loading AI analysis…</div>
     </section>
 
-    <section class="card config">
+    <section class="card quick-setup" data-normal-only>
+      <div class="card-header">
+        <div>
+          <h2>Quick strategy setup</h2>
+          <p class="card-subtitle">Select a preset, then fine-tune risk and leverage for your comfort zone.</p>
+        </div>
+      </div>
+      <div class="preset-buttons" role="group" aria-label="Risk presets">
+        <button class="preset" data-preset="low">
+          <span class="preset-title">Low</span>
+          <span class="preset-subtitle">Few trades · low risk</span>
+        </button>
+        <button class="preset" data-preset="mid">
+          <span class="preset-title">Mid</span>
+          <span class="preset-subtitle">Balanced trading</span>
+        </button>
+        <button class="preset" data-preset="high">
+          <span class="preset-title">High</span>
+          <span class="preset-subtitle">Frequent · aggressive</span>
+        </button>
+      </div>
+      <div id="preset-description" class="preset-description">Pick a profile to load recommended risk controls.</div>
+      <div class="risk-controls">
+        <div class="risk-control">
+          <div class="risk-control-header">
+            <span>Risk per trade</span>
+            <span id="risk-value" class="risk-value">1.0%</span>
+          </div>
+          <input type="range" id="risk-slider" min="0.25" max="5" step="0.25" value="1.0" aria-label="Risk per trade (%)" />
+          <div class="risk-scale">
+            <span>0.25%</span>
+            <span>5%</span>
+          </div>
+        </div>
+        <div class="risk-control">
+          <div class="risk-control-header">
+            <span>Leverage</span>
+            <span id="leverage-value" class="risk-value">1×</span>
+          </div>
+          <input type="range" id="leverage-slider" min="1" max="5" step="1" value="1" aria-label="Leverage multiplier" />
+          <div class="risk-scale">
+            <span>1×</span>
+            <span>5× max</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card config" data-pro-only>
       <div class="card-header">
         <h2>Environment configuration</h2>
         <button id="btn-save-config" class="primary subtle">Save</button>
@@ -51,9 +100,19 @@
       <div id="env-settings" class="env-grid"></div>
     </section>
 
-    <section class="card logs">
+    <section class="card logs compact" data-normal-only>
       <div class="card-header">
-        <h2>Live logs</h2>
+        <div>
+          <h2>Activity feed</h2>
+          <p class="card-subtitle">Key fills, warnings, and high-signal events.</p>
+        </div>
+      </div>
+      <div id="log-brief" class="log-stream compact"></div>
+    </section>
+
+    <section class="card logs" data-pro-only>
+      <div class="card-header">
+        <h2>Debug live logs</h2>
         <label class="toggle"><input type="checkbox" id="autoscroll" checked /> Auto-scroll</label>
       </div>
       <div id="log-stream" class="log-stream"></div>
