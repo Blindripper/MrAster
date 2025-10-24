@@ -131,8 +131,9 @@ Every field in the **Environment configuration** card maps directly to an enviro
 | `ASTER_LOGLEVEL` | `DEBUG` | Logging verbosity for the bot process (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
 | `ASTER_PAPER` | `false` | When `true`, enables the simulated exchange adapter. |
 | `ASTER_RUN_ONCE` | `false` | Exit after a single scan loop instead of running continuously. |
+| `ASTER_MODE` | `standard` | Dashboard persona to boot into (`standard`, `pro`, or `ai`). |
 | `ASTER_QUOTE` | `USDT` | Quote asset used for portfolio sizing and filters. |
-| `ASTER_INCLUDE_SYMBOLS` | `BTCUSDT,…` | Comma-separated allowlist of tradable instruments. |
+| `ASTER_INCLUDE_SYMBOLS` | `BTCUSDT,ETHUSDT,…` | Comma-separated allowlist of tradable instruments. |
 | `ASTER_EXCLUDE_SYMBOLS` | `AMZNUSDT,APRUSDT` | Comma-separated blocklist of pairs to ignore even if included elsewhere. |
 | `ASTER_UNIVERSE_MAX` | `40` | Maximum number of symbols kept in the active trading universe. |
 | `ASTER_UNIVERSE_ROTATE` | `false` | When enabled, rotates the universe periodically to explore fresh markets. |
@@ -150,6 +151,7 @@ Every field in the **Environment configuration** card maps directly to an enviro
 | `ASTER_DEFAULT_NOTIONAL` | `120` | Fallback position size in notional terms when sizing heuristics cannot decide. |
 | `ASTER_RISK_PER_TRADE` | `0.007` | Fraction of equity risked on each trade when computing position size. |
 | `ASTER_LEVERAGE` | `3` | Default leverage multiplier requested on the exchange. |
+| `ASTER_PRESET_MODE` | `mid` | Selected intensity preset used by the Standard dashboard mode (`low`, `mid`, `high`). |
 | `ASTER_EQUITY_FRACTION` | `0.25` | Cap on the fraction of account equity that can be allocated simultaneously. |
 | `ASTER_MIN_NOTIONAL_USDT` | `5` | Smallest order size (USDT) allowed after sizing rules are applied. |
 | `ASTER_MAX_NOTIONAL_USDT` | `300` | Hard ceiling on the notional per trade. |
@@ -170,7 +172,24 @@ Every field in the **Environment configuration** card maps directly to an enviro
 | `ASTER_STATE_FILE` | `aster_state.json` | Location of the bot state file used for persistence. |
 | `ASTER_LOOP_SLEEP` | `20` | Delay (seconds) between scan iterations. |
 | `ASTER_BANDIT_ENABLED` | `true` | Enables the LinUCB bandit for signal vetting and sizing. |
+| `ASTER_ALPHA_ENABLED` | `true` | Turns on the optional alpha model that complements the bandit. |
+| `ASTER_ALPHA_THRESHOLD` | `0.55` | Confidence threshold the alpha model must exceed to promote a trade. |
+| `ASTER_ALPHA_WARMUP` | `40` | Minimum observations required before the alpha model becomes active. |
+| `ASTER_ALPHA_LR` | `0.05` | Learning rate for the alpha model updates. |
+| `ASTER_ALPHA_L2` | `0.0005` | L2 regularisation applied to the alpha model weights. |
+| `ASTER_ALPHA_MIN_CONF` | `0.2` | Lowest confidence score considered meaningful by the alpha model. |
+| `ASTER_ALPHA_PROMOTE_DELTA` | `0.15` | Extra confidence boost needed to upgrade a trade to a higher size bucket. |
+| `ASTER_ALPHA_REWARD_MARGIN` | `0.05` | Margin (in R) used when computing reward shaping for the alpha learner. |
 | `ASTER_HISTORY_MAX` | `250` | Number of historic trades retained for analytics and AI hints. |
+| `ASTER_BOT_SCRIPT` | `aster_multi_bot.py` | Python entry point launched when starting the trading process from the dashboard. |
+| `ASTER_OPENAI_API_KEY` | empty | API key used to call the AI trade advisor. |
+| `ASTER_AI_MODEL` | `gpt-4o` | Model identifier used for AI-assisted trade review. |
+| `ASTER_AI_DAILY_BUDGET_USD` | `1000` | Soft daily spending cap (USD) for AI usage; `0` disables the limit. |
+| `ASTER_AI_STRICT_BUDGET` | `true` | When enabled, blocks AI calls once the daily budget is exhausted. |
+| `ASTER_AI_SENTINEL_ENABLED` | `true` | Toggles the news sentinel that can veto trades around high-impact events. |
+| `ASTER_AI_SENTINEL_DECAY_MINUTES` | `90` | Duration that sentinel alerts remain active before expiring. |
+| `ASTER_AI_NEWS_ENDPOINT` | empty | Optional HTTPS endpoint queried for breaking news alerts. |
+| `ASTER_AI_NEWS_API_KEY` | empty | API token supplied when calling the sentinel news endpoint. |
 
 The dashboard creates `dashboard_config.json` and writes changed environment values back to disk. Trades, open positions, and AI hints are driven by `aster_state.json`.
 
