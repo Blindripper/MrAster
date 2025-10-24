@@ -28,6 +28,8 @@ from typing import Dict, List, Tuple, Optional, Any
 
 import requests
 
+from requests.exceptions import RequestException
+
 try:
     import numpy as np  # noqa: F401
 except Exception:
@@ -95,6 +97,11 @@ FAST_TP_RET1 = float(os.getenv("FAST_TP_RET1", "-0.0010"))
 FAST_TP_RET3 = float(os.getenv("FAST_TP_RET3", "-0.0020"))
 FASTTP_SNAP_ATR = float(os.getenv("FASTTP_SNAP_ATR", "0.25"))
 FASTTP_COOLDOWN_S = int(os.getenv("FASTTP_COOLDOWN_S", "15"))
+
+HTTP_RETRIES = max(0, int(os.getenv("ASTER_HTTP_RETRIES", "2")))
+HTTP_BACKOFF = max(0.0, float(os.getenv("ASTER_HTTP_BACKOFF", "0.6")))
+HTTP_TIMEOUT = max(5.0, float(os.getenv("ASTER_HTTP_TIMEOUT", "20")))
+KLINE_CACHE_SEC = max(5.0, float(os.getenv("ASTER_KLINE_CACHE_SEC", "45")))
 
 MAX_OPEN_GLOBAL = int(os.getenv("ASTER_MAX_OPEN_GLOBAL", "4"))
 MAX_OPEN_PER_SYMBOL = int(os.getenv("ASTER_MAX_OPEN_PER_SYMBOL", "1"))
@@ -221,6 +228,9 @@ class Exchange:
         self.recv_window = recv_window
         self.s = requests.Session()
         self._ts_skew_ms = 0
+        self.timeout = HTTP_TIMEOUT
+        self._max_retries = HTTP_RETRIES
+        self._backoff = HTTP_BACKOFF
 
     def _headers(self) -> Dict[str, str]:
         h = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -234,9 +244,32 @@ class Exchange:
     def _ts(self) -> int:
         return int(time.time() * 1000 + self._ts_skew_ms)
 
+    def _request_with_retry(self, func, *args, **kwargs):
+        attempt = 0
+        delay = self._backoff
+        while True:
+            try:
+                kwargs.setdefault("timeout", self.timeout)
+                return func(*args, **kwargs)
+            except RequestException as exc:
+                attempt += 1
+                if attempt > max(0, self._max_retries):
+                    raise
+                sleep_for = delay if delay > 0 else 0.5 * attempt
+                try:
+                    log.debug(f"HTTP retry {attempt} for {args[0] if args else func}: {exc}")
+                except Exception:
+                    pass
+                try:
+                    time.sleep(sleep_for)
+                except Exception:
+                    pass
+                if delay > 0:
+                    delay *= 2.0
+
     def get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
         url = f"{self.base}{path}"
-        r = self.s.get(url, params=params or {}, timeout=15)
+        r = self._request_with_retry(self.s.get, url, params=params or {})
         r.raise_for_status()
         return r.json()
 
@@ -250,7 +283,7 @@ class Exchange:
         sig = self._sign(qs)
         url = f"{self.base}{path}?{qs}&signature={sig}"
         req = {"get": self.s.get, "post": self.s.post, "delete": self.s.delete}[method.lower()]
-        r = req(url, headers=self._headers(), timeout=20)
+        r = self._request_with_retry(req, url, headers=self._headers())
         r.raise_for_status()
         return r.json()
 
@@ -399,6 +432,42 @@ class Strategy:
         self._t24_cache: Dict[str, dict] = {}
         self._t24_ts = 0.0
         self._t24_ttl = 120
+        self._kl_cache: Dict[Tuple[str, str, int], Tuple[float, List[List[float]]]] = {}
+        self._kl_cache_ttl = KLINE_CACHE_SEC
+        self._kl_cache_hits = 0
+        self._kl_cache_miss = 0
+
+    def _clone_kl(self, data: List[List[float]]) -> List[List[float]]:
+        if not data:
+            return []
+        return [list(row) for row in data]
+
+    def _klines_cached(self, symbol: str, interval: str, limit: int) -> List[List[float]]:
+        key = (symbol, interval, int(limit))
+        now = time.time()
+        entry = self._kl_cache.get(key)
+        if entry and (now - entry[0]) < self._kl_cache_ttl:
+            self._kl_cache_hits += 1
+            return self._clone_kl(entry[1])
+        try:
+            fresh = self.exchange.get_klines(symbol, interval, limit)
+        except Exception:
+            if entry:
+                self._kl_cache_hits += 1
+                log.debug(f"kl-cache fallback {symbol} {interval}")
+                return self._clone_kl(entry[1])
+            raise
+        self._kl_cache_miss += 1
+        clone = self._clone_kl(fresh)
+        if clone:
+            self._kl_cache[key] = (now, clone)
+        elif entry:
+            self._kl_cache.pop(key, None)
+        if self._kl_cache_miss % 50 == 0 and len(self._kl_cache) > 200:
+            stale = [k for k, (ts, _) in self._kl_cache.items() if (now - ts) >= self._kl_cache_ttl]
+            for k in stale:
+                self._kl_cache.pop(k, None)
+        return clone
 
     def _ticker_24(self, symbol: str) -> Optional[Dict[str, Any]]:
         now = time.time()
@@ -442,10 +511,10 @@ class Strategy:
 
     def compute_signal(self, symbol: str) -> Tuple[str, float, Dict[str, float], float]:
         try:
-            kl = self.exchange.get_klines(symbol, INTERVAL, KLINES)
+            kl = self._klines_cached(symbol, INTERVAL, KLINES)
             if not kl or len(kl) < 60:
                 return self._skip("few_klines", symbol, {"k": len(kl) if kl else 0})
-            htf = self.exchange.get_klines(symbol, HTF_INTERVAL, 120)
+            htf = self._klines_cached(symbol, HTF_INTERVAL, 120)
         except Exception as e:
             return self._skip("klines_err", symbol, {"err": str(e)[:80]})
 
