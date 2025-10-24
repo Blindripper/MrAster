@@ -1,37 +1,61 @@
 :root {
   color-scheme: dark light;
-  --bg: #0f172a;
-  --bg-card: rgba(15, 23, 42, 0.85);
-  --bg-card-light: rgba(255, 255, 255, 0.82);
-  --border: rgba(148, 163, 184, 0.2);
+  --bg: #040714;
+  --bg-overlay: radial-gradient(circle at 20% 20%, rgba(56, 189, 248, 0.18), transparent 55%),
+                radial-gradient(circle at 80% 0%, rgba(14, 165, 233, 0.22), transparent 45%),
+                linear-gradient(160deg, #020617 0%, #0b1220 50%, #040714 100%);
+  --bg-card: rgba(15, 23, 42, 0.78);
+  --bg-card-light: rgba(255, 255, 255, 0.78);
+  --border: rgba(148, 163, 184, 0.18);
   --accent: #38bdf8;
   --accent-strong: #0ea5e9;
+  --accent-soft: rgba(56, 189, 248, 0.18);
   --text: #e2e8f0;
   --text-muted: #94a3b8;
   --danger: #f87171;
   --success: #34d399;
+  --glass-border: linear-gradient(135deg, rgba(148, 163, 184, 0.3), rgba(56, 189, 248, 0.2));
   font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  background: radial-gradient(circle at 20% 20%, rgba(56, 189, 248, 0.18), transparent 55%),
-              radial-gradient(circle at 80% 0%, rgba(14, 165, 233, 0.25), transparent 45%),
-              var(--bg);
+  background: var(--bg);
   color: var(--text);
   display: flex;
   flex-direction: column;
+  position: relative;
+  overflow-x: hidden;
+}
+
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+}
+
+body::before {
+  background: var(--bg-overlay);
+}
+
+body::after {
+  background: radial-gradient(circle at 12% 82%, rgba(59, 130, 246, 0.12), transparent 55%),
+              radial-gradient(circle at 88% 70%, rgba(45, 212, 191, 0.1), transparent 50%);
+  filter: blur(0.5px);
 }
 
 .hero {
-  padding: 2.5rem clamp(1.5rem, 5vw, 3.5rem);
+  padding: 2.75rem clamp(1.5rem, 5vw, 4rem);
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 2rem;
-  background: linear-gradient(120deg, rgba(56, 189, 248, 0.25), transparent 50%);
-  border-bottom: 1px solid var(--border);
+  background: linear-gradient(120deg, rgba(56, 189, 248, 0.22), transparent 55%);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
 }
 
 .hero h1 {
@@ -57,13 +81,14 @@ button {
   border-radius: 999px;
   border: 1px solid transparent;
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.2s ease;
+  transition: transform 0.18s ease, box-shadow 0.25s ease, border-color 0.2s ease;
+  position: relative;
 }
 
 button.primary {
   background: linear-gradient(135deg, var(--accent), var(--accent-strong));
   color: #0f172a;
-  box-shadow: 0 10px 30px rgba(14, 165, 233, 0.3);
+  box-shadow: 0 14px 40px rgba(14, 165, 233, 0.35);
 }
 
 button.primary.subtle {
@@ -72,33 +97,55 @@ button.primary.subtle {
 }
 
 button.ghost {
-  border-color: rgba(148, 163, 184, 0.35);
+  border-color: rgba(148, 163, 184, 0.3);
   color: var(--text);
-  background: transparent;
+  background: rgba(15, 23, 42, 0.35);
 }
 
 button:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px);
+  box-shadow: 0 18px 40px rgba(14, 165, 233, 0.28);
+}
+
+.hero-actions button:focus-visible,
+button:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.55);
+  outline-offset: 2px;
 }
 
 .layout {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 2rem;
-  padding: 2.5rem clamp(1.5rem, 5vw, 3.5rem);
+  padding: 2.75rem clamp(1.5rem, 5vw, 4rem);
   flex: 1;
 }
 
 .card {
+  position: relative;
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 1.4rem;
-  padding: 1.8rem;
-  backdrop-filter: blur(16px);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.4);
+  border-radius: 1.5rem;
+  padding: 2rem;
+  backdrop-filter: blur(18px);
+  box-shadow: 0 25px 60px rgba(2, 6, 23, 0.55);
   display: flex;
   flex-direction: column;
   gap: 1.2rem;
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--glass-border);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  -webkit-mask-composite: xor;
+  pointer-events: none;
+  opacity: 0.8;
 }
 
 .card h2 {
@@ -122,7 +169,7 @@ button:hover {
 .status-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 1rem 1.5rem;
+  gap: 1.1rem 1.5rem;
 }
 
 .label {
@@ -161,9 +208,9 @@ button:hover {
 
 .ai-hint {
   padding: 1rem 1.2rem;
-  border-radius: 1rem;
-  background: rgba(56, 189, 248, 0.08);
-  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 1.1rem;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.32);
   color: var(--text);
   font-size: 0.95rem;
   line-height: 1.5;
@@ -185,32 +232,36 @@ button:hover {
   text-transform: uppercase;
 }
 
-.env-grid input {
-  padding: 0.7rem 0.9rem;
-  border-radius: 0.75rem;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  background: rgba(15, 23, 42, 0.6);
+.env-grid input,
+.env-grid textarea {
+  padding: 0.75rem 1rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(15, 23, 42, 0.65);
   color: var(--text);
   font: inherit;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.env-grid input:focus {
-  outline: 2px solid rgba(56, 189, 248, 0.4);
-  border-color: transparent;
+.env-grid input:focus,
+.env-grid textarea:focus {
+  outline: none;
+  border-color: rgba(56, 189, 248, 0.65);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
 }
 
 .log-stream {
-  background: rgba(2, 6, 23, 0.8);
-  border-radius: 1rem;
-  border: 1px solid rgba(15, 23, 42, 0.6);
-  height: 320px;
+  background: rgba(2, 6, 23, 0.82);
+  border-radius: 1.1rem;
+  border: 1px solid rgba(15, 23, 42, 0.55);
+  height: clamp(300px, 40vh, 420px);
   overflow: auto;
   padding: 1rem;
   font-family: "JetBrains Mono", "Fira Code", monospace;
   font-size: 0.85rem;
   line-height: 1.6;
   color: #cbd5f5;
-  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.06);
 }
 
 .log-line {
@@ -218,6 +269,7 @@ button:hover {
   padding: 0.2rem 0.4rem;
   border-radius: 0.5rem;
   white-space: pre-wrap;
+  background: transparent;
 }
 
 .log-line.system {
@@ -256,8 +308,13 @@ button:hover {
   text-transform: uppercase;
 }
 
+.trade-table tbody tr {
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
 .trade-table tbody tr:hover {
-  background: rgba(148, 163, 184, 0.05);
+  background: rgba(148, 163, 184, 0.06);
+  transform: translateY(-1px);
 }
 
 .trade-table td.profit {
@@ -275,10 +332,10 @@ button:hover {
 }
 
 footer {
-  padding: 1.5rem clamp(1.5rem, 5vw, 3.5rem);
+  padding: 1.75rem clamp(1.5rem, 5vw, 4rem);
   color: var(--text-muted);
   font-size: 0.9rem;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid rgba(148, 163, 184, 0.08);
 }
 
 @media (max-width: 720px) {
@@ -291,5 +348,31 @@ footer {
   }
   button {
     flex: 1;
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f7fb;
+    --text: #1e293b;
+    --text-muted: #475569;
+    --border: rgba(148, 163, 184, 0.28);
+    --bg-card: rgba(255, 255, 255, 0.75);
+  }
+
+  body::before {
+    background: radial-gradient(circle at 15% 20%, rgba(56, 189, 248, 0.3), transparent 60%),
+                radial-gradient(circle at 85% 15%, rgba(14, 165, 233, 0.25), transparent 55%),
+                linear-gradient(160deg, rgba(244, 249, 255, 0.95), rgba(230, 240, 255, 0.92));
+  }
+
+  button.ghost {
+    background: rgba(241, 245, 249, 0.7);
+    color: var(--text);
+  }
+
+  .log-stream {
+    background: rgba(15, 23, 42, 0.85);
+    color: #e2e8f0;
   }
 }

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -10,7 +10,7 @@
   <header class="hero">
     <div>
       <h1>Aster Bot Control Center</h1>
-      <p>Steuere deine Trading-Instanz, beobachte Live-Logs und optimiere Parameter mit KI-Unterstützung.</p>
+      <p>Orchestrate your trading stack, follow live telemetry, and tune parameters with AI-assisted insights.</p>
     </div>
     <div class="hero-actions">
       <button id="btn-start" class="primary">Start</button>
@@ -23,7 +23,7 @@
       <h2>Status</h2>
       <div class="status-grid">
         <div>
-          <span class="label">Zustand</span>
+          <span class="label">State</span>
           <span id="status-indicator" class="pill neutral">–</span>
         </div>
         <div>
@@ -31,37 +31,37 @@
           <span id="status-pid">–</span>
         </div>
         <div>
-          <span class="label">Gestartet</span>
+          <span class="label">Started</span>
           <span id="status-started">–</span>
         </div>
         <div>
-          <span class="label">Laufzeit</span>
+          <span class="label">Uptime</span>
           <span id="status-uptime">–</span>
         </div>
       </div>
-      <div class="ai-hint" id="ai-hint">KI-Auswertung lädt…</div>
+      <div class="ai-hint" id="ai-hint">Loading AI analysis…</div>
     </section>
 
     <section class="card config">
       <div class="card-header">
-        <h2>ENV-Konfiguration</h2>
-        <button id="btn-save-config" class="primary subtle">Speichern</button>
+        <h2>Environment configuration</h2>
+        <button id="btn-save-config" class="primary subtle">Save</button>
       </div>
-      <p class="card-subtitle">Passe alle relevanten <code>ASTER_*</code>-Parameter ohne Neustart des Servers an. Änderungen werden persistent gespeichert.</p>
+      <p class="card-subtitle">Adjust every relevant <code>ASTER_*</code> parameter without restarting the service. Changes persist automatically.</p>
       <div id="env-settings" class="env-grid"></div>
     </section>
 
     <section class="card logs">
       <div class="card-header">
-        <h2>Live-Logs</h2>
-        <label class="toggle"><input type="checkbox" id="autoscroll" checked /> Auto-Scroll</label>
+        <h2>Live logs</h2>
+        <label class="toggle"><input type="checkbox" id="autoscroll" checked /> Auto-scroll</label>
       </div>
       <div id="log-stream" class="log-stream"></div>
     </section>
 
     <section class="card trades">
       <div class="card-header">
-        <h2>Trade-Historie</h2>
+        <h2>Trade history</h2>
         <span id="trade-summary"></span>
       </div>
       <table class="trade-table">
@@ -69,24 +69,24 @@
           <tr>
             <th>Symbol</th>
             <th>Side</th>
-            <th>Menge</th>
+            <th>Size</th>
             <th>Entry</th>
             <th>Exit</th>
             <th>PNL (USDT)</th>
             <th>R</th>
-            <th>Geöffnet</th>
-            <th>Geschlossen</th>
+            <th>Opened</th>
+            <th>Closed</th>
           </tr>
         </thead>
         <tbody id="trade-body">
-          <tr><td colspan="9" class="empty">Noch keine Trades.</td></tr>
+          <tr><td colspan="9" class="empty">No trades yet.</td></tr>
         </tbody>
       </table>
     </section>
   </main>
 
   <footer>
-    <p>Made for Aster – adaptive Trading mit Transparenz. Nutze das Log &amp; die KI-Hinweise, um die Strategie kontinuierlich zu verbessern.</p>
+    <p>Made for Aster — adaptive trading with full transparency. Lean on live logs and AI hints to iterate with confidence.</p>
   </footer>
 
   <script type="module" src="/static/app.js"></script>

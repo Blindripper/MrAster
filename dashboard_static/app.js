@@ -34,7 +34,7 @@ function renderConfig(env) {
 
 async function loadConfig() {
   const res = await fetch('/api/config');
-  if (!res.ok) throw new Error('Config konnte nicht geladen werden');
+  if (!res.ok) throw new Error('Unable to load configuration');
   currentConfig = await res.json();
   renderConfig(currentConfig.env);
 }
@@ -50,7 +50,7 @@ function gatherConfigPayload() {
 async function saveConfig() {
   const payload = gatherConfigPayload();
   btnSaveConfig.disabled = true;
-  btnSaveConfig.textContent = 'Speichern…';
+  btnSaveConfig.textContent = 'Saving…';
   try {
     const res = await fetch('/api/config', {
       method: 'PUT',
@@ -59,15 +59,15 @@ async function saveConfig() {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.detail || 'Fehler beim Speichern');
+      throw new Error(data.detail || 'Saving configuration failed');
     }
     currentConfig = await res.json();
-    btnSaveConfig.textContent = 'Gespeichert ✓';
-    setTimeout(() => (btnSaveConfig.textContent = 'Speichern'), 1500);
+    btnSaveConfig.textContent = 'Saved ✓';
+    setTimeout(() => (btnSaveConfig.textContent = 'Save'), 1500);
   } catch (err) {
-    btnSaveConfig.textContent = 'Fehler';
+    btnSaveConfig.textContent = 'Error';
     alert(err.message);
-    setTimeout(() => (btnSaveConfig.textContent = 'Speichern'), 2000);
+    setTimeout(() => (btnSaveConfig.textContent = 'Save'), 2000);
   } finally {
     btnSaveConfig.disabled = false;
   }
@@ -92,7 +92,7 @@ async function updateStatus() {
     if (!res.ok) throw new Error();
     const data = await res.json();
     const running = data.running;
-    statusIndicator.textContent = running ? 'Läuft' : 'Gestoppt';
+    statusIndicator.textContent = running ? 'Running' : 'Stopped';
     statusIndicator.className = `pill ${running ? 'running' : 'stopped'}`;
     statusPid.textContent = data.pid ?? '–';
     statusStarted.textContent = data.started_at ? new Date(data.started_at * 1000).toLocaleString() : '–';
@@ -153,7 +153,7 @@ function renderTradeHistory(history) {
     const row = document.createElement('tr');
     const cell = document.createElement('td');
     cell.colSpan = 9;
-    cell.textContent = 'Noch keine Trades.';
+    cell.textContent = 'No trades yet.';
     cell.className = 'empty';
     row.append(cell);
     tradeBody.append(row);
@@ -181,18 +181,18 @@ function renderTradeHistory(history) {
 function renderTradeSummary(stats) {
   if (!stats) {
     tradeSummary.textContent = '';
-    aiHint.textContent = 'Keine Daten verfügbar.';
+    aiHint.textContent = 'No data available.';
     return;
   }
   const avgR = stats.count ? stats.total_r / stats.count : 0;
-  tradeSummary.textContent = `${stats.count} Trades • Gesamt PNL ${formatNumber(stats.total_pnl, 2)} USDT • Winrate ${(stats.win_rate * 100).toFixed(1)}% • Ø R ${formatNumber(avgR, 2)}`;
+  tradeSummary.textContent = `${stats.count} trades • Total PNL ${formatNumber(stats.total_pnl, 2)} USDT • Win rate ${(stats.win_rate * 100).toFixed(1)}% • Avg R ${formatNumber(avgR, 2)}`;
   aiHint.textContent = stats.ai_hint;
 }
 
 async function loadTrades() {
   try {
     const res = await fetch('/api/trades');
-    if (!res.ok) throw new Error('Trades konnten nicht geladen werden');
+    if (!res.ok) throw new Error('Unable to load trades');
     const data = await res.json();
     renderTradeHistory(data.history);
     renderTradeSummary(data.stats);
@@ -207,7 +207,7 @@ async function startBot() {
     const res = await fetch('/api/bot/start', { method: 'POST' });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.detail || 'Bot konnte nicht gestartet werden');
+      throw new Error(data.detail || 'Unable to start bot');
     }
   } catch (err) {
     alert(err.message);
