@@ -726,6 +726,64 @@ input[type='range']::-moz-range-track {
   line-height: 1.5;
 }
 
+.ai-mode-view {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.ai-mode-window {
+  gap: 1.8rem;
+}
+
+.ai-mode-window-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.ai-mode-window-header h2 {
+  margin: 0;
+  font-size: 1.6rem;
+}
+
+.ai-mode-window-subtitle {
+  margin: 0;
+  color: var(--text-subtle);
+  line-height: 1.6;
+}
+
+.ai-mode-badge {
+  align-self: flex-start;
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: rgba(240, 169, 75, 0.16);
+  border: 1px solid rgba(240, 169, 75, 0.35);
+  color: var(--accent);
+}
+
+.ai-mode-window-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.ai-mode-window-body .ai-hint {
+  flex: 1;
+  background: rgba(240, 169, 75, 0.12);
+  border-color: rgba(240, 169, 75, 0.35);
+  font-size: 1rem;
+}
+
+.ai-mode-view .ai-config {
+  height: 100%;
+}
+
 .credentials-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -1399,6 +1457,10 @@ input[type='range']::-moz-range-track {
 }
 
 @media (max-width: 960px) {
+  .ai-mode-view {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .trade-overview {
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   }

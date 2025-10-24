@@ -87,7 +87,7 @@ ENV_DEFAULTS: Dict[str, str] = {
     "ASTER_HISTORY_MAX": "250",
     "ASTER_BOT_SCRIPT": "aster_multi_bot.py",
     "ASTER_OPENAI_API_KEY": "",
-    "ASTER_AI_MODEL": "gpt-4o-mini",
+    "ASTER_AI_MODEL": "gpt-5",
     "ASTER_AI_DAILY_BUDGET_USD": "1000",
     "ASTER_AI_STRICT_BUDGET": "true",
     "ASTER_AI_SENTINEL_ENABLED": "true",
