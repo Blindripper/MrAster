@@ -684,6 +684,7 @@ footer {
     width: 100%;
     border-collapse: separate;
     border-spacing: 0;
+    min-width: unset;
   }
 
   .trade-table thead {
