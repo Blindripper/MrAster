@@ -395,10 +395,89 @@ button:focus-visible {
 
 .layout {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 2rem;
   padding: 2.75rem clamp(1.5rem, 5vw, 4.5rem) 4rem;
   flex: 1;
+  align-content: start;
+}
+
+body:not(.ai-mode) .layout {
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 1fr);
+  grid-template-areas:
+    "performance status"
+    "quick status"
+    "logs credentials"
+    "trades trades";
+  grid-auto-rows: minmax(min-content, max-content);
+}
+
+body:not(.ai-mode) .status {
+  grid-area: status;
+  align-self: start;
+  justify-self: stretch;
+  max-width: 380px;
+}
+
+body:not(.ai-mode) .ai-mode-view {
+  display: contents;
+}
+
+body:not(.ai-mode) .pnl-card {
+  grid-area: performance;
+}
+
+body:not(.ai-mode) .quick-setup {
+  grid-area: quick;
+}
+
+body:not(.ai-mode) .logs {
+  grid-area: logs;
+}
+
+body:not(.ai-mode) .credentials {
+  grid-area: credentials;
+}
+
+body:not(.ai-mode) .trades {
+  grid-area: trades;
+}
+
+body.pro-mode:not(.ai-mode) .layout {
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 1fr);
+  grid-template-areas:
+    "performance status"
+    "config status"
+    "logs status"
+    "trades trades";
+}
+
+body.pro-mode:not(.ai-mode) .status {
+  max-width: 420px;
+}
+
+body.pro-mode:not(.ai-mode) .credentials {
+  grid-area: auto;
+}
+
+body.pro-mode:not(.ai-mode) .quick-setup {
+  grid-area: auto;
+}
+
+body.pro-mode:not(.ai-mode) .config {
+  grid-area: config;
+  align-self: start;
+}
+
+@media (max-width: 1100px) {
+  body:not(.ai-mode) .layout {
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    grid-template-areas: none;
+  }
+
+  body:not(.ai-mode) .layout > .card {
+    grid-area: auto !important;
+    max-width: none;
+  }
 }
 
 body.ai-mode .layout {
