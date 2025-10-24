@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import signal
 import sys
 import time
@@ -19,7 +20,6 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 ROOT_DIR = Path(__file__).resolve().parent
-BOT_SCRIPT = ROOT_DIR / "aster_multi_bot.py"
 STATE_FILE = ROOT_DIR / os.getenv("ASTER_STATE_FILE", "aster_state.json")
 STATIC_DIR = ROOT_DIR / "dashboard_static"
 CONFIG_FILE = ROOT_DIR / "dashboard_config.json"
@@ -73,6 +73,7 @@ ENV_DEFAULTS: Dict[str, str] = {
     "ASTER_LOOP_SLEEP": "20",
     "ASTER_BANDIT_ENABLED": "true",
     "ASTER_HISTORY_MAX": "250",
+    "ASTER_BOT_SCRIPT": "aster_multi_bot.py",
 }
 
 ALLOWED_ENV_KEYS = set(ENV_DEFAULTS.keys())
@@ -167,6 +168,32 @@ class LogHub:
             await self.unregister(ws)
 
 
+def _resolve_python() -> str:
+    """Return an executable python interpreter for subprocesses."""
+
+    exe = sys.executable
+    if exe:
+        path = Path(exe)
+        if path.exists():
+            return str(path)
+
+    candidate = shutil.which("python3") or shutil.which("python")
+    if not candidate:
+        raise FileNotFoundError("Python interpreter not found for bot execution")
+    return candidate
+
+
+def _resolve_bot_script(env_cfg: Dict[str, str]) -> Path:
+    script_value = env_cfg.get("ASTER_BOT_SCRIPT", "aster_multi_bot.py")
+    script_path = Path(script_value)
+    if not script_path.is_absolute():
+        script_path = ROOT_DIR / script_path
+    script_path = script_path.resolve()
+    if not script_path.exists():
+        raise FileNotFoundError(f"Bot script not found: {script_path}")
+    return script_path
+
+
 class BotRunner:
     def __init__(self, loghub: LogHub) -> None:
         self.loghub = loghub
@@ -186,15 +213,23 @@ class BotRunner:
             if self.process and self.process.returncode is None:
                 raise RuntimeError("Bot is already running")
             env = os.environ.copy()
-            env.update(CONFIG.get("env", {}))
+            env_cfg = CONFIG.get("env", {})
+            env.update(env_cfg)
+            python_cmd = _resolve_python()
+            bot_script = _resolve_bot_script(env_cfg)
             env.setdefault("ASTER_LOGLEVEL", "DEBUG")
-            self.process = await asyncio.create_subprocess_exec(
-                sys.executable,
-                str(BOT_SCRIPT),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                env=env,
-            )
+            try:
+                self.process = await asyncio.create_subprocess_exec(
+                    python_cmd,
+                    str(bot_script),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
+                    env=env,
+                    cwd=str(ROOT_DIR),
+                )
+            except FileNotFoundError as exc:
+                await self.loghub.push(str(exc), level="error")
+                raise
             self.started_at = time.time()
             await self.loghub.push("Bot process started", level="system")
             self._reader_task = asyncio.create_task(self._pump_stdout())
@@ -292,6 +327,8 @@ async def start_bot() -> Dict[str, Any]:
         await runner.start()
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {"status": "started"}
 
 
