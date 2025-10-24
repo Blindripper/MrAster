@@ -552,6 +552,14 @@ body.ai-mode .pnl-card {
     grid-column: 1 / -1;
   }
 
+  body.ai-mode .ai-mode-window {
+    grid-column: 1 / -1;
+  }
+
+  body.ai-mode .ai-config {
+    grid-column: 1 / -1;
+  }
+
   .logs.compact,
   .ai-mode-window {
     grid-column: 1 / span 8;
