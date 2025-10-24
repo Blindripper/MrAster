@@ -259,6 +259,10 @@ body:not(.pro-mode) [data-pro-only] {
   display: none;
 }
 
+body:not(.ai-mode) [data-ai-only] {
+  display: none;
+}
+
 body.pro-mode [data-normal-only] {
   display: none;
 }
@@ -544,6 +548,58 @@ input[type='range']::-moz-range-track {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 1.1rem 1.5rem;
+}
+
+.ai-budget {
+  margin-top: 1.2rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgba(255, 232, 168, 0.1);
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, rgba(240, 169, 75, 0.12), rgba(36, 44, 62, 0.18));
+  transition: opacity 0.3s ease;
+}
+
+.ai-budget:not(.active) {
+  opacity: 0.6;
+}
+
+.ai-budget-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--accent);
+  margin-bottom: 0.6rem;
+}
+
+.ai-budget-bar {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 232, 168, 0.1);
+  overflow: hidden;
+  position: relative;
+}
+
+.ai-budget-fill {
+  position: absolute;
+  inset: 0;
+  width: 0%;
+  background: linear-gradient(90deg, rgba(240, 169, 75, 0.85), rgba(80, 75, 241, 0.85));
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+
+.ai-budget-meta {
+  margin-top: 0.55rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.ai-budget.unlimited .ai-budget-fill {
+  background: linear-gradient(90deg, rgba(80, 199, 255, 0.8), rgba(80, 75, 241, 0.85));
 }
 
 .status-stats {
@@ -1088,6 +1144,131 @@ input[type='range']::-moz-range-track {
   gap: 1.2rem;
   background: rgba(9, 10, 18, 0.85);
   border-top: 1px solid rgba(255, 232, 168, 0.08);
+}
+
+.trade-ai-section,
+.trade-postmortem {
+  background: rgba(12, 14, 22, 0.65);
+  border: 1px solid rgba(255, 232, 168, 0.08);
+  border-radius: 0.9rem;
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.trade-ai-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.trade-ai-header h4,
+.trade-postmortem h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.trade-ai-explanation,
+.trade-postmortem p {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.trade-ai-plan {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+
+.trade-ai-plan li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.trade-ai-plan li strong {
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.trade-sentinel-meta {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.trade-sentinel-events {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.trade-sentinel-events li {
+  padding: 0.45rem 0.6rem;
+  border-radius: 0.6rem;
+  background: rgba(255, 232, 168, 0.06);
+  color: var(--text);
+}
+
+.trade-sentinel-events li.severity-warning {
+  background: rgba(255, 107, 107, 0.12);
+}
+
+.trade-sentinel-events li.severity-positive {
+  background: rgba(74, 222, 128, 0.12);
+}
+
+.trade-ai-warnings {
+  list-style: disc;
+  margin: 0 0 0 1.2rem;
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+.trade-ai-budget {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.sentinel-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  background: rgba(255, 232, 168, 0.16);
+  color: var(--text);
+}
+
+.sentinel-badge.sentinel-red {
+  background: rgba(255, 107, 107, 0.25);
+  color: #ffabab;
+}
+
+.sentinel-badge.sentinel-yellow {
+  background: rgba(255, 197, 75, 0.22);
+  color: #ffd27f;
+}
+
+.sentinel-badge.sentinel-green {
+  background: rgba(74, 222, 128, 0.2);
+  color: #b1ffce;
 }
 
 .trade-metric-grid {

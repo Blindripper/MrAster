@@ -35,6 +35,7 @@ ENV_DEFAULTS: Dict[str, str] = {
     "ASTER_LOGLEVEL": "DEBUG",
     "ASTER_PAPER": "false",
     "ASTER_RUN_ONCE": "false",
+    "ASTER_MODE": "standard",
     "ASTER_QUOTE": "USDT",
     "ASTER_INCLUDE_SYMBOLS": "BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,DOGEUSDT,ADAUSDT,LINKUSDT,AVAXUSDT,TRXUSDT,MATICUSDT,NEARUSDT,LTCUSDT,BCHUSDT,DOTUSDT,ATOMUSDT,ARBUSDT,APTUSDT,SUIUSDT,OPUSDT,BLUAIUSDT,HEMIUSDT,TURTLEUSDT,APRUSDT",
     "ASTER_EXCLUDE_SYMBOLS": "AMZNUSDT,APRUSDT",
@@ -77,6 +78,14 @@ ENV_DEFAULTS: Dict[str, str] = {
     "ASTER_BANDIT_ENABLED": "true",
     "ASTER_HISTORY_MAX": "250",
     "ASTER_BOT_SCRIPT": "aster_multi_bot.py",
+    "ASTER_OPENAI_API_KEY": "",
+    "ASTER_AI_MODEL": "gpt-4o-mini",
+    "ASTER_AI_DAILY_BUDGET_USD": "1000",
+    "ASTER_AI_STRICT_BUDGET": "true",
+    "ASTER_AI_SENTINEL_ENABLED": "true",
+    "ASTER_AI_SENTINEL_DECAY_MINUTES": "90",
+    "ASTER_AI_NEWS_ENDPOINT": "",
+    "ASTER_AI_NEWS_API_KEY": "",
 }
 
 ALLOWED_ENV_KEYS = set(ENV_DEFAULTS.keys())
@@ -703,11 +712,13 @@ async def trades() -> Dict[str, Any]:
     open_trades = state.get("live_trades", {})
     stats = _compute_stats(history)
     decision_stats = _decision_summary(state)
+    ai_budget = state.get("ai_budget", {})
     return {
         "open": open_trades,
         "history": history[::-1],
         "stats": stats.dict(),
         "decision_stats": decision_stats,
+        "ai_budget": ai_budget,
     }
 
 

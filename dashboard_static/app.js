@@ -3,7 +3,9 @@ const btnSaveConfig = document.getElementById('btn-save-config');
 const btnSaveCredentials = document.getElementById('btn-save-credentials');
 const btnStart = document.getElementById('btn-start');
 const btnStop = document.getElementById('btn-stop');
+const btnAiMode = document.getElementById('btn-ai-mode');
 const btnProMode = document.getElementById('btn-pro-mode');
+const btnSaveAi = document.getElementById('btn-save-ai');
 const statusIndicator = document.getElementById('status-indicator');
 const statusPid = document.getElementById('status-pid');
 const statusStarted = document.getElementById('status-started');
@@ -24,21 +26,30 @@ const riskValue = document.getElementById('risk-value');
 const leverageValue = document.getElementById('leverage-value');
 const inputApiKey = document.getElementById('input-api-key');
 const inputApiSecret = document.getElementById('input-api-secret');
+const inputOpenAiKey = document.getElementById('input-openai-key');
+const inputAiBudget = document.getElementById('input-ai-budget');
+const inputAiModel = document.getElementById('input-ai-model');
 const decisionSummary = document.getElementById('decision-summary');
 const decisionReasons = document.getElementById('decision-reasons');
 const btnApplyPreset = document.getElementById('btn-apply-preset');
 const tickerContainer = document.getElementById('market-ticker');
 const tickerTrack = document.getElementById('ticker-track');
 const tickerEmpty = document.getElementById('ticker-empty');
+const aiBudgetCard = document.getElementById('ai-budget');
+const aiBudgetModeLabel = document.getElementById('ai-budget-mode');
+const aiBudgetMeta = document.getElementById('ai-budget-meta');
+const aiBudgetFill = document.getElementById('ai-budget-fill');
 
 let currentConfig = {};
 let reconnectTimer = null;
 let pnlChart = null;
 let proMode = false;
+let aiMode = false;
 let selectedPreset = 'mid';
 let autoScrollEnabled = true;
 let quickConfigPristine = true;
 let mostTradedTimer = null;
+let lastAiBudget = null;
 
 const PRESETS = {
   low: {
@@ -143,6 +154,10 @@ const CONTEXT_LABELS = {
   alpha_conf: 'Alpha conf.',
   regime_adx: 'Regime ADX',
   regime_slope: 'Regime slope',
+  sentinel_label: 'Sentinel label',
+  sentinel_event_risk: 'Event risk',
+  sentinel_hype: 'Hype score',
+  sentinel_factor: 'Risk sizing',
 };
 
 const CONTEXT_KEYS = [
@@ -158,6 +173,10 @@ const CONTEXT_KEYS = [
   'alpha_conf',
   'regime_adx',
   'regime_slope',
+  'sentinel_label',
+  'sentinel_event_risk',
+  'sentinel_hype',
+  'sentinel_factor',
 ];
 
 const DECISION_REASON_LABELS = {
@@ -172,6 +191,8 @@ const DECISION_REASON_LABELS = {
   policy_filter: 'AI filter rejected the setup',
   position_size: 'Position size below minimum',
   order_failed: 'Order could not be placed',
+  sentinel_veto: 'Sentinel vetoed trade',
+  ai_risk_zero: 'AI sized trade to zero',
 };
 
 const FRIENDLY_LEVEL_LABELS = {
@@ -223,6 +244,15 @@ function renderCredentials(env) {
   if (inputApiSecret) {
     inputApiSecret.value = env?.ASTER_API_SECRET ?? '';
   }
+  if (inputOpenAiKey) {
+    inputOpenAiKey.value = env?.ASTER_OPENAI_API_KEY ?? '';
+  }
+  if (inputAiBudget) {
+    inputAiBudget.value = env?.ASTER_AI_DAILY_BUDGET_USD ?? '1000';
+  }
+  if (inputAiModel) {
+    inputAiModel.value = env?.ASTER_AI_MODEL ?? 'gpt-4o-mini';
+  }
 }
 
 async function loadConfig() {
@@ -232,6 +262,7 @@ async function loadConfig() {
   renderConfig(currentConfig.env);
   renderCredentials(currentConfig.env);
   syncQuickSetupFromEnv(currentConfig.env);
+  await syncAiModeFromEnv(currentConfig.env);
 }
 
 function gatherConfigPayload() {
@@ -249,6 +280,21 @@ function gatherCredentialPayload() {
   }
   if (inputApiSecret) {
     payload.ASTER_API_SECRET = inputApiSecret.value.trim();
+  }
+  return payload;
+}
+
+function gatherAiPayload() {
+  const payload = {};
+  if (inputOpenAiKey) {
+    payload.ASTER_OPENAI_API_KEY = inputOpenAiKey.value.trim();
+  }
+  if (inputAiBudget) {
+    const value = inputAiBudget.value.trim();
+    payload.ASTER_AI_DAILY_BUDGET_USD = value === '' ? '0' : value;
+  }
+  if (inputAiModel) {
+    payload.ASTER_AI_MODEL = inputAiModel.value.trim();
   }
   return payload;
 }
@@ -308,6 +354,36 @@ async function saveCredentials() {
     setTimeout(() => (btnSaveCredentials.textContent = 'Save'), 2000);
   } finally {
     btnSaveCredentials.disabled = false;
+  }
+}
+
+async function saveAiConfig() {
+  if (!btnSaveAi) return;
+  const payload = gatherAiPayload();
+  btnSaveAi.disabled = true;
+  btnSaveAi.textContent = 'Saving…';
+  try {
+    const res = await fetch('/api/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ env: payload }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || 'Saving AI configuration failed');
+    }
+    currentConfig = await res.json();
+    renderCredentials(currentConfig.env);
+    syncQuickSetupFromEnv(currentConfig.env);
+    await syncAiModeFromEnv(currentConfig.env);
+    btnSaveAi.textContent = 'Saved ✓';
+    setTimeout(() => (btnSaveAi.textContent = 'Save'), 1500);
+  } catch (err) {
+    btnSaveAi.textContent = 'Error';
+    alert(err.message);
+    setTimeout(() => (btnSaveAi.textContent = 'Save'), 2000);
+  } finally {
+    btnSaveAi.disabled = false;
   }
 }
 
@@ -981,9 +1057,17 @@ function formatContextValue(key, raw) {
       case 'alpha_prob':
       case 'alpha_conf':
         return `${(numeric * 100).toFixed(1)}%`;
+      case 'sentinel_event_risk':
+      case 'sentinel_hype':
+        return `${(numeric * 100).toFixed(1)}%`;
+      case 'sentinel_factor':
+        return `${numeric.toFixed(2)}×`;
       default:
         return numeric.toFixed(3);
     }
+  }
+  if (key === 'sentinel_label') {
+    return (raw || '').toString().replace(/^[a-z]/, (char) => char.toUpperCase());
   }
   if (raw === undefined || raw === null) return '–';
   return raw.toString();
@@ -1119,9 +1203,150 @@ function renderTradeHistory(history) {
       }
     }
 
+    const aiMeta = trade.ai && typeof trade.ai === 'object' ? trade.ai : null;
+    if (aiMeta) {
+      const aiSection = document.createElement('div');
+      aiSection.className = 'trade-ai-section';
+
+      const header = document.createElement('div');
+      header.className = 'trade-ai-header';
+      const title = document.createElement('h4');
+      title.textContent = 'AI rationale';
+      header.append(title);
+
+      const sentinel = aiMeta.sentinel && typeof aiMeta.sentinel === 'object' ? aiMeta.sentinel : null;
+      if (sentinel && sentinel.label) {
+        const badge = document.createElement('span');
+        badge.className = `sentinel-badge sentinel-${sentinel.label}`;
+        badge.textContent = sentinel.label.toString().toUpperCase();
+        header.append(badge);
+      }
+      aiSection.append(header);
+
+      if (aiMeta.explanation) {
+        const explanation = document.createElement('p');
+        explanation.className = 'trade-ai-explanation';
+        explanation.textContent = aiMeta.explanation;
+        aiSection.append(explanation);
+      }
+
+      const plan = aiMeta.plan && typeof aiMeta.plan === 'object' ? aiMeta.plan : null;
+      if (plan) {
+        const planList = document.createElement('ul');
+        planList.className = 'trade-ai-plan';
+        const planEntries = [
+          ['Size multiplier', plan.size_multiplier, '×'],
+          ['SL multiplier', plan.sl_multiplier, '×'],
+          ['TP multiplier', plan.tp_multiplier, '×'],
+          ['Leverage', plan.leverage, '×'],
+        ];
+        planEntries.forEach(([label, raw, suffix]) => {
+          if (raw === undefined || raw === null) return;
+          const value = Number(raw);
+          if (!Number.isFinite(value)) return;
+          const li = document.createElement('li');
+          li.innerHTML = `<span>${label}</span><strong>${value.toFixed(2)}${suffix || ''}</strong>`;
+          planList.append(li);
+        });
+        if (planList.children.length > 0) {
+          aiSection.append(planList);
+        }
+      }
+
+      if (sentinel) {
+        const sentinelMeta = document.createElement('div');
+        sentinelMeta.className = 'trade-sentinel-meta';
+        const risk = Number(sentinel.event_risk ?? sentinel.meta?.event_risk ?? 0);
+        const hype = Number(sentinel.hype_score ?? sentinel.meta?.hype_score ?? 0);
+        sentinelMeta.innerHTML = `Event risk ${(risk * 100).toFixed(1)}% · Hype ${(hype * 100).toFixed(1)}% · Size factor ${Number(sentinel.actions?.size_factor ?? 1).toFixed(2)}×`;
+        aiSection.append(sentinelMeta);
+
+        if (Array.isArray(sentinel.events) && sentinel.events.length > 0) {
+          const eventList = document.createElement('ul');
+          eventList.className = 'trade-sentinel-events';
+          sentinel.events.slice(0, 3).forEach((event) => {
+            if (!event) return;
+            const item = document.createElement('li');
+            const severity = (event.severity || '').toString().toLowerCase();
+            item.className = severity ? `severity-${severity}` : '';
+            item.textContent = `${event.headline || 'Event'} (${event.source || 'news'})`;
+            eventList.append(item);
+          });
+          if (eventList.children.length > 0) {
+            aiSection.append(eventList);
+          }
+        }
+      }
+
+      if (Array.isArray(aiMeta.warnings) && aiMeta.warnings.length > 0) {
+        const warningList = document.createElement('ul');
+        warningList.className = 'trade-ai-warnings';
+        aiMeta.warnings.forEach((warning) => {
+          const li = document.createElement('li');
+          li.textContent = warning;
+          warningList.append(li);
+        });
+        aiSection.append(warningList);
+      }
+
+      const budget = aiMeta.budget && typeof aiMeta.budget === 'object' ? aiMeta.budget : null;
+      if (budget && budget.limit !== undefined) {
+        const budgetMeta = document.createElement('div');
+        budgetMeta.className = 'trade-ai-budget';
+        const limit = Number(budget.limit ?? 0);
+        const spent = Number(budget.spent ?? 0);
+        if (Number.isFinite(limit) && limit > 0) {
+          const remaining = Math.max(0, limit - spent);
+          budgetMeta.textContent = `Daily AI spend ${spent.toFixed(2)} / ${limit.toFixed(2)} USD · remaining ${remaining.toFixed(2)} USD`;
+        } else {
+          budgetMeta.textContent = `Daily AI spend ${spent.toFixed(2)} USD (no hard cap)`;
+        }
+        aiSection.append(budgetMeta);
+      }
+
+      body.append(aiSection);
+    }
+
+    const postmortem = trade.postmortem && typeof trade.postmortem === 'object' ? trade.postmortem : null;
+    if (postmortem && postmortem.analysis) {
+      const postSection = document.createElement('div');
+      postSection.className = 'trade-postmortem';
+      const heading = document.createElement('h4');
+      heading.textContent = 'Post-mortem coach';
+      const summary = document.createElement('p');
+      summary.textContent = postmortem.analysis;
+      postSection.append(heading, summary);
+      body.append(postSection);
+    }
+
     details.append(body);
     tradeList.append(details);
   });
+}
+
+function renderAiBudget(budget) {
+  if (!aiBudgetCard || !aiBudgetModeLabel || !aiBudgetMeta || !aiBudgetFill) return;
+  lastAiBudget = budget || null;
+  aiBudgetCard.classList.toggle('active', aiMode);
+  aiBudgetModeLabel.textContent = aiMode ? 'AI-Mode' : 'Standard';
+  if (!aiMode) {
+    aiBudgetFill.style.width = '0%';
+    aiBudgetMeta.textContent = 'AI-Mode disabled.';
+    return;
+  }
+  const limit = Number((budget && budget.limit) ?? 0);
+  const spent = Number((budget && budget.spent) ?? 0);
+  if (!Number.isFinite(limit) || limit <= 0) {
+    aiBudgetFill.style.width = '0%';
+    aiBudgetMeta.textContent = `Spent ${spent.toFixed(2)} USD · unlimited budget`;
+    aiBudgetCard.classList.add('unlimited');
+    return;
+  }
+  aiBudgetCard.classList.remove('unlimited');
+  const pct = clampValue(limit > 0 ? (spent / limit) * 100 : 0, 0, 100);
+  aiBudgetFill.style.width = `${pct.toFixed(1)}%`;
+  const remaining = Math.max(0, limit - spent);
+  aiBudgetMeta.textContent = `Spent ${spent.toFixed(2)} / ${limit.toFixed(2)} USD · remaining ${remaining.toFixed(2)} USD`;
 }
 
 function renderTradeSummary(stats) {
@@ -1586,6 +1811,61 @@ function applyPreset(key, options = {}) {
   }
 }
 
+async function setAiMode(state, options = {}) {
+  const { persist = false } = options;
+  const previous = aiMode;
+  aiMode = Boolean(state);
+  document.body.classList.toggle('ai-mode', aiMode);
+  if (btnAiMode) {
+    btnAiMode.textContent = aiMode ? 'Exit AI-Mode' : 'AI-Mode';
+    btnAiMode.classList.toggle('active', aiMode);
+    btnAiMode.setAttribute('aria-pressed', aiMode ? 'true' : 'false');
+  }
+  if (aiBudgetModeLabel) {
+    aiBudgetModeLabel.textContent = aiMode ? 'AI-Mode' : 'Standard';
+  }
+  renderAiBudget(lastAiBudget);
+  if (!persist) {
+    return;
+  }
+  try {
+    const payload = { env: { ASTER_MODE: aiMode ? 'ai' : 'standard' } };
+    const res = await fetch('/api/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || 'Unable to update mode');
+    }
+    currentConfig = await res.json();
+    renderConfig(currentConfig.env);
+    renderCredentials(currentConfig.env);
+    syncQuickSetupFromEnv(currentConfig.env);
+  } catch (err) {
+    alert(err.message);
+    aiMode = previous;
+    document.body.classList.toggle('ai-mode', aiMode);
+    if (btnAiMode) {
+      btnAiMode.textContent = aiMode ? 'Exit AI-Mode' : 'AI-Mode';
+      btnAiMode.classList.toggle('active', aiMode);
+      btnAiMode.setAttribute('aria-pressed', aiMode ? 'true' : 'false');
+    }
+    if (aiBudgetModeLabel) {
+      aiBudgetModeLabel.textContent = aiMode ? 'AI-Mode' : 'Standard';
+    }
+    if (lastAiBudget) {
+      renderAiBudget(lastAiBudget);
+    }
+  }
+}
+
+async function syncAiModeFromEnv(env) {
+  const raw = (env?.ASTER_MODE || '').toString().toLowerCase();
+  await setAiMode(raw === 'ai', { persist: false });
+}
+
 function setProMode(state) {
   proMode = state;
   document.body.classList.toggle('pro-mode', proMode);
@@ -1605,6 +1885,7 @@ async function loadTrades() {
     renderTradeSummary(data.stats);
     renderDecisionStats(data.decision_stats);
     renderPnlChart(data.history);
+    renderAiBudget(data.ai_budget);
   } catch (err) {
     console.warn(err);
   }
@@ -1638,7 +1919,11 @@ btnSaveConfig.addEventListener('click', saveConfig);
 btnSaveCredentials?.addEventListener('click', saveCredentials);
 btnStart.addEventListener('click', startBot);
 btnStop.addEventListener('click', stopBot);
+btnAiMode?.addEventListener('click', () => {
+  setAiMode(!aiMode, { persist: true }).catch(() => {});
+});
 btnProMode?.addEventListener('click', () => setProMode(!proMode));
+btnSaveAi?.addEventListener('click', saveAiConfig);
 btnApplyPreset?.addEventListener('click', saveQuickSetup);
 
 presetButtons.forEach((button) => {

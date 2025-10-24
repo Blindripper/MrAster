@@ -24,6 +24,9 @@ import hmac
 import hashlib
 import logging
 import signal
+import textwrap
+import re
+from datetime import datetime, timezone
 from urllib.parse import urlencode
 from typing import Dict, List, Tuple, Optional, Any, Callable
 
@@ -51,6 +54,17 @@ BASE = os.getenv("ASTER_EXCHANGE_BASE", "https://fapi.asterdex.com").rstrip("/")
 API_KEY = os.getenv("ASTER_API_KEY", "")
 API_SECRET = os.getenv("ASTER_API_SECRET", "")
 RECV_WINDOW = int(os.getenv("ASTER_RECV_WINDOW", "10000"))
+
+MODE = os.getenv("ASTER_MODE", "standard").strip().lower()
+AI_MODE_ENABLED = MODE == "ai" or os.getenv("ASTER_AI_MODE", "").lower() in ("1", "true", "yes", "on")
+OPENAI_API_KEY = os.getenv("ASTER_OPENAI_API_KEY", "").strip()
+AI_MODEL = os.getenv("ASTER_AI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+AI_DAILY_BUDGET = float(os.getenv("ASTER_AI_DAILY_BUDGET_USD", "1000") or 0)
+AI_STRICT_BUDGET = os.getenv("ASTER_AI_STRICT_BUDGET", "true").lower() in ("1", "true", "yes", "on")
+SENTINEL_ENABLED = os.getenv("ASTER_AI_SENTINEL_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+SENTINEL_DECAY_MINUTES = float(os.getenv("ASTER_AI_SENTINEL_DECAY_MINUTES", "90") or 90)
+SENTINEL_NEWS_ENDPOINT = os.getenv("ASTER_AI_NEWS_ENDPOINT", "").strip()
+SENTINEL_NEWS_TOKEN = os.getenv("ASTER_AI_NEWS_API_KEY", "").strip()
 
 QUOTE = os.getenv("ASTER_QUOTE", "USDT")
 INTERVAL = os.getenv("ASTER_INTERVAL", "5m")
@@ -240,6 +254,606 @@ def build_bracket_payload(kind: str, side: str, price: float) -> str:
     }
     return json.dumps(payload, separators=(",", ":"))
 
+
+def clamp(value: float, lower: float, upper: float) -> float:
+    if lower > upper:
+        lower, upper = upper, lower
+    return max(lower, min(upper, value))
+
+
+class DailyBudgetTracker:
+    def __init__(self, state: Dict[str, Any], limit: float, strict: bool = True):
+        self._state = state
+        self.limit = max(0.0, float(limit or 0.0))
+        self.strict = bool(strict)
+
+    def _bucket(self) -> Dict[str, Any]:
+        bucket = self._state.setdefault("ai_budget", {})
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if bucket.get("date") != today:
+            bucket["date"] = today
+            bucket["spent"] = 0.0
+            bucket["history"] = []
+        bucket.setdefault("spent", 0.0)
+        bucket.setdefault("history", [])
+        return bucket
+
+    def spent(self) -> float:
+        bucket = self._bucket()
+        return float(bucket.get("spent", 0.0) or 0.0)
+
+    def remaining(self) -> Optional[float]:
+        if self.limit <= 0:
+            return None
+        return max(0.0, self.limit - self.spent())
+
+    def can_spend(self, estimate: float) -> bool:
+        estimate = max(0.0, float(estimate or 0.0))
+        if self.limit <= 0:
+            return True
+        allowed = (self.spent() + estimate) <= self.limit
+        return allowed or not self.strict
+
+    def record(self, cost: float, meta: Optional[Dict[str, Any]] = None) -> None:
+        bucket = self._bucket()
+        amount = max(0.0, float(cost or 0.0))
+        bucket["spent"] = float(bucket.get("spent", 0.0) or 0.0) + amount
+        history = bucket.get("history") or []
+        history.append({
+            "ts": time.time(),
+            "cost": float(amount),
+            "meta": meta or {},
+        })
+        if len(history) > 48:
+            history = history[-48:]
+        bucket["history"] = history
+        self._state["ai_budget"] = bucket
+
+    def snapshot(self) -> Dict[str, Any]:
+        bucket = self._bucket()
+        remaining = self.remaining()
+        return {
+            "date": bucket.get("date"),
+            "spent": float(bucket.get("spent", 0.0) or 0.0),
+            "limit": float(self.limit),
+            "remaining": remaining,
+            "history": list(bucket.get("history") or [])[-12:],
+            "strict": self.strict,
+        }
+
+
+class NewsTrendSentinel:
+    def __init__(
+        self,
+        exchange: "Exchange",
+        state: Dict[str, Any],
+        enabled: bool = True,
+        decay_minutes: float = SENTINEL_DECAY_MINUTES,
+    ):
+        self.exchange = exchange
+        self.state = state
+        self.enabled = bool(enabled)
+        self._ticker_cache: Dict[str, Dict[str, Any]] = {}
+        self._last_payload: Dict[str, Dict[str, Any]] = {}
+        self._decay = max(60.0, float(decay_minutes or 0) * 60.0)
+
+    def refresh(self, symbols: List[str]) -> None:
+        if not self.enabled:
+            return
+        for sym in symbols:
+            try:
+                self.evaluate(sym, {}, store_only=True)
+            except Exception:
+                continue
+
+    def _fetch_ticker(self, symbol: str) -> Dict[str, Any]:
+        if not self.enabled:
+            return {}
+        now = time.time()
+        cached = self._ticker_cache.get(symbol)
+        if cached and (now - cached.get("ts", 0.0)) < 45:
+            return cached.get("payload", {})
+        try:
+            payload = self.exchange.get_ticker_24hr(symbol)
+        except Exception as exc:
+            log.debug(f"sentinel ticker fetch failed {symbol}: {exc}")
+            payload = {}
+        self._ticker_cache[symbol] = {"ts": now, "payload": payload}
+        return payload or {}
+
+    def _news_events(self, symbol: str) -> List[Dict[str, Any]]:
+        if not self.enabled or not SENTINEL_NEWS_ENDPOINT:
+            return []
+        try:
+            headers = {}
+            params = {"symbol": symbol}
+            if SENTINEL_NEWS_TOKEN:
+                headers["Authorization"] = f"Bearer {SENTINEL_NEWS_TOKEN}"
+            resp = requests.get(
+                SENTINEL_NEWS_ENDPOINT,
+                params=params,
+                headers=headers,
+                timeout=6,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            items = data if isinstance(data, list) else data.get("items") or data.get("results") or []
+            events: List[Dict[str, Any]] = []
+            for item in items[:6]:
+                title = str(item.get("title") or item.get("headline") or "Event").strip()
+                source = str(item.get("source") or item.get("origin") or "news").strip()
+                severity = str(item.get("severity") or item.get("label") or "info").strip()
+                events.append({
+                    "headline": title,
+                    "source": source,
+                    "severity": severity.lower(),
+                })
+            return events
+        except Exception as exc:
+            log.debug(f"sentinel news fetch failed {symbol}: {exc}")
+            return []
+
+    def _evaluate_from_ticker(self, symbol: str, ticker: Dict[str, Any]) -> Dict[str, Any]:
+        price_change = 0.0
+        quote_volume = 0.0
+        taker_buy_quote = 0.0
+        last_price = 0.0
+        high_price = 0.0
+        low_price = 0.0
+        try:
+            price_change = float(ticker.get("priceChangePercent", 0.0) or 0.0)
+        except Exception:
+            price_change = 0.0
+        try:
+            quote_volume = float(ticker.get("quoteVolume", 0.0) or 0.0)
+        except Exception:
+            quote_volume = 0.0
+        try:
+            taker_buy_quote = float(ticker.get("takerBuyQuoteVolume", 0.0) or 0.0)
+        except Exception:
+            taker_buy_quote = 0.0
+        try:
+            last_price = float(ticker.get("lastPrice", 0.0) or 0.0)
+        except Exception:
+            last_price = 0.0
+        try:
+            high_price = float(ticker.get("highPrice", 0.0) or 0.0)
+        except Exception:
+            high_price = 0.0
+        try:
+            low_price = float(ticker.get("lowPrice", 0.0) or 0.0)
+        except Exception:
+            low_price = 0.0
+
+        spread_range = max(0.0, high_price - low_price)
+        volatility = 0.0
+        if last_price > 0.0:
+            volatility = spread_range / max(last_price, 1e-9)
+
+        buy_ratio = taker_buy_quote / max(quote_volume, 1e-9)
+        volume_factor = clamp(math.log10(max(quote_volume, 1.0)), 0.0, 9.0) / 9.0
+        trend_factor = clamp(abs(price_change) / 18.0, 0.0, 1.0)
+        bias_factor = clamp(abs(buy_ratio - 0.5) * 1.8, 0.0, 1.0)
+
+        event_risk = clamp(volatility * 1.4 + trend_factor * 0.6, 0.0, 1.0)
+        if price_change < -9.0:
+            event_risk = max(event_risk, 0.75)
+        hype_score = clamp((volume_factor * 0.6) + (trend_factor * 0.6) + (bias_factor * 0.3), 0.0, 1.0)
+
+        label = "green"
+        hard_block = False
+        if event_risk >= 0.75:
+            label = "red"
+            hard_block = True
+        elif event_risk >= 0.45:
+            label = "yellow"
+        elif hype_score >= 0.65 and price_change >= 4.0:
+            label = "yellow"
+
+        size_factor = 1.0
+        if label == "yellow":
+            size_factor = 0.5
+        if label == "red":
+            size_factor = 0.0
+        if label == "green" and hype_score > 0.7 and price_change > 0:
+            size_factor = clamp(1.0 + (hype_score - 0.6), 1.0, 1.45)
+
+        events: List[Dict[str, Any]] = []
+        if price_change >= 8.0:
+            events.append({
+                "headline": f"{symbol} rallied {price_change:.1f}% in 24h",
+                "source": "exchange",
+                "severity": "positive",
+            })
+        if price_change <= -8.0:
+            events.append({
+                "headline": f"{symbol} dropped {abs(price_change):.1f}% in 24h",
+                "source": "exchange",
+                "severity": "warning",
+            })
+        if volatility > 0.12:
+            events.append({
+                "headline": "High intraday volatility detected",
+                "source": "exchange",
+                "severity": "warning",
+            })
+
+        return {
+            "event_risk": float(clamp(event_risk, 0.0, 1.0)),
+            "hype_score": float(clamp(hype_score, 0.0, 1.0)),
+            "label": label,
+            "actions": {"size_factor": float(size_factor), "hard_block": hard_block},
+            "events": events,
+            "meta": {
+                "price_change_pct": price_change,
+                "quote_volume": quote_volume,
+                "buy_ratio": buy_ratio,
+                "volatility": volatility,
+            },
+        }
+
+    def evaluate(
+        self,
+        symbol: str,
+        ctx: Optional[Dict[str, Any]] = None,
+        *,
+        store_only: bool = False,
+    ) -> Dict[str, Any]:
+        if not self.enabled:
+            return {
+                "label": "green",
+                "event_risk": 0.0,
+                "hype_score": 0.0,
+                "actions": {"size_factor": 1.0, "hard_block": False},
+                "events": [],
+            }
+
+        now = time.time()
+        cached = self._last_payload.get(symbol)
+        if cached and (now - cached.get("ts", 0.0)) < 30:
+            payload = cached.get("payload", {})
+        else:
+            ticker = self._fetch_ticker(symbol)
+            payload = self._evaluate_from_ticker(symbol, ticker)
+            external_events = self._news_events(symbol)
+            if external_events:
+                payload["events"] = (payload.get("events") or []) + external_events
+                severe = any(e.get("severity") == "critical" for e in external_events)
+                if severe:
+                    payload["event_risk"] = clamp(payload.get("event_risk", 0.0) + 0.2, 0.0, 1.0)
+                    payload["label"] = "red"
+                    payload.setdefault("actions", {})["hard_block"] = True
+            payload = {
+                "event_risk": float(payload.get("event_risk", 0.0) or 0.0),
+                "hype_score": float(payload.get("hype_score", 0.0) or 0.0),
+                "label": payload.get("label", "green"),
+                "actions": payload.get("actions", {"size_factor": 1.0, "hard_block": False}),
+                "events": payload.get("events", []),
+                "meta": payload.get("meta", {}),
+            }
+            self._last_payload[symbol] = {"ts": now, "payload": payload}
+
+        sentinel_state = self.state.setdefault("sentinel", {})
+        sentinel_state[symbol] = {
+            **payload,
+            "updated": datetime.now(timezone.utc).isoformat(),
+        }
+        if ctx is not None:
+            ctx["sentinel_event_risk"] = float(payload.get("event_risk", 0.0) or 0.0)
+            ctx["sentinel_hype"] = float(payload.get("hype_score", 0.0) or 0.0)
+            ctx["sentinel_label"] = payload.get("label", "green")
+        if store_only:
+            return payload
+        return payload
+
+
+class AITradeAdvisor:
+    MODEL_PRICING: Dict[str, Dict[str, float]] = {
+        "gpt-4o-mini": {"input": 0.0000006, "output": 0.0000024},
+        "gpt-4.1-mini": {"input": 0.0000006, "output": 0.0000024},
+        "gpt-4.1": {"input": 0.000003, "output": 0.000009},
+        "default": {"input": 0.000001, "output": 0.000003},
+    }
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        budget: DailyBudgetTracker,
+        *,
+        enabled: bool = True,
+    ) -> None:
+        self.api_key = (api_key or "").strip()
+        self.model = (model or "gpt-4o-mini").strip()
+        self.budget = budget
+        self.enabled = bool(enabled and self.api_key)
+        self._session = requests.Session() if self.enabled else None
+
+    def _pricing(self) -> Dict[str, float]:
+        return self.MODEL_PRICING.get(self.model, self.MODEL_PRICING["default"])
+
+    def _estimate_cost(self, usage: Optional[Dict[str, Any]]) -> Optional[float]:
+        if not usage:
+            return None
+        pricing = self._pricing()
+        try:
+            prompt_tokens = float(usage.get("prompt_tokens", 0) or 0)
+            completion_tokens = float(usage.get("completion_tokens", 0) or 0)
+        except Exception:
+            return None
+        return (
+            prompt_tokens * pricing.get("input", 0.0)
+            + completion_tokens * pricing.get("output", 0.0)
+        )
+
+    def _ensure_bounds(self, text: str, fallback: str) -> str:
+        base_words = [w for w in re.split(r"\s+", (text or "").strip()) if w]
+        if len(base_words) < 40:
+            filler = [w for w in re.split(r"\s+", (fallback or "").strip()) if w]
+            idx = 0
+            while len(base_words) < 40 and filler:
+                base_words.append(filler[idx % len(filler)])
+                idx += 1
+        if len(base_words) < 40:
+            base_words.extend(["trade", "context", "risk", "sizing", "adjustment"])
+        if len(base_words) > 70:
+            base_words = base_words[:70]
+        text = " ".join(base_words).strip()
+        if not text.endswith("."):
+            text += "."
+        return text
+
+    def _chat(self, system_prompt: str, user_prompt: str, *, kind: str) -> Optional[str]:
+        if not self.enabled or not self._session:
+            return None
+        if not self.budget.can_spend(0.0025):
+            log.info("AI daily budget exhausted — skipping remote call.")
+            return None
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": self.model,
+            "temperature": 0.3,
+            "response_format": {"type": "text"},
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+        try:
+            resp = self._session.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=30,
+            )
+            if resp.status_code >= 400:
+                raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:160]}")
+            data = resp.json()
+        except Exception as exc:
+            log.debug(f"AI request failed ({kind}): {exc}")
+            return None
+
+        usage = data.get("usage")
+        cost = self._estimate_cost(usage)
+        if cost is None:
+            cost = 0.0025
+        self.budget.record(cost, {"kind": kind, "model": self.model, "usage": usage})
+
+        try:
+            choices = data.get("choices") or []
+            content = choices[0]["message"]["content"] if choices else ""
+            return str(content or "").strip()
+        except Exception:
+            return None
+
+    def _parse_structured(self, content: str) -> Optional[Dict[str, Any]]:
+        if not content:
+            return None
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            match = re.search(r"\{[\s\S]*\}", content)
+            if match:
+                try:
+                    return json.loads(match.group(0))
+                except json.JSONDecodeError:
+                    return None
+        return None
+
+    def _fallback_plan(
+        self,
+        symbol: str,
+        side: str,
+        price: float,
+        base_sl: float,
+        base_tp: float,
+        ctx: Dict[str, Any],
+        sentinel: Dict[str, Any],
+        atr_abs: float,
+    ) -> Dict[str, Any]:
+        label = sentinel.get("label", "green")
+        event_risk = float(sentinel.get("event_risk", 0.0) or 0.0)
+        hype_score = float(sentinel.get("hype_score", 0.0) or 0.0)
+        size_factor = float(sentinel.get("actions", {}).get("size_factor", 1.0) or 1.0)
+        risk_bias = 1.0
+        if label == "yellow":
+            risk_bias = 0.6
+        elif label == "red":
+            risk_bias = 0.0
+        else:
+            risk_bias = 1.0 + max(0.0, hype_score - 0.55) * 0.35
+        size_multiplier = clamp(size_factor * risk_bias, 0.0, 1.8)
+
+        sl_mult = 1.0
+        tp_mult = 1.0
+        if event_risk > 0.6:
+            sl_mult = 1.25
+            tp_mult = 0.9
+        elif hype_score > 0.65:
+            tp_mult = 1.35 if side == "BUY" else 1.2
+        elif event_risk < 0.25 and hype_score < 0.35:
+            sl_mult = 0.95
+            tp_mult = 1.05
+
+        leverage = clamp(LEVERAGE * (0.5 if event_risk > 0.6 else (1.0 + hype_score * 0.25)), 1.0, max(LEVERAGE * 1.2, 1.0))
+
+        fasttp_overrides: Optional[Dict[str, Any]] = None
+        if event_risk > 0.55:
+            fasttp_overrides = {
+                "enabled": True,
+                "min_r": min(FASTTP_MIN_R, 0.28),
+                "ret1": FAST_TP_RET1 * 0.7,
+                "ret3": FAST_TP_RET3 * 0.7,
+                "snap_atr": max(FASTTP_SNAP_ATR * 0.8, 0.1),
+            }
+
+        explanation = (
+            f"Signal suggests a {side.lower()} on {symbol}. Sentinel reports {label} risk (event={event_risk:.2f}, hype={hype_score:.2f}), "
+            f"so trade size is adjusted to {size_multiplier:.2f}× baseline and leverage steered to {leverage:.1f}×. "
+            f"Stop distance scaled {sl_mult:.2f}× ATR, target {tp_mult:.2f}× ATR. "
+            + (
+                "Fast take-profit stays default to let the move run."
+                if not fasttp_overrides
+                else "Fast take-profit tightened for quicker risk release."
+            )
+        )
+
+        explanation = self._ensure_bounds(explanation, explanation)
+
+        return {
+            "size_multiplier": size_multiplier,
+            "sl_multiplier": sl_mult,
+            "tp_multiplier": tp_mult,
+            "leverage": leverage,
+            "fasttp_overrides": fasttp_overrides,
+            "risk_note": label,
+            "explanation": explanation,
+            "event_risk": event_risk,
+            "hype_score": hype_score,
+        }
+
+    def plan_trade(
+        self,
+        symbol: str,
+        side: str,
+        price: float,
+        base_sl: float,
+        base_tp: float,
+        ctx: Dict[str, Any],
+        sentinel: Dict[str, Any],
+        atr_abs: float,
+    ) -> Dict[str, Any]:
+        fallback = self._fallback_plan(symbol, side, price, base_sl, base_tp, ctx, sentinel, atr_abs)
+        if not self.enabled:
+            return fallback
+
+        system_prompt = (
+            "You are an execution risk manager for a crypto futures bot. "
+            "Return pure JSON with fields size_multiplier, sl_multiplier, tp_multiplier, leverage, risk_note, explanation, "
+            "and fasttp_overrides (object with enabled, min_r, ret1, ret3, snap_atr)."
+        )
+        user_payload = {
+            "symbol": symbol,
+            "side": side,
+            "price": price,
+            "base_stop": base_sl,
+            "base_target": base_tp,
+            "atr_abs": atr_abs,
+            "context": ctx,
+            "sentinel": sentinel,
+            "defaults": {
+                "fasttp": {
+                    "min_r": FASTTP_MIN_R,
+                    "ret1": FAST_TP_RET1,
+                    "ret3": FAST_TP_RET3,
+                    "snap_atr": FASTTP_SNAP_ATR,
+                },
+                "leverage": LEVERAGE,
+            },
+        }
+        user_prompt = json.dumps(user_payload, indent=2)
+        response = self._chat(system_prompt, user_prompt, kind="plan")
+        if not response:
+            return fallback
+        parsed = self._parse_structured(response)
+        if not isinstance(parsed, dict):
+            return fallback
+
+        plan = {**fallback}
+        size_multiplier = parsed.get("size_multiplier")
+        sl_multiplier = parsed.get("sl_multiplier")
+        tp_multiplier = parsed.get("tp_multiplier")
+        leverage = parsed.get("leverage")
+        fasttp_overrides = parsed.get("fasttp_overrides")
+        explanation = parsed.get("explanation")
+        risk_note = parsed.get("risk_note")
+
+        if isinstance(size_multiplier, (int, float)):
+            plan["size_multiplier"] = clamp(float(size_multiplier), 0.0, 2.0)
+        if isinstance(sl_multiplier, (int, float)):
+            plan["sl_multiplier"] = clamp(float(sl_multiplier), 0.5, 2.5)
+        if isinstance(tp_multiplier, (int, float)):
+            plan["tp_multiplier"] = clamp(float(tp_multiplier), 0.5, 3.0)
+        if isinstance(leverage, (int, float)):
+            plan["leverage"] = clamp(float(leverage), 1.0, max(LEVERAGE * 2.0, 1.0))
+        if isinstance(fasttp_overrides, dict):
+            overrides = {
+                "enabled": bool(fasttp_overrides.get("enabled", True)),
+                "min_r": float(fasttp_overrides.get("min_r", fallback.get("fasttp_overrides", {}).get("min_r", FASTTP_MIN_R))),
+                "ret1": float(fasttp_overrides.get("ret1", FAST_TP_RET1)),
+                "ret3": float(fasttp_overrides.get("ret3", FAST_TP_RET3)),
+                "snap_atr": float(fasttp_overrides.get("snap_atr", FASTTP_SNAP_ATR)),
+            }
+            plan["fasttp_overrides"] = overrides
+        if isinstance(risk_note, str) and risk_note.strip():
+            plan["risk_note"] = risk_note.strip()
+        if isinstance(explanation, str) and explanation.strip():
+            plan["explanation"] = self._ensure_bounds(explanation, fallback.get("explanation", ""))
+        else:
+            plan["explanation"] = fallback.get("explanation")
+        return plan
+
+    def generate_postmortem(self, trade: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        opened = float(trade.get("opened_at", time.time()) or time.time())
+        closed = float(trade.get("closed_at", time.time()) or time.time())
+        duration = max(0.0, closed - opened)
+        pnl = float(trade.get("pnl", 0.0) or 0.0)
+        pnl_r = float(trade.get("pnl_r", 0.0) or 0.0)
+        symbol = trade.get("symbol", "")
+        side = trade.get("side", "")
+        bucket = trade.get("bucket")
+        fallback_text = (
+            f"Closed {symbol} {side.lower()} after {max(duration/60.0, 0.1):.1f} minutes with {pnl:.2f} USDT ({pnl_r:.2f}R). "
+            "Review entry timing, size bucket, and sentinel label to refine the policy."
+        )
+        fallback = {
+            "analysis": self._ensure_bounds(fallback_text, fallback_text),
+            "pnl": pnl,
+            "pnl_r": pnl_r,
+            "duration_s": duration,
+            "bucket": bucket,
+        }
+        if not self.enabled:
+            return fallback
+
+        system_prompt = (
+            "You are a trading coach. Analyse the trade JSON and respond with a 40-70 word paragraph summarising what went right, "
+            "what could improve, and one actionable tweak."
+        )
+        user_prompt = json.dumps(trade, indent=2)
+        response = self._chat(system_prompt, user_prompt, kind="postmortem")
+        if not response:
+            return fallback
+        summary = self._ensure_bounds(response, fallback_text)
+        fallback["analysis"] = summary
+        return fallback
+
+    def budget_snapshot(self) -> Dict[str, Any]:
+        return self.budget.snapshot()
+
 # ========= Exchange =========
 class Exchange:
     def __init__(self, base: str, api_key: str, api_secret: str, recv_window: int = 10000):
@@ -340,6 +954,14 @@ class Exchange:
         if PAPER:
             return {"paper": True, "cancel": symbol}
         return self.signed("delete", "/fapi/v1/allOpenOrders", {"symbol": symbol})
+
+    def set_leverage(self, symbol: str, leverage: float) -> Any:
+        if leverage <= 0:
+            raise ValueError("leverage must be positive")
+        if PAPER:
+            return {"paper": True, "symbol": symbol, "leverage": leverage}
+        payload = {"symbol": symbol, "leverage": int(max(1, round(leverage)))}
+        return self.signed("post", "/fapi/v1/leverage", payload)
 
 # ========= Universe =========
 class SymbolUniverse:
@@ -658,6 +1280,12 @@ class TradeManager:
         except Exception:
             self.history_max = 250
 
+    def _sanitize_meta(self, meta: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            return json.loads(json.dumps(meta, default=lambda o: str(o)))
+        except Exception:
+            return {}
+
     def save(self) -> None:
         if self.policy and BANDIT_ENABLED:
             try:
@@ -670,8 +1298,20 @@ class TradeManager:
         except Exception as e:
             log.warning(f"state save failed: {e}")
 
-    def note_entry(self, symbol: str, entry: float, sl: float, tp: float, side: str, qty: float, ctx: Dict[str, float], bucket: str, atr_abs: float):
-        self.state["live_trades"][symbol] = {
+    def note_entry(
+        self,
+        symbol: str,
+        entry: float,
+        sl: float,
+        tp: float,
+        side: str,
+        qty: float,
+        ctx: Dict[str, float],
+        bucket: str,
+        atr_abs: float,
+        meta: Optional[Dict[str, Any]] = None,
+    ):
+        record: Dict[str, Any] = {
             "entry": float(entry),
             "sl": float(sl),
             "tp": float(tp),
@@ -682,6 +1322,13 @@ class TradeManager:
             "atr_abs": float(atr_abs),
             "opened_at": time.time(),
         }
+        if meta:
+            sanitized = self._sanitize_meta(meta)
+            if sanitized:
+                record["ai"] = sanitized
+                if "fasttp_overrides" in sanitized:
+                    record["fasttp_overrides"] = sanitized["fasttp_overrides"]
+        self.state["live_trades"][symbol] = record
         self.save()
         if self.policy and BANDIT_ENABLED:
             try:
@@ -689,7 +1336,10 @@ class TradeManager:
             except Exception as e:
                 log.debug(f"policy note_entry fail: {e}")
 
-    def remove_closed_trades(self):
+    def remove_closed_trades(
+        self,
+        postmortem_cb: Optional[Callable[[Dict[str, Any]], Optional[Dict[str, Any]]]] = None,
+    ):
         live = self.state.get("live_trades", {})
         if not live:
             return
@@ -726,7 +1376,7 @@ class TradeManager:
             hist = self.state.setdefault("trade_history", [])
             closed_at = time.time()
             opened_at = float(rec.get("opened_at", closed_at) or closed_at)
-            hist.append({
+            record = {
                 "symbol": sym,
                 "side": side,
                 "qty": float(qty),
@@ -738,7 +1388,20 @@ class TradeManager:
                 "closed_at": float(closed_at),
                 "bucket": rec.get("bucket"),
                 "context": rec.get("ctx", {}),
-            })
+            }
+            ai_meta = rec.get("ai")
+            if ai_meta:
+                record["ai"] = ai_meta
+            postmortem = None
+            if postmortem_cb:
+                try:
+                    postmortem = postmortem_cb({**record})
+                except Exception as exc:
+                    log.debug(f"postmortem fail {sym}: {exc}")
+                    postmortem = None
+            if postmortem:
+                record["postmortem"] = postmortem
+            hist.append(record)
             if len(hist) > max(10, self.history_max):
                 del hist[: len(hist) - self.history_max]
             log.info(
@@ -840,7 +1503,10 @@ class FastTP:
         return (latest_px - ref_px) / max(ref_px, 1e-9)
 
     def maybe_apply(self, symbol: str, pos_amt: float, entry_px: float, sl_px: float, last_px: float, atr_abs: float) -> bool:
-        if not FAST_TP_ENABLED or abs(pos_amt) < 1e-12 or atr_abs <= 0.0:
+        rec = self.state.get("live_trades", {}).get(symbol, {})
+        overrides = rec.get("fasttp_overrides") or (rec.get("ai") or {}).get("fasttp_overrides")
+        enabled = FAST_TP_ENABLED if overrides is None else bool(overrides.get("enabled", True))
+        if not enabled or abs(pos_amt) < 1e-12 or atr_abs <= 0.0:
             return False
         cd_until = self.state.setdefault("fast_tp_cooldown", {}).get(symbol, 0.0)
         if time.time() < cd_until:
@@ -849,16 +1515,26 @@ class FastTP:
         side_open = "BUY" if pos_amt > 0 else "SELL"
         risk = max(abs(entry_px - sl_px), 1e-9)
         r_now = (last_px - entry_px) / risk if side_open == "BUY" else (entry_px - last_px) / risk
-        if r_now < FASTTP_MIN_R:
+        min_r = overrides.get("min_r") if overrides else None
+        if min_r is None:
+            min_r = FASTTP_MIN_R
+        if r_now < min_r:
             return False
 
         ret1 = self._ret(symbol, 60)
         ret3 = self._ret(symbol, 180)
-        reversal = (ret1 <= FAST_TP_RET1 or ret3 <= FAST_TP_RET3) if pos_amt > 0 else (ret1 >= -FAST_TP_RET1 or ret3 >= -FAST_TP_RET3)
+        ret1_cut = overrides.get("ret1") if overrides else FAST_TP_RET1
+        ret3_cut = overrides.get("ret3") if overrides else FAST_TP_RET3
+        reversal = (
+            (ret1 <= ret1_cut or ret3 <= ret3_cut)
+            if pos_amt > 0
+            else (ret1 >= -ret1_cut or ret3 >= -ret3_cut)
+        )
         if not reversal:
             return False
 
-        snap = FASTTP_SNAP_ATR * max(atr_abs, 1e-12)
+        snap_mult = overrides.get("snap_atr") if overrides else FASTTP_SNAP_ATR
+        snap = snap_mult * max(atr_abs, 1e-12)
         new_exit = (max(entry_px + 0.05 * risk, last_px - snap)
                     if pos_amt > 0 else
                     min(entry_px - 0.05 * risk, last_px + snap))
@@ -942,6 +1618,13 @@ class Bot:
         self.fasttp = FastTP(self.exchange, self.guard, self.state)
         self.decision_tracker = DecisionTracker(self.state, self.trade_mgr.save)
         self._strategy = Strategy(self.exchange, decision_tracker=self.decision_tracker)
+        self.state.setdefault("symbol_leverage", {})
+        self.budget_tracker = DailyBudgetTracker(self.state, AI_DAILY_BUDGET, AI_STRICT_BUDGET)
+        sentinel_active = SENTINEL_ENABLED or AI_MODE_ENABLED
+        self.sentinel = NewsTrendSentinel(self.exchange, self.state, enabled=sentinel_active)
+        self.ai_advisor: Optional[AITradeAdvisor] = None
+        if AI_MODE_ENABLED:
+            self.ai_advisor = AITradeAdvisor(OPENAI_API_KEY, AI_MODEL, self.budget_tracker, enabled=AI_MODE_ENABLED)
 
     @property
     def strategy(self) -> Strategy:
@@ -969,6 +1652,31 @@ class Bot:
         if sig == "NONE":
             return
 
+        sentinel_info = {
+            "label": "green",
+            "event_risk": 0.0,
+            "hype_score": 0.0,
+            "actions": {"size_factor": 1.0, "hard_block": False},
+            "events": [],
+        }
+        if self.sentinel:
+            try:
+                sentinel_info = self.sentinel.evaluate(symbol, ctx)
+            except Exception as exc:
+                log.debug(f"sentinel evaluate fail {symbol}: {exc}")
+        actions = sentinel_info.get("actions", {}) or {}
+        if actions.get("hard_block"):
+            log.info(
+                "Sentinel veto %s due to %s risk (event=%.2f, hype=%.2f)",
+                symbol,
+                sentinel_info.get("label", "red"),
+                float(sentinel_info.get("event_risk", 0.0) or 0.0),
+                float(sentinel_info.get("hype_score", 0.0) or 0.0),
+            )
+            if self.decision_tracker:
+                self.decision_tracker.record_rejection("sentinel_veto")
+            return
+
         # Policy: Gate + Size
         size_mult = SIZE_MULT_S
         bucket = "S"
@@ -994,6 +1702,13 @@ class Bot:
             ctx["alpha_prob"] = float(alpha_prob)
             ctx["alpha_conf"] = float(alpha_conf or 0.0)
 
+        sentinel_factor = float(actions.get("size_factor", 1.0) or 1.0)
+        size_mult *= sentinel_factor
+        ctx["sentinel_factor"] = sentinel_factor
+        ctx["sentinel_event_risk"] = float(sentinel_info.get("event_risk", 0.0) or 0.0)
+        ctx["sentinel_hype"] = float(sentinel_info.get("hype_score", 0.0) or 0.0)
+        ctx["sentinel_label"] = sentinel_info.get("label", "green")
+
         # Entry/SL/TP
         try:
             bt = self.exchange.get_book_ticker(symbol)
@@ -1006,6 +1721,50 @@ class Bot:
         is_buy = (sig == "BUY")
         sl = px - sl_dist if is_buy else px + sl_dist
         tp = px + tp_dist if is_buy else px - tp_dist
+
+        ai_meta: Optional[Dict[str, Any]] = None
+        if self.ai_advisor:
+            plan = self.ai_advisor.plan_trade(symbol, sig, px, sl_dist, tp_dist, ctx, sentinel_info, atr_abs)
+            plan_size = float(plan.get("size_multiplier", 1.0) or 0.0)
+            plan_sl_mult = float(plan.get("sl_multiplier", 1.0) or 1.0)
+            plan_tp_mult = float(plan.get("tp_multiplier", 1.0) or 1.0)
+            size_mult *= plan_size
+            sl_dist *= plan_sl_mult
+            tp_dist *= plan_tp_mult
+            sl = px - sl_dist if is_buy else px + sl_dist
+            tp = px + tp_dist if is_buy else px - tp_dist
+            leverage = plan.get("leverage")
+            ai_meta = {
+                "plan": plan,
+                "sentinel": sentinel_info,
+                "budget": self.ai_advisor.budget_snapshot(),
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            explanation = plan.get("explanation")
+            if isinstance(explanation, str) and explanation.strip():
+                ai_meta["explanation"] = explanation.strip()
+            risk_note = plan.get("risk_note")
+            if isinstance(risk_note, str) and risk_note.strip():
+                ai_meta["risk_note"] = risk_note.strip()
+            if isinstance(leverage, (int, float)) and leverage > 0:
+                leverage_state = self.state.setdefault("symbol_leverage", {})
+                current = float(leverage_state.get(symbol, 0.0) or 0.0)
+                if abs(leverage - current) >= 0.5:
+                    try:
+                        self.exchange.set_leverage(symbol, leverage)
+                        leverage_state[symbol] = float(leverage)
+                    except Exception as exc:
+                        log.debug(f"set leverage fail {symbol}: {exc}")
+                        ai_meta.setdefault("warnings", []).append("Leverage update failed")
+            fasttp_overrides = plan.get("fasttp_overrides")
+            if isinstance(fasttp_overrides, dict):
+                ai_meta["fasttp_overrides"] = fasttp_overrides
+
+        size_mult = clamp(size_mult, 0.0, 5.0)
+        if size_mult <= 0:
+            if self.decision_tracker:
+                self.decision_tracker.record_rejection("ai_risk_zero")
+            return
 
         tick = float(self.risk.symbol_filters.get(symbol, {}).get("tickSize", 0.0001) or 0.0001)
         sl = round_price(symbol, sl, tick)
@@ -1037,11 +1796,23 @@ class Bot:
                 log.warning(f"Bracket orders for {symbol} could not be fully created.")
             if self.decision_tracker:
                 self.decision_tracker.record_acceptance(bucket, persist=False)
-            self.trade_mgr.note_entry(symbol, px, sl, tp, sig, float(q_str), ctx, bucket, atr_abs)
+            self.trade_mgr.note_entry(symbol, px, sl, tp, sig, float(q_str), ctx, bucket, atr_abs, meta=ai_meta)
             alpha_msg = ""
             if alpha_prob is not None:
                 alpha_msg = f" alpha={alpha_prob:.3f}/{(alpha_conf or 0.0):.2f}"
-            log.info(f"ENTRY {symbol} {sig} qty={q_str} px≈{px:.6f} SL={sl:.6f} TP={tp:.6f} bucket={bucket}{alpha_msg}")
+            log.info(
+                "ENTRY %s %s qty=%s px≈%.6f SL=%.6f TP=%.6f bucket=%s%s",
+                symbol,
+                sig,
+                q_str,
+                px,
+                sl,
+                tp,
+                bucket,
+                alpha_msg,
+            )
+            if ai_meta and ai_meta.get("explanation"):
+                log.info("AI plan %s: %s", symbol, ai_meta.get("explanation"))
         except Exception as e:
             log.debug(f"entry fail {symbol}: {e}")
             if self.decision_tracker:
@@ -1056,8 +1827,17 @@ class Bot:
             f": {', '.join(syms[:12])}{'...' if len(syms)>12 else ''}",
         )
 
+        if self.sentinel:
+            try:
+                self.sentinel.refresh(syms)
+            except Exception as exc:
+                log.debug(f"sentinel refresh failed: {exc}")
+
         # geschlossene Trades aus State räumen + Policy belohnen
-        self.trade_mgr.remove_closed_trades()
+        postmortem_cb = None
+        if self.ai_advisor:
+            postmortem_cb = self.ai_advisor.generate_postmortem
+        self.trade_mgr.remove_closed_trades(postmortem_cb=postmortem_cb)
 
         # einmalig Positionen holen (pos_map), für FastTP & Skip bei offenen Positionen
         try:
