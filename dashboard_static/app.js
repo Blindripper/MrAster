@@ -11,10 +11,7 @@ const statusUptime = document.getElementById('status-uptime');
 const logStream = document.getElementById('log-stream');
 const compactLogStream = document.getElementById('log-brief');
 const autoScrollToggles = document.querySelectorAll('input[data-autoscroll]');
-const tradeBodyPosition = document.getElementById('trade-body-position');
-const tradeBodyPricing = document.getElementById('trade-body-pricing');
-const tradeBodyPerformance = document.getElementById('trade-body-performance');
-const tradeBodyTiming = document.getElementById('trade-body-timing');
+const tradeList = document.getElementById('trade-list');
 const tradeSummary = document.getElementById('trade-summary');
 const aiHint = document.getElementById('ai-hint');
 const pnlChartCanvas = document.getElementById('pnl-chart');
@@ -29,6 +26,7 @@ const inputApiKey = document.getElementById('input-api-key');
 const inputApiSecret = document.getElementById('input-api-secret');
 const decisionSummary = document.getElementById('decision-summary');
 const decisionReasons = document.getElementById('decision-reasons');
+const btnApplyPreset = document.getElementById('btn-apply-preset');
 
 let currentConfig = {};
 let reconnectTimer = null;
@@ -36,6 +34,7 @@ let pnlChart = null;
 let proMode = false;
 let selectedPreset = 'mid';
 let autoScrollEnabled = true;
+let quickConfigPristine = true;
 
 const PRESETS = {
   low: {
@@ -43,20 +42,119 @@ const PRESETS = {
     summary: 'Capital preservation first: slower signal intake, narrower exposure, and conservative scaling.',
     risk: 0.5,
     leverage: 1,
+    slAtr: 1.1,
+    tpAtr: 1.8,
+    fasttp: {
+      minR: 0.18,
+      ret1: -0.0007,
+      ret3: -0.0014,
+      snapAtr: 0.2,
+      cooldown: 60,
+    },
+    sizeMult: {
+      base: 0.9,
+      s: 0.9,
+      m: 1.15,
+      l: 1.35,
+    },
+    alpha: {
+      threshold: 0.6,
+      minConf: 0.28,
+      promoteDelta: 0.18,
+      rewardMargin: 0.06,
+    },
+    equityFraction: 0.22,
+    maxOpenGlobal: 1,
   },
   mid: {
     label: 'Mid',
     summary: 'Balanced cadence with moderate risk and leverage designed for steady account growth.',
     risk: 1.0,
     leverage: 2,
+    slAtr: 1.3,
+    tpAtr: 2.0,
+    fasttp: {
+      minR: 0.25,
+      ret1: -0.001,
+      ret3: -0.002,
+      snapAtr: 0.25,
+      cooldown: 45,
+    },
+    sizeMult: {
+      base: 1.0,
+      s: 1.0,
+      m: 1.4,
+      l: 1.9,
+    },
+    alpha: {
+      threshold: 0.55,
+      minConf: 0.22,
+      promoteDelta: 0.15,
+      rewardMargin: 0.05,
+    },
+    equityFraction: 0.28,
+    maxOpenGlobal: 2,
   },
   high: {
     label: 'High',
     summary: 'High-frequency execution with wider risk budgets and leverage up to the aggressive limit.',
     risk: 2.0,
     leverage: 4,
+    slAtr: 1.7,
+    tpAtr: 2.6,
+    fasttp: {
+      minR: 0.32,
+      ret1: -0.0013,
+      ret3: -0.0026,
+      snapAtr: 0.3,
+      cooldown: 30,
+    },
+    sizeMult: {
+      base: 1.2,
+      s: 1.2,
+      m: 1.6,
+      l: 2.2,
+    },
+    alpha: {
+      threshold: 0.52,
+      minConf: 0.18,
+      promoteDelta: 0.12,
+      rewardMargin: 0.04,
+    },
+    equityFraction: 0.34,
+    maxOpenGlobal: 3,
   },
 };
+
+const CONTEXT_LABELS = {
+  adx: 'ADX',
+  rsi: 'RSI',
+  atr_pct: 'ATR / Price',
+  spread_bps: 'Spread',
+  funding: 'Funding',
+  qv_score: 'Volume score',
+  slope_htf: 'HTF slope',
+  trend: 'Trend bias',
+  alpha_prob: 'Alpha prob.',
+  alpha_conf: 'Alpha conf.',
+  regime_adx: 'Regime ADX',
+  regime_slope: 'Regime slope',
+};
+
+const CONTEXT_KEYS = [
+  'adx',
+  'rsi',
+  'atr_pct',
+  'spread_bps',
+  'funding',
+  'qv_score',
+  'slope_htf',
+  'trend',
+  'alpha_prob',
+  'alpha_conf',
+  'regime_adx',
+  'regime_slope',
+];
 
 const DECISION_REASON_LABELS = {
   spread: 'Spread too wide',
@@ -129,6 +227,7 @@ async function loadConfig() {
   currentConfig = await res.json();
   renderConfig(currentConfig.env);
   renderCredentials(currentConfig.env);
+  syncQuickSetupFromEnv(currentConfig.env);
 }
 
 function gatherConfigPayload() {
@@ -166,6 +265,7 @@ async function saveConfig() {
     }
     currentConfig = await res.json();
     renderCredentials(currentConfig.env);
+    syncQuickSetupFromEnv(currentConfig.env);
     btnSaveConfig.textContent = 'Saved ✓';
     setTimeout(() => (btnSaveConfig.textContent = 'Save'), 1500);
   } catch (err) {
@@ -195,6 +295,7 @@ async function saveCredentials() {
     currentConfig = await res.json();
     renderCredentials(currentConfig.env);
     renderConfig(currentConfig.env);
+    syncQuickSetupFromEnv(currentConfig.env);
     btnSaveCredentials.textContent = 'Saved ✓';
     setTimeout(() => (btnSaveCredentials.textContent = 'Save'), 1500);
   } catch (err) {
@@ -230,6 +331,29 @@ function formatTimestamp(value) {
     minute: '2-digit',
     second: '2-digit',
   });
+}
+
+function formatTimeShort(value) {
+  if (!value) return '–';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '–';
+  return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
+function computeDurationSeconds(openedIso, closedIso) {
+  if (!openedIso || !closedIso) return NaN;
+  const opened = new Date(openedIso).getTime();
+  const closed = new Date(closedIso).getTime();
+  if (Number.isNaN(opened) || Number.isNaN(closed)) return NaN;
+  return Math.max(0, Math.round((closed - opened) / 1000));
+}
+
+function formatSideLabel(side) {
+  if (!side) return '–';
+  const normalized = side.toString().toUpperCase();
+  if (normalized === 'BUY') return 'LONG';
+  if (normalized === 'SELL') return 'SHORT';
+  return normalized;
 }
 
 function friendlyReason(reason) {
@@ -584,117 +708,184 @@ function connectLogs() {
   });
 }
 
-function createTradeCell(label, { text, node, className }) {
-  const cell = document.createElement('td');
-  cell.dataset.label = label;
-  if (className) {
-    className
-      .split(' ')
-      .filter(Boolean)
-      .forEach((cls) => cell.classList.add(cls));
+function createMetric(label, value, tone = 'neutral') {
+  const metric = document.createElement('div');
+  metric.className = `trade-metric${tone && tone !== 'neutral' ? ` ${tone}` : ''}`;
+  const labelEl = document.createElement('span');
+  labelEl.className = 'metric-label';
+  labelEl.textContent = label;
+  const valueEl = document.createElement('span');
+  valueEl.className = 'metric-value';
+  valueEl.textContent = value ?? '–';
+  metric.append(labelEl, valueEl);
+  return metric;
+}
+
+function formatContextValue(key, raw) {
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric)) {
+    switch (key) {
+      case 'atr_pct':
+        return `${(numeric * 100).toFixed(2)}%`;
+      case 'spread_bps':
+        return `${(numeric * 100).toFixed(2)}%`;
+      case 'funding':
+        return `${(numeric * 100).toFixed(3)}%`;
+      case 'qv_score':
+        return numeric.toFixed(2);
+      case 'slope_htf':
+      case 'regime_slope':
+        return numeric.toFixed(3);
+      case 'adx':
+      case 'regime_adx':
+      case 'rsi':
+        return numeric.toFixed(1);
+      case 'trend':
+        return numeric > 0 ? 'Bullish' : numeric < 0 ? 'Bearish' : 'Neutral';
+      case 'alpha_prob':
+      case 'alpha_conf':
+        return `${(numeric * 100).toFixed(1)}%`;
+      default:
+        return numeric.toFixed(3);
+    }
   }
-  if (node) {
-    cell.append(node);
-  } else {
-    cell.textContent = text ?? '–';
-  }
-  return cell;
+  if (raw === undefined || raw === null) return '–';
+  return raw.toString();
 }
 
 function renderTradeHistory(history) {
-  const groups = [
-    {
-      body: tradeBodyPosition,
-      columns: ['symbol', 'side', 'size'],
-    },
-    {
-      body: tradeBodyPricing,
-      columns: ['entry', 'exit'],
-    },
-    {
-      body: tradeBodyPerformance,
-      columns: ['pnl', 'r'],
-    },
-    {
-      body: tradeBodyTiming,
-      columns: ['opened', 'closed'],
-    },
-  ];
-
-  groups.forEach((group) => {
-    if (group.body) {
-      group.body.innerHTML = '';
-    }
-  });
+  if (!tradeList) return;
+  tradeList.innerHTML = '';
 
   if (!history || history.length === 0) {
-    const placeholder = document.createElement('tr');
-    const cell = document.createElement('td');
-    cell.colSpan = 3;
-    cell.textContent = 'No trades yet.';
-    cell.className = 'empty';
-    placeholder.append(cell);
-    if (tradeBodyPosition) {
-      tradeBodyPosition.append(placeholder);
-    }
-    groups
-      .filter((group) => group.body && group.body !== tradeBodyPosition)
-      .forEach((group) => {
-        const row = document.createElement('tr');
-        const filler = document.createElement('td');
-        filler.colSpan = group.columns.length;
-        filler.className = 'empty';
-        filler.textContent = 'Awaiting trade data…';
-        row.append(filler);
-        group.body.append(row);
-      });
+    const emptyState = document.createElement('div');
+    emptyState.className = 'trade-empty';
+    emptyState.textContent = 'No trades yet.';
+    tradeList.append(emptyState);
     return;
   }
 
-  for (const trade of history) {
+  history.forEach((trade, index) => {
     const pnl = Number(trade.pnl ?? 0);
-    const pnlClass = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : '';
-    const pnlValue = `${pnl > 0 ? '+' : ''}${formatNumber(pnl, 2)}`;
-    const pnlR = Number(trade.pnl_r ?? 0);
-    const pnlRClass = pnlR > 0 ? 'profit' : pnlR < 0 ? 'loss' : '';
-    const side = (trade.side || '').toString().toLowerCase();
-    const sideLabel = trade.side ? trade.side.toUpperCase() : '–';
-    const sideBadge = document.createElement('span');
-    sideBadge.className = `side-badge ${side}`.trim();
-    sideBadge.textContent = sideLabel;
+    const pnlTone = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'neutral';
+    const pnlDisplay = `${pnl > 0 ? '+' : ''}${formatNumber(pnl, 2)} USDT`;
+    const rValue = Number(trade.pnl_r ?? 0);
+    const rTone = rValue > 0 ? 'profit' : rValue < 0 ? 'loss' : 'neutral';
+    const rDisplay = `${rValue > 0 ? '+' : ''}${formatNumber(rValue, 2)} R`;
+    const durationSeconds = computeDurationSeconds(trade.opened_at_iso, trade.closed_at_iso);
 
-    const columnRenderers = {
-      symbol: () => createTradeCell('Symbol', { text: trade.symbol || '–', className: 'symbol' }),
-      side: () => createTradeCell('Side', { node: sideBadge }),
-      size: () => createTradeCell('Size', { text: formatNumber(trade.qty, 4), className: 'numeric' }),
-      entry: () => createTradeCell('Entry', { text: formatNumber(trade.entry, 4), className: 'numeric' }),
-      exit: () => createTradeCell('Exit', { text: formatNumber(trade.exit, 4), className: 'numeric' }),
-      pnl: () =>
-        createTradeCell('PNL (USDT)', {
-          text: pnlValue,
-          className: ['numeric', pnlClass].filter(Boolean).join(' '),
-        }),
-      r: () =>
-        createTradeCell('R', {
-          text: formatNumber(pnlR, 2),
-          className: ['numeric', pnlRClass].filter(Boolean).join(' '),
-        }),
-      opened: () => createTradeCell('Opened', { text: formatTimestamp(trade.opened_at_iso) }),
-      closed: () => createTradeCell('Closed', { text: formatTimestamp(trade.closed_at_iso) }),
-    };
+    const details = document.createElement('details');
+    details.className = 'trade-item';
+    if (index === 0) {
+      details.open = true;
+    }
 
-    groups.forEach((group) => {
-      if (!group.body) return;
-      const row = document.createElement('tr');
-      group.columns.forEach((key) => {
-        const renderer = columnRenderers[key];
-        if (renderer) {
-          row.append(renderer());
-        }
-      });
-      group.body.append(row);
-    });
-  }
+    const summary = document.createElement('summary');
+    summary.className = 'trade-item-summary';
+
+    const heading = document.createElement('div');
+    heading.className = 'trade-item-heading';
+    const symbol = document.createElement('span');
+    symbol.className = 'trade-symbol';
+    symbol.textContent = trade.symbol || '–';
+    heading.append(symbol);
+
+    if (trade.side) {
+      const sideBadge = document.createElement('span');
+      const normalized = trade.side.toString().toLowerCase();
+      const sideClass = normalized === 'buy' ? 'long' : normalized === 'sell' ? 'short' : '';
+      sideBadge.className = `side-badge ${sideClass}`.trim();
+      sideBadge.textContent = formatSideLabel(trade.side);
+      heading.append(sideBadge);
+    }
+
+    if (trade.bucket) {
+      const bucket = document.createElement('span');
+      bucket.className = 'bucket-badge';
+      bucket.textContent = `Bucket ${trade.bucket}`;
+      heading.append(bucket);
+    }
+
+    const priceBlock = document.createElement('div');
+    priceBlock.className = 'trade-price-block';
+    const entryLine = document.createElement('span');
+    entryLine.innerHTML = `<strong>Entry</strong> ${formatNumber(trade.entry, 4)}`;
+    const exitLine = document.createElement('span');
+    exitLine.innerHTML = `<strong>Exit</strong> ${formatNumber(trade.exit, 4)}`;
+    priceBlock.append(entryLine, exitLine);
+
+    const resultBlock = document.createElement('div');
+    resultBlock.className = 'trade-result-block';
+    const pnlSpan = document.createElement('span');
+    pnlSpan.className = `trade-pnl ${pnlTone === 'neutral' ? '' : pnlTone}`.trim();
+    pnlSpan.textContent = pnlDisplay;
+    const rSpan = document.createElement('span');
+    rSpan.className = `trade-r ${rTone === 'neutral' ? '' : rTone}`.trim();
+    rSpan.textContent = rDisplay;
+    resultBlock.append(pnlSpan, rSpan);
+
+    const timeBlock = document.createElement('div');
+    timeBlock.className = 'trade-time-block';
+    const timeRange = document.createElement('span');
+    timeRange.className = 'trade-time-range';
+    timeRange.textContent = `${formatTimeShort(trade.opened_at_iso)} → ${formatTimeShort(trade.closed_at_iso)}`;
+    timeBlock.append(timeRange);
+    if (Number.isFinite(durationSeconds)) {
+      const durationLabel = document.createElement('span');
+      durationLabel.className = 'trade-duration';
+      durationLabel.textContent = `Duration ${formatDuration(durationSeconds)}`;
+      timeBlock.append(durationLabel);
+    }
+
+    summary.append(heading, priceBlock, resultBlock, timeBlock);
+    details.append(summary);
+
+    const body = document.createElement('div');
+    body.className = 'trade-item-body';
+
+    const metricGrid = document.createElement('div');
+    metricGrid.className = 'trade-metric-grid';
+    const metrics = [
+      createMetric('PNL (USDT)', pnlDisplay, pnlTone),
+      createMetric('R multiple', rDisplay, rTone),
+      createMetric('Size', formatNumber(trade.qty, 4)),
+      createMetric('Bandit bucket', trade.bucket ? trade.bucket.toString().toUpperCase() : '–'),
+      createMetric('Opened', formatTimestamp(trade.opened_at_iso)),
+      createMetric('Closed', formatTimestamp(trade.closed_at_iso)),
+      createMetric('Entry', formatNumber(trade.entry, 4)),
+      createMetric('Exit', formatNumber(trade.exit, 4)),
+    ];
+    if (Number.isFinite(durationSeconds)) {
+      metrics.splice(6, 0, createMetric('Duration', formatDuration(durationSeconds)));
+    }
+    metrics.forEach((metric) => metricGrid.append(metric));
+    body.append(metricGrid);
+
+    const context = trade.context && typeof trade.context === 'object' ? trade.context : null;
+    if (context) {
+      const keys = CONTEXT_KEYS.filter((key) => context[key] !== undefined && context[key] !== null);
+      if (keys.length > 0) {
+        const contextWrapper = document.createElement('div');
+        contextWrapper.className = 'trade-context-wrapper';
+        const title = document.createElement('h4');
+        title.textContent = 'Signal context';
+        const dl = document.createElement('dl');
+        dl.className = 'trade-context';
+        keys.forEach((key) => {
+          const dt = document.createElement('dt');
+          dt.textContent = CONTEXT_LABELS[key] || key;
+          const dd = document.createElement('dd');
+          dd.textContent = formatContextValue(key, context[key]);
+          dl.append(dt, dd);
+        });
+        contextWrapper.append(title, dl);
+        body.append(contextWrapper);
+      }
+    }
+
+    details.append(body);
+    tradeList.append(details);
+  });
 }
 
 function renderTradeSummary(stats) {
@@ -977,6 +1168,22 @@ function setRangeBackground(slider) {
   slider.style.background = `linear-gradient(90deg, var(--accent-strong) ${percent}%, rgba(22, 24, 34, 0.85) ${percent}%)`;
 }
 
+function clampValue(value, min, max) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return min;
+  if (Number.isFinite(min) && numeric < min) return min;
+  if (Number.isFinite(max) && numeric > max) return max;
+  return numeric;
+}
+
+function toFixedString(value, digits) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return Number(0).toFixed(digits);
+  }
+  return numeric.toFixed(digits);
+}
+
 function formatRisk(value) {
   const numeric = Number(value);
   if (Number.isNaN(numeric)) return '–';
@@ -997,9 +1204,126 @@ function updateLeverageValue() {
   setRangeBackground(leverageSlider);
 }
 
-function applyPreset(key) {
+function resetQuickConfigButton() {
+  quickConfigPristine = true;
+  if (btnApplyPreset && !btnApplyPreset.disabled) {
+    btnApplyPreset.textContent = 'Apply preset';
+  }
+}
+
+function markQuickConfigDirty() {
+  quickConfigPristine = false;
+  if (btnApplyPreset && !btnApplyPreset.disabled) {
+    btnApplyPreset.textContent = 'Apply changes';
+  }
+}
+
+function buildQuickSetupPayload() {
+  const presetKey = PRESETS[selectedPreset] ? selectedPreset : 'mid';
+  const preset = PRESETS[presetKey];
+  const riskMin = riskSlider ? Number(riskSlider.min) : 0.25;
+  const riskMax = riskSlider ? Number(riskSlider.max) : 5;
+  const leverageMin = leverageSlider ? Number(leverageSlider.min) : 1;
+  const leverageMax = leverageSlider ? Number(leverageSlider.max) : 5;
+  const rawRisk = riskSlider ? Number(riskSlider.value) : preset.risk;
+  const rawLeverage = leverageSlider ? Number(leverageSlider.value) : preset.leverage;
+  const safeRisk = clampValue(rawRisk, riskMin, riskMax);
+  const safeLeverage = clampValue(rawLeverage, leverageMin, leverageMax);
+  const baselineRisk = Number(preset.risk) || 1;
+  const ratio = clampValue(baselineRisk > 0 ? safeRisk / baselineRisk : 1, 0.2, 4);
+
+  const payload = {
+    ASTER_PRESET_MODE: presetKey,
+    ASTER_RISK_PER_TRADE: toFixedString(safeRisk / 100, 4),
+    ASTER_LEVERAGE: toFixedString(safeLeverage, 0),
+    ASTER_SL_ATR_MULT: toFixedString(preset.slAtr, 2),
+    ASTER_TP_ATR_MULT: toFixedString(preset.tpAtr, 2),
+    FAST_TP_ENABLED: 'true',
+    FASTTP_MIN_R: toFixedString(preset.fasttp.minR, 2),
+    FAST_TP_RET1: toFixedString(preset.fasttp.ret1, 4),
+    FAST_TP_RET3: toFixedString(preset.fasttp.ret3, 4),
+    FASTTP_SNAP_ATR: toFixedString(preset.fasttp.snapAtr, 2),
+    FASTTP_COOLDOWN_S: toFixedString(preset.fasttp.cooldown, 0),
+    ASTER_SIZE_MULT: toFixedString(preset.sizeMult.base * ratio, 2),
+    ASTER_SIZE_MULT_S: toFixedString(preset.sizeMult.s * ratio, 2),
+    ASTER_SIZE_MULT_M: toFixedString(preset.sizeMult.m * ratio, 2),
+    ASTER_SIZE_MULT_L: toFixedString(preset.sizeMult.l * ratio, 2),
+    ASTER_EQUITY_FRACTION: toFixedString(preset.equityFraction, 2),
+    ASTER_MAX_OPEN_GLOBAL: toFixedString(preset.maxOpenGlobal, 0),
+    ASTER_BANDIT_ENABLED: 'true',
+    ASTER_ALPHA_ENABLED: 'true',
+    ASTER_ALPHA_THRESHOLD: toFixedString(preset.alpha.threshold, 2),
+    ASTER_ALPHA_MIN_CONF: toFixedString(preset.alpha.minConf, 2),
+    ASTER_ALPHA_PROMOTE_DELTA: toFixedString(preset.alpha.promoteDelta, 2),
+    ASTER_ALPHA_REWARD_MARGIN: toFixedString(preset.alpha.rewardMargin, 2),
+  };
+
+  return payload;
+}
+
+function syncQuickSetupFromEnv(env) {
+  if (!env) return;
+  const storedPreset = (env.ASTER_PRESET_MODE || '').toString().toLowerCase();
+  const presetKey = PRESETS[storedPreset] ? storedPreset : PRESETS[selectedPreset] ? selectedPreset : 'mid';
+  applyPreset(presetKey, { silent: true });
+
+  if (riskSlider && env.ASTER_RISK_PER_TRADE) {
+    const percent = clampValue(Number(env.ASTER_RISK_PER_TRADE) * 100, Number(riskSlider.min), Number(riskSlider.max));
+    riskSlider.value = percent.toFixed(2).replace(/\.00$/, '');
+  }
+  if (leverageSlider && env.ASTER_LEVERAGE) {
+    const lev = clampValue(Number(env.ASTER_LEVERAGE), Number(leverageSlider.min), Number(leverageSlider.max));
+    leverageSlider.value = lev.toString();
+  }
+  updateRiskValue();
+  updateLeverageValue();
+  resetQuickConfigButton();
+}
+
+async function saveQuickSetup() {
+  if (!btnApplyPreset) return;
+  const payload = buildQuickSetupPayload();
+  btnApplyPreset.disabled = true;
+  btnApplyPreset.textContent = 'Applying…';
+  try {
+    const res = await fetch('/api/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ env: payload }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || 'Saving quick setup failed');
+    }
+    currentConfig = await res.json();
+    renderConfig(currentConfig.env);
+    renderCredentials(currentConfig.env);
+    syncQuickSetupFromEnv(currentConfig.env);
+    btnApplyPreset.textContent = 'Applied ✓';
+    setTimeout(() => {
+      if (btnApplyPreset && !btnApplyPreset.disabled) {
+        resetQuickConfigButton();
+      }
+    }, 1800);
+  } catch (err) {
+    btnApplyPreset.textContent = 'Error';
+    alert(err.message);
+    setTimeout(() => {
+      if (btnApplyPreset && !btnApplyPreset.disabled) {
+        btnApplyPreset.textContent = 'Apply changes';
+      }
+    }, 2000);
+  } finally {
+    if (btnApplyPreset) {
+      btnApplyPreset.disabled = false;
+    }
+  }
+}
+
+function applyPreset(key, options = {}) {
   const preset = PRESETS[key];
   if (!preset) return;
+  const { silent = false } = options;
   selectedPreset = key;
   presetButtons.forEach((button) => {
     const active = button.dataset.preset === key;
@@ -1021,6 +1345,9 @@ function applyPreset(key) {
   }
   updateRiskValue();
   updateLeverageValue();
+  if (!silent) {
+    markQuickConfigDirty();
+  }
 }
 
 function setProMode(state) {
@@ -1076,6 +1403,7 @@ btnSaveCredentials?.addEventListener('click', saveCredentials);
 btnStart.addEventListener('click', startBot);
 btnStop.addEventListener('click', stopBot);
 btnProMode?.addEventListener('click', () => setProMode(!proMode));
+btnApplyPreset?.addEventListener('click', saveQuickSetup);
 
 presetButtons.forEach((button) => {
   button.addEventListener('click', () => applyPreset(button.dataset.preset));
@@ -1087,10 +1415,22 @@ presetButtons.forEach((button) => {
   });
 });
 
-riskSlider?.addEventListener('input', updateRiskValue);
-riskSlider?.addEventListener('change', updateRiskValue);
-leverageSlider?.addEventListener('input', updateLeverageValue);
-leverageSlider?.addEventListener('change', updateLeverageValue);
+riskSlider?.addEventListener('input', () => {
+  updateRiskValue();
+  markQuickConfigDirty();
+});
+riskSlider?.addEventListener('change', () => {
+  updateRiskValue();
+  markQuickConfigDirty();
+});
+leverageSlider?.addEventListener('input', () => {
+  updateLeverageValue();
+  markQuickConfigDirty();
+});
+leverageSlider?.addEventListener('change', () => {
+  updateLeverageValue();
+  markQuickConfigDirty();
+});
 
 if (autoScrollToggles.length > 0) {
   const initial = autoScrollToggles[0].checked;
@@ -1122,7 +1462,6 @@ async function init() {
   await loadConfig();
   await updateStatus();
   await loadTrades();
-  applyPreset(selectedPreset);
   setProMode(false);
   connectLogs();
   setInterval(updateStatus, 5000);
