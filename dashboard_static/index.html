@@ -82,6 +82,7 @@
           <h2>Quick strategy setup</h2>
           <p class="card-subtitle">Select a preset, then fine-tune risk and leverage for your comfort zone.</p>
         </div>
+        <button id="btn-apply-preset" class="primary subtle">Apply preset</button>
       </div>
       <div class="preset-buttons" role="group" aria-label="Risk presets">
         <button class="preset" data-preset="low">
@@ -173,74 +174,9 @@
         </div>
         <div class="trade-overview" id="trade-summary"></div>
       </div>
-      <div class="trade-table-stack">
-        <div class="trade-table-group">
-          <h3 class="trade-table-group-title">Position</h3>
-          <div class="trade-table-wrapper">
-            <table class="trade-table">
-              <thead>
-                <tr>
-                  <th>Symbol</th>
-                  <th>Side</th>
-                  <th>Size</th>
-                </tr>
-              </thead>
-              <tbody id="trade-body-position">
-                <tr><td colspan="3" class="empty">No trades yet.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="trade-table-group">
-          <h3 class="trade-table-group-title">Pricing</h3>
-          <div class="trade-table-wrapper">
-            <table class="trade-table">
-              <thead>
-                <tr>
-                  <th>Entry</th>
-                  <th>Exit</th>
-                </tr>
-              </thead>
-              <tbody id="trade-body-pricing">
-                <tr><td colspan="2" class="empty">No trades yet.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="trade-table-group">
-          <h3 class="trade-table-group-title">Performance</h3>
-          <div class="trade-table-wrapper">
-            <table class="trade-table">
-              <thead>
-                <tr>
-                  <th>PNL (USDT)</th>
-                  <th>R</th>
-                </tr>
-              </thead>
-              <tbody id="trade-body-performance">
-                <tr><td colspan="2" class="empty">No trades yet.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="trade-table-group">
-          <h3 class="trade-table-group-title">Timing</h3>
-          <div class="trade-table-wrapper">
-            <table class="trade-table">
-              <thead>
-                <tr>
-                  <th>Opened</th>
-                  <th>Closed</th>
-                </tr>
-              </thead>
-              <tbody id="trade-body-timing">
-                <tr><td colspan="2" class="empty">No trades yet.</td></tr>
-              </tbody>
-            </table>
-          </div>
+      <div class="trade-history">
+        <div id="trade-list" class="trade-list">
+          <div class="trade-empty">No trades yet.</div>
         </div>
       </div>
     </section>
