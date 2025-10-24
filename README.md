@@ -156,7 +156,9 @@ Every field in the **Environment configuration** card maps directly to an enviro
 | `ASTER_HISTORY_MAX` | `250` | Number of historic trades retained for analytics and AI hints. |
 
 The dashboard creates `dashboard_config.json` and writes changed environment values back to disk. Trades, open positions, and AI hints are driven by `aster_state.json`.
-Update to new version with (so you don't destroy your .venv): git fetch --all --prune && git reset --hard @{u} && git clean -fd -e .venv/
+
+Update to new version with (so you don't destroy your .venv): git fetch --all --prune && git reset --hard @{u} && git clean -fd -e .venv/.
+
 ## Safety & disclaimers
 
 * Live trading involves substantial financial risk—thoroughly test every change in paper mode first.
