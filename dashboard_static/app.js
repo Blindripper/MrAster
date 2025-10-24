@@ -49,6 +49,7 @@ let autoScrollEnabled = true;
 let quickConfigPristine = true;
 let mostTradedTimer = null;
 let lastAiBudget = null;
+let lastMostTradedAssets = [];
 
 function getCurrentMode() {
   if (aiMode) return 'ai';
@@ -663,10 +664,18 @@ async function loadMostTradedCoins() {
       throw new Error(payload.detail || 'Unable to load market data');
     }
     const data = await res.json();
-    renderMostTradedTicker(data.assets || []);
+    const assets = data.assets || [];
+    if (assets.length > 0) {
+      lastMostTradedAssets = assets;
+    }
+    renderMostTradedTicker(assets);
   } catch (err) {
     console.warn(err);
-    renderMostTradedTicker([], { error: 'Unable to load market data.' });
+    if (lastMostTradedAssets.length > 0) {
+      renderMostTradedTicker(lastMostTradedAssets);
+    } else {
+      renderMostTradedTicker([], { error: 'Unable to load market data.' });
+    }
   }
 }
 

@@ -24,10 +24,6 @@
       <p>Orchestrate your trading stack, follow live telemetry, and tune parameters with AI-assisted insights.</p>
     </div>
     <div class="hero-actions">
-      <div class="hero-primary-actions">
-        <button id="btn-start" class="primary">Start</button>
-        <button id="btn-stop" class="ghost">Stop</button>
-      </div>
       <div class="hero-credentials" role="group" aria-label="Exchange credentials">
         <div class="hero-credentials-title">Exchange credentials</div>
         <label class="hero-credential">
@@ -38,7 +34,11 @@
           <span>ASTER_API_SECRET</span>
           <input id="input-api-secret" type="password" autocomplete="off" placeholder="Enter API secret" />
         </label>
-        <button id="btn-save-credentials" class="primary subtle">Save</button>
+        <div class="hero-credentials-actions">
+          <button id="btn-start" class="primary">Start</button>
+          <button id="btn-stop" class="ghost">Stop</button>
+          <button id="btn-save-credentials" class="primary subtle">Save</button>
+        </div>
       </div>
       <div class="hero-mode-toggle" role="group" aria-label="Select mode">
         <button class="mode-button active" data-mode-select="standard" aria-pressed="true">Standard</button>
