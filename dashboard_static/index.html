@@ -43,6 +43,27 @@
       <div class="ai-hint" id="ai-hint">Loading AI analysis…</div>
     </section>
 
+    <section class="card credentials" data-normal-only>
+      <div class="card-header">
+        <div>
+          <h2>Exchange credentials</h2>
+          <p class="card-subtitle">Provide your Aster API key and secret to enable live execution.</p>
+        </div>
+        <button id="btn-save-credentials" class="primary subtle">Save</button>
+      </div>
+      <div class="credentials-grid">
+        <label>
+          <span>ASTER_API_KEY</span>
+          <input id="input-api-key" type="text" autocomplete="off" placeholder="Enter API key" />
+        </label>
+        <label>
+          <span>ASTER_API_SECRET</span>
+          <input id="input-api-secret" type="password" autocomplete="off" placeholder="Enter API secret" />
+        </label>
+      </div>
+      <p class="credentials-hint">Need advanced environment variables? Switch to Pro-Mode for the full configuration editor.</p>
+    </section>
+
     <section class="card quick-setup" data-normal-only>
       <div class="card-header">
         <div>
