@@ -24,8 +24,15 @@
       <p>Orchestrate your trading stack, follow live telemetry, and tune parameters with AI-assisted insights.</p>
     </div>
     <div class="hero-actions">
-      <button id="btn-start" class="primary">Start</button>
-      <button id="btn-stop" class="ghost">Stop</button>
+      <div class="hero-primary-actions">
+        <button id="btn-start" class="primary">Start</button>
+        <button id="btn-stop" class="ghost">Stop</button>
+      </div>
+      <div class="hero-mode-toggle" role="group" aria-label="Select mode">
+        <button class="mode-button active" data-mode-select="standard" aria-pressed="true">Standard</button>
+        <button class="mode-button" data-mode-select="pro" aria-pressed="false">Pro</button>
+        <button class="mode-button" data-mode-select="ai" aria-pressed="false">AI</button>
+      </div>
     </div>
   </header>
 
@@ -71,27 +78,6 @@
         <ul class="decision-reasons" id="decision-reasons">
           <li class="empty">No trade decisions yet.</li>
         </ul>
-      </div>
-    </section>
-
-    <section class="card mode-switcher" aria-labelledby="mode-switcher-heading">
-      <div class="mode-switcher-header">
-        <h2 id="mode-switcher-heading">Select Mode</h2>
-        <p class="card-subtitle">Choose the workspace that matches your workflow.</p>
-      </div>
-      <div class="mode-switcher-buttons" role="group" aria-label="Select mode">
-        <button class="mode-button active" data-mode-select="standard" aria-pressed="true">
-          <span class="mode-button-title">Standard</span>
-          <span class="mode-button-subtitle">Quick launch with presets &amp; credentials.</span>
-        </button>
-        <button class="mode-button" data-mode-select="pro" aria-pressed="false">
-          <span class="mode-button-title">Pro</span>
-          <span class="mode-button-subtitle">Deep configuration for power users.</span>
-        </button>
-        <button class="mode-button" data-mode-select="ai" aria-pressed="false">
-          <span class="mode-button-title">AI</span>
-          <span class="mode-button-subtitle">Autonomous trading with AI orchestration.</span>
-        </button>
       </div>
     </section>
 
