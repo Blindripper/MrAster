@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import os
 import signal
@@ -218,9 +217,16 @@ class BotRunner:
             self.started_at = None
             await self.loghub.push("Bot process stopped", level="system")
         if self._reader_task:
-            self._reader_task.cancel()
-            with contextlib.suppress(Exception):
-                await self._reader_task
+            task = self._reader_task
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:  # pragma: no cover - best effort cleanup
+                await self.loghub.push(
+                    f"Log reader stopped with error: {exc}", level="error"
+                )
             self._reader_task = None
 
     async def _pump_stdout(self) -> None:
