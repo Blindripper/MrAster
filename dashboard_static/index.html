@@ -7,6 +7,17 @@
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
+  <div class="market-ticker" id="market-ticker">
+    <div class="ticker-label" aria-hidden="true">
+      <span class="ticker-dot"></span>
+      <span>Most traded coins</span>
+    </div>
+    <div class="ticker-viewport" aria-live="polite">
+      <div class="ticker-track" id="ticker-track" role="list"></div>
+      <div class="ticker-empty" id="ticker-empty">Gathering market leaders…</div>
+    </div>
+  </div>
+
   <header class="hero">
     <div>
       <h1>MrAster - your Aster Bot Control Center</h1>
