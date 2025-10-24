@@ -26,8 +26,8 @@
     <div class="hero-actions">
       <button id="btn-start" class="primary">Start</button>
       <button id="btn-stop" class="ghost">Stop</button>
-      <button id="btn-ai-mode" class="ghost ai-toggle">AI-Mode</button>
       <button id="btn-pro-mode" class="ghost pro-toggle">Pro-Mode</button>
+      <button id="btn-ai-mode" class="ghost ai-toggle highlight">AI-Mode</button>
     </div>
   </header>
 
@@ -116,25 +116,35 @@
           </div>
           <button id="btn-save-ai" class="primary subtle">Save</button>
         </div>
-        <div class="ai-config-grid">
-          <label>
-            <span>OpenAI API key</span>
-            <input id="input-openai-key" type="password" autocomplete="off" placeholder="sk-..." />
-          </label>
-          <label>
-            <span>Daily budget (USD)</span>
-            <input id="input-ai-budget" type="number" min="0" step="1" placeholder="1000" />
-          </label>
-          <label>
-            <span>Model</span>
-            <input id="input-ai-model" type="text" placeholder="gpt-5" />
-          </label>
+        <div class="ai-config-panels">
+          <div class="ai-config-panel">
+            <h3>Access</h3>
+            <label>
+              <span>OpenAI API key</span>
+              <input id="input-openai-key" type="password" autocomplete="off" placeholder="sk-..." />
+            </label>
+            <p class="ai-config-panel-hint">Stored securely on your machine. Required for autonomous execution.</p>
+          </div>
+          <div class="ai-config-panel">
+            <h3>Budget &amp; model</h3>
+            <div class="ai-config-grid">
+              <label>
+                <span>Daily budget (USD)</span>
+                <input id="input-ai-budget" type="number" min="0" step="1" placeholder="1000" />
+              </label>
+              <label>
+                <span>Model</span>
+                <input id="input-ai-model" type="text" placeholder="gpt-5" />
+              </label>
+            </div>
+            <p class="ai-config-panel-hint">Define the spend ceiling and foundation model the AI core should rely on.</p>
+          </div>
         </div>
         <p class="ai-config-hint">When AI-Mode is active, the bot auto-tunes size, leverage, stops, and FastTP using the configured model while respecting the daily spend cap.</p>
       </section>
     </section>
 
-    <section class="card quick-setup" data-normal-only>
+    <section class="card quick-setup" data-normal-only data-hide-when-ai>
       <div class="card-header">
         <div>
           <h2>Quick strategy setup</h2>
@@ -192,7 +202,7 @@
       <div id="env-settings" class="env-grid"></div>
     </section>
 
-    <section class="card logs compact" data-normal-only>
+    <section class="card logs compact" data-normal-only data-hide-when-ai>
       <div class="card-header">
         <div>
           <h2>Activity feed</h2>
