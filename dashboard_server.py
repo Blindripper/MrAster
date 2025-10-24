@@ -273,7 +273,17 @@ def _resolve_bot_command(env_cfg: Dict[str, str]) -> tuple[Any, bool]:
     # normalise the following script argument when it points inside the repo.
     first_token_lower = tokens[0].lower()
     if "python" in first_token_lower:
-        resolved = [tokens[0]]
+        interpreter = tokens[0]
+        interpreter_path = Path(interpreter)
+        if interpreter_path.is_absolute():
+            if interpreter_path.exists():
+                interpreter = str(interpreter_path.resolve())
+        else:
+            candidate = (ROOT_DIR / interpreter).resolve()
+            if candidate.exists():
+                interpreter = str(candidate)
+
+        resolved = [interpreter]
         for idx, token in enumerate(tokens[1:], start=1):
             if idx == 1 and token.endswith(".py"):
                 try:
