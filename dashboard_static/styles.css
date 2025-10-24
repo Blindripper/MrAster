@@ -312,6 +312,64 @@ body.pro-mode [data-normal-only] {
   flex-wrap: wrap;
 }
 
+.hero-credentials {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 232, 168, 0.14);
+  background: rgba(17, 18, 26, 0.7);
+  backdrop-filter: blur(12px);
+}
+
+.hero-credential {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 200px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hero-credentials-title {
+  width: 100%;
+  font-size: 0.78rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 0.35rem;
+}
+
+.hero-credential input {
+  padding: 0.65rem 0.9rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 232, 168, 0.2);
+  background: rgba(26, 27, 40, 0.7);
+  color: var(--text);
+  font: inherit;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.hero-credential input:focus {
+  outline: none;
+  border-color: rgba(240, 169, 75, 0.55);
+  box-shadow: 0 0 0 3px rgba(240, 169, 75, 0.18);
+}
+
+.hero-credentials .primary {
+  white-space: nowrap;
+  align-self: stretch;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-inline: 1.4rem;
+}
+
 .hero-mode-toggle {
   display: flex;
   align-items: center;
@@ -425,18 +483,13 @@ button:focus-visible {
   align-self: stretch;
 }
 
-.credentials {
-  grid-column: 1 / span 4;
-  align-self: stretch;
-}
-
 .logs.compact {
   grid-column: 5 / span 4;
   align-self: stretch;
 }
 
 .logs:not(.compact) {
-  grid-column: 5 / span 8;
+  grid-column: 5 / span 4;
   align-self: stretch;
 }
 
@@ -474,10 +527,6 @@ body.ai-mode .pnl-card {
     grid-column: 1 / span 4;
   }
 
-  .credentials {
-    grid-column: 5 / span 4;
-  }
-
   .logs.compact,
   .ai-mode-window {
     grid-column: 1 / span 8;
@@ -485,6 +534,20 @@ body.ai-mode .pnl-card {
 
   .logs:not(.compact) {
     grid-column: 1 / span 8;
+  }
+
+  .hero-credentials {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .hero-credential {
+    min-width: 100%;
+  }
+
+  .hero-credentials .primary {
+    width: 100%;
   }
 }
 
@@ -499,7 +562,6 @@ body.ai-mode .pnl-card {
   .status,
   .pnl-card,
   .mode-panel,
-  .credentials,
   .logs,
   .ai-mode-window,
   .trades {
