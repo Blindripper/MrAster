@@ -931,7 +931,7 @@ class Bot:
             except TypeError:
                 ok = self.guard.ensure_after_entry(symbol, sig, sl, tp)
             if not ok:
-                log.warning(f"Bracket für {symbol} nicht vollständig gesetzt.")
+                log.warning(f"Bracket orders for {symbol} could not be fully created.")
             self.trade_mgr.note_entry(symbol, px, sl, tp, sig, float(q_str), ctx, bucket, atr_abs)
             alpha_msg = ""
             if alpha_prob is not None:
@@ -943,7 +943,11 @@ class Bot:
 
     def run_once(self):
         syms = self.universe.refresh()
-        log.info("Scan %d Symbole%s", len(syms), f": {', '.join(syms[:12])}{'...' if len(syms)>12 else ''}")
+        log.info(
+            "Scanning %d symbols%s",
+            len(syms),
+            f": {', '.join(syms[:12])}{'...' if len(syms)>12 else ''}",
+        )
 
         # geschlossene Trades aus State räumen + Policy belohnen
         self.trade_mgr.remove_closed_trades()
@@ -984,12 +988,12 @@ class Bot:
             time.sleep(0.05)
 
     def run(self, loop: bool = True):
-        log.info("Start Bot – Mode=%s, Loop=%s", "PAPER" if PAPER else "LIVE", loop)
+        log.info("Starting bot (mode=%s, loop=%s)", "PAPER" if PAPER else "LIVE", loop)
         running = True
         def _stop(*_):
             nonlocal running
             running = False
-            log.info("Signal empfangen – beende nach Zyklus.")
+            log.info("Shutdown signal received — finishing the current cycle.")
         signal.signal(signal.SIGINT, _stop)
         signal.signal(signal.SIGTERM, _stop)
 
@@ -1002,11 +1006,11 @@ class Bot:
             t0 = time.time()
             self.run_once()
             dt = time.time() - t0
-            log.info("Zyklus beendet (%.2fs).", dt)
+            log.info("Cycle finished in %.2fs.", dt)
             if not running:
                 break
             time.sleep(max(1, LOOP_SLEEP))
-        log.info("Bot gestoppt.")
+        log.info("Bot stopped. Safe to exit.")
 
 # ========= main =========
 if __name__ == "__main__":

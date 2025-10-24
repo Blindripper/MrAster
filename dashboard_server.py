@@ -185,7 +185,7 @@ class BotRunner:
     async def start(self) -> None:
         async with self._lock:
             if self.process and self.process.returncode is None:
-                raise RuntimeError("Bot läuft bereits")
+                raise RuntimeError("Bot is already running")
             env = os.environ.copy()
             env.update(CONFIG.get("env", {}))
             env.setdefault("ASTER_LOGLEVEL", "DEBUG")
@@ -197,7 +197,7 @@ class BotRunner:
                 env=env,
             )
             self.started_at = time.time()
-            await self.loghub.push("Bot-Prozess gestartet", level="system")
+            await self.loghub.push("Bot process started", level="system")
             self._reader_task = asyncio.create_task(self._pump_stdout())
 
     async def stop(self) -> None:
@@ -216,7 +216,7 @@ class BotRunner:
                     proc.kill()
             self.process = None
             self.started_at = None
-            await self.loghub.push("Bot-Prozess gestoppt", level="system")
+            await self.loghub.push("Bot process stopped", level="system")
         if self._reader_task:
             self._reader_task.cancel()
             with contextlib.suppress(Exception):
@@ -237,7 +237,7 @@ class BotRunner:
         finally:
             if proc.returncode is None:
                 await proc.wait()
-            await self.loghub.push("Bot-Prozess beendet", level="system")
+            await self.loghub.push("Bot process finished", level="system")
             self.process = None
             self.started_at = None
 
@@ -259,7 +259,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 async def index() -> FileResponse:
     index_file = STATIC_DIR / "index.html"
     if not index_file.exists():
-        raise HTTPException(status_code=404, detail="Dashboard wurde nicht gebaut")
+        raise HTTPException(status_code=404, detail="Dashboard build not found")
     return FileResponse(index_file)
 
 
@@ -273,10 +273,10 @@ async def update_config(update: ConfigUpdate) -> Dict[str, Any]:
     env_cfg = CONFIG.setdefault("env", {})
     for key, value in update.env.items():
         if key not in ALLOWED_ENV_KEYS:
-            raise HTTPException(status_code=400, detail=f"Unbekannter Key: {key}")
+            raise HTTPException(status_code=400, detail=f"Unknown key: {key}")
         env_cfg[key] = str(value)
     _save_config(CONFIG)
-    await loghub.push("Konfiguration aktualisiert", level="system")
+    await loghub.push("Configuration updated", level="system")
     return CONFIG
 
 
@@ -327,7 +327,7 @@ def _compute_stats(history: List[Dict[str, Any]]) -> TradeStats:
             win_rate=0.0,
             best_trade=None,
             worst_trade=None,
-            ai_hint="Noch keine Trades – starte den Bot, um Daten zu sammeln.",
+            ai_hint="No trades yet — start the bot to collect more data.",
         )
     total_pnl = sum(float(h.get("pnl", 0.0) or 0.0) for h in history)
     total_r = sum(float(h.get("pnl_r", 0.0) or 0.0) for h in history)
@@ -340,13 +340,13 @@ def _compute_stats(history: List[Dict[str, Any]]) -> TradeStats:
 
     hint: str
     if count < 10:
-        hint = "Noch wenig Daten – beobachte weitere Trades, bevor du Parameter änderst."
+        hint = "Limited data so far — observe a few more trades before tweaking parameters."
     elif win_rate > 0.6 and total_r > 0:
-        hint = "Starke Performance! Du kannst erwägen, den Size-Multiplikator leicht zu erhöhen."
+        hint = "Strong performance! Consider nudging the size multiplier slightly higher."
     elif win_rate < 0.4 and total_r < 0:
-        hint = "Vorsicht: Performance schwach. Prüfe Spread/RSI-Filter oder erhöhe PAPER-Modus fürs Feintuning."
+        hint = "Caution: performance is lagging. Review spread/RSI filters or switch to PAPER mode for fine-tuning."
     else:
-        hint = "Solide Entwicklung. Beobachte PnL und passe RSI/ATR-Multiplikatoren fein an."
+        hint = "Steady progress. Keep watching PnL and refine the RSI/ATR multipliers gradually."
 
     return TradeStats(
         count=count,

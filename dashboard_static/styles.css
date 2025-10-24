@@ -254,30 +254,112 @@ button:focus-visible {
   background: rgba(2, 6, 23, 0.82);
   border-radius: 1.1rem;
   border: 1px solid rgba(15, 23, 42, 0.55);
-  height: clamp(300px, 40vh, 420px);
+  height: clamp(360px, 55vh, 560px);
   overflow: auto;
-  padding: 1rem;
+  padding: 1.2rem;
   font-family: "JetBrains Mono", "Fira Code", monospace;
-  font-size: 0.85rem;
-  line-height: 1.6;
+  font-size: 0.88rem;
+  line-height: 1.65;
   color: #cbd5f5;
   box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.06);
 }
 
 .log-line {
-  margin: 0;
-  padding: 0.2rem 0.4rem;
-  border-radius: 0.5rem;
+  margin: 0 0 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 1rem;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  display: grid;
+  gap: 0.35rem;
+  transition: transform 0.2s ease, background 0.3s ease;
+}
+
+.log-line:last-child {
+  margin-bottom: 0;
+}
+
+.log-line .log-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.log-line .log-time {
+  font-variant-numeric: tabular-nums;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.55);
+  color: var(--text);
+}
+
+.log-line .log-level {
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+
+.log-line .log-message {
   white-space: pre-wrap;
-  background: transparent;
+  word-break: break-word;
+  color: #e2e8f0;
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.log-line.info {
+  background: rgba(148, 163, 184, 0.08);
+  border-color: rgba(148, 163, 184, 0.2);
+}
+
+.log-line.info .log-level {
+  background: rgba(148, 163, 184, 0.22);
+  color: #e2e8f0;
 }
 
 .log-line.system {
-  color: var(--accent);
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.log-line.system .log-level {
+  background: rgba(56, 189, 248, 0.22);
+  color: #0ea5e9;
+}
+
+.log-line.debug {
+  background: rgba(148, 163, 184, 0.06);
+  border-color: rgba(148, 163, 184, 0.16);
+}
+
+.log-line.debug .log-level {
+  background: rgba(148, 163, 184, 0.18);
+  color: #cbd5f5;
 }
 
 .log-line.error {
-  color: var(--danger);
+  background: rgba(248, 113, 113, 0.15);
+  border-color: rgba(248, 113, 113, 0.32);
+}
+
+.log-line.error .log-level {
+  background: rgba(248, 113, 113, 0.22);
+  color: #fecaca;
+}
+
+.log-line.warning {
+  background: rgba(251, 191, 36, 0.18);
+  border-color: rgba(251, 191, 36, 0.32);
+}
+
+.log-line.warning .log-level {
+  background: rgba(251, 191, 36, 0.28);
+  color: #fde68a;
 }
 
 .toggle {

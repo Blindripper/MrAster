@@ -109,10 +109,37 @@ async function updateStatus() {
 }
 
 function appendLogLine({ line, level, ts }) {
+  const normalizedLevel = (level || 'info').toLowerCase();
   const el = document.createElement('div');
-  el.className = `log-line ${level || ''}`.trim();
-  const time = ts ? new Date(ts * 1000).toLocaleTimeString() : '';
-  el.textContent = time ? `[${time}] ${line}` : line;
+  el.className = `log-line ${normalizedLevel}`.trim();
+
+  const meta = document.createElement('div');
+  meta.className = 'log-meta';
+
+  if (ts) {
+    const time = document.createElement('span');
+    time.className = 'log-time';
+    time.textContent = new Date(ts * 1000).toLocaleTimeString();
+    meta.append(time);
+  }
+
+  const label = document.createElement('span');
+  label.className = 'log-level';
+  const labelMap = {
+    error: 'Error',
+    warning: 'Warning',
+    system: 'System',
+    debug: 'Debug',
+    info: 'Info',
+  };
+  label.textContent = labelMap[normalizedLevel] || normalizedLevel.toUpperCase();
+  meta.append(label);
+
+  const message = document.createElement('div');
+  message.className = 'log-message';
+  message.textContent = line;
+
+  el.append(meta, message);
   logStream.append(el);
   while (logStream.children.length > 500) {
     logStream.removeChild(logStream.firstChild);
