@@ -167,7 +167,6 @@ class BracketGuard:
             "type": "STOP_MARKET" if kind.upper() == "STOP" else "TAKE_PROFIT_MARKET",
             "stopPrice": self._format_decimal(price),
             "workingType": self.working_type,
-            "reduceOnly": True,
             "closePosition": True,
         }
         if position_side:
@@ -225,7 +224,6 @@ class BracketGuard:
             "type": "STOP_MARKET",
             "workingType": self.working_type,
             "closePosition": "true",
-            "reduceOnly": "true",
             "stopPrice": self._format_decimal(px),
         }
         params["stopLossPrice"] = self._format_decimal(px)
@@ -257,7 +255,6 @@ class BracketGuard:
             "type": "TAKE_PROFIT_MARKET",
             "workingType": self.working_type,
             "closePosition": "true",
-            "reduceOnly": "true",
             "stopPrice": self._format_decimal(px),
         }
         params["takeProfitPrice"] = self._format_decimal(px)

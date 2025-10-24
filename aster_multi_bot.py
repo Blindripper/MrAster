@@ -235,7 +235,6 @@ def build_bracket_payload(kind: str, side: str, price: float) -> str:
         "type": "STOP_MARKET" if kind.upper() == "SL" else "TAKE_PROFIT_MARKET",
         "stopPrice": _format_decimal(price),
         "workingType": WORKING_TYPE,
-        "reduceOnly": True,
         "closePosition": True,
         "side": opp_side,
     }
