@@ -102,20 +102,8 @@
       <p class="credentials-hint">Need advanced environment variables? Switch to Pro-Mode for the full configuration editor.</p>
     </section>
 
-    <section class="ai-mode-view" data-ai-only>
-      <div class="card ai-mode-window">
-        <div class="ai-mode-window-header">
-          <span class="ai-mode-label">AI ACTIVITY</span>
-          <div class="ai-mode-window-title">
-            <h2>Autonomous strategy cockpit</h2>
-            <p class="ai-mode-window-subtitle">Verfolge in Echtzeit, welche Marktbeobachtungen, Hypothesen und Entscheidungen die AI aktuell vorbereitet. Der Stream wird laufend aktualisiert.</p>
-          </div>
-        </div>
-        <div class="ai-mode-window-body">
-          <div class="ai-hint" id="ai-hint">Loading AI analysis…</div>
-        </div>
-      </div>
-      <section class="card ai-config">
+    <section class="ai-mode-view">
+      <section class="card ai-config" data-ai-only>
         <div class="card-header">
           <div>
             <h2>AI-Mode controls</h2>
@@ -133,22 +121,57 @@
             <p class="ai-config-panel-hint">Stored securely on your machine. Required for autonomous execution.</p>
           </div>
           <div class="ai-config-panel">
-            <h3>Budget &amp; model</h3>
-            <div class="ai-config-grid">
-              <label>
-                <span>Daily budget (USD)</span>
-                <input id="input-ai-budget" type="number" min="0" step="1" placeholder="1000" />
-              </label>
-              <label>
-                <span>Model</span>
-                <input id="input-ai-model" type="text" placeholder="gpt-5" />
-              </label>
-            </div>
-            <p class="ai-config-panel-hint">Define the spend ceiling and foundation model the AI core should rely on.</p>
+            <h3>Daily budget</h3>
+            <label>
+              <span>Daily budget (USD)</span>
+              <input id="input-ai-budget" type="number" min="0" step="1" placeholder="1000" />
+            </label>
+            <p class="ai-config-panel-hint">Set a daily AI spend limit so autonomous actions stay within budget.</p>
+          </div>
+          <div class="ai-config-panel">
+            <h3>Model</h3>
+            <label>
+              <span>Model</span>
+              <select id="input-ai-model">
+                <option value="gpt-4o" selected>GPT-4o</option>
+                <option value="gpt-4o-mini">GPT-4o mini</option>
+                <option value="gpt-4.1">GPT-4.1</option>
+                <option value="gpt-4.1-mini">GPT-4.1 mini</option>
+                <option value="o4-mini">o4-mini</option>
+                <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+              </select>
+            </label>
+            <p class="ai-config-panel-hint">Choose the OpenAI foundation model that powers live analysis.</p>
           </div>
         </div>
         <p class="ai-config-hint">When AI-Mode is active, the bot auto-tunes size, leverage, stops, and FastTP using the configured model while respecting the daily spend cap.</p>
       </section>
+      <section class="card pnl-card">
+        <div class="card-header">
+          <div>
+            <h2>Performance overview</h2>
+            <p class="card-subtitle">Cumulative realized PNL across your recorded trades.</p>
+          </div>
+        </div>
+        <div class="pnl-chart-wrapper">
+          <canvas id="pnl-chart" aria-label="Cumulative PNL chart" style="display: none;"></canvas>
+          <div id="pnl-empty" class="empty-state">No PNL data yet. Execute trades to populate the performance graph.</div>
+        </div>
+      </section>
+    </section>
+
+    <section class="card ai-mode-window" data-ai-only>
+      <div class="ai-mode-window-header">
+        <span class="ai-mode-label">AI ACTIVITY</span>
+        <div class="ai-mode-window-title">
+          <h2>Autonomous strategy cockpit</h2>
+          <p class="ai-mode-window-subtitle">Verfolge in Echtzeit, welche Marktbeobachtungen, Hypothesen und Entscheidungen die AI aktuell vorbereitet. Der Stream wird laufend aktualisiert.</p>
+        </div>
+      </div>
+      <div class="ai-mode-window-body">
+        <div class="ai-hint" id="ai-hint">Loading AI analysis…</div>
+      </div>
     </section>
 
     <section class="card quick-setup" data-normal-only data-hide-when-ai>
@@ -228,18 +251,6 @@
       <div id="log-stream" class="log-stream"></div>
     </section>
 
-    <section class="card pnl-card">
-      <div class="card-header">
-        <div>
-          <h2>Performance overview</h2>
-          <p class="card-subtitle">Cumulative realized PNL across your recorded trades.</p>
-        </div>
-      </div>
-      <div class="pnl-chart-wrapper">
-        <canvas id="pnl-chart" aria-label="Cumulative PNL chart" style="display: none;"></canvas>
-        <div id="pnl-empty" class="empty-state">No PNL data yet. Execute trades to populate the performance graph.</div>
-      </div>
-    </section>
 
     <section class="card trades">
       <div class="card-header trade-header">
