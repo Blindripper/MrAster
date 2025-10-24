@@ -413,8 +413,8 @@ body.ai-mode .status {
   grid-row: 1;
   align-self: stretch;
   justify-self: stretch;
-  max-width: none;
-  padding: 1.6rem;
+  max-width: 360px;
+  padding: 1.35rem 1.45rem;
   gap: 1.1rem;
 }
 
@@ -844,8 +844,6 @@ body.ai-mode .ai-mode-view {
 }
 
 .ai-mode-window {
-  grid-column: 1;
-  grid-row: 1;
   gap: 1.6rem;
   min-height: 360px;
   height: 100%;
@@ -857,6 +855,7 @@ body.ai-mode .ai-mode-view {
 body.ai-mode .ai-mode-window {
   padding: 2.4rem 2.2rem;
   align-self: stretch;
+  grid-column: 1 / -1;
 }
 
 .ai-mode-window-header {
@@ -924,6 +923,12 @@ body.ai-mode .ai-config {
   gap: 1.1rem;
   max-width: none;
   justify-self: stretch;
+  grid-column: 1 / 2;
+  grid-row: 1;
+  align-self: stretch;
+}
+
+body.ai-mode .ai-mode-view .pnl-card {
   grid-column: 2 / 3;
   grid-row: 1;
   align-self: stretch;
@@ -933,10 +938,11 @@ body.ai-mode .ai-config {
   display: grid;
   gap: 1.4rem;
   align-items: stretch;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 body.ai-mode .ai-config-panels {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 1.1rem;
 }
 
@@ -969,17 +975,6 @@ body.ai-mode .ai-config-panel h3 {
   letter-spacing: 0.12em;
 }
 
-.ai-config-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 1.2rem;
-}
-
-body.ai-mode .ai-config-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-}
-
 .ai-config-panel-hint {
   margin: 0;
   color: var(--text-subtle);
@@ -995,9 +990,11 @@ body.ai-mode .ai-config-grid {
   font-size: 0.82rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  height: auto;
 }
 
-.ai-config-panel input {
+.ai-config-panel input,
+.ai-config-panel select {
   padding: 0.75rem 1rem;
   border-radius: 0.85rem;
   border: 1px solid rgba(255, 232, 168, 0.2);
@@ -1005,9 +1002,24 @@ body.ai-mode .ai-config-grid {
   color: var(--text);
   font: inherit;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
 }
 
-.ai-config-panel input:focus {
+.ai-config-panel select {
+  cursor: pointer;
+  padding-right: 3rem;
+  background-image:
+    linear-gradient(135deg, rgba(240, 169, 75, 0.25), rgba(240, 169, 75, 0)),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23f6d28f' d='M1.41.59 6 5.17 10.59.59 12 2 6 8 0 2z'/%3E%3C/svg%3E");
+  background-position: center right 2.1rem, center right 1rem;
+  background-repeat: no-repeat;
+  background-size: auto, 0.75rem;
+}
+
+.ai-config-panel input:focus,
+.ai-config-panel select:focus {
   outline: none;
   border-color: rgba(240, 169, 75, 0.55);
   box-shadow: 0 0 0 3px rgba(240, 169, 75, 0.18);
@@ -1708,6 +1720,10 @@ body.ai-mode .ai-config-grid {
   body.ai-mode .ai-config {
     grid-column: 1 / -1;
     max-width: none;
+  }
+
+  body.ai-mode .ai-mode-view .pnl-card {
+    grid-column: 1 / -1;
   }
 
   body.ai-mode .ai-config-panels {

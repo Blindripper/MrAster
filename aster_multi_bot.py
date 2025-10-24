@@ -58,7 +58,7 @@ RECV_WINDOW = int(os.getenv("ASTER_RECV_WINDOW", "10000"))
 MODE = os.getenv("ASTER_MODE", "standard").strip().lower()
 AI_MODE_ENABLED = MODE == "ai" or os.getenv("ASTER_AI_MODE", "").lower() in ("1", "true", "yes", "on")
 OPENAI_API_KEY = os.getenv("ASTER_OPENAI_API_KEY", "").strip()
-AI_MODEL = os.getenv("ASTER_AI_MODEL", "gpt-5").strip() or "gpt-5"
+AI_MODEL = os.getenv("ASTER_AI_MODEL", "gpt-4o").strip() or "gpt-4o"
 AI_DAILY_BUDGET = float(os.getenv("ASTER_AI_DAILY_BUDGET_USD", "1000") or 0)
 AI_STRICT_BUDGET = os.getenv("ASTER_AI_STRICT_BUDGET", "true").lower() in ("1", "true", "yes", "on")
 SENTINEL_ENABLED = os.getenv("ASTER_AI_SENTINEL_ENABLED", "true").lower() in ("1", "true", "yes", "on")
@@ -549,10 +549,14 @@ class NewsTrendSentinel:
 
 class AITradeAdvisor:
     MODEL_PRICING: Dict[str, Dict[str, float]] = {
-        "gpt-5": {"input": 0.000004, "output": 0.000012},
+        "gpt-4o": {"input": 0.000005, "output": 0.000015},
         "gpt-4o-mini": {"input": 0.0000006, "output": 0.0000024},
+        "o4-mini": {"input": 0.0000012, "output": 0.0000036},
         "gpt-4.1-mini": {"input": 0.0000006, "output": 0.0000024},
         "gpt-4.1": {"input": 0.000003, "output": 0.000009},
+        "gpt-4-turbo": {"input": 0.000006, "output": 0.000018},
+        "gpt-3.5-turbo": {"input": 0.0000005, "output": 0.0000015},
+        "gpt-5": {"input": 0.000004, "output": 0.000012},
         "default": {"input": 0.000001, "output": 0.000003},
     }
 
@@ -565,7 +569,7 @@ class AITradeAdvisor:
         enabled: bool = True,
     ) -> None:
         self.api_key = (api_key or "").strip()
-        self.model = (model or "gpt-5").strip()
+        self.model = (model or "gpt-4o").strip()
         self.budget = budget
         self.enabled = bool(enabled and self.api_key)
         self._session = requests.Session() if self.enabled else None

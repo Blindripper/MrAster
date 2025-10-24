@@ -282,7 +282,14 @@ function renderCredentials(env) {
     inputAiBudget.value = env?.ASTER_AI_DAILY_BUDGET_USD ?? '1000';
   }
   if (inputAiModel) {
-    inputAiModel.value = env?.ASTER_AI_MODEL ?? 'gpt-5';
+    const model = env?.ASTER_AI_MODEL ?? 'gpt-4o';
+    const existingOption = Array.from(inputAiModel.options).find((option) => option.value === model);
+    if (existingOption) {
+      inputAiModel.value = model;
+    } else {
+      const fallbackOption = new Option(model, model, true, true);
+      inputAiModel.add(fallbackOption);
+    }
   }
 }
 
