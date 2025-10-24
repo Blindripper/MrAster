@@ -3,6 +3,7 @@
 MrAster is a Python trading toolkit tailored for perpetual futures on Binance-compatible exchanges. The repository contains the following core pieces:
 
 * `aster_multi_bot.py` – the main trading bot with signal logic, multi-armed bandit policy, and automated bracket-order handling.
+* `ml_policy.py` – LinUCB-based bandit and optional alpha model that guide trade admission and position sizing when enabled.
 * `brackets_guard.py` – a resilient guard process that repairs stop-loss and take-profit orders.
 * `dashboard_server.py` + `dashboard_static/` – a FastAPI-powered dashboard for bot control, configuration, and log streaming.
 
@@ -68,6 +69,10 @@ python aster_multi_bot.py
 *Press `CTRL+C` (or send SIGTERM) to gracefully finish the current scan cycle.*
 
 You can execute a single analysis pass by setting `ASTER_RUN_ONCE=true`. Runtime state (trades, policy, FastTP cooldowns) is persisted in `aster_state.json`.
+
+### Machine-learning trading policy
+
+The optional reinforcement-learning layer lives in `ml_policy.py` and is switched on by setting `ASTER_BANDIT_ENABLED=true` (enabled by default). When active, the bot loads or creates a persisted `BanditPolicy` and consults it for every candidate signal to decide whether to open a trade and which size bucket (`S`, `M`, `L`) to use. Trade outcomes are fed back into the policy via `note_entry`/`note_exit`, allowing the LinUCB model and alpha estimator to keep learning between runs.
 
 ## Using the dashboard
 
