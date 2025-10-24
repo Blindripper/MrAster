@@ -218,10 +218,27 @@ def round_price(symbol: str, price: float, tick: float) -> float:
     steps = math.floor(price / tick + 1e-12)
     return float(steps * tick)
 
+def _format_decimal(value: float) -> str:
+    s = f"{float(value):.12f}".rstrip("0").rstrip(".")
+    return s or "0"
+
+
 def format_qty(qty: float, step: float) -> str:
     q = max(0.0, math.floor(qty / step) * step)
-    s = f"{q:.12f}".rstrip("0").rstrip(".")
-    return s or "0"
+    return _format_decimal(q)
+
+
+def build_bracket_payload(kind: str, side: str, price: float) -> str:
+    opp_side = "SELL" if side.upper() == "BUY" else "BUY"
+    payload = {
+        "type": "STOP_MARKET" if kind.upper() == "SL" else "TAKE_PROFIT_MARKET",
+        "stopPrice": _format_decimal(price),
+        "workingType": WORKING_TYPE,
+        "reduceOnly": True,
+        "closePosition": True,
+        "side": opp_side,
+    }
+    return json.dumps(payload, separators=(",", ":"))
 
 # ========= Exchange =========
 class Exchange:
@@ -943,7 +960,12 @@ class Bot:
 
         # Entry
         try:
-            self.exchange.post_order({"symbol": symbol, "side": sig, "type": "MARKET", "quantity": q_str})
+            order_params = {"symbol": symbol, "side": sig, "type": "MARKET", "quantity": q_str}
+            order_params["stopLoss"] = build_bracket_payload("SL", sig, sl)
+            order_params["takeProfit"] = build_bracket_payload("TP", sig, tp)
+            order_params["stopLossPrice"] = _format_decimal(sl)
+            order_params["takeProfitPrice"] = _format_decimal(tp)
+            self.exchange.post_order(order_params)
             # Brackets – versuche neue Signatur (qty+entry), fallback auf alte
             try:
                 ok = self.guard.ensure_after_entry(symbol, sig, float(q_str), px, sl, tp)
