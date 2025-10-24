@@ -60,28 +60,33 @@
     </section>
 
     <section class="card trades">
-      <div class="card-header">
-        <h2>Trade history</h2>
-        <span id="trade-summary"></span>
+      <div class="card-header trade-header">
+        <div class="trade-title">
+          <h2>Trade history</h2>
+          <p class="card-subtitle">Latest fills and realized performance at a glance.</p>
+        </div>
+        <div class="trade-overview" id="trade-summary"></div>
       </div>
-      <table class="trade-table">
-        <thead>
-          <tr>
-            <th>Symbol</th>
-            <th>Side</th>
-            <th>Size</th>
-            <th>Entry</th>
-            <th>Exit</th>
-            <th>PNL (USDT)</th>
-            <th>R</th>
-            <th>Opened</th>
-            <th>Closed</th>
-          </tr>
-        </thead>
-        <tbody id="trade-body">
-          <tr><td colspan="9" class="empty">No trades yet.</td></tr>
-        </tbody>
-      </table>
+      <div class="trade-table-wrapper">
+        <table class="trade-table">
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Side</th>
+              <th>Size</th>
+              <th>Entry</th>
+              <th>Exit</th>
+              <th>PNL (USDT)</th>
+              <th>R</th>
+              <th>Opened</th>
+              <th>Closed</th>
+            </tr>
+          </thead>
+          <tbody id="trade-body">
+            <tr><td colspan="9" class="empty">No trades yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
     </section>
   </main>
 
