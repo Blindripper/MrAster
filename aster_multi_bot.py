@@ -98,6 +98,10 @@ FAST_TP_RET3 = float(os.getenv("FAST_TP_RET3", "-0.0020"))
 FASTTP_SNAP_ATR = float(os.getenv("FASTTP_SNAP_ATR", "0.25"))
 FASTTP_COOLDOWN_S = int(os.getenv("FASTTP_COOLDOWN_S", "15"))
 
+FUNDING_FILTER_ENABLED = os.getenv("ASTER_FUNDING_FILTER_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+FUNDING_MAX_LONG = float(os.getenv("ASTER_FUNDING_MAX_LONG", "0.0010"))  # 0.10 %
+FUNDING_MAX_SHORT = float(os.getenv("ASTER_FUNDING_MAX_SHORT", "0.0010"))  # 0.10 %
+
 HTTP_RETRIES = max(0, int(os.getenv("ASTER_HTTP_RETRIES", "2")))
 HTTP_BACKOFF = max(0.0, float(os.getenv("ASTER_HTTP_BACKOFF", "0.6")))
 HTTP_TIMEOUT = max(5.0, float(os.getenv("ASTER_HTTP_TIMEOUT", "20")))
@@ -590,6 +594,20 @@ class Strategy:
             except Exception:
                 funding = 0.0
 
+        if FUNDING_FILTER_ENABLED and sig in ("BUY", "SELL"):
+            if sig == "BUY" and funding > FUNDING_MAX_LONG:
+                return self._skip(
+                    "funding_long",
+                    symbol,
+                    {"funding": f"{funding:.6f}", "max": f"{FUNDING_MAX_LONG:.6f}"},
+                )
+            if sig == "SELL" and funding < -FUNDING_MAX_SHORT:
+                return self._skip(
+                    "funding_short",
+                    symbol,
+                    {"funding": f"{funding:.6f}", "max": f"{-FUNDING_MAX_SHORT:.6f}"},
+                )
+
         ctx: Dict[str, float] = {
             "adx": float(adx_val),
             "atr_pct": atrp,
@@ -773,13 +791,14 @@ class FastTP:
 
         qty_abs = abs(pos_amt)
         try:
-            ok = _bg_replace_tp(
+            _bg_replace_tp(
                 self.guard,
                 symbol,
                 qty_abs,
                 new_exit,
                 side=("BUY" if pos_amt > 0 else "SELL")
             )
+            ok = True
         except Exception as e:
             log.debug(f"FASTTP {symbol} replace error: {e}")
             ok = False

@@ -49,6 +49,9 @@ The bot is controlled via environment variables. Key parameters include:
 | `ASTER_HTTP_BACKOFF` | Base delay (seconds) for retries | `0.6` |
 | `ASTER_HTTP_TIMEOUT` | Request timeout in seconds | `20` |
 | `ASTER_KLINE_CACHE_SEC` | Lifetime of the kline cache | `45` |
+| `ASTER_FUNDING_FILTER_ENABLED` | Skip trades when funding exceeds thresholds | `true` |
+| `ASTER_FUNDING_MAX_LONG` | Maximum funding rate (decimal) for long entries | `0.0010` |
+| `ASTER_FUNDING_MAX_SHORT` | Maximum absolute negative funding rate for short entries | `0.0010` |
 
 Strategy parameters (RSI limits, ATR multipliers, position sizing, trading universe, and more) can also be configured through environment variables. Check the top section of `aster_multi_bot.py` or the dashboard (`/api/config`) for the full list.
 
