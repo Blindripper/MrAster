@@ -26,8 +26,6 @@
     <div class="hero-actions">
       <button id="btn-start" class="primary">Start</button>
       <button id="btn-stop" class="ghost">Stop</button>
-      <button id="btn-pro-mode" class="ghost pro-toggle">Pro-Mode</button>
-      <button id="btn-ai-mode" class="ghost ai-toggle highlight">AI-Mode</button>
     </div>
   </header>
 
@@ -76,6 +74,27 @@
       </div>
     </section>
 
+    <section class="card mode-switcher" aria-labelledby="mode-switcher-heading">
+      <div class="mode-switcher-header">
+        <h2 id="mode-switcher-heading">Select Mode</h2>
+        <p class="card-subtitle">Choose the workspace that matches your workflow.</p>
+      </div>
+      <div class="mode-switcher-buttons" role="group" aria-label="Select mode">
+        <button class="mode-button active" data-mode-select="standard" aria-pressed="true">
+          <span class="mode-button-title">Standard</span>
+          <span class="mode-button-subtitle">Quick launch with presets &amp; credentials.</span>
+        </button>
+        <button class="mode-button" data-mode-select="pro" aria-pressed="false">
+          <span class="mode-button-title">Pro</span>
+          <span class="mode-button-subtitle">Deep configuration for power users.</span>
+        </button>
+        <button class="mode-button" data-mode-select="ai" aria-pressed="false">
+          <span class="mode-button-title">AI</span>
+          <span class="mode-button-subtitle">Autonomous trading with AI orchestration.</span>
+        </button>
+      </div>
+    </section>
+
     <section class="card credentials" data-normal-only>
       <div class="card-header">
         <div>
@@ -98,16 +117,6 @@
     </section>
 
     <section class="ai-mode-view" data-ai-only>
-      <div class="card ai-mode-window">
-        <div class="ai-mode-window-header">
-          <span class="ai-mode-badge">AI activity</span>
-          <h2>Autonomous strategy cockpit</h2>
-          <p class="ai-mode-window-subtitle">Verfolge in Echtzeit, welche Marktbeobachtungen, Hypothesen und Entscheidungen die AI aktuell vorbereitet. Der Stream wird laufend aktualisiert.</p>
-        </div>
-        <div class="ai-mode-window-body">
-          <div class="ai-hint" id="ai-hint">Loading AI analysis…</div>
-        </div>
-      </div>
       <section class="card ai-config">
         <div class="card-header">
           <div>
@@ -142,6 +151,16 @@
         </div>
         <p class="ai-config-hint">When AI-Mode is active, the bot auto-tunes size, leverage, stops, and FastTP using the configured model while respecting the daily spend cap.</p>
       </section>
+      <div class="card ai-mode-window">
+        <div class="ai-mode-window-header">
+          <span class="ai-mode-badge">AI activity</span>
+          <h2>Autonomous strategy cockpit</h2>
+          <p class="ai-mode-window-subtitle">Verfolge in Echtzeit, welche Marktbeobachtungen, Hypothesen und Entscheidungen die AI aktuell vorbereitet. Der Stream wird laufend aktualisiert.</p>
+        </div>
+        <div class="ai-mode-window-body">
+          <div class="ai-hint" id="ai-hint">Loading AI analysis…</div>
+        </div>
+      </div>
     </section>
 
     <section class="card quick-setup" data-normal-only data-hide-when-ai>
