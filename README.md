@@ -157,7 +157,9 @@ Every field in the **Environment configuration** card maps directly to an enviro
 
 The dashboard creates `dashboard_config.json` and writes changed environment values back to disk. Trades, open positions, and AI hints are driven by `aster_state.json`.
 
-Update to new version with (so you don't destroy your .venv): git fetch --all --prune && git reset --hard @{u} && git clean -fd -e .venv/.
+Update to new version with this command (so you don't destroy your venv): 
+
+git fetch --all --prune && git reset --hard @{u} && git clean -fd -e .venv/
 
 ## Safety & disclaimers
 
