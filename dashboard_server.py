@@ -12,8 +12,9 @@ import time
 from collections import deque
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
+import requests
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -79,6 +80,188 @@ ENV_DEFAULTS: Dict[str, str] = {
 }
 
 ALLOWED_ENV_KEYS = set(ENV_DEFAULTS.keys())
+
+
+CG_ID: Dict[str, str] = {
+    "BTC": "bitcoin",
+    "ETH": "ethereum",
+    "BNB": "binancecoin",
+    "SOL": "solana",
+    "XRP": "ripple",
+    "ADA": "cardano",
+    "DOGE": "dogecoin",
+    "TON": "the-open-network",
+    "TRX": "tron",
+    "LTC": "litecoin",
+    "BCH": "bitcoin-cash",
+    "LINK": "chainlink",
+    "AVAX": "avalanche-2",
+    "DOT": "polkadot",
+    "MATIC": "matic-network",
+    "ETC": "ethereum-classic",
+    "UNI": "uniswap",
+    "ATOM": "cosmos",
+    "NEAR": "near",
+    "APT": "aptos",
+    "SUI": "sui",
+    "ARB": "arbitrum",
+    "OP": "optimism",
+}
+
+
+def build_logo_candidates(ticker: str, chain: Optional[str] = None, contract: Optional[str] = None) -> List[str]:
+    t = (ticker or "").upper().strip()
+    urls: List[str] = []
+    if t in CG_ID:
+        cid = CG_ID[t]
+        urls.append(f"https://coin-logos.simplr.sh/images/{cid}/standard.png")
+        urls.append(f"https://coin-logos.simplr.sh/images/{cid}/large.png")
+    if chain and contract:
+        urls.append(
+            f"https://cdn.jsdelivr.net/gh/trustwallet/assets@master/blockchains/{chain}/assets/{contract}/logo.png"
+        )
+    if chain and not contract:
+        urls.append(
+            f"https://cdn.jsdelivr.net/gh/trustwallet/assets@master/blockchains/{chain}/info/logo.png"
+        )
+    urls.append(f"https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons/128/color/{t.lower()}.png")
+    return urls
+
+
+LogoCacheKey = Tuple[str, Optional[str], Optional[str]]
+LOGO_CACHE: Dict[LogoCacheKey, Dict[str, Any]] = {}
+
+
+MOST_TRADED_CACHE: Dict[str, Any] = {"timestamp": 0.0, "payload": None}
+
+BINANCE_24H_URL = "https://api.binance.com/api/v3/ticker/24hr"
+BINANCE_KLINES_URL = "https://api.binance.com/api/v3/klines"
+EXCLUDED_VOLUME_SUFFIXES = ("UPUSDT", "DOWNUSDT", "BULLUSDT", "BEARUSDT")
+
+
+def _resolve_logo_sources(ticker: str, chain: Optional[str] = None, contract: Optional[str] = None) -> Dict[str, Any]:
+    key: LogoCacheKey = (
+        (ticker or "").upper().strip(),
+        (chain or "").lower().strip() or None,
+        (contract or "").lower().strip() or None,
+    )
+    cached = LOGO_CACHE.get(key)
+    if cached:
+        return cached
+
+    candidates = build_logo_candidates(key[0], key[1], key[2])
+    primary: Optional[str] = None
+    fallbacks: List[str] = []
+    for url in candidates:
+        try:
+            resp = requests.head(url, timeout=4, allow_redirects=True)
+            if resp.status_code == 200 and not primary:
+                primary = url
+                continue
+        except requests.RequestException:
+            pass
+        fallbacks.append(url)
+
+    if not primary and candidates:
+        primary = candidates[0]
+        fallbacks = [u for u in candidates[1:]]
+    elif primary:
+        fallbacks = [u for u in candidates if u != primary]
+
+    payload = {"logo": primary, "fallbacks": fallbacks, "candidates": candidates}
+    LOGO_CACHE[key] = payload
+    return payload
+
+
+def _fetch_price_change(symbol: str) -> Tuple[Optional[float], Optional[float]]:
+    try:
+        resp = requests.get(
+            BINANCE_KLINES_URL,
+            params={"symbol": symbol, "interval": "1m", "limit": 16},
+            timeout=6,
+        )
+        resp.raise_for_status()
+        candles = resp.json()
+        if not candles:
+            return None, None
+        first_close = float(candles[0][4])
+        last_close = float(candles[-1][4])
+        if first_close <= 0:
+            return last_close, None
+        change = ((last_close - first_close) / first_close) * 100.0
+        return last_close, change
+    except (requests.RequestException, ValueError, TypeError, IndexError):
+        return None, None
+
+
+def _fetch_most_traded_from_binance(limit: int = 8) -> List[Dict[str, Any]]:
+    resp = requests.get(BINANCE_24H_URL, timeout=8)
+    resp.raise_for_status()
+    payload = resp.json()
+    filtered: List[Dict[str, Any]] = []
+
+    for entry in payload:
+        symbol = entry.get("symbol")
+        if not symbol or not symbol.endswith("USDT"):
+            continue
+        if any(symbol.endswith(suffix) for suffix in EXCLUDED_VOLUME_SUFFIXES):
+            continue
+        try:
+            volume_quote = float(entry.get("quoteVolume") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if volume_quote <= 0:
+            continue
+        try:
+            last_price = float(entry.get("lastPrice") or 0.0)
+        except (TypeError, ValueError):
+            last_price = 0.0
+        base = symbol[:-4]
+        asset = {
+            "symbol": symbol,
+            "base": base,
+            "quote": "USDT",
+            "price": last_price,
+            "volume_quote": volume_quote,
+            "change_15m": 0.0,
+        }
+        logo = _resolve_logo_sources(base)
+        asset["logo"] = logo.get("logo")
+        asset["logo_fallbacks"] = logo.get("fallbacks", [])
+        asset["logo_candidates"] = logo.get("candidates", [])
+        filtered.append(asset)
+
+    filtered.sort(key=lambda item: item["volume_quote"], reverse=True)
+    top_assets = filtered[:limit]
+
+    for asset in top_assets:
+        price, change = _fetch_price_change(asset["symbol"])
+        if price:
+            asset["price"] = price
+        if change is not None:
+            asset["change_15m"] = change
+
+    return top_assets
+
+
+async def get_most_traded_assets(force: bool = False) -> Dict[str, Any]:
+    now = time.time()
+    cached_payload = MOST_TRADED_CACHE.get("payload")
+    cached_ts = MOST_TRADED_CACHE.get("timestamp", 0.0)
+    if cached_payload and not force and now - cached_ts < 60:
+        return cached_payload
+
+    try:
+        assets = await asyncio.to_thread(_fetch_most_traded_from_binance)
+    except Exception:
+        if cached_payload:
+            return cached_payload
+        return {"updated": datetime.utcnow().isoformat() + "Z", "assets": []}
+
+    payload = {"updated": datetime.utcnow().isoformat() + "Z", "assets": assets}
+    MOST_TRADED_CACHE["payload"] = payload
+    MOST_TRADED_CACHE["timestamp"] = now
+    return payload
 
 
 def _load_config() -> Dict[str, Any]:
@@ -423,6 +606,11 @@ async def stop_bot() -> Dict[str, Any]:
 @app.get("/api/bot/status", response_model=BotStatus)
 async def bot_status() -> BotStatus:
     return await runner.status()
+
+
+@app.get("/api/markets/most-traded")
+async def most_traded() -> Dict[str, Any]:
+    return await get_most_traded_assets()
 
 
 def _read_state() -> Dict[str, Any]:
