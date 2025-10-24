@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shlex
 import shutil
 import signal
 import sys
@@ -183,20 +184,123 @@ def _resolve_python() -> str:
     return candidate
 
 
-def _resolve_bot_script(env_cfg: Dict[str, str]) -> Path:
-    script_value = env_cfg.get("ASTER_BOT_SCRIPT", "aster_multi_bot.py")
-    if not script_value or not str(script_value).strip():
-        script_value = "aster_multi_bot.py"
+def _split_command_tokens(raw: Any) -> List[str]:
+    """Normalise the configured bot command into a token list."""
 
-    script_path = Path(script_value)
-    if not script_path.is_absolute():
-        script_path = ROOT_DIR / script_path
+    if isinstance(raw, (list, tuple)):
+        tokens = [str(part).strip() for part in raw if str(part).strip()]
+        if tokens:
+            return tokens
+        raise FileNotFoundError("Bot command is empty")
 
-    script_path = script_path.resolve()
-    if not script_path.exists() or not script_path.is_file():
-        raise FileNotFoundError(f"Bot script not found: {script_path}")
+    value = str(raw or "").strip()
+    if not value:
+        value = "aster_multi_bot.py"
 
-    return script_path
+    # Allow JSON encoded lists from manual config edits.
+    if value.startswith("[") and value.endswith("]"):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, list):
+            tokens = [str(part).strip() for part in parsed if str(part).strip()]
+            if tokens:
+                return tokens
+            raise FileNotFoundError("Bot command is empty")
+
+    return shlex.split(value)
+
+
+def _should_use_shell(raw: Any) -> Optional[str]:
+    """Return the raw command string if it should be executed via a shell."""
+
+    if not isinstance(raw, str):
+        return None
+
+    value = raw.strip()
+    if not value:
+        return None
+
+    if value.lower().startswith("shell:"):
+        shell_cmd = value.split(":", 1)[1].strip()
+        if not shell_cmd:
+            raise FileNotFoundError("Shell bot command is empty")
+        return shell_cmd
+
+    # Detect common shell constructs so users can keep existing commands like
+    # "source .venv/bin/activate && python bot.py" working without extra
+    # configuration.
+    shell_markers = ("&&", "||", "|", ";", "$", "`", "\n")
+    if value.startswith("source ") or any(marker in value for marker in shell_markers):
+        return value
+
+    return None
+
+
+def _resolve_bot_command(env_cfg: Dict[str, str]) -> tuple[Any, bool]:
+    """Build a subprocess command for launching the trading bot.
+
+    The configuration may either point directly at a Python script or
+    provide a full command with additional arguments. The function
+    normalises relative paths so that they are resolved against the
+    repository root and ensures the resulting command exists before
+    execution.
+    """
+
+    raw_value = env_cfg.get("ASTER_BOT_SCRIPT")
+    shell_cmd = _should_use_shell(raw_value)
+    if shell_cmd:
+        return shell_cmd, True
+
+    tokens = _split_command_tokens(raw_value)
+    if not tokens:
+        raise FileNotFoundError("Bot command is empty")
+
+    python_cmd = _resolve_python()
+
+    def _resolve_path(token: str) -> str:
+        path = Path(token)
+        if not path.is_absolute():
+            path = (ROOT_DIR / path).resolve()
+        else:
+            path = path.resolve()
+        if not path.exists():
+            raise FileNotFoundError(f"Bot script not found: {path}")
+        return str(path)
+
+    # If the command already specifies a Python interpreter we only need to
+    # normalise the following script argument when it points inside the repo.
+    first_token_lower = tokens[0].lower()
+    if "python" in first_token_lower:
+        resolved = [tokens[0]]
+        for idx, token in enumerate(tokens[1:], start=1):
+            if idx == 1 and token.endswith(".py"):
+                try:
+                    resolved.append(_resolve_path(token))
+                    continue
+                except FileNotFoundError:
+                    pass
+            resolved.append(token)
+        return resolved, False
+
+    # If only a script path is provided, run it with the detected python.
+    if len(tokens) == 1:
+        script_path = _resolve_path(tokens[0])
+        return [python_cmd, script_path], False
+
+    # If the first token looks like a python script, prepend the interpreter.
+    if tokens[0].endswith(".py"):
+        script_path = _resolve_path(tokens[0])
+        return [python_cmd, script_path, *tokens[1:]], False
+
+    # For arbitrary executables shipped with the repo we normalise their path
+    # as well, otherwise we assume they can be resolved via PATH.
+    exec_path = ROOT_DIR / tokens[0]
+    if exec_path.exists():
+        tokens[0] = str(exec_path.resolve())
+
+    return tokens, False
 
 
 class BotRunner:
@@ -220,18 +324,33 @@ class BotRunner:
             env = os.environ.copy()
             env_cfg = CONFIG.get("env", {})
             env.update(env_cfg)
-            python_cmd = _resolve_python()
-            bot_script = _resolve_bot_script(env_cfg)
+            command, use_shell = _resolve_bot_command(env_cfg)
             env.setdefault("ASTER_LOGLEVEL", "DEBUG")
             try:
-                self.process = await asyncio.create_subprocess_exec(
-                    python_cmd,
-                    str(bot_script),
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.STDOUT,
-                    env=env,
-                    cwd=str(ROOT_DIR),
-                )
+                if use_shell:
+                    await self.loghub.push(
+                        f"Launching bot via shell: {command}", level="system"
+                    )
+                    self.process = await asyncio.create_subprocess_shell(
+                        command,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT,
+                        env=env,
+                        cwd=str(ROOT_DIR),
+                    )
+                else:
+                    await self.loghub.push(
+                        "Launching bot: "
+                        + " ".join(shlex.quote(part) for part in command),
+                        level="system",
+                    )
+                    self.process = await asyncio.create_subprocess_exec(
+                        *command,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT,
+                        env=env,
+                        cwd=str(ROOT_DIR),
+                    )
             except FileNotFoundError as exc:
                 await self.loghub.push(str(exc), level="error")
                 raise
