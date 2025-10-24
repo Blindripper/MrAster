@@ -59,6 +59,19 @@
       <div id="log-stream" class="log-stream"></div>
     </section>
 
+    <section class="card pnl-card">
+      <div class="card-header">
+        <div>
+          <h2>Performance overview</h2>
+          <p class="card-subtitle">Cumulative realized PNL across your recorded trades.</p>
+        </div>
+      </div>
+      <div class="pnl-chart-wrapper">
+        <canvas id="pnl-chart" aria-label="Cumulative PNL chart" style="display: none;"></canvas>
+        <div id="pnl-empty" class="empty-state">No PNL data yet. Execute trades to populate the performance graph.</div>
+      </div>
+    </section>
+
     <section class="card trades">
       <div class="card-header trade-header">
         <div class="trade-title">
@@ -94,6 +107,7 @@
     <p>Made for Aster — adaptive trading with full transparency. Lean on live logs and AI hints to iterate with confidence.</p>
   </footer>
 
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
   <script type="module" src="/static/app.js"></script>
 </body>
 </html>

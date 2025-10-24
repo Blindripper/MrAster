@@ -11,9 +11,28 @@ const autoScrollToggle = document.getElementById('autoscroll');
 const tradeBody = document.getElementById('trade-body');
 const tradeSummary = document.getElementById('trade-summary');
 const aiHint = document.getElementById('ai-hint');
+const pnlChartCanvas = document.getElementById('pnl-chart');
+const pnlEmptyState = document.getElementById('pnl-empty');
 
 let currentConfig = {};
 let reconnectTimer = null;
+let pnlChart = null;
+
+function configureChartDefaults() {
+  if (typeof Chart === 'undefined') return;
+  const styles = getComputedStyle(document.documentElement);
+  const muted = styles.getPropertyValue('--text-muted').trim();
+  const border = styles.getPropertyValue('--border').trim();
+  const font = styles.getPropertyValue('--font-sans')?.trim() || '"Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+
+  Chart.defaults.color = muted || '#a09889';
+  Chart.defaults.font.family = font;
+  Chart.defaults.borderColor = border || 'rgba(255, 232, 168, 0.08)';
+  Chart.defaults.plugins.legend.labels.usePointStyle = true;
+  Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(10, 10, 14, 0.92)';
+  Chart.defaults.plugins.tooltip.borderColor = border || 'rgba(255, 232, 168, 0.12)';
+  Chart.defaults.plugins.tooltip.borderWidth = 1;
+}
 
 function renderConfig(env) {
   envContainer.innerHTML = '';
@@ -268,6 +287,137 @@ function renderTradeSummary(stats) {
   aiHint.textContent = stats.ai_hint;
 }
 
+function renderPnlChart(history) {
+  if (!pnlChartCanvas || typeof Chart === 'undefined') return;
+
+  const entries = Array.isArray(history) ? history.slice() : [];
+  const sorted = entries
+    .filter((trade) => trade && trade.pnl !== undefined && trade.pnl !== null)
+    .sort((a, b) => {
+      const aDate = new Date(a.closed_at_iso || a.opened_at_iso || 0).getTime();
+      const bDate = new Date(b.closed_at_iso || b.opened_at_iso || 0).getTime();
+      return aDate - bDate;
+    });
+
+  if (sorted.length === 0) {
+    if (pnlChart) {
+      pnlChart.destroy();
+      pnlChart = null;
+    }
+    pnlChartCanvas.style.display = 'none';
+    if (pnlEmptyState) {
+      pnlEmptyState.style.display = 'flex';
+    }
+    return;
+  }
+
+  if (pnlEmptyState) {
+    pnlEmptyState.style.display = 'none';
+  }
+  pnlChartCanvas.style.display = 'block';
+
+  const labels = [];
+  const values = [];
+  let cumulative = 0;
+  for (const trade of sorted) {
+    const pnl = Number(trade.pnl ?? 0);
+    if (Number.isNaN(pnl)) continue;
+    cumulative += pnl;
+    const timestamp = trade.closed_at_iso || trade.opened_at_iso;
+    if (timestamp) {
+      const date = new Date(timestamp);
+      if (!Number.isNaN(date.getTime())) {
+        labels.push(
+          date.toLocaleString(undefined, {
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+        );
+      } else {
+        labels.push(`Trade ${labels.length + 1}`);
+      }
+    } else {
+      labels.push(`Trade ${labels.length + 1}`);
+    }
+    values.push(Number(cumulative.toFixed(2)));
+  }
+
+  const styles = getComputedStyle(document.documentElement);
+  const accent = styles.getPropertyValue('--accent-strong').trim() || '#f0a94b';
+  const accentSoft = styles.getPropertyValue('--accent-soft').trim() || 'rgba(240, 169, 75, 0.18)';
+
+  const data = {
+    labels,
+    datasets: [
+      {
+        label: 'Cumulative PNL (USDT)',
+        data: values,
+        borderColor: accent,
+        backgroundColor: accentSoft,
+        tension: 0.35,
+        pointRadius: 2.5,
+        pointHoverRadius: 4,
+        pointBackgroundColor: '#0c0d12',
+        fill: true,
+      },
+    ],
+  };
+
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+      x: {
+        ticks: {
+          maxRotation: 0,
+          autoSkip: true,
+          color: styles.getPropertyValue('--text-muted').trim() || '#a09889',
+        },
+        grid: {
+          display: false,
+        },
+      },
+      y: {
+        ticks: {
+          callback: (value) => `${Number(value).toFixed ? Number(value).toFixed(2) : value}`,
+          color: styles.getPropertyValue('--text-muted').trim() || '#a09889',
+        },
+        grid: {
+          color: styles.getPropertyValue('--grid-line').trim() || 'rgba(255, 232, 168, 0.08)',
+        },
+      },
+    },
+    plugins: {
+      legend: {
+        display: false,
+      },
+      tooltip: {
+        callbacks: {
+          label: (context) => {
+            const value = context.parsed.y;
+            return ` ${value >= 0 ? '+' : ''}${value.toFixed(2)} USDT`;
+          },
+        },
+      },
+    },
+  };
+
+  if (pnlChart) {
+    pnlChart.data = data;
+    pnlChart.options = options;
+    pnlChart.update();
+  } else {
+    const ctx = pnlChartCanvas.getContext('2d');
+    pnlChart = new Chart(ctx, {
+      type: 'line',
+      data,
+      options,
+    });
+  }
+}
+
 async function loadTrades() {
   try {
     const res = await fetch('/api/trades');
@@ -275,6 +425,7 @@ async function loadTrades() {
     const data = await res.json();
     renderTradeHistory(data.history);
     renderTradeSummary(data.stats);
+    renderPnlChart(data.history);
   } catch (err) {
     console.warn(err);
   }
@@ -316,6 +467,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 async function init() {
+  configureChartDefaults();
   await loadConfig();
   await updateStatus();
   await loadTrades();
