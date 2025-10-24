@@ -225,16 +225,16 @@ def _fetch_most_traded_from_binance(limit: int = 8) -> List[Dict[str, Any]]:
             "volume_quote": volume_quote,
             "change_15m": 0.0,
         }
-        logo = _resolve_logo_sources(base)
-        asset["logo"] = logo.get("logo")
-        asset["logo_fallbacks"] = logo.get("fallbacks", [])
-        asset["logo_candidates"] = logo.get("candidates", [])
         filtered.append(asset)
 
     filtered.sort(key=lambda item: item["volume_quote"], reverse=True)
     top_assets = filtered[:limit]
 
     for asset in top_assets:
+        logo = _resolve_logo_sources(asset["base"])
+        asset["logo"] = logo.get("logo")
+        asset["logo_fallbacks"] = logo.get("fallbacks", [])
+        asset["logo_candidates"] = logo.get("candidates", [])
         price, change = _fetch_price_change(asset["symbol"])
         if price:
             asset["price"] = price
