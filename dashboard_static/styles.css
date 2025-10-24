@@ -1889,12 +1889,39 @@ footer {
   .hero {
     flex-direction: column;
     align-items: flex-start;
+    gap: 1.6rem;
   }
+
   .hero-actions {
     width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
   }
-  button {
-    flex: 1;
+
+  .hero-primary-actions {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .hero-actions button {
+    width: 100%;
+  }
+
+  .hero-credentials {
+    width: 100%;
+  }
+
+  .hero-mode-toggle {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+
+  .hero-mode-toggle .mode-button {
+    flex: 1 1 calc(33.333% - 0.6rem);
+    min-width: 140px;
   }
 }
 
@@ -1925,6 +1952,12 @@ footer {
     gap: 1.1rem;
   }
 
+  .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
   .card h2 {
     font-size: 1.35rem;
   }
@@ -1935,6 +1968,20 @@ footer {
 
   .env-grid {
     grid-template-columns: 1fr;
+  }
+
+  .preset-buttons {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-mode-toggle {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .hero-mode-toggle .mode-button {
+    min-width: 0;
   }
 
   .env-grid label {
@@ -1987,5 +2034,44 @@ footer {
   footer {
     padding: 1.5rem clamp(1rem, 6vw, 1.5rem);
     font-size: 0.85rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero-primary-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  .hero-credentials {
+    padding: 0.75rem 0.85rem;
+    gap: 0.75rem;
+  }
+
+  .hero-credential {
+    min-width: 100%;
+  }
+
+  .market-ticker {
+    padding-inline: clamp(1rem, 6vw, 1.5rem);
+  }
+
+  .ticker-label {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .ticker-label span:last-child {
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+  }
+
+  .trade-item-summary {
+    padding-inline: 1rem;
+  }
+
+  .trade-item-body {
+    padding-inline: 1rem;
   }
 }
