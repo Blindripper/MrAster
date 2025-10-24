@@ -184,7 +184,10 @@ def _get_exchange_base() -> str:
 
 def _exchange_url(path: str) -> str:
     base = _get_exchange_base()
-    return urljoin(base + "/", path.lstrip("/"))
+    cleaned = path.lstrip("/")
+    if not cleaned:
+        return base
+    return f"{base}/{cleaned}"
 
 
 def _fetch_price_change(symbol: str) -> Tuple[Optional[float], Optional[float]]:
