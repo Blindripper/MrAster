@@ -251,7 +251,7 @@ function renderCredentials(env) {
     inputAiBudget.value = env?.ASTER_AI_DAILY_BUDGET_USD ?? '1000';
   }
   if (inputAiModel) {
-    inputAiModel.value = env?.ASTER_AI_MODEL ?? 'gpt-4o-mini';
+    inputAiModel.value = env?.ASTER_AI_MODEL ?? 'gpt-5';
   }
 }
 
