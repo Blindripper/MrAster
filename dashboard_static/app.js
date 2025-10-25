@@ -42,6 +42,8 @@ const aiBudgetFill = document.getElementById('ai-budget-fill');
 const modeButtons = document.querySelectorAll('[data-mode-select]');
 const btnHeroDownload = document.getElementById('btn-hero-download');
 
+const DEFAULT_BOT_STATUS = { running: false, pid: null, started_at: null, uptime_s: null };
+
 let currentConfig = {};
 let reconnectTimer = null;
 let pnlChart = null;
@@ -55,6 +57,7 @@ let mostTradedTimer = null;
 let lastAiBudget = null;
 let lastMostTradedAssets = [];
 let latestTradesSnapshot = null;
+let lastBotStatus = { ...DEFAULT_BOT_STATUS };
 
 function getCurrentMode() {
   if (aiMode) return 'ai';
@@ -1055,6 +1058,7 @@ async function updateStatus() {
     const res = await fetch('/api/bot/status');
     if (!res.ok) throw new Error();
     const data = await res.json();
+    lastBotStatus = data;
     const running = data.running;
     statusIndicator.textContent = running ? 'Running' : 'Stopped';
     statusIndicator.className = `pill ${running ? 'running' : 'stopped'}`;
@@ -1064,6 +1068,7 @@ async function updateStatus() {
     btnStart.disabled = running;
     btnStop.disabled = !running;
   } catch {
+    lastBotStatus = { ...DEFAULT_BOT_STATUS };
     statusIndicator.textContent = 'Offline';
     statusIndicator.className = 'pill stopped';
     statusPid.textContent = '–';
@@ -1759,6 +1764,10 @@ function clampValue(value, min, max) {
   return numeric;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function toFixedString(value, digits) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {
@@ -1884,7 +1893,13 @@ async function saveQuickSetup() {
     renderConfig(currentConfig.env);
     renderCredentials(currentConfig.env);
     syncQuickSetupFromEnv(currentConfig.env);
-    btnApplyPreset.textContent = 'Applied ✓';
+    let restarted = false;
+    try {
+      restarted = await restartBotIfNeeded();
+    } catch (restartErr) {
+      throw new Error(`Bot restart failed: ${restartErr.message}`);
+    }
+    btnApplyPreset.textContent = restarted ? 'Restarted ✓' : 'Applied ✓';
     setTimeout(() => {
       if (btnApplyPreset && !btnApplyPreset.disabled) {
         resetQuickConfigButton();
@@ -2069,6 +2084,48 @@ async function loadTrades() {
   } catch (err) {
     console.warn(err);
   }
+}
+
+async function waitForBotState(targetRunning, options = {}) {
+  const { timeout = 15000, interval = 500 } = options;
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    await updateStatus();
+    if (lastBotStatus.running === targetRunning) {
+      return lastBotStatus;
+    }
+    await sleep(interval);
+  }
+  throw new Error(`Timed out waiting for bot to ${targetRunning ? 'start' : 'stop'}`);
+}
+
+async function restartBotIfNeeded() {
+  if (getCurrentMode() !== 'standard') {
+    return false;
+  }
+  await updateStatus();
+  if (!lastBotStatus.running) {
+    return false;
+  }
+
+  if (btnApplyPreset) {
+    btnApplyPreset.textContent = 'Restarting…';
+  }
+
+  const stopRes = await fetch('/api/bot/stop', { method: 'POST' });
+  if (!stopRes.ok) {
+    const data = await stopRes.json().catch(() => ({}));
+    throw new Error(data.detail || 'Unable to stop bot');
+  }
+  await waitForBotState(false);
+
+  const startRes = await fetch('/api/bot/start', { method: 'POST' });
+  if (!startRes.ok) {
+    const data = await startRes.json().catch(() => ({}));
+    throw new Error(data.detail || 'Unable to start bot');
+  }
+  await waitForBotState(true);
+  return true;
 }
 
 async function startBot() {
