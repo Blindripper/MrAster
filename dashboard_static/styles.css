@@ -1354,6 +1354,7 @@ body.ai-mode .status .decision-metric {
 body.ai-mode .ai-mode-window {
   padding: 2.1rem 2rem;
   align-self: stretch;
+  height: auto;
 }
 
 .ai-mode-window-header {
