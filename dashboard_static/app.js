@@ -44,6 +44,11 @@ const aiChatMessages = document.getElementById('ai-chat-messages');
 const aiChatForm = document.getElementById('ai-chat-form');
 const aiChatInput = document.getElementById('ai-chat-input');
 const aiChatStatus = document.getElementById('ai-chat-status');
+const activePositionsCard = document.getElementById('active-positions-card');
+const activePositionsModeLabel = document.getElementById('active-positions-mode');
+const activePositionsWrapper = document.getElementById('active-positions-wrapper');
+const activePositionsEmpty = document.getElementById('active-positions-empty');
+const activePositionsRows = document.getElementById('active-positions-rows');
 const modeButtons = document.querySelectorAll('[data-mode-select]');
 const btnHeroDownload = document.getElementById('btn-hero-download');
 
@@ -65,6 +70,7 @@ let latestTradesSnapshot = null;
 let lastBotStatus = { ...DEFAULT_BOT_STATUS };
 let aiChatHistory = [];
 let aiChatPending = false;
+let activePositionsByMode = createEmptyActivePositionsMap();
 const aiChatSubmit = aiChatForm ? aiChatForm.querySelector('button[type="submit"]') : null;
 
 function getCurrentMode() {
@@ -799,6 +805,442 @@ function formatSideLabel(side) {
   if (normalized === 'BUY') return 'LONG';
   if (normalized === 'SELL') return 'SHORT';
   return normalized;
+}
+
+function createEmptyActivePositionsMap() {
+  return { standard: [], pro: [], ai: [] };
+}
+
+const ACTIVE_POSITION_ALIASES = {
+  symbol: ['symbol', 'sym', 'ticker', 'pair'],
+  size: ['size', 'qty', 'quantity', 'positionAmt', 'position_amt', 'position_amount'],
+  entry: ['entry', 'entry_price', 'entryPrice'],
+  mark: ['mark', 'mark_price', 'markPrice', 'lastPrice', 'price'],
+  roi: ['roi', 'roi_percent', 'roi_pct', 'return', 'return_percent', 'return_pct'],
+  roe: ['roe', 'roe_percent', 'roe_pct', 'roePercent', 'pnl_percent', 'pnl_pct'],
+  pnl: ['pnl', 'unrealized', 'unrealized_pnl', 'pnl_unrealized', 'unrealizedProfit', 'pnl_usd'],
+  nextTp: ['next_tp', 'tp_next', 'nextTarget', 'next_tp_price', 'tp', 'take_profit_next'],
+  tpCount: ['tp_in_position', 'tp_count', 'tpCount', 'take_profits_in_position', 'tps_in_position'],
+  side: ['side', 'positionSide', 'direction'],
+};
+
+const ACTIVE_POSITION_TIMESTAMP_NUMERIC_KEYS = [
+  'opened_at',
+  'openedAt',
+  'opened_ts',
+  'opened_at_ts',
+  'open_time',
+  'openTime',
+  'timestamp',
+  'ts',
+];
+
+const ACTIVE_POSITION_TIMESTAMP_ISO_KEYS = [
+  'opened_at_iso',
+  'open_time_iso',
+  'openTimeIso',
+  'opened_iso',
+  'created_at',
+  'openedAtIso',
+];
+
+const ACTIVE_POSITION_MODE_KEYS = ['mode', 'profile', 'strategy', 'bot', 'bot_mode', 'preset'];
+
+function unwrapPositionValue(raw) {
+  if (raw === undefined || raw === null) return undefined;
+  if (Array.isArray(raw)) {
+    return raw.length ? unwrapPositionValue(raw[0]) : undefined;
+  }
+  if (typeof raw === 'object') {
+    if ('value' in raw) return unwrapPositionValue(raw.value);
+    if ('price' in raw) return unwrapPositionValue(raw.price);
+    if ('amount' in raw) return unwrapPositionValue(raw.amount);
+    if ('qty' in raw) return unwrapPositionValue(raw.qty);
+    return undefined;
+  }
+  return raw;
+}
+
+function toNumeric(value) {
+  if (value === undefined || value === null || value === '') return NaN;
+  if (typeof value === 'number') return Number(value);
+  if (typeof value === 'string') {
+    const normalized = value.replace(/[^0-9+-.eE]/g, '');
+    if (!normalized || normalized === '+' || normalized === '-') {
+      return NaN;
+    }
+    return Number(normalized);
+  }
+  return Number(value);
+}
+
+function normalisePositionRecord(record, fallbackSymbol) {
+  if (!record || typeof record !== 'object') {
+    return { symbol: fallbackSymbol };
+  }
+  const normalized = { ...record };
+  const symbolCandidate =
+    unwrapPositionValue(record.symbol) ??
+    unwrapPositionValue(record.sym) ??
+    unwrapPositionValue(record.ticker) ??
+    unwrapPositionValue(record.pair) ??
+    fallbackSymbol;
+  if (symbolCandidate && !normalized.symbol) {
+    normalized.symbol = symbolCandidate;
+  }
+  return normalized;
+}
+
+function mapPositionCollection(collection) {
+  if (!collection) return [];
+  if (Array.isArray(collection)) {
+    return collection.map((item) => normalisePositionRecord(item));
+  }
+  if (collection instanceof Map) {
+    return Array.from(collection.entries()).map(([key, value]) => normalisePositionRecord(value, key));
+  }
+  if (typeof collection === 'object') {
+    return Object.entries(collection).map(([key, value]) => normalisePositionRecord(value, key));
+  }
+  return [];
+}
+
+function resolvePositionMode(position) {
+  if (!position || typeof position !== 'object') return null;
+  for (const key of ACTIVE_POSITION_MODE_KEYS) {
+    if (position[key] !== undefined && position[key] !== null) {
+      const raw = unwrapPositionValue(position[key]);
+      if (!raw) continue;
+      const normalized = raw.toString().toLowerCase();
+      if (normalized.startsWith('ai')) return 'ai';
+      if (normalized.startsWith('pro')) return 'pro';
+      if (normalized.startsWith('std') || normalized.startsWith('basic') || normalized.startsWith('standard')) {
+        return 'standard';
+      }
+    }
+  }
+  return null;
+}
+
+function normaliseActivePositions(raw) {
+  const groups = createEmptyActivePositionsMap();
+  if (!raw || (typeof raw !== 'object' && !Array.isArray(raw))) {
+    return groups;
+  }
+
+  const hasModeBuckets = ['standard', 'pro', 'ai'].some((mode) => raw && raw[mode] !== undefined);
+  if (hasModeBuckets) {
+    ['standard', 'pro', 'ai'].forEach((mode) => {
+      groups[mode] = mapPositionCollection(raw[mode]);
+    });
+    const shared = mapPositionCollection(raw.all || raw.shared);
+    if (shared.length) {
+      ['standard', 'pro', 'ai'].forEach((mode) => {
+        if (groups[mode].length === 0) {
+          groups[mode] = shared.slice();
+        }
+      });
+    }
+    return groups;
+  }
+
+  const flat = mapPositionCollection(raw);
+  if (flat.length === 0) {
+    return groups;
+  }
+
+  const unspecified = [];
+  flat.forEach((position) => {
+    const mode = resolvePositionMode(position);
+    if (mode && groups[mode]) {
+      groups[mode].push(position);
+    } else {
+      unspecified.push(position);
+    }
+  });
+
+  if (unspecified.length) {
+    ['standard', 'pro', 'ai'].forEach((mode) => {
+      groups[mode] = groups[mode].concat(unspecified);
+    });
+  }
+
+  return groups;
+}
+
+function pickFieldValue(position, candidates) {
+  if (!position || typeof position !== 'object') {
+    return { value: undefined, raw: undefined, key: null };
+  }
+  for (const key of candidates) {
+    if (key in position) {
+      const raw = position[key];
+      const value = unwrapPositionValue(raw);
+      if (value !== undefined && value !== null && value !== '') {
+        return { value, raw, key };
+      }
+      if (Array.isArray(raw) || (raw && typeof raw === 'object')) {
+        return { value, raw, key };
+      }
+    }
+  }
+  return { value: undefined, raw: undefined, key: null };
+}
+
+function pickNumericField(position, candidates) {
+  const result = pickFieldValue(position, candidates);
+  let numeric = toNumeric(result.value);
+  if (Number.isFinite(numeric)) {
+    return { ...result, numeric };
+  }
+  if (Array.isArray(result.raw) && result.raw.length > 0) {
+    numeric = toNumeric(result.raw[0]);
+    if (Number.isFinite(numeric)) {
+      return { ...result, numeric };
+    }
+  }
+  return { ...result, numeric: null };
+}
+
+function formatSignedNumber(value, digits = 2) {
+  if (!Number.isFinite(value)) return null;
+  const abs = Math.abs(value).toFixed(digits);
+  if (value > 0) return `+${abs}`;
+  if (value < 0) return `-${abs}`;
+  return abs;
+}
+
+function formatPercentField(field, digits = 2) {
+  if (!field || !Number.isFinite(field.numeric)) {
+    return null;
+  }
+  let numeric = field.numeric;
+  const key = (field.key || '').toString();
+  const keyHintsPercent = /percent|pct/i.test(key);
+  if (!keyHintsPercent && Math.abs(numeric) <= 10) {
+    numeric *= 100;
+  }
+  const abs = Math.abs(numeric).toFixed(digits);
+  const sign = numeric > 0 ? '+' : numeric < 0 ? '-' : '';
+  return { text: `${sign}${abs}%`, numeric };
+}
+
+function formatPositionSize(value) {
+  if (!Number.isFinite(value)) return '–';
+  const abs = Math.abs(value);
+  if (abs >= 1000) {
+    return abs.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  }
+  if (abs >= 100) {
+    return abs.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  }
+  if (abs >= 10) {
+    return abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  if (abs >= 1) {
+    return abs.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  }
+  if (abs >= 0.1) {
+    return abs.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+  }
+  return abs.toLocaleString(undefined, { minimumFractionDigits: 5, maximumFractionDigits: 5 });
+}
+
+function getModeLabel(mode) {
+  if (mode === 'ai') return 'AI';
+  if (mode === 'pro') return 'Pro';
+  return 'Standard';
+}
+
+function getPositionSymbol(position) {
+  const field = pickFieldValue(position, ACTIVE_POSITION_ALIASES.symbol || []);
+  const symbol = field.value ?? position.symbol;
+  if (!symbol) return '–';
+  return symbol.toString().toUpperCase();
+}
+
+function buildSideBadge(side) {
+  if (!side) return null;
+  const badge = document.createElement('span');
+  const normalized = side.toString().toLowerCase();
+  let tone = '';
+  if (normalized === 'buy' || normalized === 'long') tone = 'long';
+  else if (normalized === 'sell' || normalized === 'short') tone = 'short';
+  badge.className = `side-badge ${tone}`.trim();
+  badge.textContent = formatSideLabel(side);
+  return badge;
+}
+
+function extractPositionSide(position, sizeField) {
+  const field = pickFieldValue(position, ACTIVE_POSITION_ALIASES.side || []);
+  if (field.value) return field.value;
+  if (sizeField && Number.isFinite(sizeField.numeric)) {
+    if (sizeField.numeric > 0) return 'BUY';
+    if (sizeField.numeric < 0) return 'SELL';
+  }
+  return null;
+}
+
+function getPositionTimestamp(position) {
+  const numericField = pickNumericField(position, ACTIVE_POSITION_TIMESTAMP_NUMERIC_KEYS);
+  if (Number.isFinite(numericField.numeric)) {
+    return numericField.numeric;
+  }
+  const isoField = pickFieldValue(position, ACTIVE_POSITION_TIMESTAMP_ISO_KEYS);
+  if (isoField.value) {
+    const parsed = Date.parse(isoField.value);
+    if (Number.isFinite(parsed)) {
+      return parsed / 1000;
+    }
+  }
+  return Number.NEGATIVE_INFINITY;
+}
+
+function updateActivePositionsView(mode) {
+  if (!activePositionsRows) return;
+  const label = getModeLabel(mode);
+  const positions = Array.isArray(activePositionsByMode[mode]) ? activePositionsByMode[mode] : [];
+  const sorted = positions.slice().sort((a, b) => getPositionTimestamp(b) - getPositionTimestamp(a));
+  activePositionsRows.innerHTML = '';
+
+  const hasRows = sorted.length > 0;
+
+  if (activePositionsModeLabel) {
+    activePositionsModeLabel.textContent = `${label} mode`;
+  }
+  if (activePositionsEmpty) {
+    activePositionsEmpty.textContent = `No active positions in ${label} mode.`;
+    if (hasRows) {
+      activePositionsEmpty.setAttribute('hidden', '');
+    } else {
+      activePositionsEmpty.removeAttribute('hidden');
+    }
+  }
+  if (activePositionsWrapper) {
+    if (hasRows) {
+      activePositionsWrapper.removeAttribute('hidden');
+    } else {
+      activePositionsWrapper.setAttribute('hidden', '');
+    }
+  }
+  if (activePositionsCard) {
+    if (hasRows) {
+      activePositionsCard.removeAttribute('data-empty');
+    } else {
+      activePositionsCard.setAttribute('data-empty', 'true');
+    }
+  }
+
+  if (!hasRows) return;
+
+  sorted.forEach((position) => {
+    const row = document.createElement('tr');
+
+    const sizeField = pickNumericField(position, ACTIVE_POSITION_ALIASES.size || []);
+
+    const symbolCell = document.createElement('td');
+    const symbolWrapper = document.createElement('div');
+    symbolWrapper.className = 'active-positions-symbol-wrapper';
+    const symbolLabel = document.createElement('span');
+    symbolLabel.className = 'active-positions-symbol';
+    symbolLabel.textContent = getPositionSymbol(position);
+    symbolWrapper.append(symbolLabel);
+    const sideValue = extractPositionSide(position, sizeField);
+    const sideBadge = buildSideBadge(sideValue);
+    if (sideBadge) {
+      symbolWrapper.append(sideBadge);
+    }
+    symbolCell.append(symbolWrapper);
+    row.append(symbolCell);
+
+    const sizeCell = document.createElement('td');
+    sizeCell.className = 'numeric active-positions-size';
+    const sizeNumeric = Number.isFinite(sizeField.numeric) ? Math.abs(sizeField.numeric) : sizeField.numeric;
+    sizeCell.textContent = formatPositionSize(sizeNumeric);
+    row.append(sizeCell);
+
+    const entryCell = document.createElement('td');
+    entryCell.className = 'numeric';
+    const entryField = pickNumericField(position, ACTIVE_POSITION_ALIASES.entry || []);
+    entryCell.textContent = formatPriceDisplay(entryField.numeric);
+    row.append(entryCell);
+
+    const markCell = document.createElement('td');
+    markCell.className = 'numeric';
+    const markField = pickNumericField(position, ACTIVE_POSITION_ALIASES.mark || []);
+    markCell.textContent = formatPriceDisplay(markField.numeric);
+    row.append(markCell);
+
+    const roiCell = document.createElement('td');
+    roiCell.className = 'numeric';
+    const roiField = pickNumericField(position, ACTIVE_POSITION_ALIASES.roi || []);
+    const roiFormatted =
+      formatPercentField(roiField) || formatPercentField(pickNumericField(position, ACTIVE_POSITION_ALIASES.roe || []));
+    roiCell.textContent = roiFormatted ? roiFormatted.text : '–';
+    row.append(roiCell);
+
+    const pnlCell = document.createElement('td');
+    pnlCell.className = 'numeric';
+    const pnlField = pickNumericField(position, ACTIVE_POSITION_ALIASES.pnl || []);
+    const pnlPercentField = formatPercentField(pickNumericField(position, ACTIVE_POSITION_ALIASES.roe || []));
+    let pnlDisplay = '–';
+    let pnlTone = null;
+    if (Number.isFinite(pnlField.numeric)) {
+      pnlTone = pnlField.numeric;
+      pnlDisplay = `${formatSignedNumber(pnlField.numeric, 2)} USDT`;
+      if (pnlPercentField && pnlPercentField.text) {
+        pnlDisplay += ` (${pnlPercentField.text})`;
+      }
+    } else if (pnlPercentField && pnlPercentField.text) {
+      pnlTone = pnlPercentField.numeric;
+      pnlDisplay = pnlPercentField.text;
+    }
+    pnlCell.textContent = pnlDisplay;
+    if (Number.isFinite(pnlTone)) {
+      if (pnlTone > 0) {
+        pnlCell.classList.add('tone-profit');
+      } else if (pnlTone < 0) {
+        pnlCell.classList.add('tone-loss');
+      }
+    }
+    row.append(pnlCell);
+
+    const nextTpCell = document.createElement('td');
+    nextTpCell.className = 'numeric';
+    const nextTpField = pickFieldValue(position, ACTIVE_POSITION_ALIASES.nextTp || []);
+    let nextTpDisplay = '–';
+    if (nextTpField.value !== undefined && nextTpField.value !== null && nextTpField.value !== '') {
+      const numeric = toNumeric(nextTpField.value);
+      nextTpDisplay = Number.isFinite(numeric) ? formatPriceDisplay(numeric) : nextTpField.value.toString();
+    } else if (Array.isArray(nextTpField.raw) && nextTpField.raw.length > 0) {
+      const numeric = toNumeric(unwrapPositionValue(nextTpField.raw[0]));
+      nextTpDisplay = Number.isFinite(numeric) ? formatPriceDisplay(numeric) : nextTpField.raw[0].toString();
+    }
+    nextTpCell.textContent = nextTpDisplay;
+    row.append(nextTpCell);
+
+    const tpCountCell = document.createElement('td');
+    tpCountCell.className = 'numeric';
+    const tpCountField = pickFieldValue(position, ACTIVE_POSITION_ALIASES.tpCount || []);
+    let tpCountDisplay = '–';
+    if (tpCountField.value !== undefined && tpCountField.value !== null && tpCountField.value !== '') {
+      const numeric = toNumeric(tpCountField.value);
+      tpCountDisplay = Number.isFinite(numeric) ? numeric.toString() : tpCountField.value.toString();
+    } else if (Array.isArray(tpCountField.raw)) {
+      tpCountDisplay = tpCountField.raw.length.toString();
+    } else if (tpCountField.raw && typeof tpCountField.raw === 'object' && Array.isArray(tpCountField.raw.levels)) {
+      tpCountDisplay = tpCountField.raw.levels.length.toString();
+    }
+    tpCountCell.textContent = tpCountDisplay;
+    row.append(tpCountCell);
+
+    activePositionsRows.append(row);
+  });
+}
+
+function renderActivePositions(openPositions) {
+  activePositionsByMode = normaliseActivePositions(openPositions);
+  updateActivePositionsView(getCurrentMode());
 }
 
 function friendlyReason(reason) {
@@ -2152,6 +2594,7 @@ function applyModeState(mode) {
     setAiMode(false);
     setProMode(false);
   }
+  updateActivePositionsView(mode);
   syncModeUi();
 }
 
@@ -2246,6 +2689,7 @@ async function loadTrades() {
     renderPnlChart(data.history);
     renderAiBudget(data.ai_budget);
     renderAiActivity(data.ai_activity);
+    renderActivePositions(data.open);
   } catch (err) {
     console.warn(err);
   }
