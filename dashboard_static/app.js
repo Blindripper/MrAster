@@ -40,7 +40,6 @@ const aiBudgetModeLabel = document.getElementById('ai-budget-mode');
 const aiBudgetMeta = document.getElementById('ai-budget-meta');
 const aiBudgetFill = document.getElementById('ai-budget-fill');
 const modeButtons = document.querySelectorAll('[data-mode-select]');
-const btnHeroLaunch = document.getElementById('btn-hero-launch');
 const btnHeroDownload = document.getElementById('btn-hero-download');
 
 let currentConfig = {};
@@ -2052,10 +2051,6 @@ btnStop.addEventListener('click', stopBot);
 btnSaveAi?.addEventListener('click', saveAiConfig);
 btnApplyPreset?.addEventListener('click', saveQuickSetup);
 btnToggleEnv?.addEventListener('click', toggleEnvPanel);
-btnHeroLaunch?.addEventListener('click', () => {
-  const newWindow = window.open('https://www.asterdex.com/en/futures/v1/ASTERUSDT', '_blank', 'noopener,noreferrer');
-  newWindow?.focus();
-});
 btnHeroDownload?.addEventListener('click', () => {
   downloadTradeHistory();
 });
