@@ -749,7 +749,6 @@ button:focus-visible {
 .layout > .card {
   grid-column: span 12;
   min-height: 0;
-  height: 100%;
 }
 
 @media (min-width: 901px) {
