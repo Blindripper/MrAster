@@ -327,8 +327,10 @@ def build_bracket_payload(kind: str, side: str, price: float, position_side: Opt
     kind_norm = kind.upper()
     payload = {
         "type": "STOP_MARKET" if kind_norm in {"SL", "STOP"} else "TAKE_PROFIT_MARKET",
-        "stopPrice": _format_decimal(price),
-        "workingType": WORKING_TYPE,
+        "trigger": {
+            "type": WORKING_TYPE,
+            "price": _format_decimal(price),
+        },
         "closePosition": True,
     }
     if position_side:
@@ -2051,8 +2053,6 @@ class Bot:
             order_params = {"symbol": symbol, "side": sig, "type": "MARKET", "quantity": q_str}
             order_params["stopLoss"] = build_bracket_payload("SL", sig, sl)
             order_params["takeProfit"] = build_bracket_payload("TP", sig, tp)
-            order_params["stopLossPrice"] = _format_decimal(sl)
-            order_params["takeProfitPrice"] = _format_decimal(tp)
             self.exchange.post_order(order_params)
             # Brackets – versuche neue Signatur (qty+entry), fallback auf alte
             try:
