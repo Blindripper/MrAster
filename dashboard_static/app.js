@@ -1957,8 +1957,19 @@ function renderAiBudget(budget) {
   aiBudgetMeta.textContent = `Spent ${spent.toFixed(2)} / ${limit.toFixed(2)} USD · remaining ${remaining.toFixed(2)} USD`;
 }
 
+function isScrolledToBottom(element, threshold = 24) {
+  if (!element) return true;
+  return element.scrollHeight - element.clientHeight - element.scrollTop <= threshold;
+}
+
+function scrollToBottom(element, behavior = 'smooth') {
+  if (!element) return;
+  element.scrollTo({ top: element.scrollHeight, behavior });
+}
+
 function renderAiActivity(feed) {
   if (!aiActivityFeed) return;
+  const shouldAutoScroll = isScrolledToBottom(aiActivityFeed);
   aiActivityFeed.innerHTML = '';
   if (!aiMode) {
     const disabled = document.createElement('div');
@@ -2019,6 +2030,11 @@ function renderAiActivity(feed) {
     wrapper.append(kind, body);
     aiActivityFeed.append(wrapper);
   });
+  if (shouldAutoScroll) {
+    const behavior = aiActivityFeed.scrollHeight > aiActivityFeed.clientHeight ? 'smooth' : 'auto';
+    // Ensure the newest activity remains visible when new entries arrive.
+    scrollToBottom(aiActivityFeed, behavior);
+  }
 }
 
 function appendChatMessage(role, message, meta = {}) {
