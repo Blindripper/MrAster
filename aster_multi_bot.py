@@ -2108,6 +2108,7 @@ class Bot:
         self.state.setdefault("ai_activity", [])
         self.state.setdefault("manual_trade_requests", [])
         self.state.setdefault("manual_trade_history", [])
+        self._ensure_banned_state()
         self._last_ai_activity_persist = 0.0
         self._manual_state_dirty = False
         self.policy: Optional[BanditPolicy] = None
@@ -2163,6 +2164,51 @@ class Bot:
     @property
     def strategy(self) -> Strategy:
         return self._strategy
+
+    def _ensure_banned_state(self) -> None:
+        banned = self.state.get("banned_symbols")
+        if not isinstance(banned, dict):
+            banned = {}
+        self.state["banned_symbols"] = banned
+        try:
+            self.universe.exclude = set(self.universe.exclude)
+            if banned:
+                self.universe.exclude.update(banned.keys())
+        except Exception:
+            pass
+
+    def _banned_map(self) -> Dict[str, Dict[str, Any]]:
+        banned = self.state.get("banned_symbols")
+        if not isinstance(banned, dict):
+            banned = {}
+            self.state["banned_symbols"] = banned
+        return banned
+
+    def _ban_symbol(self, symbol: str, reason: str, details: Optional[str] = None) -> None:
+        banned = self._banned_map()
+        if symbol in banned:
+            return
+        banned[symbol] = {
+            "reason": reason,
+            "banned_at": time.time(),
+        }
+        if details:
+            banned[symbol]["details"] = details
+        try:
+            self.universe.exclude.add(symbol)
+        except Exception:
+            pass
+        log.warning(
+            "Banning symbol %s due to %s%s",
+            symbol,
+            reason,
+            f" ({details})" if details else "",
+        )
+        if getattr(self, "trade_mgr", None):
+            try:
+                self.trade_mgr.save()
+            except Exception as exc:
+                log.debug(f"ban persist failed {symbol}: {exc}")
 
     def _refresh_manual_requests(self):
         try:
@@ -2295,6 +2341,11 @@ class Bot:
         return {"S": SIZE_MULT_S, "M": SIZE_MULT_M, "L": SIZE_MULT_L}.get(bucket, SIZE_MULT_S)
 
     def handle_symbol(self, symbol: str, pos_map: Dict[str, float]):
+        banned_map = self._banned_map()
+        if symbol in banned_map:
+            if self.decision_tracker:
+                self.decision_tracker.record_rejection("banned_symbol")
+            return
         fail_until = self.state.setdefault("fail_skip_until", {}).get(symbol)
         if fail_until and time.time() < fail_until:
             return
@@ -2770,7 +2821,20 @@ class Bot:
             order_params = {"symbol": symbol, "side": sig, "type": "MARKET", "quantity": q_str}
             order_params["stopLoss"] = build_bracket_payload("SL", sig, sl)
             order_params["takeProfit"] = build_bracket_payload("TP", sig, tp)
-            self.exchange.post_order(order_params)
+            try:
+                self.exchange.post_order(order_params)
+            except requests.HTTPError as exc:
+                status = getattr(exc.response, "status_code", None)
+                if status == 400:
+                    detail = ""
+                    if exc.response is not None:
+                        try:
+                            payload = exc.response.json()
+                            detail = json.dumps(payload)[:160]
+                        except ValueError:
+                            detail = (exc.response.text or "")[:160]
+                    self._ban_symbol(symbol, "order_bad_request", details=detail or None)
+                raise
             # Brackets – versuche neue Signatur (qty+entry), fallback auf alte
             try:
                 ok = self.guard.ensure_after_entry(symbol, sig, float(q_str), px, sl, tp)
