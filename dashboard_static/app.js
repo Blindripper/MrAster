@@ -73,6 +73,18 @@ let aiChatPending = false;
 let activePositions = [];
 const aiChatSubmit = aiChatForm ? aiChatForm.querySelector('button[type="submit"]') : null;
 
+function buildAsterPositionUrl(symbol) {
+  if (!symbol) return null;
+  const trimmed = symbol.toString().trim();
+  if (!trimmed) return null;
+  return `https://www.asterdex.com/en/futures/v1/${trimmed.toUpperCase()}`;
+}
+
+function openAsterPositionUrl(url) {
+  if (!url) return;
+  window.open(url, '_blank', 'noopener');
+}
+
 function getCurrentMode() {
   if (aiMode) return 'ai';
   if (proMode) return 'pro';
@@ -1098,7 +1110,8 @@ function updateActivePositionsView() {
     symbolWrapper.className = 'active-positions-symbol-wrapper';
     const symbolLabel = document.createElement('span');
     symbolLabel.className = 'active-positions-symbol';
-    symbolLabel.textContent = getPositionSymbol(position);
+    const symbolValue = getPositionSymbol(position);
+    symbolLabel.textContent = symbolValue;
     symbolWrapper.append(symbolLabel);
     const sideValue = extractPositionSide(position, sizeField);
     const sideBadge = buildSideBadge(sideValue);
@@ -1107,6 +1120,22 @@ function updateActivePositionsView() {
     }
     symbolCell.append(symbolWrapper);
     row.append(symbolCell);
+
+    const asterUrl = buildAsterPositionUrl(symbolValue);
+    if (asterUrl) {
+      row.dataset.asterUrl = asterUrl;
+      row.classList.add('active-positions-row-link');
+      row.setAttribute('tabindex', '0');
+      row.setAttribute('role', 'link');
+      row.setAttribute('aria-label', `Open ${symbolValue} on Asterdex`);
+      row.addEventListener('click', () => openAsterPositionUrl(asterUrl));
+      row.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openAsterPositionUrl(asterUrl);
+        }
+      });
+    }
 
     const sizeCell = document.createElement('td');
     sizeCell.className = 'numeric active-positions-size';

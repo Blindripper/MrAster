@@ -660,6 +660,16 @@ body.pro-mode [data-normal-only] {
   color: var(--text);
 }
 
+.active-positions-table tbody tr.active-positions-row-link {
+  cursor: pointer;
+  transition: background 0.16s ease;
+}
+
+.active-positions-table tbody tr.active-positions-row-link:hover,
+.active-positions-table tbody tr.active-positions-row-link:focus-visible {
+  background: rgba(245, 196, 107, 0.08);
+}
+
 .active-positions-table tbody tr:last-child td {
   border-bottom: none;
 }
