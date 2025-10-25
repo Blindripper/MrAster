@@ -72,6 +72,7 @@ let aiChatHistory = [];
 let aiChatPending = false;
 let activePositions = [];
 let tradesRefreshTimer = null;
+let tradeViewportSyncHandle = null;
 const aiChatSubmit = aiChatForm ? aiChatForm.querySelector('button[type="submit"]') : null;
 
 function buildAsterPositionUrl(symbol) {
@@ -1686,6 +1687,8 @@ function renderTradeHistory(history) {
   tradeList.innerHTML = '';
 
   if (!history || history.length === 0) {
+    tradeList.style.removeProperty('max-height');
+    tradeList.removeAttribute('data-viewport-locked');
     const emptyState = document.createElement('div');
     emptyState.className = 'trade-empty';
     emptyState.textContent = 'No trades yet.';
@@ -1704,8 +1707,11 @@ function renderTradeHistory(history) {
 
     const details = document.createElement('details');
     details.className = 'trade-item';
-    if (index === 0) {
-      details.open = true;
+    if (trade.side) {
+      details.dataset.side = trade.side.toString().toLowerCase();
+    }
+    if (pnlTone && pnlTone !== 'neutral') {
+      details.dataset.pnl = pnlTone;
     }
 
     const summary = document.createElement('summary');
@@ -1727,12 +1733,20 @@ function renderTradeHistory(history) {
       heading.append(sideBadge);
     }
 
-    if (trade.bucket) {
-      const bucket = document.createElement('span');
-      bucket.className = 'bucket-badge';
-      bucket.textContent = `Bucket ${trade.bucket}`;
-      heading.append(bucket);
-    }
+    const summaryMain = document.createElement('div');
+    summaryMain.className = 'trade-summary-main';
+    summaryMain.append(heading);
+
+    const summaryMeta = document.createElement('div');
+    summaryMeta.className = 'trade-summary-meta';
+    const tradeDate = document.createElement('span');
+    tradeDate.className = 'trade-date';
+    tradeDate.textContent = formatTimestamp(trade.closed_at_iso || trade.opened_at_iso);
+    const outcomeLabel = pnlTone === 'profit' ? 'Profit' : pnlTone === 'loss' ? 'Loss' : 'Flat';
+    const tradeOutcome = document.createElement('span');
+    tradeOutcome.className = `trade-outcome ${pnlTone}`.trim();
+    tradeOutcome.textContent = `${outcomeLabel} ${pnlDisplay}`;
+    summaryMeta.append(tradeOutcome, tradeDate);
 
     const priceBlock = document.createElement('div');
     priceBlock.className = 'trade-price-block';
@@ -1765,11 +1779,16 @@ function renderTradeHistory(history) {
       timeBlock.append(durationLabel);
     }
 
-    summary.append(heading, priceBlock, resultBlock, timeBlock);
+    summary.append(summaryMain, summaryMeta);
     details.append(summary);
 
     const body = document.createElement('div');
     body.className = 'trade-item-body';
+
+    const overview = document.createElement('div');
+    overview.className = 'trade-item-overview';
+    overview.append(priceBlock, resultBlock, timeBlock);
+    body.append(overview);
 
     const metricGrid = document.createElement('div');
     metricGrid.className = 'trade-metric-grid';
@@ -1930,6 +1949,8 @@ function renderTradeHistory(history) {
     details.append(body);
     tradeList.append(details);
   });
+
+  requestTradeListViewportSync();
 }
 
 function renderAiBudget(budget) {
@@ -1965,6 +1986,78 @@ function isScrolledToBottom(element, threshold = 24) {
 function scrollToBottom(element, behavior = 'smooth') {
   if (!element) return;
   element.scrollTo({ top: element.scrollHeight, behavior });
+}
+
+function parsePxValue(value) {
+  if (typeof value !== 'string') return 0;
+  const parsed = parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function syncTradeListViewport() {
+  if (!tradeList || typeof window === 'undefined') return;
+  const items = Array.from(tradeList.querySelectorAll('.trade-item'));
+  if (items.length <= 3) {
+    tradeList.style.removeProperty('max-height');
+    tradeList.removeAttribute('data-viewport-locked');
+    return;
+  }
+
+  const summaries = items
+    .slice(0, 3)
+    .map((item) => item.querySelector('.trade-item-summary'))
+    .filter(Boolean);
+
+  if (summaries.length === 0) {
+    tradeList.style.removeProperty('max-height');
+    tradeList.removeAttribute('data-viewport-locked');
+    return;
+  }
+
+  let visibleHeight = 0;
+  summaries.forEach((summary) => {
+    visibleHeight += summary.getBoundingClientRect().height;
+  });
+
+  if (visibleHeight <= 0) {
+    tradeList.style.removeProperty('max-height');
+    tradeList.removeAttribute('data-viewport-locked');
+    return;
+  }
+
+  const style = window.getComputedStyle(tradeList);
+  const gapValue = parsePxValue(style.rowGap || style.gap || '0');
+  const paddingTop = parsePxValue(style.paddingTop);
+  const paddingBottom = parsePxValue(style.paddingBottom);
+  const visibleCount = summaries.length;
+  const totalHeight =
+    visibleHeight + gapValue * Math.max(0, visibleCount - 1) + paddingTop + paddingBottom + 4;
+
+  tradeList.style.maxHeight = `${Math.round(Math.max(totalHeight, 0))}px`;
+  tradeList.setAttribute('data-viewport-locked', 'true');
+}
+
+function requestTradeListViewportSync() {
+  if (!tradeList) return;
+
+  if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+    syncTradeListViewport();
+    return;
+  }
+
+  if (tradeViewportSyncHandle !== null) {
+    window.cancelAnimationFrame(tradeViewportSyncHandle);
+  }
+
+  tradeViewportSyncHandle = window.requestAnimationFrame(() => {
+    tradeViewportSyncHandle = null;
+    syncTradeListViewport();
+  });
+}
+
+if (typeof window !== 'undefined' && tradeList) {
+  tradeList.addEventListener('toggle', () => requestTradeListViewportSync());
+  window.addEventListener('resize', () => requestTradeListViewportSync());
 }
 
 function renderAiActivity(feed) {
