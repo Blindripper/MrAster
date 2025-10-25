@@ -571,7 +571,6 @@ class BotRunner:
 
 loghub = LogHub()
 runner = BotRunner(loghub)
-chat_engine = AIChatEngine(CONFIG)
 
 app = FastAPI(title="Aster Bot Control Center")
 app.add_middleware(
@@ -883,6 +882,9 @@ class AIChatEngine:
                 except RuntimeError:
                     pass
             return {"reply": textwrap.fill(fallback, width=96), "model": model, "source": "fallback"}
+
+
+chat_engine = AIChatEngine(CONFIG)
 
 @app.get("/api/trades")
 async def trades() -> Dict[str, Any]:
