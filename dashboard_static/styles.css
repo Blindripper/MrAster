@@ -1367,13 +1367,15 @@ body.ai-mode .status .decision-metric {
 }
 
 .ai-hint {
-  padding: 1rem 1.2rem;
-  border-radius: 1.1rem;
-  background: rgba(245, 196, 107, 0.1);
-  border: 1px solid rgba(245, 196, 107, 0.28);
-  color: var(--text);
-  font-size: 0.95rem;
+  margin: 0;
+  padding: 0.25rem 0.4rem 0.6rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
   line-height: 1.5;
+}
+
+.ai-hint[hidden] {
+  display: none;
 }
 
 .ai-mode-window {
@@ -1449,10 +1451,9 @@ body.ai-mode .ai-mode-window {
 
 .ai-mode-window-body .ai-hint {
   flex: 0 0 auto;
-  background: rgba(245, 196, 107, 0.12);
-  border-color: rgba(245, 196, 107, 0.35);
-  font-size: 1rem;
-  margin: 0;
+  background: none;
+  border: none;
+  font-size: 0.9rem;
 }
 
 .ai-activity-feed {
@@ -1466,12 +1467,12 @@ body.ai-mode .ai-mode-window {
 }
 
 .ai-feed-empty {
-  padding: 1rem 1.2rem;
-  border-radius: 0.9rem;
-  background: rgba(245, 196, 107, 0.08);
-  color: var(--text-subtle);
-  text-align: center;
-  letter-spacing: 0.01em;
+  margin: 0;
+  padding: 0.3rem 0.4rem;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  font-style: italic;
+  text-align: left;
 }
 
 .ai-activity-item {

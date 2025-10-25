@@ -2069,9 +2069,9 @@ function renderAiActivity(feed) {
   }
   const items = Array.isArray(feed) ? feed.slice(0, 80) : [];
   if (!items.length) {
-    const empty = document.createElement('div');
+    const empty = document.createElement('p');
     empty.className = 'ai-feed-empty';
-    empty.textContent = 'Noch keine autonomen Entscheidungen aufgezeichnet.';
+    empty.textContent = 'Autonome Entscheidungen werden hier live angezeigt, sobald neue Aktionen stattfinden.';
     aiActivityFeed.append(empty);
     return;
   }
@@ -2124,6 +2124,18 @@ function renderAiActivity(feed) {
     // Ensure the newest activity remains visible when new entries arrive.
     scrollToBottom(aiActivityFeed, behavior);
   }
+}
+
+function setAiHintMessage(message) {
+  if (!aiHint) return;
+  const text = (message || '').toString().trim();
+  if (!text) {
+    aiHint.textContent = '';
+    aiHint.hidden = true;
+    return;
+  }
+  aiHint.hidden = false;
+  aiHint.textContent = text;
 }
 
 function appendChatMessage(role, message, meta = {}) {
@@ -2197,7 +2209,7 @@ function renderTradeSummary(stats) {
     placeholder.className = 'trade-metric muted';
     placeholder.innerHTML = `<span class="metric-label">Performance</span><span class="metric-value">No data yet</span>`;
     tradeSummary.append(placeholder);
-    aiHint.textContent = 'No data available.';
+    setAiHintMessage('KI-Analyse wird angezeigt, sobald neue Telemetrie vorliegt.');
     return;
   }
   const avgR = stats.count ? stats.total_r / stats.count : 0;
@@ -2232,7 +2244,7 @@ function renderTradeSummary(stats) {
     `;
     tradeSummary.append(el);
   }
-  aiHint.textContent = stats.ai_hint;
+  setAiHintMessage(stats.ai_hint);
 }
 
 function renderDecisionStats(stats) {
