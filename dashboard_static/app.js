@@ -24,6 +24,8 @@ const pnlChartModalClose = document.getElementById('pnl-modal-close');
 const pnlChartModalCanvas = document.getElementById('pnl-chart-expanded');
 const presetButtons = document.querySelectorAll('.preset[data-preset]');
 const presetDescription = document.getElementById('preset-description');
+const presetFundingDetails = document.getElementById('preset-funding-details');
+const presetMlDetails = document.getElementById('preset-ml-details');
 const riskSlider = document.getElementById('risk-slider');
 const leverageSlider = document.getElementById('leverage-slider');
 const riskValue = document.getElementById('risk-value');
@@ -191,12 +193,20 @@ const PRESETS = {
       m: 1.15,
       l: 1.35,
     },
+    funding: {
+      enabled: true,
+      maxLong: 0.0007,
+      maxShort: 0.0009,
+    },
     alpha: {
       threshold: 0.6,
       minConf: 0.28,
       promoteDelta: 0.18,
       rewardMargin: 0.06,
     },
+    alphaWarmup: 55,
+    banditEnabled: true,
+    alphaEnabled: true,
     equityFraction: 0.22,
     maxOpenGlobal: 1,
     trendBias: 'with',
@@ -222,12 +232,20 @@ const PRESETS = {
       m: 1.4,
       l: 1.9,
     },
+    funding: {
+      enabled: true,
+      maxLong: 0.001,
+      maxShort: 0.001,
+    },
     alpha: {
       threshold: 0.55,
       minConf: 0.22,
       promoteDelta: 0.15,
       rewardMargin: 0.05,
     },
+    alphaWarmup: 40,
+    banditEnabled: true,
+    alphaEnabled: true,
     equityFraction: 0.28,
     maxOpenGlobal: 2,
     trendBias: 'with',
@@ -253,12 +271,20 @@ const PRESETS = {
       m: 1.6,
       l: 2.2,
     },
+    funding: {
+      enabled: true,
+      maxLong: 0.0014,
+      maxShort: 0.0018,
+    },
     alpha: {
       threshold: 0.52,
       minConf: 0.18,
       promoteDelta: 0.12,
       rewardMargin: 0.04,
     },
+    alphaWarmup: 32,
+    banditEnabled: true,
+    alphaEnabled: true,
     equityFraction: 0.34,
     maxOpenGlobal: 3,
     trendBias: 'with',
@@ -284,12 +310,20 @@ const PRESETS = {
       m: 1.1,
       l: 1.3,
     },
+    funding: {
+      enabled: true,
+      maxLong: 0.0011,
+      maxShort: 0.0013,
+    },
     alpha: {
       threshold: 0.6,
       minConf: 0.25,
       promoteDelta: 0.16,
       rewardMargin: 0.05,
     },
+    alphaWarmup: 45,
+    banditEnabled: true,
+    alphaEnabled: true,
     equityFraction: 0.24,
     maxOpenGlobal: 2,
     trendBias: 'against',
@@ -3012,6 +3046,243 @@ function toFixedString(value, digits) {
   return numeric.toFixed(digits);
 }
 
+function numbersDiffer(a, b, tolerance = 1e-6) {
+  const numA = Number(a);
+  const numB = Number(b);
+  const aValid = Number.isFinite(numA);
+  const bValid = Number.isFinite(numB);
+  if (!aValid && !bValid) return false;
+  if (!aValid || !bValid) return true;
+  return Math.abs(numA - numB) > tolerance;
+}
+
+function getPresetScaling(preset) {
+  if (!preset) {
+    return { safeRisk: 1, safeLeverage: 1, ratio: 1 };
+  }
+  const riskMin = riskSlider ? Number(riskSlider.min) : 0.25;
+  const riskMax = riskSlider ? Number(riskSlider.max) : 5;
+  const leverageMin = leverageSlider ? Number(leverageSlider.min) : 1;
+  const leverageMax = leverageSlider ? Number(leverageSlider.max) : 5;
+  const rawRisk = riskSlider ? Number(riskSlider.value) : Number(preset.risk ?? 1);
+  const rawLeverage = leverageSlider ? Number(leverageSlider.value) : Number(preset.leverage ?? 1);
+  const safeRisk = clampValue(rawRisk, riskMin, riskMax);
+  const safeLeverage = clampValue(rawLeverage, leverageMin, leverageMax);
+  const baselineRisk = Number(preset.risk ?? 1) || 1;
+  const ratio = clampValue(baselineRisk > 0 ? safeRisk / baselineRisk : 1, 0.2, 4);
+  return { safeRisk, safeLeverage, ratio };
+}
+
+function getEnvNumber(env, key, fallback) {
+  if (!env || env[key] === undefined || env[key] === null || env[key] === '') {
+    return fallback;
+  }
+  const numeric = Number(env[key]);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function getEnvBoolean(env, key, fallback) {
+  if (!env || env[key] === undefined || env[key] === null || env[key] === '') {
+    return fallback;
+  }
+  return isTruthy(env[key]);
+}
+
+function formatFundingRate(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '–';
+  const percent = numeric * 100;
+  const digits = Math.abs(percent) >= 0.1 ? 2 : 3;
+  return `${percent.toFixed(digits)}%`;
+}
+
+function formatMultiplierValue(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '–';
+  return `${numeric.toFixed(2)}×`;
+}
+
+function appendPresetMetaItem(list, { label, value, detail, note }) {
+  if (!list) return;
+  const item = document.createElement('li');
+  if (label) {
+    const labelEl = document.createElement('span');
+    labelEl.className = 'preset-meta-label';
+    labelEl.textContent = label;
+    item.append(labelEl);
+  }
+  if (value) {
+    const valueEl = document.createElement('span');
+    valueEl.className = 'preset-meta-value';
+    valueEl.textContent = value;
+    item.append(valueEl);
+  }
+  if (detail) {
+    const detailEl = document.createElement('span');
+    detailEl.className = 'preset-meta-detail';
+    detailEl.textContent = detail;
+    item.append(detailEl);
+  }
+  if (note) {
+    const noteEl = document.createElement('span');
+    noteEl.className = 'preset-meta-note';
+    noteEl.textContent = note;
+    item.append(noteEl);
+  }
+  list.append(item);
+}
+
+function renderPresetMeta(presetKey = selectedPreset) {
+  const preset = PRESETS[presetKey];
+  if (!preset || (!presetFundingDetails && !presetMlDetails)) return;
+
+  const env = currentConfig?.env ?? {};
+  const { ratio } = getPresetScaling(preset);
+
+  const fundingTarget = {
+    enabled: preset.funding?.enabled !== false,
+    maxLong: Number(preset.funding?.maxLong ?? 0.001),
+    maxShort: Number(preset.funding?.maxShort ?? 0.001),
+  };
+  const fundingCurrent = {
+    enabled: getEnvBoolean(env, 'ASTER_FUNDING_FILTER_ENABLED', fundingTarget.enabled),
+    maxLong: getEnvNumber(env, 'ASTER_FUNDING_MAX_LONG', fundingTarget.maxLong),
+    maxShort: getEnvNumber(env, 'ASTER_FUNDING_MAX_SHORT', fundingTarget.maxShort),
+  };
+
+  if (presetFundingDetails) {
+    let text;
+    if (fundingTarget.enabled) {
+      text = `Enabled · Long cap ${formatFundingRate(fundingTarget.maxLong)} · Short cap ${formatFundingRate(fundingTarget.maxShort)}`;
+    } else {
+      text = 'Disabled — trades ignore funding drift for this preset.';
+    }
+    const differs =
+      fundingCurrent.enabled !== fundingTarget.enabled ||
+      numbersDiffer(fundingCurrent.maxLong, fundingTarget.maxLong, 1e-5) ||
+      numbersDiffer(fundingCurrent.maxShort, fundingTarget.maxShort, 1e-5);
+    if (differs) {
+      const currentSummary = fundingCurrent.enabled
+        ? `${formatFundingRate(fundingCurrent.maxLong)} / ${formatFundingRate(fundingCurrent.maxShort)}`
+        : 'disabled';
+      presetFundingDetails.innerHTML = `${text} <span class="preset-meta-note">Current: ${currentSummary}</span>`;
+    } else {
+      presetFundingDetails.textContent = text;
+    }
+  }
+
+  if (presetMlDetails) {
+    presetMlDetails.innerHTML = '';
+    const banditTargetEnabled = preset.banditEnabled !== false;
+    const alphaTargetEnabled = preset.alphaEnabled !== false;
+
+    const sizeTarget = {
+      base: Number(preset.sizeMult?.base ?? 1) * ratio,
+      s: Number(preset.sizeMult?.s ?? preset.sizeMult?.base ?? 1) * ratio,
+      m: Number(preset.sizeMult?.m ?? 1.4) * ratio,
+      l: Number(preset.sizeMult?.l ?? 1.9) * ratio,
+    };
+    const sizeCurrent = {
+      base: getEnvNumber(env, 'ASTER_SIZE_MULT', sizeTarget.base),
+      s: getEnvNumber(env, 'ASTER_SIZE_MULT_S', sizeTarget.s),
+      m: getEnvNumber(env, 'ASTER_SIZE_MULT_M', sizeTarget.m),
+      l: getEnvNumber(env, 'ASTER_SIZE_MULT_L', sizeTarget.l),
+    };
+    const banditCurrentEnabled = getEnvBoolean(env, 'ASTER_BANDIT_ENABLED', banditTargetEnabled);
+
+    const banditDetail = banditTargetEnabled
+      ? `Target buckets — S ${formatMultiplierValue(sizeTarget.s)} · M ${formatMultiplierValue(sizeTarget.m)} · L ${formatMultiplierValue(sizeTarget.l)}`
+      : 'Target preset disables ML gating for entries.';
+
+    let banditNote = '';
+    if (
+      banditCurrentEnabled !== banditTargetEnabled ||
+      numbersDiffer(sizeTarget.s, sizeCurrent.s, 1e-3) ||
+      numbersDiffer(sizeTarget.m, sizeCurrent.m, 1e-3) ||
+      numbersDiffer(sizeTarget.l, sizeCurrent.l, 1e-3)
+    ) {
+      if (banditCurrentEnabled) {
+        banditNote = `Current: S ${formatMultiplierValue(sizeCurrent.s)} · M ${formatMultiplierValue(sizeCurrent.m)} · L ${formatMultiplierValue(sizeCurrent.l)}`;
+      } else {
+        banditNote = 'Current: disabled';
+      }
+    }
+
+    appendPresetMetaItem(presetMlDetails, {
+      label: 'Bandit gate',
+      value: banditTargetEnabled ? 'Enabled' : 'Disabled',
+      detail: banditDetail,
+      note: banditNote,
+    });
+
+    const alphaTarget = {
+      threshold: Number(preset.alpha?.threshold ?? 0.55),
+      minConf: Number(preset.alpha?.minConf ?? 0.2),
+      promoteDelta: Number(preset.alpha?.promoteDelta ?? 0.15),
+      rewardMargin: Number(preset.alpha?.rewardMargin ?? 0.05),
+      warmup: Number(preset.alphaWarmup ?? 40),
+    };
+    const alphaCurrentEnabled = getEnvBoolean(env, 'ASTER_ALPHA_ENABLED', alphaTargetEnabled);
+    const alphaCurrent = {
+      threshold: getEnvNumber(env, 'ASTER_ALPHA_THRESHOLD', alphaTarget.threshold),
+      minConf: getEnvNumber(env, 'ASTER_ALPHA_MIN_CONF', alphaTarget.minConf),
+      promoteDelta: getEnvNumber(env, 'ASTER_ALPHA_PROMOTE_DELTA', alphaTarget.promoteDelta),
+      rewardMargin: getEnvNumber(env, 'ASTER_ALPHA_REWARD_MARGIN', alphaTarget.rewardMargin),
+      warmup: getEnvNumber(env, 'ASTER_ALPHA_WARMUP', alphaTarget.warmup),
+    };
+
+    const alphaDetail = alphaTargetEnabled
+      ? `Target — threshold ${formatNumber(alphaTarget.threshold, 2)}, min conf ${formatNumber(alphaTarget.minConf, 2)}, promote Δ ${formatNumber(alphaTarget.promoteDelta, 2)}, warmup ${Math.round(alphaTarget.warmup)} trades`
+      : 'Target preset disables the alpha filter.';
+
+    let alphaNote = '';
+    if (
+      alphaCurrentEnabled !== alphaTargetEnabled ||
+      numbersDiffer(alphaCurrent.threshold, alphaTarget.threshold, 1e-4) ||
+      numbersDiffer(alphaCurrent.minConf, alphaTarget.minConf, 1e-4) ||
+      numbersDiffer(alphaCurrent.promoteDelta, alphaTarget.promoteDelta, 1e-4) ||
+      numbersDiffer(alphaCurrent.warmup, alphaTarget.warmup, 0.5)
+    ) {
+      if (alphaCurrentEnabled) {
+        alphaNote = `Current — threshold ${formatNumber(alphaCurrent.threshold, 2)}, min conf ${formatNumber(alphaCurrent.minConf, 2)}, promote Δ ${formatNumber(alphaCurrent.promoteDelta, 2)}, warmup ${Math.round(alphaCurrent.warmup)} trades`;
+      } else {
+        alphaNote = 'Current: disabled';
+      }
+    }
+
+    appendPresetMetaItem(presetMlDetails, {
+      label: 'Alpha filter',
+      value: alphaTargetEnabled ? 'Enabled' : 'Disabled',
+      detail: alphaDetail,
+      note: alphaNote,
+    });
+
+    if (alphaTargetEnabled) {
+      let rewardNote = '';
+      if (numbersDiffer(alphaCurrent.rewardMargin, alphaTarget.rewardMargin, 1e-4)) {
+        rewardNote = `Current: ${formatNumber(alphaCurrent.rewardMargin, 2)} R`;
+      }
+      appendPresetMetaItem(presetMlDetails, {
+        label: 'Alpha reward',
+        value: `${formatNumber(alphaTarget.rewardMargin, 2)} R`,
+        detail: 'Minimum realised edge needed to reinforce the model.',
+        note: rewardNote,
+      });
+    }
+
+    if (!presetMlDetails.children.length) {
+      const empty = document.createElement('li');
+      empty.className = 'preset-meta-empty';
+      empty.textContent = 'No ML policy details available for this preset.';
+      presetMlDetails.append(empty);
+    }
+  }
+}
+
+function refreshPresetMeta() {
+  renderPresetMeta(selectedPreset);
+}
+
 function formatRisk(value) {
   const numeric = Number(value);
   if (Number.isNaN(numeric)) return '–';
@@ -3049,16 +3320,7 @@ function markQuickConfigDirty() {
 function buildQuickSetupPayload() {
   const presetKey = PRESETS[selectedPreset] ? selectedPreset : 'mid';
   const preset = PRESETS[presetKey];
-  const riskMin = riskSlider ? Number(riskSlider.min) : 0.25;
-  const riskMax = riskSlider ? Number(riskSlider.max) : 5;
-  const leverageMin = leverageSlider ? Number(leverageSlider.min) : 1;
-  const leverageMax = leverageSlider ? Number(leverageSlider.max) : 5;
-  const rawRisk = riskSlider ? Number(riskSlider.value) : preset.risk;
-  const rawLeverage = leverageSlider ? Number(leverageSlider.value) : preset.leverage;
-  const safeRisk = clampValue(rawRisk, riskMin, riskMax);
-  const safeLeverage = clampValue(rawLeverage, leverageMin, leverageMax);
-  const baselineRisk = Number(preset.risk) || 1;
-  const ratio = clampValue(baselineRisk > 0 ? safeRisk / baselineRisk : 1, 0.2, 4);
+  const { safeRisk, safeLeverage, ratio } = getPresetScaling(preset);
 
   const payload = {
     ASTER_PRESET_MODE: presetKey,
@@ -3080,12 +3342,16 @@ function buildQuickSetupPayload() {
     ASTER_SIZE_MULT_L: toFixedString(preset.sizeMult.l * ratio, 2),
     ASTER_EQUITY_FRACTION: toFixedString(preset.equityFraction, 2),
     ASTER_MAX_OPEN_GLOBAL: toFixedString(preset.maxOpenGlobal, 0),
-    ASTER_BANDIT_ENABLED: 'true',
-    ASTER_ALPHA_ENABLED: 'true',
+    ASTER_FUNDING_FILTER_ENABLED: preset?.funding?.enabled === false ? 'false' : 'true',
+    ASTER_FUNDING_MAX_LONG: toFixedString(preset?.funding?.maxLong ?? 0.001, 4),
+    ASTER_FUNDING_MAX_SHORT: toFixedString(preset?.funding?.maxShort ?? 0.001, 4),
+    ASTER_BANDIT_ENABLED: preset?.banditEnabled === false ? 'false' : 'true',
+    ASTER_ALPHA_ENABLED: preset?.alphaEnabled === false ? 'false' : 'true',
     ASTER_ALPHA_THRESHOLD: toFixedString(preset.alpha.threshold, 2),
     ASTER_ALPHA_MIN_CONF: toFixedString(preset.alpha.minConf, 2),
     ASTER_ALPHA_PROMOTE_DELTA: toFixedString(preset.alpha.promoteDelta, 2),
     ASTER_ALPHA_REWARD_MARGIN: toFixedString(preset.alpha.rewardMargin, 2),
+    ASTER_ALPHA_WARMUP: toFixedString(preset?.alphaWarmup ?? 40, 0),
   };
 
   return payload;
@@ -3107,6 +3373,7 @@ function syncQuickSetupFromEnv(env) {
   }
   updateRiskValue();
   updateLeverageValue();
+  refreshPresetMeta();
   resetQuickConfigButton();
 }
 
@@ -3181,6 +3448,7 @@ function applyPreset(key, options = {}) {
   }
   updateRiskValue();
   updateLeverageValue();
+  refreshPresetMeta();
   if (!silent) {
     markQuickConfigDirty();
   }
@@ -3511,18 +3779,22 @@ presetButtons.forEach((button) => {
 riskSlider?.addEventListener('input', () => {
   updateRiskValue();
   markQuickConfigDirty();
+  refreshPresetMeta();
 });
 riskSlider?.addEventListener('change', () => {
   updateRiskValue();
   markQuickConfigDirty();
+  refreshPresetMeta();
 });
 leverageSlider?.addEventListener('input', () => {
   updateLeverageValue();
   markQuickConfigDirty();
+  refreshPresetMeta();
 });
 leverageSlider?.addEventListener('change', () => {
   updateLeverageValue();
   markQuickConfigDirty();
+  refreshPresetMeta();
 });
 
 if (autoScrollToggles.length > 0) {
