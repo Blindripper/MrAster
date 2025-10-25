@@ -812,7 +812,6 @@ const ACTIVE_POSITION_ALIASES = {
   size: ['size', 'qty', 'quantity', 'positionAmt', 'position_amt', 'position_amount'],
   entry: ['entry', 'entry_price', 'entryPrice'],
   mark: ['mark', 'mark_price', 'markPrice', 'lastPrice', 'price'],
-  roi: ['roi', 'roi_percent', 'roi_pct', 'return', 'return_percent', 'return_pct'],
   roe: ['roe', 'roe_percent', 'roe_pct', 'roePercent', 'pnl_percent', 'pnl_pct'],
   pnl: ['pnl', 'unrealized', 'unrealized_pnl', 'pnl_unrealized', 'unrealizedProfit', 'pnl_usd'],
   nextTp: ['next_tp', 'tp_next', 'nextTarget', 'next_tp_price', 'tp', 'take_profit_next'],
@@ -1126,14 +1125,6 @@ function updateActivePositionsView() {
     const markField = pickNumericField(position, ACTIVE_POSITION_ALIASES.mark || []);
     markCell.textContent = formatPriceDisplay(markField.numeric);
     row.append(markCell);
-
-    const roiCell = document.createElement('td');
-    roiCell.className = 'numeric';
-    const roiField = pickNumericField(position, ACTIVE_POSITION_ALIASES.roi || []);
-    const roiFormatted =
-      formatPercentField(roiField) || formatPercentField(pickNumericField(position, ACTIVE_POSITION_ALIASES.roe || []));
-    roiCell.textContent = roiFormatted ? roiFormatted.text : '–';
-    row.append(roiCell);
 
     const pnlCell = document.createElement('td');
     pnlCell.className = 'numeric';
