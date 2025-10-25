@@ -926,6 +926,7 @@ def _decision_summary(state: Dict[str, Any]) -> Dict[str, Any]:
 class AIChatEngine:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
+        self._temperature_supported = True
 
     def _env(self) -> Dict[str, Any]:
         return self.config.get("env", {})
@@ -1064,18 +1065,51 @@ class AIChatEngine:
         }
         payload = {
             "model": model,
-            "temperature": 0.4,
             "messages": messages,
             "max_tokens": 400,
         }
+
+        if self._temperature_supported:
+            dash_temp = os.getenv("ASTER_DASHBOARD_AI_TEMPERATURE")
+            if dash_temp:
+                try:
+                    parsed_temp = float(dash_temp)
+                except ValueError:
+                    parsed_temp = None
+                    log.debug("Invalid ASTER_DASHBOARD_AI_TEMPERATURE=%s — ignoring", dash_temp)
+                else:
+                    if abs(parsed_temp - 1.0) > 1e-6:
+                        payload["temperature"] = parsed_temp
+            else:
+                payload["temperature"] = 0.4
+
         try:
-            resp = requests.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=30,
-            )
-            resp.raise_for_status()
+            attempt = 0
+            while True:
+                resp = requests.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=30,
+                )
+                if resp.status_code < 400:
+                    break
+                body_snippet = (resp.text or "")[:160]
+                lower_body = body_snippet.lower()
+                if (
+                    self._temperature_supported
+                    and "temperature" in payload
+                    and "temperature" in lower_body
+                    and "default" in lower_body
+                    and attempt == 0
+                ):
+                    payload.pop("temperature", None)
+                    attempt += 1
+                    self._temperature_supported = False
+                    log.debug("Dashboard AI model rejected temperature override; retrying without it.")
+                    continue
+                resp.raise_for_status()
+
             data = resp.json()
             choices = data.get("choices") or []
             reply = choices[0]["message"]["content"] if choices else ""

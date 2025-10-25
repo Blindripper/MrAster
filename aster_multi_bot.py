@@ -656,6 +656,7 @@ class AITradeAdvisor:
         self.budget = budget
         self.enabled = bool(enabled and self.api_key)
         self._session = requests.Session() if self.enabled else None
+        self._temperature_supported = True
 
     def _pricing(self) -> Dict[str, float]:
         return self.MODEL_PRICING.get(self.model, self.MODEL_PRICING["default"])
@@ -703,23 +704,59 @@ class AITradeAdvisor:
         }
         payload = {
             "model": self.model,
-            "temperature": 0.3,
             "response_format": {"type": "text"},
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
         }
-        try:
-            resp = self._session.post(
+
+        def _send_chat(p: Dict[str, Any]) -> requests.Response:
+            return self._session.post(
                 "https://api.openai.com/v1/chat/completions",
                 headers=headers,
-                json=payload,
+                json=p,
                 timeout=30,
             )
-            if resp.status_code >= 400:
-                raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:160]}")
-            data = resp.json()
+
+        if self._temperature_supported:
+            temperature_override = os.getenv("ASTER_AI_TEMPERATURE")
+            if temperature_override:
+                try:
+                    temp_value = float(temperature_override)
+                except ValueError:
+                    temp_value = None
+                    log.debug("Invalid ASTER_AI_TEMPERATURE=%s — ignoring", temperature_override)
+                else:
+                    if abs(temp_value - 1.0) > 1e-6:
+                        payload["temperature"] = temp_value
+            else:
+                # Default to deterministic responses for legacy models that still accept it.
+                payload["temperature"] = 0.3
+
+        try:
+            attempt = 0
+            while True:
+                resp = _send_chat(payload)
+                if resp.status_code < 400:
+                    data = resp.json()
+                    break
+                text_preview = (resp.text or "")[:160]
+                lower_preview = text_preview.lower()
+                if (
+                    self._temperature_supported
+                    and "temperature" in payload
+                    and "temperature" in lower_preview
+                    and "default" in lower_preview
+                    and attempt == 0
+                ):
+                    # Retry without temperature for models that only allow the default value.
+                    payload.pop("temperature", None)
+                    attempt += 1
+                    self._temperature_supported = False
+                    log.debug("AI model rejected temperature override; retrying without it.")
+                    continue
+                raise RuntimeError(f"HTTP {resp.status_code}: {text_preview}")
         except Exception as exc:
             log.debug(f"AI request failed ({kind}): {exc}")
             return None
@@ -1266,7 +1303,30 @@ class Exchange:
     def post_order(self, params: Dict[str, Any]) -> Any:
         if PAPER:
             return {"paper": True, "params": params}
-        return self.signed("post", "/fapi/v1/order", params)
+        try:
+            return self.signed("post", "/fapi/v1/order", params)
+        except requests.HTTPError as exc:
+            if any(k in params for k in ("stopLoss", "takeProfit")):
+                context_text = ""
+                if exc.response is not None:
+                    try:
+                        payload = exc.response.json()
+                        context_text = json.dumps(payload)[:160]
+                    except ValueError:
+                        context_text = (exc.response.text or "")[:160]
+                context_lower = context_text.lower()
+                if context_lower and not any(
+                    hint in context_lower for hint in ("stoploss", "takeprofit", "trigger", "closeposition")
+                ):
+                    raise
+                log.debug(
+                    "Entry order rejected with bracket payloads (will retry without them): %s",
+                    context_text,
+                )
+                stripped = {k: v for k, v in params.items() if k not in {"stopLoss", "takeProfit"}}
+                if stripped != params:
+                    return self.signed("post", "/fapi/v1/order", stripped)
+            raise
 
     def cancel_all(self, symbol: str) -> Any:
         if PAPER:
