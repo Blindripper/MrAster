@@ -1,4 +1,6 @@
 const envContainer = document.getElementById('env-settings');
+const envPanel = document.getElementById('env-config-panel');
+const btnToggleEnv = document.getElementById('btn-toggle-env');
 const btnSaveConfig = document.getElementById('btn-save-config');
 const btnSaveCredentials = document.getElementById('btn-save-credentials');
 const btnStart = document.getElementById('btn-start');
@@ -49,6 +51,7 @@ let aiMode = false;
 let selectedPreset = 'mid';
 let autoScrollEnabled = true;
 let quickConfigPristine = true;
+let envCollapsed = true;
 let mostTradedTimer = null;
 let lastAiBudget = null;
 let lastMostTradedAssets = [];
@@ -85,6 +88,27 @@ function syncModeUi() {
   updateModeButtons();
   updateAiBudgetModeLabel();
 }
+
+function setEnvCollapsed(collapsed) {
+  envCollapsed = Boolean(collapsed);
+  if (envPanel) {
+    envPanel.classList.toggle('collapsed', envCollapsed);
+  }
+  if (btnToggleEnv) {
+    btnToggleEnv.setAttribute('aria-expanded', (!envCollapsed).toString());
+    btnToggleEnv.textContent = envCollapsed ? 'Show settings' : 'Hide settings';
+    btnToggleEnv.setAttribute(
+      'aria-label',
+      envCollapsed ? 'Expand environment settings' : 'Collapse environment settings',
+    );
+  }
+}
+
+function toggleEnvPanel() {
+  setEnvCollapsed(!envCollapsed);
+}
+
+setEnvCollapsed(true);
 
 const PRESETS = {
   low: {
@@ -1907,6 +1931,9 @@ async function syncAiModeFromEnv(env) {
 function setProMode(state) {
   proMode = Boolean(state);
   document.body.classList.toggle('pro-mode', proMode);
+  if (proMode) {
+    setEnvCollapsed(true);
+  }
   syncModeUi();
 }
 
@@ -2024,6 +2051,7 @@ btnStart.addEventListener('click', startBot);
 btnStop.addEventListener('click', stopBot);
 btnSaveAi?.addEventListener('click', saveAiConfig);
 btnApplyPreset?.addEventListener('click', saveQuickSetup);
+btnToggleEnv?.addEventListener('click', toggleEnvPanel);
 btnHeroLaunch?.addEventListener('click', () => {
   const newWindow = window.open('https://www.asterdex.com/en/futures/v1/ASTERUSDT', '_blank', 'noopener,noreferrer');
   newWindow?.focus();

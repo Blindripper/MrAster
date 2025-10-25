@@ -265,9 +265,20 @@
         </div>
       </section>
 
-      <section class="card mode-panel config" data-pro-only>
+      <section id="env-config-panel" class="card mode-panel config" data-pro-only>
         <div class="card-header">
-          <h2>Environment configuration</h2>
+          <div class="card-header-main">
+            <h2>Environment configuration</h2>
+            <button
+              id="btn-toggle-env"
+              class="ghost"
+              type="button"
+              aria-expanded="false"
+              aria-controls="env-settings"
+            >
+              Show settings
+            </button>
+          </div>
           <button id="btn-save-config" class="primary subtle">Save</button>
         </div>
         <p class="card-subtitle">Adjust every relevant <code>ASTER_*</code> parameter without restarting the service. Changes persist automatically.</p>
