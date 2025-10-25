@@ -1305,7 +1305,10 @@ function formatBracketLevel(field) {
     }
     const numeric = toNumeric(candidate);
     if (Number.isFinite(numeric)) {
-      const formatted = formatPriceDisplay(numeric);
+      const formatted = formatPriceDisplay(numeric, {
+        minimumFractionDigits: 7,
+        maximumFractionDigits: 7,
+      });
       if (formatted !== '–') {
         return formatted;
       }
