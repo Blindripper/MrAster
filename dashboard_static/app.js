@@ -828,6 +828,20 @@ const ACTIVE_POSITION_ALIASES = {
   roe: ['roe', 'roe_percent', 'roe_pct', 'roePercent', 'pnl_percent', 'pnl_pct'],
   pnl: ['pnl', 'unrealized', 'unrealized_pnl', 'pnl_unrealized', 'unrealizedProfit', 'pnl_usd'],
   nextTp: ['next_tp', 'tp_next', 'nextTarget', 'next_tp_price', 'tp', 'take_profit_next'],
+  stop: [
+    'stop',
+    'stop_loss',
+    'stopLoss',
+    'stop_price',
+    'stopPrice',
+    'stopLossPrice',
+    'stop_loss_price',
+    'sl',
+    'stop_next',
+    'next_stop',
+    'stopTarget',
+    'stop_loss_next',
+  ],
   side: ['side', 'positionSide', 'direction'],
 };
 
@@ -974,6 +988,38 @@ function pickNumericField(position, candidates) {
     }
   }
   return { ...result, numeric: null };
+}
+
+function formatBracketLevel(field) {
+  if (!field) return '–';
+
+  const valueCandidates = [];
+
+  if (field.value !== undefined && field.value !== null && field.value !== '') {
+    valueCandidates.push(field.value);
+  }
+
+  if (Array.isArray(field.raw) && field.raw.length > 0) {
+    valueCandidates.push(unwrapPositionValue(field.raw[0]));
+  }
+
+  for (const candidate of valueCandidates) {
+    if (candidate === undefined || candidate === null || candidate === '') {
+      continue;
+    }
+    const numeric = toNumeric(candidate);
+    if (Number.isFinite(numeric)) {
+      const formatted = formatPriceDisplay(numeric);
+      if (formatted !== '–') {
+        return formatted;
+      }
+    }
+    if (typeof candidate === 'string' || typeof candidate === 'number') {
+      return candidate.toString();
+    }
+  }
+
+  return '–';
 }
 
 function formatSignedNumber(value, digits = 2) {
@@ -1181,19 +1227,32 @@ function updateActivePositionsView() {
     }
     row.append(pnlCell);
 
-    const nextTpCell = document.createElement('td');
-    nextTpCell.className = 'numeric';
+    const tpSlCell = document.createElement('td');
+    tpSlCell.className = 'numeric active-positions-brackets';
     const nextTpField = pickFieldValue(position, ACTIVE_POSITION_ALIASES.nextTp || []);
-    let nextTpDisplay = '–';
-    if (nextTpField.value !== undefined && nextTpField.value !== null && nextTpField.value !== '') {
-      const numeric = toNumeric(nextTpField.value);
-      nextTpDisplay = Number.isFinite(numeric) ? formatPriceDisplay(numeric) : nextTpField.value.toString();
-    } else if (Array.isArray(nextTpField.raw) && nextTpField.raw.length > 0) {
-      const numeric = toNumeric(unwrapPositionValue(nextTpField.raw[0]));
-      nextTpDisplay = Number.isFinite(numeric) ? formatPriceDisplay(numeric) : nextTpField.raw[0].toString();
-    }
-    nextTpCell.textContent = nextTpDisplay;
-    row.append(nextTpCell);
+    const stopField = pickFieldValue(position, ACTIVE_POSITION_ALIASES.stop || []);
+    const tpDisplay = formatBracketLevel(nextTpField);
+    const slDisplay = formatBracketLevel(stopField);
+
+    const buildBracketRow = (labelText, valueText) => {
+      const bracketRow = document.createElement('div');
+      bracketRow.className = 'active-positions-bracket';
+
+      const label = document.createElement('span');
+      label.className = 'active-positions-bracket-label';
+      label.textContent = labelText;
+
+      const value = document.createElement('span');
+      value.className = 'active-positions-bracket-value';
+      value.textContent = valueText;
+
+      bracketRow.append(label, value);
+      return bracketRow;
+    };
+
+    tpSlCell.append(buildBracketRow('TP', tpDisplay));
+    tpSlCell.append(buildBracketRow('SL', slDisplay));
+    row.append(tpSlCell);
 
     activePositionsRows.append(row);
   });

@@ -693,6 +693,30 @@ body.pro-mode [data-normal-only] {
   font-variant-numeric: tabular-nums;
 }
 
+.active-positions-brackets {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
+}
+
+.active-positions-bracket {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.active-positions-bracket-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.active-positions-bracket-value {
+  font-variant-numeric: tabular-nums;
+}
+
 .active-positions-empty {
   padding: 0.95rem 1.1rem;
   text-align: center;
