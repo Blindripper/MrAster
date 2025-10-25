@@ -23,16 +23,43 @@
     <header class="hero">
       <div class="hero-inner">
         <div class="hero-header">
-          <div class="hero-title">
-            <h1>MrAster - your Aster Bot Control Center</h1>
-            <p>Orchestrate your trading stack, follow live telemetry, and tune parameters with AI-assisted insights.</p>
+          <div class="hero-lede">
+            <span class="hero-badge">Autonomous trading suite</span>
+            <h1>Command your automated crypto strategies.</h1>
+            <p>
+              Orchestrate your bots, track live telemetry, and tune parameters with AI-assisted insights. MrAster keeps
+              every execution transparent — whether you're in Standard, Pro, or AI mode.
+            </p>
+            <div class="hero-actions" role="group" aria-label="Primary actions">
+              <button class="primary" id="btn-hero-launch">Launch console</button>
+              <button class="ghost hero-secondary" id="btn-hero-download">Download CLI</button>
+            </div>
+            <dl class="hero-metrics">
+              <div class="hero-metric">
+                <dt>Total trading volume</dt>
+                <dd>$3T</dd>
+              </div>
+              <div class="hero-metric">
+                <dt>Global users</dt>
+                <dd>5M</dd>
+              </div>
+              <div class="hero-metric">
+                <dt>Median execution latency</dt>
+                <dd>32ms</dd>
+              </div>
+            </dl>
           </div>
-          <div class="hero-mode-panel" role="group" aria-label="Select mode">
-            <span class="hero-mode-label">Mode</span>
-            <div class="hero-mode-toggle">
-              <button class="mode-button active" data-mode-select="standard" aria-pressed="true">Standard</button>
-              <button class="mode-button" data-mode-select="pro" aria-pressed="false">Pro</button>
-              <button class="mode-button mode-highlight" data-mode-select="ai" aria-pressed="false">AI</button>
+          <div class="hero-visual">
+            <div class="hero-orbit" aria-hidden="true">
+              <div class="hero-orbit-core"></div>
+            </div>
+            <div class="hero-mode-panel" role="group" aria-label="Select mode">
+              <span class="hero-mode-label">Mode</span>
+              <div class="hero-mode-toggle">
+                <button class="mode-button active" data-mode-select="standard" aria-pressed="true">Standard</button>
+                <button class="mode-button" data-mode-select="pro" aria-pressed="false">Pro</button>
+                <button class="mode-button mode-highlight" data-mode-select="ai" aria-pressed="false">AI</button>
+              </div>
             </div>
           </div>
         </div>
