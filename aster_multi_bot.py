@@ -631,6 +631,24 @@ class NewsTrendSentinel:
 
 
 class AITradeAdvisor:
+    STAT_KEY_WHITELIST = {
+        "atr_abs",
+        "atr_pct",
+        "expected_r",
+        "funding",
+        "htf_trend_down",
+        "htf_trend_up",
+        "last_price",
+        "mid_price",
+        "qv_score",
+        "regime_adx",
+        "regime_slope",
+        "rsi",
+        "spread_bps",
+        "trend",
+        "wickiness",
+    }
+    STAT_PREFIX_WHITELIST = ("adx", "ema_", "slope_")
     MODEL_PRICING: Dict[str, Dict[str, float]] = {
         "gpt-4o": {"input": 0.000005, "output": 0.000015},
         "gpt-4o-mini": {"input": 0.0000006, "output": 0.0000024},
@@ -657,6 +675,44 @@ class AITradeAdvisor:
         self.enabled = bool(enabled and self.api_key)
         self._session = requests.Session() if self.enabled else None
         self._temperature_supported = True
+
+    def _coerce_float(self, value: Any) -> Optional[float]:
+        if isinstance(value, bool):
+            return 1.0 if value else 0.0
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError:
+                return None
+        return None
+
+    def _extract_stat_block(self, ctx: Dict[str, Any]) -> Dict[str, float]:
+        stats: Dict[str, float] = {}
+        if not isinstance(ctx, dict):
+            return stats
+        for key, raw in ctx.items():
+            if key in self.STAT_KEY_WHITELIST or any(key.startswith(prefix) for prefix in self.STAT_PREFIX_WHITELIST):
+                num = self._coerce_float(raw)
+                if num is not None and math.isfinite(num):
+                    stats[key] = num
+        return stats
+
+    def _summarize_sentinel(self, sentinel: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(sentinel, dict):
+            return {}
+        summary: Dict[str, Any] = {}
+        label = sentinel.get("label")
+        if isinstance(label, str) and label:
+            summary["label"] = label
+        event_risk = self._coerce_float(sentinel.get("event_risk"))
+        if event_risk is not None and math.isfinite(event_risk):
+            summary["event_risk"] = event_risk
+        hype_score = self._coerce_float(sentinel.get("hype_score"))
+        if hype_score is not None and math.isfinite(hype_score):
+            summary["hype_score"] = hype_score
+        return summary
 
     def _pricing(self) -> Dict[str, float]:
         return self.MODEL_PRICING.get(self.model, self.MODEL_PRICING["default"])
@@ -883,45 +939,32 @@ class AITradeAdvisor:
             return fallback
 
         system_prompt = (
-            "You are an autonomous crypto futures strategist. Analyse the provided EMA relationships, RSI, ADX, ATR," \
-            " order book context, and sentinel signals to decide independently whether to execute the trade. "
-            "Ignore legacy skip heuristics and make your own judgement from the indicators. "
-            "Return pure JSON with fields take (boolean) or decision ('take'/'skip'), decision_reason, decision_note, "
+            "You are an autonomous crypto futures strategist. Analyse the provided indicator statistics (EMA relationships, "
+            "trend slope, RSI, ADX, ATR, expected edge) together with sentinel risk hints to decide independently whether "
+            "to execute the trade. Ignore legacy skip heuristics and make your own judgement from the indicators. Return "
+            "pure JSON with fields take (boolean) or decision ('take'/'skip'), decision_reason, decision_note, "
             "size_multiplier, sl_multiplier, tp_multiplier, leverage, risk_note, explanation, fasttp_overrides (object "
             "with enabled, min_r, ret1, ret3, snap_atr), and optional precise levels entry_price, stop_loss, take_profit. "
             "If you reject the trade set take=false and leave explanation empty."
         )
-        user_payload = {
+        stats_block = self._extract_stat_block(ctx)
+        sentinel_payload = self._summarize_sentinel(sentinel)
+        constraints: Dict[str, Any] = {}
+        if MAX_NOTIONAL_USDT > 0:
+            constraints["max_notional"] = MAX_NOTIONAL_USDT
+        user_payload: Dict[str, Any] = {
             "symbol": symbol,
             "side": side,
             "price": price,
             "base_stop": base_sl,
             "base_target": base_tp,
             "atr_abs": atr_abs,
-            "context": ctx,
-            "sentinel": sentinel,
-            "book": ctx.get("book", {}),
-            "defaults": {
-                "fasttp": {
-                    "min_r": FASTTP_MIN_R,
-                    "ret1": FAST_TP_RET1,
-                    "ret3": FAST_TP_RET3,
-                    "snap_atr": FASTTP_SNAP_ATR,
-                },
-                "leverage": LEVERAGE,
-                "risk": {
-                    "default_notional": DEFAULT_NOTIONAL,
-                    "risk_per_trade": RISK_PER_TRADE,
-                    "sl_atr_mult": SL_ATR_MULT,
-                    "tp_atr_mult": TP_ATR_MULT,
-                    "size_multipliers": {
-                        "S": SIZE_MULT_S,
-                        "M": SIZE_MULT_M,
-                        "L": SIZE_MULT_L,
-                    },
-                },
-            },
+            "stats": stats_block,
         }
+        if sentinel_payload:
+            user_payload["sentinel"] = sentinel_payload
+        if constraints:
+            user_payload["constraints"] = constraints
         user_prompt = json.dumps(user_payload, indent=2)
         response = self._chat(system_prompt, user_prompt, kind="plan")
         if not response:
@@ -1047,42 +1090,29 @@ class AITradeAdvisor:
             return fallback
 
         system_prompt = (
-            "You are an autonomous trend scout for a futures trading bot. Base your decision on the EMA alignment, HTF "
-            "trend slope, RSI, ADX, ATR, and sentinel metadata rather than fixed bot rules. "
-            "Return JSON with fields take (boolean), decision, decision_reason, decision_note, side (BUY/SELL), "
-            "size_multiplier, sl_multiplier, tp_multiplier, leverage, risk_note, explanation, fasttp_overrides "
-            "(object with enabled, min_r, ret1, ret3, snap_atr), confidence (0-1), and optional levels entry_price, stop_loss, take_profit. "
+            "You are an autonomous trend scout for a futures trading bot. Base your decision on the provided indicator "
+            "statistics (EMA alignment, trend slope, RSI, ADX, ATR, expected edge) and sentinel risk hints instead of fixed "
+            "bot rules. Return JSON with fields take (boolean), decision, decision_reason, decision_note, side (BUY/SELL), "
+            "size_multiplier, sl_multiplier, tp_multiplier, leverage, risk_note, explanation, fasttp_overrides (object with "
+            "enabled, min_r, ret1, ret3, snap_atr), confidence (0-1), and optional levels entry_price, stop_loss, take_profit. "
             "If you decline the setup leave explanation empty."
         )
-        user_payload = {
+        stats_block = self._extract_stat_block(ctx)
+        sentinel_payload = self._summarize_sentinel(sentinel)
+        constraints: Dict[str, Any] = {}
+        if MAX_NOTIONAL_USDT > 0:
+            constraints["max_notional"] = MAX_NOTIONAL_USDT
+        user_payload: Dict[str, Any] = {
             "symbol": symbol,
             "price": price,
             "atr_abs": atr_abs,
             "distance": {"stop": base_sl, "target": base_tp},
-            "context": ctx,
-            "sentinel": sentinel,
-            "book": ctx.get("book", {}),
-            "defaults": {
-                "fasttp": {
-                    "min_r": FASTTP_MIN_R,
-                    "ret1": FAST_TP_RET1,
-                    "ret3": FAST_TP_RET3,
-                    "snap_atr": FASTTP_SNAP_ATR,
-                },
-                "leverage": LEVERAGE,
-                "risk": {
-                    "default_notional": DEFAULT_NOTIONAL,
-                    "risk_per_trade": RISK_PER_TRADE,
-                    "sl_atr_mult": SL_ATR_MULT,
-                    "tp_atr_mult": TP_ATR_MULT,
-                    "size_multipliers": {
-                        "S": SIZE_MULT_S,
-                        "M": SIZE_MULT_M,
-                        "L": SIZE_MULT_L,
-                    },
-                },
-            },
+            "stats": stats_block,
         }
+        if sentinel_payload:
+            user_payload["sentinel"] = sentinel_payload
+        if constraints:
+            user_payload["constraints"] = constraints
         response = self._chat(system_prompt, json.dumps(user_payload, indent=2), kind="trend")
         if not response:
             return fallback
