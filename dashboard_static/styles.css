@@ -292,6 +292,7 @@ body.pro-mode [data-normal-only] {
 .hero {
   position: relative;
   padding: clamp(2.4rem, 4vw, 3rem) clamp(1.5rem, 5vw, 3.8rem);
+  padding-bottom: clamp(3.4rem, 6vw, 5rem);
   border-radius: 2rem;
   width: 100%;
   background: radial-gradient(circle at 12% 20%, rgba(245, 196, 107, 0.18), transparent 55%),
@@ -724,7 +725,7 @@ button:focus-visible {
   }
 
   body.pro-mode:not(.ai-mode) .layout {
-    grid-auto-rows: minmax(460px, auto);
+    grid-auto-rows: minmax(400px, auto);
   }
 
   body.ai-mode .layout {
@@ -1447,6 +1448,10 @@ body.ai-mode .ai-config-panel h3 {
   line-height: 1.6;
   color: #f1ede1;
   box-shadow: inset 0 0 0 1px rgba(245, 196, 107, 0.06);
+}
+
+body.pro-mode .log-stream {
+  min-height: clamp(240px, 32vh, 420px);
 }
 
 .log-line {
