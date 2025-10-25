@@ -1768,6 +1768,25 @@ class TradeManager:
                 self.state["policy"] = self.policy.to_dict()
             except Exception as e:
                 log.debug(f"policy serialize fail: {e}")
+        if os.path.exists(STATE_FILE):
+            try:
+                with open(STATE_FILE, "r") as fh:
+                    disk_state = json.load(fh)
+            except Exception:
+                disk_state = {}
+            if isinstance(disk_state, dict):
+                disk_queue = disk_state.get("manual_trade_requests")
+                if isinstance(disk_queue, list):
+                    mem_queue = self.state.setdefault("manual_trade_requests", [])
+                    existing_ids = {
+                        item.get("id") for item in mem_queue if isinstance(item, dict) and item.get("id")
+                    }
+                    for item in disk_queue:
+                        if not isinstance(item, dict):
+                            continue
+                        item_id = item.get("id")
+                        if item_id and item_id not in existing_ids:
+                            mem_queue.append(item)
         try:
             with open(STATE_FILE, "w") as f:
                 json.dump(self.state, f, indent=2)
@@ -2057,7 +2076,10 @@ class Bot:
         if not isinstance(self.state, dict):
             self.state = {}
         self.state.setdefault("ai_activity", [])
+        self.state.setdefault("manual_trade_requests", [])
+        self.state.setdefault("manual_trade_history", [])
         self._last_ai_activity_persist = 0.0
+        self._manual_state_dirty = False
         self.policy: Optional[BanditPolicy] = None
         if BANDIT_ENABLED:
             pol_state = self.state.get("policy") if isinstance(self.state, dict) else None
@@ -2111,6 +2133,75 @@ class Bot:
     @property
     def strategy(self) -> Strategy:
         return self._strategy
+
+    def _refresh_manual_requests(self):
+        try:
+            if not os.path.exists(STATE_FILE):
+                return
+            with open(STATE_FILE, "r") as fh:
+                disk_state = json.load(fh)
+        except Exception:
+            return
+        if not isinstance(disk_state, dict):
+            return
+        queue_disk = disk_state.get("manual_trade_requests")
+        if not isinstance(queue_disk, list):
+            return
+        queue_mem = self.state.setdefault("manual_trade_requests", [])
+        seen_ids = {item.get("id") for item in queue_mem if isinstance(item, dict)}
+        updated = False
+        for item in queue_disk:
+            if not isinstance(item, dict):
+                continue
+            item_id = item.get("id")
+            if item_id in seen_ids:
+                continue
+            queue_mem.append(item)
+            updated = True
+        if updated:
+            self.state["manual_trade_requests"] = queue_mem
+
+    def _pop_manual_request(self, symbol: str) -> Optional[Dict[str, Any]]:
+        queue = self.state.get("manual_trade_requests")
+        if not isinstance(queue, list):
+            return None
+        for item in queue:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("symbol") or "").upper() != symbol.upper():
+                continue
+            if str(item.get("status") or "pending").lower() != "pending":
+                continue
+            item["status"] = "processing"
+            item["started_at"] = time.time()
+            self._manual_state_dirty = True
+            return item
+        return None
+
+    def _complete_manual_request(
+        self,
+        request: Optional[Dict[str, Any]],
+        status: str,
+        *,
+        result: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None,
+    ) -> None:
+        if not request or not isinstance(request, dict):
+            return
+        request["status"] = status
+        request["processed_at"] = time.time()
+        if result is not None:
+            request["result"] = result
+        if error:
+            request["error"] = error
+        elif "error" in request:
+            request.pop("error", None)
+        history = self.state.setdefault("manual_trade_history", [])
+        history.append(dict(request))
+        if len(history) > 100:
+            del history[:-100]
+        self.state["manual_trade_history"] = history
+        self._manual_state_dirty = True
 
     def _log_ai_activity(
         self,
@@ -2186,10 +2277,42 @@ class Bot:
         # bereits offene Position?
         amt = float(pos_map.get(symbol, 0.0) or 0.0)
         if abs(amt) > 1e-12:
+            pending_queue = self.state.get("manual_trade_requests")
+            if isinstance(pending_queue, list):
+                for item in pending_queue:
+                    if not isinstance(item, dict):
+                        continue
+                    if str(item.get("symbol") or "").upper() != symbol.upper():
+                        continue
+                    if str(item.get("status") or "pending").lower() != "pending":
+                        continue
+                    self._complete_manual_request(item, "failed", error="Position already open")
             return
 
         sig, atr_abs, ctx, price = self.strategy.compute_signal(symbol)
         base_signal = sig
+
+        manual_req = self._pop_manual_request(symbol)
+        manual_override = manual_req is not None
+        manual_notional = None
+        if manual_override:
+            requested_side = str(manual_req.get("side") or "").upper()
+            if requested_side not in {"BUY", "SELL"}:
+                self._complete_manual_request(manual_req, "failed", error="Invalid side")
+                return
+            sig = requested_side
+            ctx["manual_override"] = True
+            ctx["manual_request_id"] = manual_req.get("id")
+            ctx["manual_source"] = manual_req.get("source")
+            note = manual_req.get("note")
+            if isinstance(note, str) and note.strip():
+                ctx["manual_note"] = note.strip()
+            raw_notional = manual_req.get("notional")
+            if raw_notional is not None:
+                try:
+                    manual_notional = float(raw_notional)
+                except (TypeError, ValueError):
+                    manual_notional = None
 
         sentinel_info = {
             "label": "green",
@@ -2204,7 +2327,7 @@ class Bot:
             except Exception as exc:
                 log.debug(f"sentinel evaluate fail {symbol}: {exc}")
         actions = sentinel_info.get("actions", {}) or {}
-        if actions.get("hard_block"):
+        if actions.get("hard_block") and not manual_override:
             veto_target = base_signal if base_signal != "NONE" else "opportunity"
             log.info(
                 "Sentinel veto %s due to %s risk (event=%.2f, hype=%.2f)",
@@ -2234,7 +2357,15 @@ class Bot:
         bucket = "S"
         alpha_prob = None
         alpha_conf = None
-        if sig != "NONE" and BANDIT_ENABLED and self.policy:
+        if manual_override:
+            bucket = manual_req.get("bucket") or "MANUAL"
+            override_mult = manual_req.get("size_multiplier")
+            if override_mult is not None:
+                try:
+                    size_mult = float(override_mult)
+                except (TypeError, ValueError):
+                    pass
+        elif sig != "NONE" and BANDIT_ENABLED and self.policy:
             try:
                 decision, extras = self.policy.decide(ctx)  # "TAKE"/"SKIP" + {"size_bucket": "..."}
                 bucket = extras.get("size_bucket", "S")
@@ -2288,6 +2419,8 @@ class Bot:
         if atr_abs <= 0 and atr_hint > 0:
             atr_abs = atr_hint
         if atr_abs <= 0:
+            if manual_override:
+                self._complete_manual_request(manual_req, "failed", error="ATR unavailable")
             return
 
         sl_dist = max(1e-9, SL_ATR_MULT * atr_abs)
@@ -2300,7 +2433,7 @@ class Bot:
         plan_stop: Optional[float] = None
         plan_take: Optional[float] = None
 
-        if self.ai_advisor:
+        if self.ai_advisor and not manual_override:
             price_for_plan = mid_px if mid_px > 0 else price
             if sig == "NONE":
                 plan = self.ai_advisor.plan_trend_trade(
@@ -2475,6 +2608,29 @@ class Bot:
             fasttp_overrides = plan.get("fasttp_overrides")
             if isinstance(fasttp_overrides, dict):
                 ai_meta["fasttp_overrides"] = fasttp_overrides
+        elif manual_override:
+            ai_meta = {
+                "manual_request": True,
+                "request_id": manual_req.get("id"),
+                "source": manual_req.get("source"),
+            }
+            raw_note = manual_req.get("note")
+            if isinstance(raw_note, str) and raw_note.strip():
+                ai_meta["note"] = raw_note.strip()
+            payload = manual_req.get("payload")
+            if isinstance(payload, dict):
+                ai_meta["payload"] = payload
+            override_mult = manual_req.get("size_multiplier")
+            if override_mult is not None:
+                try:
+                    ai_meta["size_multiplier"] = float(override_mult)
+                except (TypeError, ValueError):
+                    pass
+            if manual_notional is not None:
+                try:
+                    ai_meta["notional"] = float(manual_notional)
+                except (TypeError, ValueError):
+                    pass
         elif sig == "NONE":
             return
 
@@ -2532,6 +2688,8 @@ class Bot:
             )
             if self.decision_tracker:
                 self.decision_tracker.record_rejection("invalid_levels", force=True)
+            if manual_override:
+                self._complete_manual_request(manual_req, "failed", error="Invalid trade levels")
             return
 
         size_mult = clamp(size_mult, 0.0, 5.0)
@@ -2545,13 +2703,22 @@ class Bot:
             )
             if self.decision_tracker:
                 self.decision_tracker.record_rejection("ai_risk_zero")
+            if manual_override:
+                self._complete_manual_request(manual_req, "failed", error="Position size reduced to zero")
             return
 
         tick = float(self.risk.symbol_filters.get(symbol, {}).get("tickSize", 0.0001) or 0.0001)
         sl = round_price(symbol, sl, tick)
         tp = round_price(symbol, tp, tick)
 
+        step = float(self.risk.symbol_filters.get(symbol, {}).get("stepSize", 0.0001) or 0.0001)
+
         qty = self.risk.compute_qty(symbol, px, sl, size_mult)
+        if manual_override and manual_notional is not None:
+            manual_qty = manual_notional / max(px, 1e-9)
+            manual_qty = max(0.0, math.floor(manual_qty / step) * step)
+            if manual_qty > 0:
+                qty = manual_qty
         if qty <= 0:
             self._log_ai_activity(
                 "decision",
@@ -2562,9 +2729,10 @@ class Bot:
             )
             if self.decision_tracker:
                 self.decision_tracker.record_rejection("position_size")
+            if manual_override:
+                self._complete_manual_request(manual_req, "failed", error="Risk engine returned zero quantity")
             return
 
-        step = float(self.risk.symbol_filters.get(symbol, {}).get("stepSize", 0.0001) or 0.0001)
         q_str = format_qty(qty, step)
 
         # Entry
@@ -2580,9 +2748,20 @@ class Bot:
                 ok = self.guard.ensure_after_entry(symbol, sig, sl, tp)
             if not ok:
                 log.warning(f"Bracket orders for {symbol} could not be fully created.")
-            if self.decision_tracker:
+            if self.decision_tracker and not manual_override:
                 self.decision_tracker.record_acceptance(bucket, persist=False)
             self.trade_mgr.note_entry(symbol, px, sl, tp, sig, float(q_str), ctx, bucket, atr_abs, meta=ai_meta)
+            if manual_override:
+                self._complete_manual_request(
+                    manual_req,
+                    "filled",
+                    result={
+                        "quantity": float(q_str),
+                        "entry": float(px),
+                        "stop": float(sl),
+                        "target": float(tp),
+                    },
+                )
             alpha_msg = ""
             if alpha_prob is not None:
                 alpha_msg = f" alpha={alpha_prob:.3f}/{(alpha_conf or 0.0):.2f}"
@@ -2599,28 +2778,44 @@ class Bot:
             )
             if ai_meta and ai_meta.get("explanation"):
                 log.info("AI plan %s: %s", symbol, ai_meta.get("explanation"))
+            activity_kind = "execution"
+            activity_headline = f"Executed {symbol} {sig}"
+            activity_body = f"qty={q_str} @≈{px:.6f} (SL {sl:.6f} · TP {tp:.6f})"
+            activity_data = {
+                "symbol": symbol,
+                "side": sig,
+                "qty": q_str,
+                "entry": float(px),
+                "sl": float(sl),
+                "tp": float(tp),
+                "bucket": bucket,
+            }
+            if manual_override:
+                activity_kind = "manual"
+                activity_headline = f"Manual {sig.lower()} executed for {symbol}"
+                activity_body = (
+                    f"qty={q_str} @≈{px:.6f} (SL {sl:.6f} · TP {tp:.6f}) — triggered from chat request."
+                )
+                activity_data["manual_request"] = True
+                activity_data["request_id"] = manual_req.get("id")
             self._log_ai_activity(
-                "execution",
-                f"Executed {symbol} {sig}",
-                body=f"qty={q_str} @≈{px:.6f} (SL {sl:.6f} · TP {tp:.6f})",
-                data={
-                    "symbol": symbol,
-                    "side": sig,
-                    "qty": q_str,
-                    "entry": float(px),
-                    "sl": float(sl),
-                    "tp": float(tp),
-                    "bucket": bucket,
-                },
+                activity_kind,
+                activity_headline,
+                body=activity_body,
+                data=activity_data,
                 force=True,
             )
         except Exception as e:
             log.debug(f"entry fail {symbol}: {e}")
-            if self.decision_tracker:
+            if self.decision_tracker and not manual_override:
                 self.decision_tracker.record_rejection("order_failed", force=True)
+            if manual_override:
+                self._complete_manual_request(manual_req, "failed", error=str(e))
             self.state.setdefault("fail_skip_until", {})[symbol] = time.time() + 60
 
     def run_once(self):
+        self._manual_state_dirty = False
+        self._refresh_manual_requests()
         syms = self.universe.refresh()
         log.info(
             "Scanning %d symbols%s",
@@ -2674,6 +2869,10 @@ class Bot:
             except Exception as e:
                 log.debug(f"signal handling fail {sym}: {e}")
             time.sleep(0.05)
+
+        if self._manual_state_dirty:
+            self.trade_mgr.save()
+            self._manual_state_dirty = False
 
     def run(self, loop: bool = True):
         log.info("Starting bot (mode=%s, loop=%s)", "PAPER" if PAPER else "LIVE", loop)

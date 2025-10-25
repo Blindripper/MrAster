@@ -8,12 +8,14 @@ import hmac
 import json
 import logging
 import os
+import re
 import shlex
 import shutil
 import signal
 import sys
 import textwrap
 import time
+import uuid
 from collections import deque
 from datetime import datetime
 from pathlib import Path
@@ -852,6 +854,26 @@ def _read_state() -> Dict[str, Any]:
     return {}
 
 
+def _append_manual_trade_request(request: Dict[str, Any]) -> Dict[str, Any]:
+    request = dict(request)
+    attempts = 0
+    while attempts < 3:
+        attempts += 1
+        state = _read_state()
+        queue = state.setdefault("manual_trade_requests", [])
+        if not isinstance(queue, list):
+            queue = []
+        queue.append(request)
+        state["manual_trade_requests"] = queue[-100:]
+        try:
+            STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True))
+            return request
+        except Exception as exc:
+            logger.debug("Failed to persist manual trade request (attempt %s): %s", attempts, exc)
+            time.sleep(0.05)
+    raise RuntimeError("Could not persist manual trade request")
+
+
 def _format_ts(ts: Optional[float]) -> Optional[str]:
     if not ts:
         return None
@@ -952,8 +974,10 @@ class AIChatEngine:
     ) -> str:
         lines = [
             "You are the AI co-pilot for the MrAster autonomous strategy cockpit.",
-            "Summarise telemetry, react to user questions, and surface concrete actions without placing orders yourself.",
-            "Mirror the user's language when possible and stay concise but actionable.",
+            "Summarise telemetry, react to user questions, and surface concrete actions. You may queue trades for execution when the user explicitly instructs you to do so.",
+            "Only queue a trade when the user clearly provides the symbol and direction; otherwise, ask a clarifying question.",
+            "When you do queue a trade, include a single-line directive that starts with 'ACTION:' followed by compact JSON such as ACTION: {\"type\":\"open_trade\",\"symbol\":\"BTCUSDT\",\"side\":\"BUY\",\"size_multiplier\":1.0}.",
+            "Keep the ACTION line on one line, avoid code fences, and mirror the user's language in the rest of the reply while staying concise but actionable.",
             (
                 f"Performance: {stats.count} trades · total PNL {stats.total_pnl:.2f} USDT · "
                 f"total R {stats.total_r:.2f} · win rate {(stats.win_rate * 100.0):.1f}%"
@@ -1041,6 +1065,72 @@ class AIChatEngine:
         parts.append(f"User prompt acknowledged: {message.strip()}")
         return " ".join(parts)
 
+    def _extract_action(self, text: str) -> Optional[Dict[str, Any]]:
+        if not text:
+            return None
+        action_pattern = re.compile(r"ACTION:\s*(\{.*\})", re.IGNORECASE)
+        for raw_line in text.splitlines():
+            line = raw_line.strip().strip("`>-")
+            match = action_pattern.search(line)
+            if not match:
+                continue
+            payload_text = match.group(1).strip().rstrip("`")
+            try:
+                return json.loads(payload_text)
+            except json.JSONDecodeError:
+                continue
+        return None
+
+    def _queue_trade_action(
+        self, action: Dict[str, Any], message: str
+    ) -> Optional[Dict[str, Any]]:
+        if not isinstance(action, dict):
+            return None
+        action_type = str(action.get("type") or "").strip().lower()
+        if action_type != "open_trade":
+            return None
+        symbol = str(action.get("symbol") or "").upper().strip()
+        side = str(action.get("side") or "").upper().strip()
+        if not symbol or side not in {"BUY", "SELL"}:
+            return None
+        request: Dict[str, Any] = {
+            "id": str(uuid.uuid4()),
+            "type": "open_trade",
+            "symbol": symbol,
+            "side": side,
+            "requested_at": time.time(),
+            "status": "pending",
+            "source": "chat",
+            "message": message,
+            "payload": action,
+        }
+        size_mult = action.get("size_multiplier")
+        if size_mult is not None:
+            try:
+                request["size_multiplier"] = float(size_mult)
+            except (TypeError, ValueError):
+                pass
+        notional = action.get("notional")
+        if notional is not None:
+            try:
+                request["notional"] = float(notional)
+            except (TypeError, ValueError):
+                pass
+        note = action.get("note")
+        if isinstance(note, str) and note.strip():
+            request["note"] = note.strip()
+        try:
+            stored = _append_manual_trade_request(request)
+        except Exception as exc:
+            logger.debug("Failed to queue manual trade request: %s", exc)
+            return None
+        return {
+            "id": stored["id"],
+            "symbol": stored["symbol"],
+            "side": stored["side"],
+            "status": stored["status"],
+        }
+
     def respond(self, message: str, history_payload: List[ChatMessagePayload]) -> Dict[str, Any]:
         stats, history, open_trades, ai_activity, ai_budget = self._current_state()
         fallback = self._fallback_reply(message, stats, history, ai_activity, open_trades, ai_budget)
@@ -1116,7 +1206,17 @@ class AIChatEngine:
             reply_text = (reply or "").strip()
             if not reply_text:
                 reply_text = fallback
-            return {"reply": reply_text, "model": model, "source": "openai", "usage": data.get("usage")}
+            action_payload = self._extract_action(reply_text)
+            queued_action = self._queue_trade_action(action_payload, message) if action_payload else None
+            response: Dict[str, Any] = {
+                "reply": reply_text,
+                "model": model,
+                "source": "openai",
+                "usage": data.get("usage"),
+            }
+            if queued_action:
+                response["queued_action"] = queued_action
+            return response
         except Exception as exc:
             awaitable = getattr(loghub, "push", None)
             if awaitable:
@@ -1124,7 +1224,13 @@ class AIChatEngine:
                     asyncio.create_task(loghub.push(f"AI chat fallback: {exc}", level="warning"))
                 except RuntimeError:
                     pass
-            return {"reply": textwrap.fill(fallback, width=96), "model": model, "source": "fallback"}
+            reply_text = textwrap.fill(fallback, width=96)
+            action_payload = self._extract_action(reply_text)
+            queued_action = self._queue_trade_action(action_payload, message) if action_payload else None
+            response = {"reply": reply_text, "model": model, "source": "fallback"}
+            if queued_action:
+                response["queued_action"] = queued_action
+            return response
 
 
 chat_engine = AIChatEngine(CONFIG)

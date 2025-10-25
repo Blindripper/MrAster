@@ -2146,7 +2146,7 @@ function appendChatMessage(role, message, meta = {}) {
   msg.className = `ai-chat-message ${role === 'user' ? 'user' : 'assistant'}`;
   const roleLabel = document.createElement('div');
   roleLabel.className = 'ai-chat-role';
-  roleLabel.textContent = role === 'user' ? 'Du' : 'Strategie-AI';
+  roleLabel.textContent = role === 'user' ? 'You' : 'Strategy AI';
   const text = document.createElement('p');
   text.className = 'ai-chat-text';
   text.textContent = message;
@@ -2186,8 +2186,8 @@ function syncAiChatAvailability() {
     aiChatInput.disabled = true;
     if (aiChatSubmit) aiChatSubmit.disabled = true;
     aiChatHistory = [];
-    resetChatPlaceholder('Der Chat ist nur im AI-Mode aktiv.');
-    setChatStatus('AI-Mode deaktiviert.');
+    resetChatPlaceholder('Chat is only available in AI-Mode.');
+    setChatStatus('AI-Mode disabled.');
   } else {
     aiChatInput.disabled = false;
     if (aiChatSubmit) aiChatSubmit.disabled = false;
@@ -2196,7 +2196,7 @@ function syncAiChatAvailability() {
       !aiChatMessages.querySelector('.ai-chat-message') &&
       !aiChatMessages.querySelector('.ai-chat-empty')
     ) {
-      resetChatPlaceholder('Sprich mit der Strategie-AI, um Entscheidungen zu diskutieren.');
+      resetChatPlaceholder('Chat with the Strategy AI to discuss decisions.');
     }
     setChatStatus('');
   }
@@ -2209,7 +2209,7 @@ function renderTradeSummary(stats) {
     placeholder.className = 'trade-metric muted';
     placeholder.innerHTML = `<span class="metric-label">Performance</span><span class="metric-value">No data yet</span>`;
     tradeSummary.append(placeholder);
-    setAiHintMessage('KI-Analyse wird angezeigt, sobald neue Telemetrie vorliegt.');
+    setAiHintMessage('AI insight will appear once new telemetry is available.');
     return;
   }
   const avgR = stats.count ? stats.total_r / stats.count : 0;
@@ -2989,18 +2989,18 @@ if (aiChatForm && aiChatInput) {
       return;
     }
     if (!aiMode) {
-      setChatStatus('Bitte aktiviere zuerst den AI-Mode.');
+      setChatStatus('Please enable AI-Mode first.');
       return;
     }
     const message = (aiChatInput.value || '').trim();
     if (!message) {
-      setChatStatus('Bitte gib eine Nachricht ein.');
+      setChatStatus('Please enter a message.');
       return;
     }
     aiChatPending = true;
     aiChatInput.disabled = true;
     if (aiChatSubmit) aiChatSubmit.disabled = true;
-    setChatStatus('Strategie-AI denkt nach …');
+    setChatStatus('Strategy AI is thinking…');
     const historyPayload = aiChatHistory.slice(-6);
     appendChatMessage('user', message);
     aiChatHistory.push({ role: 'user', content: message });
@@ -3025,22 +3025,29 @@ if (aiChatForm && aiChatInput) {
         const detail = data && typeof data === 'object' ? data.detail : null;
         throw new Error(detail || 'Chat request failed');
       }
-      const reply = (data.reply || '').toString() || 'Keine Antwort erhalten.';
+      const reply = (data.reply || '').toString() || 'No reply received.';
       appendChatMessage('assistant', reply, { model: data.model, source: data.source });
       aiChatHistory.push({ role: 'assistant', content: reply });
       if (aiChatHistory.length > 12) {
         aiChatHistory = aiChatHistory.slice(-12);
       }
+      let statusMessage = '';
       if (data.source === 'fallback') {
-        setChatStatus('Antwort (Fallback)');
+        statusMessage = 'Reply (fallback)';
       } else if (data.model) {
-        setChatStatus(`Antwort (${data.model})`);
+        statusMessage = `Reply (${data.model})`;
       } else {
-        setChatStatus('Antwort empfangen');
+        statusMessage = 'Reply received';
       }
+      if (data.queued_action && data.queued_action.symbol && data.queued_action.side) {
+        const { symbol, side } = data.queued_action;
+        const summary = `${symbol.toUpperCase()} ${side.toUpperCase()}`;
+        statusMessage = statusMessage ? `${statusMessage} · Manual trade queued (${summary})` : `Manual trade queued (${summary})`;
+      }
+      setChatStatus(statusMessage);
     } catch (err) {
-      appendChatMessage('assistant', err?.message || 'Chat fehlgeschlagen.', { source: 'error' });
-      setChatStatus('Chat fehlgeschlagen.');
+      appendChatMessage('assistant', err?.message || 'Chat failed.', { source: 'error' });
+      setChatStatus('Chat failed.');
     } finally {
       aiChatPending = false;
       if (aiMode) {
