@@ -165,8 +165,10 @@ class BracketGuard:
     ) -> str:
         payload = {
             "type": "STOP_MARKET" if kind.upper() == "STOP" else "TAKE_PROFIT_MARKET",
-            "stopPrice": self._format_decimal(price),
-            "workingType": self.working_type,
+            "trigger": {
+                "type": self.working_type,
+                "price": self._format_decimal(price),
+            },
             "closePosition": True,
         }
         if position_side:
@@ -223,10 +225,9 @@ class BracketGuard:
             "side": opp_side,
             "type": "STOP_MARKET",
             "workingType": self.working_type,
-            "closePosition": "true",
+            "closePosition": True,
             "stopPrice": self._format_decimal(px),
         }
-        params["stopLossPrice"] = self._format_decimal(px)
         params["stopLoss"] = self._build_bracket_payload("STOP", side, px, position_side=position_side)
         if position_side:
             params["positionSide"] = position_side
@@ -254,10 +255,9 @@ class BracketGuard:
             "side": opp_side,
             "type": "TAKE_PROFIT_MARKET",
             "workingType": self.working_type,
-            "closePosition": "true",
+            "closePosition": True,
             "stopPrice": self._format_decimal(px),
         }
-        params["takeProfitPrice"] = self._format_decimal(px)
         params["takeProfit"] = self._build_bracket_payload("TP", side, px, position_side=position_side)
         if position_side:
             params["positionSide"] = position_side
