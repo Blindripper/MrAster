@@ -666,7 +666,7 @@ body.pro-mode [data-normal-only] {
 }
 
 .active-positions-table tbody tr.active-positions-row-link:hover,
-.active-positions-table tbody tr.active-positions-row-link:focus-visible {
+.active-positions-table tbody tr.active-positions-row-link.active-positions-row-link-focus {
   background: rgba(245, 196, 107, 0.08);
 }
 
@@ -682,6 +682,20 @@ body.pro-mode [data-normal-only] {
   display: inline-flex;
   align-items: center;
   gap: 0.55rem;
+}
+
+.active-positions-symbol-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.active-positions-symbol-link:focus-visible {
+  outline: 2px solid rgba(245, 196, 107, 0.65);
+  outline-offset: 2px;
+  border-radius: 0.35rem;
 }
 
 .active-positions-symbol {
