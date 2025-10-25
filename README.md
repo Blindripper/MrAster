@@ -147,7 +147,7 @@ Every field in the **Environment configuration** card maps directly to an enviro
 | `ASTER_ALIGN_RSI_PAD` | `1.5` | Margin applied to RSI thresholds when enforcing trend alignment. |
 | `ASTER_SPREAD_BPS_MAX` | `0.009` | Maximum bid/ask spread (in basis points) tolerated before skipping a trade. |
 | `ASTER_WICKINESS_MAX` | `0.985` | Rejects symbols whose candlesticks show excessive wicks (volatility proxy). |
-| `ASTER_MIN_EDGE_R` | `0.08` | Minimum estimated edge (in R) required to approve a signal. |
+| `ASTER_MIN_EDGE_R` | `0.06` | Minimum estimated edge (in R) required to approve a signal. |
 | `ASTER_DEFAULT_NOTIONAL` | `120` | Fallback position size in notional terms when sizing heuristics cannot decide. |
 | `ASTER_RISK_PER_TRADE` | `0.007` | Fraction of equity risked on each trade when computing position size. |
 | `ASTER_LEVERAGE` | `3` | Default leverage multiplier requested on the exchange. |

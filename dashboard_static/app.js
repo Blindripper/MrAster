@@ -127,6 +127,7 @@ const PRESETS = {
     summary: 'Capital preservation first: slower signal intake, narrower exposure, and conservative scaling.',
     risk: 0.5,
     leverage: 1,
+    edgeMinR: 0.08,
     slAtr: 1.1,
     tpAtr: 1.8,
     fasttp: {
@@ -156,6 +157,7 @@ const PRESETS = {
     summary: 'Balanced cadence with moderate risk and leverage designed for steady account growth.',
     risk: 1.0,
     leverage: 2,
+    edgeMinR: 0.06,
     slAtr: 1.3,
     tpAtr: 2.0,
     fasttp: {
@@ -185,6 +187,7 @@ const PRESETS = {
     summary: 'High-frequency execution with wider risk budgets and leverage up to the aggressive limit.',
     risk: 2.0,
     leverage: 4,
+    edgeMinR: 0.04,
     slAtr: 1.7,
     tpAtr: 2.6,
     fasttp: {
@@ -1790,6 +1793,7 @@ function buildQuickSetupPayload() {
     FAST_TP_RET3: toFixedString(preset.fasttp.ret3, 4),
     FASTTP_SNAP_ATR: toFixedString(preset.fasttp.snapAtr, 2),
     FASTTP_COOLDOWN_S: toFixedString(preset.fasttp.cooldown, 0),
+    ASTER_MIN_EDGE_R: toFixedString(preset.edgeMinR, 2),
     ASTER_SIZE_MULT: toFixedString(preset.sizeMult.base * ratio, 2),
     ASTER_SIZE_MULT_S: toFixedString(preset.sizeMult.s * ratio, 2),
     ASTER_SIZE_MULT_M: toFixedString(preset.sizeMult.m * ratio, 2),
