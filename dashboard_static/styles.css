@@ -837,6 +837,12 @@ button:focus-visible {
   gap: 1rem;
 }
 
+.card-header-main {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .quick-setup {
   gap: 1.75rem;
 }
@@ -1403,6 +1409,10 @@ body.ai-mode .ai-config-panel h3 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 1rem 1.5rem;
+}
+
+#env-config-panel.collapsed .env-grid {
+  display: none;
 }
 
 .env-grid label {
