@@ -379,7 +379,7 @@ async function loadConfig() {
   renderConfig(currentConfig.env);
   renderCredentials(currentConfig.env);
   syncQuickSetupFromEnv(currentConfig.env);
-  await syncAiModeFromEnv(currentConfig.env);
+  await syncModeFromEnv(currentConfig.env);
 }
 
 function gatherConfigPayload() {
@@ -492,7 +492,7 @@ async function saveAiConfig() {
     currentConfig = await res.json();
     renderCredentials(currentConfig.env);
     syncQuickSetupFromEnv(currentConfig.env);
-    await syncAiModeFromEnv(currentConfig.env);
+    await syncModeFromEnv(currentConfig.env);
     btnSaveAi.textContent = 'Saved ✓';
     setTimeout(() => (btnSaveAi.textContent = 'Save'), 1500);
   } catch (err) {
@@ -1950,44 +1950,18 @@ function applyPreset(key, options = {}) {
   }
 }
 
-async function setAiMode(state, options = {}) {
-  const { persist = false } = options;
-  const previous = aiMode;
+function setAiMode(state) {
   aiMode = Boolean(state);
   document.body.classList.toggle('ai-mode', aiMode);
-  syncModeUi();
   renderAiBudget(lastAiBudget);
-  if (!persist) {
-    return;
-  }
-  try {
-    const payload = { env: { ASTER_MODE: aiMode ? 'ai' : 'standard' } };
-    const res = await fetch('/api/config', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.detail || 'Unable to update mode');
-    }
-    currentConfig = await res.json();
-    renderConfig(currentConfig.env);
-    renderCredentials(currentConfig.env);
-    syncQuickSetupFromEnv(currentConfig.env);
-  } catch (err) {
-    alert(err.message);
-    aiMode = previous;
-    document.body.classList.toggle('ai-mode', aiMode);
-    syncModeUi();
-    renderAiBudget(lastAiBudget);
-  }
 }
 
-async function syncAiModeFromEnv(env) {
+async function syncModeFromEnv(env) {
   const raw = (env?.ASTER_MODE || '').toString().toLowerCase();
   if (raw === 'ai') {
     await selectMode('ai', { persist: false });
+  } else if (raw === 'pro') {
+    await selectMode('pro', { persist: false });
   } else {
     await selectMode('standard', { persist: false });
   }
@@ -1999,7 +1973,37 @@ function setProMode(state) {
   if (proMode) {
     setEnvCollapsed(true);
   }
+}
+
+function applyModeState(mode) {
+  if (mode === 'ai') {
+    setAiMode(true);
+    setProMode(false);
+  } else if (mode === 'pro') {
+    setAiMode(false);
+    setProMode(true);
+  } else {
+    setAiMode(false);
+    setProMode(false);
+  }
   syncModeUi();
+}
+
+async function persistMode(mode) {
+  const payload = { env: { ASTER_MODE: mode } };
+  const res = await fetch('/api/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || 'Unable to update mode');
+  }
+  currentConfig = await res.json();
+  renderConfig(currentConfig.env);
+  renderCredentials(currentConfig.env);
+  syncQuickSetupFromEnv(currentConfig.env);
 }
 
 async function selectMode(mode, options = {}) {
@@ -2010,26 +2014,20 @@ async function selectMode(mode, options = {}) {
     return;
   }
 
-  if (target === 'ai') {
-    if (proMode) {
-      setProMode(false);
-    }
-    await setAiMode(true, { persist });
-  } else if (target === 'pro') {
-    if (aiMode || persist) {
-      await setAiMode(false, { persist });
-    }
-    if (aiMode) {
-      syncModeUi();
-      return;
-    }
-    setProMode(true);
-  } else {
-    await setAiMode(false, { persist });
-    setProMode(false);
+  const previous = current;
+  applyModeState(target);
+
+  if (!persist) {
+    return;
   }
 
-  syncModeUi();
+  try {
+    await persistMode(target);
+  } catch (err) {
+    alert(err.message);
+    applyModeState(previous);
+    throw err;
+  }
 }
 
 async function downloadTradeHistory() {
@@ -2236,7 +2234,6 @@ async function init() {
   await updateStatus();
   await loadTrades();
   await loadMostTradedCoins();
-  setProMode(false);
   connectLogs();
   setInterval(updateStatus, 5000);
   setInterval(loadTrades, 8000);
