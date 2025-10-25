@@ -889,6 +889,127 @@ const ACTIVE_POSITION_TIMESTAMP_ISO_KEYS = [
   'openedAtIso',
 ];
 
+const POSITION_CLOSED_FLAG_KEYS = [
+  'closed',
+  'is_closed',
+  'isClosed',
+  'closed_out',
+  'closedOut',
+  'has_closed',
+  'hasClosed',
+  'settled',
+  'isSettled',
+  'done',
+  'isDone',
+  'completed',
+  'isCompleted',
+];
+
+const POSITION_OPEN_FLAG_KEYS = [
+  'open',
+  'is_open',
+  'isOpen',
+  'active',
+  'isActive',
+  'running',
+];
+
+const POSITION_STATUS_KEYS = [
+  'status',
+  'state',
+  'lifecycle',
+  'stage',
+  'positionStatus',
+  'tradeStatus',
+];
+
+const POSITION_CLOSED_STATUS_TOKENS = [
+  'closed',
+  'closing',
+  'settled',
+  'settlement',
+  'exit',
+  'exited',
+  'inactive',
+  'cancelled',
+  'canceled',
+  'finished',
+  'complete',
+  'completed',
+  'filled',
+  'stopped',
+  'liquidated',
+];
+
+const POSITION_OPEN_STATUS_TOKENS = ['open', 'opening', 'active', 'running', 'live', 'entered'];
+
+const CLOSED_FLAG_POSITIVE_TOKENS = [
+  '1',
+  'true',
+  'yes',
+  'y',
+  'on',
+  'closed',
+  'closing',
+  'done',
+  'complete',
+  'completed',
+  'finished',
+  'exit',
+  'exited',
+  'inactive',
+  'settled',
+  'settlement',
+  'filled',
+  'liquidated',
+  'cancelled',
+  'canceled',
+];
+
+const CLOSED_FLAG_NEGATIVE_TOKENS = ['0', 'false', 'no', 'off', 'open', 'opening', 'active', 'running', 'pending'];
+
+const OPEN_FLAG_POSITIVE_TOKENS = ['1', 'true', 'yes', 'y', 'on', 'open', 'opening', 'active', 'running', 'live'];
+
+const OPEN_FLAG_NEGATIVE_TOKENS = [
+  '0',
+  'false',
+  'no',
+  'off',
+  'closed',
+  'closing',
+  'inactive',
+  'disabled',
+  'done',
+  'complete',
+  'completed',
+  'exit',
+  'exited',
+  'settled',
+  'liquidated',
+  'cancelled',
+  'canceled',
+];
+
+const POSITION_CLOSED_TIMESTAMP_KEYS = [
+  'closed_at',
+  'closedAt',
+  'closed_ts',
+  'closedTs',
+  'closed_time',
+  'closedTime',
+  'close_time',
+  'closeTime',
+  'closed_at_iso',
+  'closedAtIso',
+  'closed_iso',
+  'close_iso',
+  'exit_at',
+  'exitAt',
+  'exited_at',
+  'exitedAt',
+  'closeTimeIso',
+];
+
 function unwrapPositionValue(raw) {
   if (raw === undefined || raw === null) return undefined;
   if (Array.isArray(raw)) {
@@ -956,7 +1077,7 @@ function normaliseActivePositions(raw) {
   const collected = [];
 
   const appendCollection = (collection) => {
-    const mapped = mapPositionCollection(collection);
+    const mapped = mapPositionCollection(collection).filter((item) => !isPositionLikelyClosed(item));
     if (mapped.length) {
       collected.push(...mapped);
     }
@@ -978,6 +1099,128 @@ function normaliseActivePositions(raw) {
   appendCollection(raw);
 
   return collected;
+}
+
+function tokeniseTextValue(value) {
+  if (value === undefined || value === null) return [];
+  return value
+    .toString()
+    .trim()
+    .toLowerCase()
+    .split(/[^a-z0-9]+/g)
+    .filter(Boolean);
+}
+
+function parseFlagValue(value, positiveTokens, negativeTokens) {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return null;
+    if (value === 0) return false;
+    return true;
+  }
+  const tokens = tokeniseTextValue(value);
+  if (!tokens.length) return null;
+  if (tokens.some((token) => negativeTokens.includes(token))) return false;
+  if (tokens.some((token) => positiveTokens.includes(token))) return true;
+  return null;
+}
+
+function hasClosedTimestamp(position) {
+  for (const key of POSITION_CLOSED_TIMESTAMP_KEYS) {
+    if (!(key in position)) continue;
+    const value = unwrapPositionValue(position[key]);
+    if (value === undefined || value === null || value === '') {
+      continue;
+    }
+    const numeric = toNumeric(value);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return true;
+    }
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function sizeLooksClosed(position) {
+  const sizeKeys = ACTIVE_POSITION_ALIASES.size || [];
+  for (const key of sizeKeys) {
+    if (!(key in position)) continue;
+    const direct = unwrapPositionValue(position[key]);
+    const numeric = toNumeric(direct);
+    if (Number.isFinite(numeric)) {
+      if (Math.abs(numeric) < 1e-9) {
+        return true;
+      }
+      return false;
+    }
+    const raw = position[key];
+    if (Array.isArray(raw) && raw.length > 0) {
+      for (const candidate of raw) {
+        const numericCandidate = toNumeric(unwrapPositionValue(candidate));
+        if (Number.isFinite(numericCandidate)) {
+          if (Math.abs(numericCandidate) < 1e-9) {
+            return true;
+          }
+          return false;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function isPositionLikelyClosed(position) {
+  if (!position || typeof position !== 'object') {
+    return false;
+  }
+
+  for (const key of POSITION_CLOSED_FLAG_KEYS) {
+    if (!(key in position)) continue;
+    const flag = parseFlagValue(position[key], CLOSED_FLAG_POSITIVE_TOKENS, CLOSED_FLAG_NEGATIVE_TOKENS);
+    if (flag === true) {
+      return true;
+    }
+    if (flag === false) {
+      return false;
+    }
+  }
+
+  for (const key of POSITION_OPEN_FLAG_KEYS) {
+    if (!(key in position)) continue;
+    const flag = parseFlagValue(position[key], OPEN_FLAG_POSITIVE_TOKENS, OPEN_FLAG_NEGATIVE_TOKENS);
+    if (flag === true) {
+      return false;
+    }
+    if (flag === false) {
+      return true;
+    }
+  }
+
+  for (const key of POSITION_STATUS_KEYS) {
+    if (!(key in position)) continue;
+    const tokens = tokeniseTextValue(position[key]);
+    if (!tokens.length) continue;
+    if (tokens.some((token) => POSITION_CLOSED_STATUS_TOKENS.includes(token))) {
+      return true;
+    }
+    if (tokens.some((token) => POSITION_OPEN_STATUS_TOKENS.includes(token))) {
+      return false;
+    }
+  }
+
+  if (hasClosedTimestamp(position)) {
+    return true;
+  }
+
+  if (sizeLooksClosed(position)) {
+    return true;
+  }
+
+  return false;
 }
 
 function pickFieldValue(position, candidates) {
