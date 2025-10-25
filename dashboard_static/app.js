@@ -2063,7 +2063,7 @@ function renderAiActivity(feed) {
   if (!aiMode) {
     const disabled = document.createElement('div');
     disabled.className = 'ai-feed-empty';
-    disabled.textContent = 'Aktiviere den AI-Mode, um den Activity Feed zu sehen.';
+    disabled.textContent = 'Enable AI mode to see the activity feed.';
     aiActivityFeed.append(disabled);
     return;
   }
@@ -2071,7 +2071,7 @@ function renderAiActivity(feed) {
   if (!items.length) {
     const empty = document.createElement('p');
     empty.className = 'ai-feed-empty';
-    empty.textContent = 'Autonome Entscheidungen werden hier live angezeigt, sobald neue Aktionen stattfinden.';
+    empty.textContent = 'Autonomous decisions appear here in real time as new actions occur.';
     aiActivityFeed.append(empty);
     return;
   }

@@ -200,32 +200,29 @@
     <main class="layout">
       <section class="card ai-mode-window" data-ai-only>
         <div class="ai-mode-window-header">
-          <span class="ai-mode-label">AI ACTIVITY</span>
+          <span class="ai-mode-label">AI COCKPIT</span>
           <div class="ai-mode-window-title">
-            <h2>Autonomous strategy cockpit</h2>
-            <p class="ai-mode-window-subtitle">Track in real time which market observations, hypotheses, and decisions the AI is currently preparing. The stream updates continuously.</p>
+            <h2>Autonomous Strategy Cockpit</h2>
+            <p class="ai-mode-window-subtitle">Discuss live market moves with the strategy AI while automated insights continue to appear in the activity feed.</p>
           </div>
         </div>
         <div class="ai-mode-window-body">
           <div class="ai-hint" id="ai-hint" hidden></div>
-          <div class="ai-activity-feed" id="ai-activity" aria-live="polite">
-            <div class="ai-feed-empty">Autonome Entscheidungen werden hier live angezeigt, sobald neue Aktionen stattfinden.</div>
-          </div>
           <div class="ai-chat-panel">
             <div class="ai-chat-messages" id="ai-chat-messages" aria-live="polite">
-              <div class="ai-chat-empty">Sprich mit der Strategie-AI, um Entscheidungen zu diskutieren.</div>
+              <div class="ai-chat-empty">Start a conversation with the strategy AI to review decisions.</div>
             </div>
             <form id="ai-chat-form" class="ai-chat-form">
-              <label class="sr-only" for="ai-chat-input">Ask the autonomous cockpit</label>
+              <label class="sr-only" for="ai-chat-input">Ask the strategy AI</label>
               <textarea
                 id="ai-chat-input"
                 rows="2"
-                placeholder="Frage die Strategie-AI nach offenen Trades, Risiken oder nächsten Schritten…"
+                placeholder="Ask the strategy AI about open trades, risk, or the next steps…"
                 autocomplete="off"
               ></textarea>
               <div class="ai-chat-actions">
                 <span class="ai-chat-status" id="ai-chat-status" role="status" aria-live="polite"></span>
-                <button type="submit" class="primary">Senden</button>
+                <button type="submit" class="primary">Send</button>
               </div>
             </form>
           </div>
