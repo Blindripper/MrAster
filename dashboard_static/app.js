@@ -70,7 +70,7 @@ let latestTradesSnapshot = null;
 let lastBotStatus = { ...DEFAULT_BOT_STATUS };
 let aiChatHistory = [];
 let aiChatPending = false;
-let activePositionsByMode = createEmptyActivePositionsMap();
+let activePositions = [];
 const aiChatSubmit = aiChatForm ? aiChatForm.querySelector('button[type="submit"]') : null;
 
 function getCurrentMode() {
@@ -807,10 +807,6 @@ function formatSideLabel(side) {
   return normalized;
 }
 
-function createEmptyActivePositionsMap() {
-  return { standard: [], pro: [], ai: [] };
-}
-
 const ACTIVE_POSITION_ALIASES = {
   symbol: ['symbol', 'sym', 'ticker', 'pair'],
   size: ['size', 'qty', 'quantity', 'positionAmt', 'position_amt', 'position_amount'],
@@ -843,8 +839,6 @@ const ACTIVE_POSITION_TIMESTAMP_ISO_KEYS = [
   'created_at',
   'openedAtIso',
 ];
-
-const ACTIVE_POSITION_MODE_KEYS = ['mode', 'profile', 'strategy', 'bot', 'bot_mode', 'preset'];
 
 function unwrapPositionValue(raw) {
   if (raw === undefined || raw === null) return undefined;
@@ -905,67 +899,36 @@ function mapPositionCollection(collection) {
   return [];
 }
 
-function resolvePositionMode(position) {
-  if (!position || typeof position !== 'object') return null;
-  for (const key of ACTIVE_POSITION_MODE_KEYS) {
-    if (position[key] !== undefined && position[key] !== null) {
-      const raw = unwrapPositionValue(position[key]);
-      if (!raw) continue;
-      const normalized = raw.toString().toLowerCase();
-      if (normalized.startsWith('ai')) return 'ai';
-      if (normalized.startsWith('pro')) return 'pro';
-      if (normalized.startsWith('std') || normalized.startsWith('basic') || normalized.startsWith('standard')) {
-        return 'standard';
-      }
-    }
-  }
-  return null;
-}
-
 function normaliseActivePositions(raw) {
-  const groups = createEmptyActivePositionsMap();
   if (!raw || (typeof raw !== 'object' && !Array.isArray(raw))) {
-    return groups;
+    return [];
   }
 
-  const hasModeBuckets = ['standard', 'pro', 'ai'].some((mode) => raw && raw[mode] !== undefined);
+  const collected = [];
+
+  const appendCollection = (collection) => {
+    const mapped = mapPositionCollection(collection);
+    if (mapped.length) {
+      collected.push(...mapped);
+    }
+  };
+
+  const hasModeBuckets =
+    typeof raw === 'object' && ['standard', 'pro', 'ai'].some((mode) => raw && raw[mode] !== undefined);
+
   if (hasModeBuckets) {
     ['standard', 'pro', 'ai'].forEach((mode) => {
-      groups[mode] = mapPositionCollection(raw[mode]);
+      appendCollection(raw[mode]);
     });
-    const shared = mapPositionCollection(raw.all || raw.shared);
-    if (shared.length) {
-      ['standard', 'pro', 'ai'].forEach((mode) => {
-        if (groups[mode].length === 0) {
-          groups[mode] = shared.slice();
-        }
-      });
+    if (collected.length === 0) {
+      appendCollection(raw.all || raw.shared);
     }
-    return groups;
+    return collected;
   }
 
-  const flat = mapPositionCollection(raw);
-  if (flat.length === 0) {
-    return groups;
-  }
+  appendCollection(raw);
 
-  const unspecified = [];
-  flat.forEach((position) => {
-    const mode = resolvePositionMode(position);
-    if (mode && groups[mode]) {
-      groups[mode].push(position);
-    } else {
-      unspecified.push(position);
-    }
-  });
-
-  if (unspecified.length) {
-    ['standard', 'pro', 'ai'].forEach((mode) => {
-      groups[mode] = groups[mode].concat(unspecified);
-    });
-  }
-
-  return groups;
+  return collected;
 }
 
 function pickFieldValue(position, candidates) {
@@ -1046,12 +1009,6 @@ function formatPositionSize(value) {
   return abs.toLocaleString(undefined, { minimumFractionDigits: 5, maximumFractionDigits: 5 });
 }
 
-function getModeLabel(mode) {
-  if (mode === 'ai') return 'AI';
-  if (mode === 'pro') return 'Pro';
-  return 'Standard';
-}
-
 function getPositionSymbol(position) {
   const field = pickFieldValue(position, ACTIVE_POSITION_ALIASES.symbol || []);
   const symbol = field.value ?? position.symbol;
@@ -1096,20 +1053,19 @@ function getPositionTimestamp(position) {
   return Number.NEGATIVE_INFINITY;
 }
 
-function updateActivePositionsView(mode) {
+function updateActivePositionsView() {
   if (!activePositionsRows) return;
-  const label = getModeLabel(mode);
-  const positions = Array.isArray(activePositionsByMode[mode]) ? activePositionsByMode[mode] : [];
+  const positions = Array.isArray(activePositions) ? activePositions : [];
   const sorted = positions.slice().sort((a, b) => getPositionTimestamp(b) - getPositionTimestamp(a));
   activePositionsRows.innerHTML = '';
 
   const hasRows = sorted.length > 0;
 
   if (activePositionsModeLabel) {
-    activePositionsModeLabel.textContent = `${label} mode`;
+    activePositionsModeLabel.textContent = 'All modes';
   }
   if (activePositionsEmpty) {
-    activePositionsEmpty.textContent = `No active positions in ${label} mode.`;
+    activePositionsEmpty.textContent = 'No active positions.';
     if (hasRows) {
       activePositionsEmpty.setAttribute('hidden', '');
     } else {
@@ -1239,8 +1195,8 @@ function updateActivePositionsView(mode) {
 }
 
 function renderActivePositions(openPositions) {
-  activePositionsByMode = normaliseActivePositions(openPositions);
-  updateActivePositionsView(getCurrentMode());
+  activePositions = normaliseActivePositions(openPositions);
+  updateActivePositionsView();
 }
 
 function friendlyReason(reason) {
@@ -2594,7 +2550,7 @@ function applyModeState(mode) {
     setAiMode(false);
     setProMode(false);
   }
-  updateActivePositionsView(mode);
+  updateActivePositionsView();
   syncModeUi();
 }
 
