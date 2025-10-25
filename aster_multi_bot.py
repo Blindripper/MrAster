@@ -935,6 +935,127 @@ class AITradeAdvisor:
             plan["explanation"] = fallback.get("explanation")
         return plan
 
+    def plan_trend_trade(
+        self,
+        symbol: str,
+        price: float,
+        base_sl: float,
+        base_tp: float,
+        ctx: Dict[str, Any],
+        sentinel: Dict[str, Any],
+        atr_abs: float,
+    ) -> Dict[str, Any]:
+        fallback = {
+            "take": False,
+            "decision": "skip",
+            "decision_reason": "no_signal",
+            "decision_note": "Autonomous scan did not detect a safe opportunity.",
+            "size_multiplier": 1.0,
+            "sl_multiplier": 1.0,
+            "tp_multiplier": 1.0,
+            "leverage": LEVERAGE,
+            "risk_note": sentinel.get("label", "green") if sentinel else "green",
+            "explanation": "",
+            "fasttp_overrides": None,
+            "event_risk": float(sentinel.get("event_risk", 0.0) if sentinel else 0.0),
+            "hype_score": float(sentinel.get("hype_score", 0.0) if sentinel else 0.0),
+            "side": None,
+            "confidence": 0.0,
+        }
+        if not self.enabled:
+            return fallback
+
+        system_prompt = (
+            "You are an autonomous trend scout for a futures trading bot. "
+            "Return JSON with fields take (boolean), decision, decision_reason, decision_note, side (BUY/SELL), "
+            "size_multiplier, sl_multiplier, tp_multiplier, leverage, risk_note, explanation, fasttp_overrides "
+            "(object with enabled, min_r, ret1, ret3, snap_atr), and confidence (0-1)."
+        )
+        user_payload = {
+            "symbol": symbol,
+            "price": price,
+            "atr_abs": atr_abs,
+            "distance": {"stop": base_sl, "target": base_tp},
+            "context": ctx,
+            "sentinel": sentinel,
+            "defaults": {
+                "fasttp": {
+                    "min_r": FASTTP_MIN_R,
+                    "ret1": FAST_TP_RET1,
+                    "ret3": FAST_TP_RET3,
+                    "snap_atr": FASTTP_SNAP_ATR,
+                },
+                "leverage": LEVERAGE,
+            },
+        }
+        response = self._chat(system_prompt, json.dumps(user_payload, indent=2), kind="trend")
+        if not response:
+            return fallback
+        parsed = self._parse_structured(response)
+        if not isinstance(parsed, dict):
+            return fallback
+
+        plan = {**fallback}
+        decision_reason = parsed.get("decision_reason") or parsed.get("reason")
+        decision_note = parsed.get("decision_note") or parsed.get("note")
+        if isinstance(decision_reason, str) and decision_reason.strip():
+            plan["decision_reason"] = decision_reason.strip()
+        if isinstance(decision_note, str) and decision_note.strip():
+            plan["decision_note"] = decision_note.strip()
+
+        decision_raw = parsed.get("decision")
+        take_raw = parsed.get("take")
+        take = bool(plan.get("take", False))
+        if isinstance(take_raw, bool):
+            take = bool(take_raw)
+        elif isinstance(decision_raw, str):
+            token = decision_raw.strip().lower()
+            if token in {"take", "enter", "buy", "sell", "long", "short", "proceed"}:
+                take = True
+            elif token in {"skip", "avoid", "pass", "reject", "stop"}:
+                take = False
+        plan["take"] = bool(take)
+        plan["decision"] = "take" if plan["take"] else "skip"
+
+        side_raw = parsed.get("side") or parsed.get("direction")
+        if isinstance(side_raw, str):
+            side = side_raw.strip().upper()
+            if side in {"BUY", "SELL"}:
+                plan["side"] = side
+
+        size_multiplier = parsed.get("size_multiplier")
+        sl_multiplier = parsed.get("sl_multiplier")
+        tp_multiplier = parsed.get("tp_multiplier")
+        leverage = parsed.get("leverage")
+        fasttp_overrides = parsed.get("fasttp_overrides") or parsed.get("fast_tp")
+        risk_note = parsed.get("risk_note")
+        explanation = parsed.get("explanation") or parsed.get("rationale")
+        confidence = parsed.get("confidence") or parsed.get("score")
+
+        if isinstance(size_multiplier, (int, float)):
+            plan["size_multiplier"] = clamp(float(size_multiplier), 0.0, 2.0)
+        if isinstance(sl_multiplier, (int, float)):
+            plan["sl_multiplier"] = clamp(float(sl_multiplier), 0.5, 2.5)
+        if isinstance(tp_multiplier, (int, float)):
+            plan["tp_multiplier"] = clamp(float(tp_multiplier), 0.5, 3.0)
+        if isinstance(leverage, (int, float)):
+            plan["leverage"] = clamp(float(leverage), 1.0, max(LEVERAGE * 2.0, 1.0))
+        if isinstance(fasttp_overrides, dict):
+            plan["fasttp_overrides"] = {
+                "enabled": bool(fasttp_overrides.get("enabled", True)),
+                "min_r": float(fasttp_overrides.get("min_r", FASTTP_MIN_R)),
+                "ret1": float(fasttp_overrides.get("ret1", FAST_TP_RET1)),
+                "ret3": float(fasttp_overrides.get("ret3", FAST_TP_RET3)),
+                "snap_atr": float(fasttp_overrides.get("snap_atr", FASTTP_SNAP_ATR)),
+            }
+        if isinstance(risk_note, str) and risk_note.strip():
+            plan["risk_note"] = risk_note.strip()
+        if isinstance(explanation, str) and explanation.strip():
+            plan["explanation"] = self._ensure_bounds(explanation, fallback.get("explanation", ""))
+        if isinstance(confidence, (int, float)):
+            plan["confidence"] = clamp(float(confidence), 0.0, 1.0)
+        return plan
+
     def generate_postmortem(self, trade: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         opened = float(trade.get("opened_at", time.time()) or time.time())
         closed = float(trade.get("closed_at", time.time()) or time.time())
@@ -1266,14 +1387,37 @@ class Strategy:
         score = min(2.5, qvol / max(self.min_quote_vol, 1e-9)) if qvol > 0 else 0.0
         return score, rec
 
-    def _skip(self, reason: str, symbol: str, extra: Dict[str, Any] = None):
+    def _skip(
+        self,
+        reason: str,
+        symbol: str,
+        extra: Optional[Dict[str, Any]] = None,
+        *,
+        ctx: Optional[Dict[str, Any]] = None,
+        price: Optional[float] = None,
+        atr: Optional[float] = None,
+    ):
         if extra:
             log.debug(f"SKIP {symbol}: {reason} {extra}")
         else:
             log.debug(f"SKIP {symbol}: {reason}")
         if self.decision_tracker:
             self.decision_tracker.record_rejection(reason)
-        return "NONE", 0.0, {}, 0.0
+        payload: Dict[str, Any] = {}
+        if ctx:
+            try:
+                payload = json.loads(json.dumps(ctx, default=lambda o: float(o)))
+            except Exception:
+                payload = dict(ctx)
+        payload.setdefault("skip_reason", reason)
+        if extra:
+            payload.setdefault("skip_meta", extra)
+        return (
+            "NONE",
+            float(atr or payload.get("atr_abs") or 0.0),
+            payload,
+            float(price or payload.get("mid_price") or payload.get("last_price") or 0.0),
+        )
 
     def compute_signal(self, symbol: str) -> Tuple[str, float, Dict[str, float], float]:
         try:
@@ -1286,6 +1430,9 @@ class Strategy:
 
         closes = [x[4] for x in kl]; highs = [x[2] for x in kl]; lows = [x[3] for x in kl]
         last = closes[-1]
+        ctx_base: Dict[str, Any] = {
+            "last_price": float(last),
+        }
 
         # Spread (adaptiv an ATR%)
         try:
@@ -1296,12 +1443,29 @@ class Strategy:
             spread_bps = (ask - bid) / max(mid, 1e-9)
         except Exception:
             mid, spread_bps = last, 0.0
+        ctx_base.update(
+            {
+                "mid_price": float(mid),
+                "spread_bps": float(spread_bps),
+            }
+        )
 
         atr = atr_abs_from_klines(kl, 14)
         atrp = atr / max(1e-9, last)
         dyn_spread_max = max(self.spread_bps_max, 0.5 * atrp)
         if spread_bps > dyn_spread_max:
-            return self._skip("spread", symbol, {"spread": f"{spread_bps:.5f}", "max": f"{dyn_spread_max:.5f}"})
+            ctx_base["atr_abs"] = float(atr)
+            ctx_base["atr_pct"] = float(atrp)
+            return self._skip(
+                "spread",
+                symbol,
+                {"spread": f"{spread_bps:.5f}", "max": f"{dyn_spread_max:.5f}"},
+                ctx=ctx_base,
+                price=mid,
+                atr=atr,
+            )
+        ctx_base["atr_abs"] = float(atr)
+        ctx_base["atr_pct"] = float(atrp)
 
         # Wickiness
         try:
@@ -1309,7 +1473,16 @@ class Strategy:
             wick_lo = min(closes[-1], float(kl[-1][1])) - lows[-1]
             wickiness = max(wick_hi, wick_lo) / max(1e-9, highs[-1] - lows[-1])
             if wickiness > self.wickiness_max:
-                return self._skip("wicky", symbol, {"w": f"{wickiness:.2f}"})
+                ctx_base["wickiness"] = float(wickiness)
+                return self._skip(
+                    "wicky",
+                    symbol,
+                    {"w": f"{wickiness:.2f}"},
+                    ctx=ctx_base,
+                    price=mid,
+                    atr=atr,
+                )
+            ctx_base["wickiness"] = float(wickiness)
         except Exception:
             pass
 
@@ -1319,12 +1492,36 @@ class Strategy:
         cross_up = ema_fast[-2] < ema_slow[-2] and ema_fast[-1] > ema_slow[-1]
         cross_dn = ema_fast[-2] > ema_slow[-2] and ema_fast[-1] < ema_slow[-1]
         rsi14 = rsi(closes, 14)
+        ctx_base.update(
+            {
+                "ema_fast": float(ema_fast[-1]),
+                "ema_slow": float(ema_slow[-1]),
+                "ema_fast_delta": float(ema_fast[-1] - ema_slow[-1]),
+                "ema_htf": float(ema_htf[-1]),
+                "cross_up": float(1.0 if cross_up else 0.0),
+                "cross_down": float(1.0 if cross_dn else 0.0),
+                "rsi": float(rsi14[-1]),
+            }
+        )
 
         adx_val, adx_delta = adx_latest(kl, 14)
         slope_fast = (ema_fast[-1] - ema_fast[-5]) / max(abs(ema_fast[-5]), 1e-9)
+        ctx_base.update(
+            {
+                "adx": float(adx_val),
+                "adx_delta": float(adx_delta),
+                "slope_fast": float(slope_fast),
+            }
+        )
 
         htf_trend_up = ema_htf[-1] > ema_htf[-5]
         htf_trend_down = ema_htf[-1] < ema_htf[-5]
+        ctx_base.update(
+            {
+                "htf_trend_up": float(1.0 if htf_trend_up else 0.0),
+                "htf_trend_down": float(1.0 if htf_trend_down else 0.0),
+            }
+        )
 
         sig = "NONE"
         if cross_up and rsi14[-1] > RSI_BUY_MIN and htf_trend_up:
@@ -1338,9 +1535,9 @@ class Strategy:
             elif ema_fast[-1] < ema_slow[-1] and htf_trend_down and rsi14[-1] < (RSI_SELL_MAX + ALIGN_RSI_PAD):
                 sig = "SELL"
             else:
-                return self._skip("no_cross", symbol)
+                return self._skip("no_cross", symbol, ctx=ctx_base, price=mid, atr=atr)
         else:
-            return self._skip("no_cross", symbol)
+            return self._skip("no_cross", symbol, ctx=ctx_base, price=mid, atr=atr)
 
         if CONTRARIAN:
             if sig == "BUY":
@@ -1352,7 +1549,16 @@ class Strategy:
         trend_strength = 0.5 + max(adx_val - 20.0, 0.0) / 50.0
         expected_R = abs(slope_htf) * 20.0 * trend_strength
         if expected_R < MIN_EDGE_R:
-            return self._skip("edge_r", symbol, {"expR": f"{expected_R:.3f}", "minR": f"{MIN_EDGE_R:.3f}"})
+            ctx_base.update({"slope_htf": float(slope_htf), "expected_r": float(expected_R)})
+            return self._skip(
+                "edge_r",
+                symbol,
+                {"expR": f"{expected_R:.3f}", "minR": f"{MIN_EDGE_R:.3f}"},
+                ctx=ctx_base,
+                price=mid,
+                atr=atr,
+            )
+        ctx_base.update({"slope_htf": float(slope_htf), "expected_r": float(expected_R)})
 
         qv_score, t24 = self._get_qv_score(symbol)
         funding = 0.0
@@ -1361,6 +1567,8 @@ class Strategy:
                 funding = float(t24.get("lastFundingRate", 0.0) or 0.0)
             except Exception:
                 funding = 0.0
+        ctx_base["qv_score"] = float(qv_score)
+        ctx_base["funding"] = float(funding)
 
         if FUNDING_FILTER_ENABLED and sig in ("BUY", "SELL"):
             if sig == "BUY" and funding > FUNDING_MAX_LONG:
@@ -1368,25 +1576,25 @@ class Strategy:
                     "funding_long",
                     symbol,
                     {"funding": f"{funding:.6f}", "max": f"{FUNDING_MAX_LONG:.6f}"},
+                    ctx=ctx_base,
+                    price=mid,
+                    atr=atr,
                 )
             if sig == "SELL" and funding < -FUNDING_MAX_SHORT:
                 return self._skip(
                     "funding_short",
                     symbol,
                     {"funding": f"{funding:.6f}", "max": f"{-FUNDING_MAX_SHORT:.6f}"},
+                    ctx=ctx_base,
+                    price=mid,
+                    atr=atr,
                 )
 
         ctx: Dict[str, float] = {
-            "adx": float(adx_val),
-            "atr_pct": atrp,
-            "slope_htf": slope_htf,
-            "rsi": float(rsi14[-1]),
-            "funding": float(funding),
-            "qv_score": float(qv_score),
+            **ctx_base,
             "trend": 1.0 if sig == "BUY" else -1.0,
             "regime_adx": float(max(min(adx_delta / 100.0, 2.0), -2.0)),
             "regime_slope": float(max(min(slope_fast, 2.0), -2.0)),
-            "spread_bps": float(spread_bps),
         }
         return sig, float(atr), ctx, float(mid or last)
 
@@ -1838,8 +2046,7 @@ class Bot:
             return
 
         sig, atr_abs, ctx, price = self.strategy.compute_signal(symbol)
-        if sig == "NONE":
-            return
+        base_signal = sig
 
         sentinel_info = {
             "label": "green",
@@ -1855,6 +2062,7 @@ class Bot:
                 log.debug(f"sentinel evaluate fail {symbol}: {exc}")
         actions = sentinel_info.get("actions", {}) or {}
         if actions.get("hard_block"):
+            veto_target = base_signal if base_signal != "NONE" else "opportunity"
             log.info(
                 "Sentinel veto %s due to %s risk (event=%.2f, hype=%.2f)",
                 symbol,
@@ -1865,10 +2073,10 @@ class Bot:
             self._log_ai_activity(
                 "decision",
                 f"Sentinel vetoed {symbol}",
-                body=f"Risk label {sentinel_info.get('label', 'red')} blocked the {sig} setup.",
+                body=f"Risk label {sentinel_info.get('label', 'red')} blocked the {veto_target} setup.",
                 data={
                     "symbol": symbol,
-                    "side": sig,
+                    "side": base_signal,
                     "event_risk": float(sentinel_info.get("event_risk", 0.0) or 0.0),
                     "hype_score": float(sentinel_info.get("hype_score", 0.0) or 0.0),
                 },
@@ -1883,7 +2091,7 @@ class Bot:
         bucket = "S"
         alpha_prob = None
         alpha_conf = None
-        if BANDIT_ENABLED and self.policy:
+        if sig != "NONE" and BANDIT_ENABLED and self.policy:
             try:
                 decision, extras = self.policy.decide(ctx)  # "TAKE"/"SKIP" + {"size_bucket": "..."}
                 bucket = extras.get("size_bucket", "S")
@@ -1910,60 +2118,160 @@ class Bot:
         ctx["sentinel_hype"] = float(sentinel_info.get("hype_score", 0.0) or 0.0)
         ctx["sentinel_label"] = sentinel_info.get("label", "green")
 
-        # Entry/SL/TP
+        # Entry/SL/TP foundation
         try:
             bt = self.exchange.get_book_ticker(symbol)
-            px = float(bt.get("askPrice" if sig == "BUY" else "bidPrice", 0.0) or 0.0) or price
+            ask_px = float(bt.get("askPrice", 0.0) or 0.0)
+            bid_px = float(bt.get("bidPrice", 0.0) or 0.0)
         except Exception:
-            px = price
+            ask_px = 0.0
+            bid_px = 0.0
+
+        mid_px = (ask_px + bid_px) / 2.0 if ask_px > 0 and bid_px > 0 else price
+        if mid_px <= 0:
+            mid_px = price
+        if ask_px <= 0:
+            ask_px = mid_px
+        if bid_px <= 0:
+            bid_px = mid_px
+
+        ctx.setdefault("mid_price", float(mid_px))
+        ctx["book_ask"] = float(ask_px)
+        ctx["book_bid"] = float(bid_px)
+        ctx["base_signal"] = base_signal
+
+        atr_hint = float(ctx.get("atr_abs") or 0.0)
+        if atr_abs <= 0 and atr_hint > 0:
+            atr_abs = atr_hint
+        if atr_abs <= 0:
+            return
 
         sl_dist = max(1e-9, SL_ATR_MULT * atr_abs)
         tp_dist = max(1e-9, TP_ATR_MULT * atr_abs)
-        is_buy = (sig == "BUY")
-        sl = px - sl_dist if is_buy else px + sl_dist
-        tp = px + tp_dist if is_buy else px - tp_dist
 
         ai_meta: Optional[Dict[str, Any]] = None
         plan: Optional[Dict[str, Any]] = None
+        plan_origin: Optional[str] = None
+
         if self.ai_advisor:
-            plan = self.ai_advisor.plan_trade(symbol, sig, px, sl_dist, tp_dist, ctx, sentinel_info, atr_abs)
-            decision_summary = {
-                "decision": plan.get("decision"),
-                "take": bool(plan.get("take", True)),
-                "decision_reason": plan.get("decision_reason"),
-                "decision_note": plan.get("decision_note"),
-                "size_multiplier": plan.get("size_multiplier"),
-                "sl_multiplier": plan.get("sl_multiplier"),
-                "tp_multiplier": plan.get("tp_multiplier"),
-                "leverage": plan.get("leverage"),
-                "event_risk": plan.get("event_risk"),
-                "hype_score": plan.get("hype_score"),
-                "sentinel_label": sentinel_info.get("label"),
-            }
-            explanation = plan.get("explanation")
-            self._log_ai_activity(
-                "analysis",
-                f"{symbol} {sig} signal analysed",
-                body=explanation,
-                data={"symbol": symbol, "side": sig, **decision_summary},
-            )
-            if not bool(plan.get("take", True)):
-                reason = (
-                    plan.get("decision_reason")
-                    or plan.get("decision_note")
-                    or (explanation if isinstance(explanation, str) else None)
-                    or "AI rejected opportunity"
+            price_for_plan = mid_px if mid_px > 0 else price
+            if sig == "NONE":
+                plan = self.ai_advisor.plan_trend_trade(
+                    symbol,
+                    price_for_plan,
+                    sl_dist,
+                    tp_dist,
+                    ctx,
+                    sentinel_info,
+                    atr_abs,
                 )
+                plan_origin = "trend"
+                decision_summary = {
+                    "decision": plan.get("decision"),
+                    "take": bool(plan.get("take", False)),
+                    "decision_reason": plan.get("decision_reason"),
+                    "decision_note": plan.get("decision_note"),
+                    "size_multiplier": plan.get("size_multiplier"),
+                    "sl_multiplier": plan.get("sl_multiplier"),
+                    "tp_multiplier": plan.get("tp_multiplier"),
+                    "leverage": plan.get("leverage"),
+                    "origin": plan_origin,
+                    "event_risk": plan.get("event_risk"),
+                    "hype_score": plan.get("hype_score"),
+                    "sentinel_label": sentinel_info.get("label"),
+                }
+                explanation = plan.get("explanation")
                 self._log_ai_activity(
-                    "decision",
-                    f"AI skipped {symbol}",
-                    body=reason,
-                    data={"symbol": symbol, "side": sig, **decision_summary},
-                    force=True,
+                    "analysis",
+                    f"{symbol} trend scan analysed",
+                    body=explanation,
+                    data={"symbol": symbol, "side": plan.get("side") or sig, **decision_summary},
                 )
-                if self.decision_tracker:
-                    self.decision_tracker.record_rejection("ai_decision", force=True)
-                return
+                if not bool(plan.get("take", False)):
+                    reason = (
+                        plan.get("decision_reason")
+                        or plan.get("decision_note")
+                        or (explanation if isinstance(explanation, str) else None)
+                        or "AI rejected opportunity"
+                    )
+                    self._log_ai_activity(
+                        "decision",
+                        f"AI skipped {symbol}",
+                        body=reason,
+                        data={"symbol": symbol, "side": plan.get("side") or sig, **decision_summary},
+                        force=True,
+                    )
+                    if self.decision_tracker:
+                        self.decision_tracker.record_rejection("ai_trend_skip", force=True)
+                    return
+                side = str(plan.get("side") or "").upper()
+                if side not in {"BUY", "SELL"}:
+                    self._log_ai_activity(
+                        "decision",
+                        f"AI skipped {symbol}",
+                        body="Trend plan returned no actionable side.",
+                        data={"symbol": symbol, "side": sig, **decision_summary},
+                        force=True,
+                    )
+                    if self.decision_tracker:
+                        self.decision_tracker.record_rejection("ai_trend_invalid", force=True)
+                    return
+                sig = side
+                ctx["ai_generated_signal"] = True
+                ctx["ai_plan_origin"] = plan_origin
+                decision_summary["side"] = sig
+            else:
+                plan = self.ai_advisor.plan_trade(
+                    symbol,
+                    sig,
+                    price_for_plan,
+                    sl_dist,
+                    tp_dist,
+                    ctx,
+                    sentinel_info,
+                    atr_abs,
+                )
+                plan_origin = "signal"
+                decision_summary = {
+                    "decision": plan.get("decision"),
+                    "take": bool(plan.get("take", True)),
+                    "decision_reason": plan.get("decision_reason"),
+                    "decision_note": plan.get("decision_note"),
+                    "size_multiplier": plan.get("size_multiplier"),
+                    "sl_multiplier": plan.get("sl_multiplier"),
+                    "tp_multiplier": plan.get("tp_multiplier"),
+                    "leverage": plan.get("leverage"),
+                    "origin": plan_origin,
+                    "event_risk": plan.get("event_risk"),
+                    "hype_score": plan.get("hype_score"),
+                    "sentinel_label": sentinel_info.get("label"),
+                }
+                explanation = plan.get("explanation")
+                self._log_ai_activity(
+                    "analysis",
+                    f"{symbol} {sig} signal analysed",
+                    body=explanation,
+                    data={"symbol": symbol, "side": sig, **decision_summary},
+                )
+                if not bool(plan.get("take", True)):
+                    reason = (
+                        plan.get("decision_reason")
+                        or plan.get("decision_note")
+                        or (explanation if isinstance(explanation, str) else None)
+                        or "AI rejected opportunity"
+                    )
+                    self._log_ai_activity(
+                        "decision",
+                        f"AI skipped {symbol}",
+                        body=reason,
+                        data={"symbol": symbol, "side": sig, **decision_summary},
+                        force=True,
+                    )
+                    if self.decision_tracker:
+                        self.decision_tracker.record_rejection("ai_decision", force=True)
+                    return
+                ctx["ai_plan_origin"] = plan_origin
+                decision_summary["side"] = sig
 
             plan_size = float(plan.get("size_multiplier", 1.0) or 0.0)
             plan_sl_mult = float(plan.get("sl_multiplier", 1.0) or 1.0)
@@ -1971,11 +2279,10 @@ class Bot:
             size_mult *= plan_size
             sl_dist *= plan_sl_mult
             tp_dist *= plan_tp_mult
-            sl = px - sl_dist if is_buy else px + sl_dist
-            tp = px + tp_dist if is_buy else px - tp_dist
             leverage = plan.get("leverage")
             ai_meta = {
                 "plan": plan,
+                "origin": plan_origin,
                 "sentinel": sentinel_info,
                 "budget": self.ai_advisor.budget_snapshot(),
                 "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -1989,6 +2296,10 @@ class Bot:
             risk_note = plan.get("risk_note")
             if isinstance(risk_note, str) and risk_note.strip():
                 ai_meta["risk_note"] = risk_note.strip()
+            confidence = plan.get("confidence")
+            if isinstance(confidence, (int, float)):
+                ai_meta["confidence"] = float(confidence)
+                ctx["ai_confidence"] = float(confidence)
             note_body = (
                 plan.get("decision_note")
                 or plan.get("decision_reason")
@@ -2014,6 +2325,18 @@ class Bot:
             fasttp_overrides = plan.get("fasttp_overrides")
             if isinstance(fasttp_overrides, dict):
                 ai_meta["fasttp_overrides"] = fasttp_overrides
+        elif sig == "NONE":
+            return
+
+        if sig == "NONE":
+            return
+
+        is_buy = sig == "BUY"
+        px = ask_px if is_buy else bid_px
+        if px <= 0:
+            px = mid_px if mid_px > 0 else price
+        sl = px - sl_dist if is_buy else px + sl_dist
+        tp = px + tp_dist if is_buy else px - tp_dist
 
         size_mult = clamp(size_mult, 0.0, 5.0)
         if size_mult <= 0:
