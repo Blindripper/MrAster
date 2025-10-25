@@ -136,6 +136,8 @@ RSI_BUY_MIN = float(os.getenv("ASTER_RSI_BUY_MIN", "52"))
 RSI_SELL_MAX = float(os.getenv("ASTER_RSI_SELL_MAX", "48"))
 ALLOW_ALIGN = os.getenv("ASTER_ALLOW_TREND_ALIGN", "false").lower() in ("1", "true", "yes", "on")
 ALIGN_RSI_PAD = float(os.getenv("ASTER_ALIGN_RSI_PAD", "1.0"))
+TREND_BIAS = os.getenv("ASTER_TREND_BIAS", "with").strip().lower()
+CONTRARIAN = TREND_BIAS in ("against", "att", "contrarian")
 
 # ========= Utils =========
 def ema(data: List[float], period: int) -> List[float]:
@@ -1227,6 +1229,12 @@ class Strategy:
                 return self._skip("no_cross", symbol)
         else:
             return self._skip("no_cross", symbol)
+
+        if CONTRARIAN:
+            if sig == "BUY":
+                sig = "SELL"
+            elif sig == "SELL":
+                sig = "BUY"
 
         slope_htf = (ema_htf[-1] - ema_htf[-5]) / max(1e-9, ema_htf[-5])
         trend_strength = 0.5 + max(adx_val - 20.0, 0.0) / 50.0
