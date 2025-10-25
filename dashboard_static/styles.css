@@ -2436,6 +2436,15 @@ body.pro-mode .log-stream {
     gap: 1.5rem;
   }
 
+  .hero-header > * {
+    width: 100%;
+  }
+
+  .hero-lede {
+    text-align: left;
+    align-items: flex-start;
+  }
+
   .hero-mode-panel {
     width: 100%;
     align-items: center;
@@ -2452,6 +2461,12 @@ body.pro-mode .log-stream {
   .hero-mode-toggle .mode-button {
     flex: 1 1 calc(33.333% - 0.6rem);
     min-width: 140px;
+  }
+
+  .hero-visual {
+    width: 100%;
+    max-width: 360px;
+    margin-inline: auto;
   }
 
   .hero-overview-grid {
@@ -2500,6 +2515,15 @@ footer p {
 }
 
 @media (max-width: 600px) {
+  body {
+    padding: 1.5rem clamp(1rem, 6vw, 1.75rem) 2.6rem;
+  }
+
+  .page {
+    align-items: stretch;
+    gap: 1.6rem;
+  }
+
   .hero {
     padding: 2.2rem clamp(1.15rem, 6vw, 1.75rem) 1.8rem;
     gap: 1.75rem;
@@ -2512,6 +2536,30 @@ footer p {
   .hero-lede p {
     font-size: 0.95rem;
     max-width: 100%;
+  }
+
+  .hero-actions {
+    width: 100%;
+  }
+
+  .hero-actions > * {
+    width: 100%;
+  }
+
+  .hero-visual {
+    padding: 1.75rem 1.5rem;
+  }
+
+  .hero-overview-card,
+  .hero-active-positions,
+  .trades,
+  .pnl-card {
+    padding: 1.35rem 1.4rem 1.45rem;
+  }
+
+  .active-positions-table-wrapper {
+    margin-inline: -0.4rem;
+    padding-inline: 0.4rem;
   }
 
   .layout {
@@ -2565,6 +2613,20 @@ footer p {
   .log-stream {
     height: clamp(240px, 52vh, 420px);
     font-size: 0.82rem;
+  }
+
+  .ai-mode-window-body {
+    gap: 1rem;
+  }
+
+  .ai-chat-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.65rem;
+  }
+
+  .ai-chat-actions button {
+    width: 100%;
   }
 
   .trade-header {
@@ -2647,6 +2709,67 @@ footer p {
 
   .trade-item-body {
     padding-inline: 1rem;
+  }
+
+  .ai-mode-window {
+    padding: 1.6rem 1.4rem;
+  }
+
+  .ai-mode-window-body {
+    padding: 0.95rem;
+  }
+}
+
+@media (max-width: 420px) {
+  body {
+    padding: 1.35rem 0.9rem 2.4rem;
+  }
+
+  .hero {
+    border-radius: 1.5rem;
+    padding: 2rem 1.25rem 1.6rem;
+  }
+
+  .hero-visual {
+    padding: 1.5rem 1.25rem;
+    max-width: none;
+  }
+
+  .hero-mode-toggle {
+    padding: 0.4rem;
+  }
+
+  .hero-mode-toggle .mode-button {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .hero-metric {
+    padding: 0.9rem 1rem;
+  }
+
+  .hero-overview-card,
+  .hero-active-positions,
+  .trades,
+  .pnl-card {
+    padding: 1.2rem 1.25rem 1.3rem;
+  }
+
+  .active-positions-table-wrapper {
+    margin-inline: -0.75rem;
+    padding-inline: 0.75rem;
+  }
+
+  .ai-mode-window {
+    border-radius: 1.2rem;
+  }
+
+  .ai-mode-window-body .ai-hint {
+    font-size: 0.9rem;
+  }
+
+  footer {
+    padding: 1.35rem 0.9rem;
   }
 }
 
