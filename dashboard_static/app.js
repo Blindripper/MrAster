@@ -151,6 +151,7 @@ const PRESETS = {
     },
     equityFraction: 0.22,
     maxOpenGlobal: 1,
+    trendBias: 'with',
   },
   mid: {
     label: 'Mid',
@@ -181,6 +182,7 @@ const PRESETS = {
     },
     equityFraction: 0.28,
     maxOpenGlobal: 2,
+    trendBias: 'with',
   },
   high: {
     label: 'High',
@@ -211,6 +213,38 @@ const PRESETS = {
     },
     equityFraction: 0.34,
     maxOpenGlobal: 3,
+    trendBias: 'with',
+  },
+  att: {
+    label: 'ATT',
+    summary: 'Against-the-trend fading: contrarian plays with tighter stops and disciplined sizing.',
+    risk: 0.75,
+    leverage: 2,
+    edgeMinR: 0.07,
+    slAtr: 0.9,
+    tpAtr: 1.6,
+    fasttp: {
+      minR: 0.2,
+      ret1: -0.0005,
+      ret3: -0.0012,
+      snapAtr: 0.18,
+      cooldown: 40,
+    },
+    sizeMult: {
+      base: 0.85,
+      s: 0.85,
+      m: 1.1,
+      l: 1.3,
+    },
+    alpha: {
+      threshold: 0.6,
+      minConf: 0.25,
+      promoteDelta: 0.16,
+      rewardMargin: 0.05,
+    },
+    equityFraction: 0.24,
+    maxOpenGlobal: 2,
+    trendBias: 'against',
   },
 };
 
@@ -1787,6 +1821,7 @@ function buildQuickSetupPayload() {
     ASTER_LEVERAGE: toFixedString(safeLeverage, 0),
     ASTER_SL_ATR_MULT: toFixedString(preset.slAtr, 2),
     ASTER_TP_ATR_MULT: toFixedString(preset.tpAtr, 2),
+    ASTER_TREND_BIAS: preset.trendBias || 'with',
     FAST_TP_ENABLED: 'true',
     FASTTP_MIN_R: toFixedString(preset.fasttp.minR, 2),
     FAST_TP_RET1: toFixedString(preset.fasttp.ret1, 4),

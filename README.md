@@ -151,7 +151,8 @@ Every field in the **Environment configuration** card maps directly to an enviro
 | `ASTER_DEFAULT_NOTIONAL` | `120` | Fallback position size in notional terms when sizing heuristics cannot decide. |
 | `ASTER_RISK_PER_TRADE` | `0.007` | Fraction of equity risked on each trade when computing position size. |
 | `ASTER_LEVERAGE` | `3` | Default leverage multiplier requested on the exchange. |
-| `ASTER_PRESET_MODE` | `mid` | Selected intensity preset used by the Standard dashboard mode (`low`, `mid`, `high`). |
+| `ASTER_PRESET_MODE` | `mid` | Selected intensity preset used by the Standard dashboard mode (`low`, `mid`, `high`, `att`). |
+| `ASTER_TREND_BIAS` | `with` | Controls whether entries follow (`with`) or fade (`against`) the detected trend. |
 | `ASTER_EQUITY_FRACTION` | `0.25` | Cap on the fraction of account equity that can be allocated simultaneously. |
 | `ASTER_MIN_NOTIONAL_USDT` | `5` | Smallest order size (USDT) allowed after sizing rules are applied. |
 | `ASTER_MAX_NOTIONAL_USDT` | `300` | Hard ceiling on the notional per trade. |
