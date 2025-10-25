@@ -117,8 +117,14 @@ function updateAiBudgetModeLabel() {
   if (!aiBudgetModeLabel) return;
   const active = getCurrentMode();
   if (active === 'ai') {
-    aiBudgetModeLabel.textContent = 'AI-Mode';
-  } else if (active === 'pro') {
+    aiBudgetModeLabel.textContent = '';
+    aiBudgetModeLabel.style.display = 'none';
+    aiBudgetModeLabel.setAttribute('aria-hidden', 'true');
+    return;
+  }
+  aiBudgetModeLabel.style.display = '';
+  aiBudgetModeLabel.removeAttribute('aria-hidden');
+  if (active === 'pro') {
     aiBudgetModeLabel.textContent = 'Pro-Mode';
   } else {
     aiBudgetModeLabel.textContent = 'Standard';
@@ -408,7 +414,7 @@ function renderCredentials(env) {
     inputOpenAiKey.value = env?.ASTER_OPENAI_API_KEY ?? '';
   }
   if (inputAiBudget) {
-    inputAiBudget.value = env?.ASTER_AI_DAILY_BUDGET_USD ?? '1000';
+    inputAiBudget.value = env?.ASTER_AI_DAILY_BUDGET_USD ?? '20';
   }
   if (inputAiModel) {
     const model = env?.ASTER_AI_MODEL ?? 'gpt-4o';
@@ -2254,15 +2260,21 @@ function renderAiBudget(budget) {
     aiBudgetMeta.textContent = 'AI-Mode disabled.';
     return;
   }
-  const limit = Number((budget && budget.limit) ?? 0);
+  let limit = Number((budget && budget.limit) ?? 0);
   const spent = Number((budget && budget.spent) ?? 0);
   if (!Number.isFinite(limit) || limit <= 0) {
+    const envLimit = Number(currentConfig?.env?.ASTER_AI_DAILY_BUDGET_USD ?? 0);
+    if (Number.isFinite(envLimit) && envLimit > 0) {
+      limit = envLimit;
+    }
+  }
+  const hasLimit = Number.isFinite(limit) && limit > 0;
+  aiBudgetCard.classList.toggle('unlimited', !hasLimit);
+  if (!hasLimit) {
     aiBudgetFill.style.width = '0%';
     aiBudgetMeta.textContent = `Spent ${spent.toFixed(2)} USD · unlimited budget`;
-    aiBudgetCard.classList.add('unlimited');
     return;
   }
-  aiBudgetCard.classList.remove('unlimited');
   const pct = clampValue(limit > 0 ? (spent / limit) * 100 : 0, 0, 100);
   aiBudgetFill.style.width = `${pct.toFixed(1)}%`;
   const remaining = Math.max(0, limit - spent);

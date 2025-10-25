@@ -118,7 +118,7 @@ All relevant parameters can be set via environment variables or edited in the da
 | `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `52` / `48` | RSI bounds for long and short entries. |
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | Enforces trend alignment between timeframes. |
 | `ASTER_TREND_BIAS` | `with` | Trade with or against the trend. |
-| `ASTER_MIN_QUOTE_VOL_USDT` | `75000` | Minimum volume for tradable symbols. |
+| `ASTER_MIN_QUOTE_VOL_USDT` | `150000` | Minimum volume for tradable symbols. |
 | `ASTER_SPREAD_BPS_MAX` | `0.0030` | Maximum tolerated bid/ask spread (bps). |
 | `ASTER_WICKINESS_MAX` | `0.97` | Filter against overly volatile candles. |
 | `ASTER_MIN_EDGE_R` | `0.30` | Minimum edge (in R) required to approve a trade. |
@@ -148,7 +148,7 @@ All relevant parameters can be set via environment variables or edited in the da
 | `ASTER_HISTORY_MAX` | `250` | Number of historical trades for analytics. |
 | `ASTER_OPENAI_API_KEY` | empty | API key for AITradeAdvisor. |
 | `ASTER_AI_MODEL` | `gpt-4o` | Model ID for AI analysis. |
-| `ASTER_AI_DAILY_BUDGET_USD` | `1000` | Daily budget limit (USD). |
+| `ASTER_AI_DAILY_BUDGET_USD` | `20` | Daily budget limit (USD). |
 | `ASTER_AI_STRICT_BUDGET` | `true` | Stops AI calls after hitting the budget. |
 | `ASTER_AI_SENTINEL_ENABLED` | `true` | Activates the News Sentinel. |
 | `ASTER_AI_SENTINEL_DECAY_MINUTES` | `90` | Lifetime of a news warning. |
