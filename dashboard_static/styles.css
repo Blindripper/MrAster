@@ -2360,9 +2360,11 @@ body.pro-mode .log-stream {
   box-shadow: inset 0 1px 0 rgba(245, 196, 107, 0.05), 0 20px 55px rgba(5, 6, 8, 0.55);
   padding: 1.5rem 1.75rem;
   min-height: 300px;
+  max-height: 300px;
   display: flex;
   align-items: stretch;
   justify-content: center;
+  overflow: hidden;
 }
 
 .pnl-chart-wrapper canvas {
@@ -2400,6 +2402,7 @@ body.pro-mode .log-stream {
 
   .pnl-chart-wrapper {
     min-height: 260px;
+    max-height: 260px;
     padding: 1.35rem 1.5rem;
   }
 
@@ -2641,6 +2644,7 @@ footer p {
   .pnl-chart-wrapper {
     padding: 1.25rem 1.35rem;
     min-height: 240px;
+    max-height: 240px;
   }
 
   .trade-list {
