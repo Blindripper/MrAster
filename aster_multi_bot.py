@@ -559,6 +559,9 @@ class AITradeAdvisor:
         "gpt-4-turbo": {"input": 0.000006, "output": 0.000018},
         "gpt-3.5-turbo": {"input": 0.0000005, "output": 0.0000015},
         "gpt-5": {"input": 0.000004, "output": 0.000012},
+        "gpt-5-mini": {"input": 0.0000015, "output": 0.0000045},
+        "o1": {"input": 0.000015, "output": 0.00006},
+        "o1-mini": {"input": 0.0000035, "output": 0.0000105},
         "default": {"input": 0.000001, "output": 0.000003},
     }
 
