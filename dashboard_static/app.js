@@ -17,7 +17,11 @@ const tradeList = document.getElementById('trade-list');
 const tradeSummary = document.getElementById('trade-summary');
 const aiHint = document.getElementById('ai-hint');
 const pnlChartCanvas = document.getElementById('pnl-chart');
+const pnlChartWrapper = document.querySelector('.pnl-chart-wrapper');
 const pnlEmptyState = document.getElementById('pnl-empty');
+const pnlChartModal = document.getElementById('pnl-modal');
+const pnlChartModalClose = document.getElementById('pnl-modal-close');
+const pnlChartModalCanvas = document.getElementById('pnl-chart-expanded');
 const presetButtons = document.querySelectorAll('.preset[data-preset]');
 const presetDescription = document.getElementById('preset-description');
 const riskSlider = document.getElementById('risk-slider');
@@ -58,6 +62,7 @@ const DEFAULT_BOT_STATUS = { running: false, pid: null, started_at: null, uptime
 let currentConfig = {};
 let reconnectTimer = null;
 let pnlChart = null;
+let pnlChartExpanded = null;
 let proMode = false;
 let aiMode = false;
 let paperMode = false;
@@ -76,6 +81,10 @@ let activePositions = [];
 let tradesRefreshTimer = null;
 let tradeViewportSyncHandle = null;
 const aiChatSubmit = aiChatForm ? aiChatForm.querySelector('button[type="submit"]') : null;
+let lastPnlChartPayload = null;
+let pnlModalHideTimer = null;
+let pnlModalFinalizeHandler = null;
+let pnlModalReturnTarget = null;
 
 function buildAsterPositionUrl(symbol) {
   if (!symbol) return null;
@@ -2588,6 +2597,212 @@ function renderDecisionStats(stats) {
   }
 }
 
+function getPnlChartPalette() {
+  const styles = getComputedStyle(document.documentElement);
+  return {
+    accent: styles.getPropertyValue('--accent-strong').trim() || '#f0a94b',
+    accentSoft: styles.getPropertyValue('--accent-soft').trim() || 'rgba(240, 169, 75, 0.18)',
+    textMuted: styles.getPropertyValue('--text-muted').trim() || '#a09889',
+    gridLine: styles.getPropertyValue('--grid-line').trim() || 'rgba(255, 232, 168, 0.08)',
+  };
+}
+
+function buildPnlChartData(payload, { variant = 'default' } = {}) {
+  const { accent, accentSoft } = getPnlChartPalette();
+  const labels = Array.isArray(payload?.labels) ? payload.labels.slice() : [];
+  const values = Array.isArray(payload?.values) ? payload.values.slice() : [];
+  const pointRadius = variant === 'expanded' ? 3 : 2.5;
+  const pointHoverRadius = variant === 'expanded' ? 5 : 4;
+  return {
+    labels,
+    datasets: [
+      {
+        label: 'Cumulative PNL (USDT)',
+        data: values,
+        borderColor: accent,
+        backgroundColor: accentSoft,
+        tension: 0.35,
+        pointRadius,
+        pointHoverRadius,
+        pointBackgroundColor: '#0c0d12',
+        fill: true,
+      },
+    ],
+  };
+}
+
+function buildPnlChartOptions({ variant = 'default' } = {}) {
+  const { textMuted, gridLine } = getPnlChartPalette();
+  const xTicks = {
+    maxRotation: 0,
+    autoSkip: true,
+    color: textMuted,
+  };
+  const yTicks = {
+    callback: (value) => {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? numeric.toFixed(2) : value;
+    },
+    color: textMuted,
+  };
+  if (variant === 'expanded') {
+    xTicks.font = { size: 13 };
+    yTicks.font = { size: 13 };
+  }
+  const tooltip = {
+    callbacks: {
+      label: (context) => {
+        const value = Number(context?.parsed?.y ?? 0);
+        if (!Number.isFinite(value)) {
+          return ' 0.00 USDT';
+        }
+        const sign = value >= 0 ? '+' : '';
+        return ` ${sign}${value.toFixed(2)} USDT`;
+      },
+    },
+  };
+  if (variant === 'expanded') {
+    tooltip.bodyFont = { size: 14 };
+    tooltip.titleFont = { size: 13 };
+  }
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+      x: {
+        ticks: xTicks,
+        grid: {
+          display: false,
+        },
+      },
+      y: {
+        ticks: yTicks,
+        grid: {
+          color: gridLine,
+        },
+      },
+    },
+    plugins: {
+      legend: {
+        display: false,
+      },
+      tooltip,
+    },
+  };
+}
+
+function handlePnlModalKeydown(event) {
+  if (event.key === 'Escape') {
+    closePnlModal();
+  }
+}
+
+function openPnlModal() {
+  if (!pnlChartModal || !pnlChartModalCanvas) return;
+  if (!lastPnlChartPayload || !Array.isArray(lastPnlChartPayload.values) || lastPnlChartPayload.values.length === 0) {
+    return;
+  }
+
+  const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  pnlModalReturnTarget = active && active !== document.body ? active : pnlChartWrapper;
+
+  if (pnlModalHideTimer) {
+    clearTimeout(pnlModalHideTimer);
+    pnlModalHideTimer = null;
+  }
+
+  if (pnlModalFinalizeHandler && pnlChartModal) {
+    pnlChartModal.removeEventListener('transitionend', pnlModalFinalizeHandler);
+    pnlModalFinalizeHandler = null;
+  }
+
+  if (pnlChartExpanded) {
+    pnlChartExpanded.destroy();
+    pnlChartExpanded = null;
+  }
+
+  pnlChartModal.removeAttribute('hidden');
+  pnlChartModal.removeAttribute('aria-hidden');
+  requestAnimationFrame(() => {
+    pnlChartModal.classList.add('is-active');
+  });
+  document.body.classList.add('modal-open');
+
+  const ctx = pnlChartModalCanvas.getContext('2d');
+  if (!ctx || typeof Chart === 'undefined') {
+    return;
+  }
+
+  pnlChartExpanded = new Chart(ctx, {
+    type: 'line',
+    data: buildPnlChartData(lastPnlChartPayload, { variant: 'expanded' }),
+    options: buildPnlChartOptions({ variant: 'expanded' }),
+  });
+
+  document.addEventListener('keydown', handlePnlModalKeydown);
+  if (pnlChartModalClose) {
+    setTimeout(() => pnlChartModalClose.focus(), 120);
+  }
+}
+
+function closePnlModal() {
+  if (!pnlChartModal) {
+    return;
+  }
+
+  if (pnlModalHideTimer) {
+    clearTimeout(pnlModalHideTimer);
+    pnlModalHideTimer = null;
+  }
+
+  if (pnlModalFinalizeHandler) {
+    pnlChartModal.removeEventListener('transitionend', pnlModalFinalizeHandler);
+    pnlModalFinalizeHandler = null;
+  }
+
+  if (pnlChartModal.hasAttribute('hidden')) {
+    return;
+  }
+
+  pnlChartModal.classList.remove('is-active');
+  pnlChartModal.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('modal-open');
+
+  if (pnlChartExpanded) {
+    pnlChartExpanded.destroy();
+    pnlChartExpanded = null;
+  }
+
+  const finalize = () => {
+    if (pnlModalHideTimer) {
+      clearTimeout(pnlModalHideTimer);
+      pnlModalHideTimer = null;
+    }
+    if (!pnlChartModal.hasAttribute('hidden')) {
+      pnlChartModal.setAttribute('hidden', '');
+    }
+    if (pnlModalFinalizeHandler) {
+      pnlChartModal.removeEventListener('transitionend', pnlModalFinalizeHandler);
+      pnlModalFinalizeHandler = null;
+    }
+    const restoreTarget = pnlModalReturnTarget && typeof pnlModalReturnTarget.focus === 'function'
+      ? pnlModalReturnTarget
+      : pnlChartWrapper?.classList.contains('is-interactive')
+        ? pnlChartWrapper
+        : null;
+    pnlModalReturnTarget = null;
+    if (restoreTarget && typeof restoreTarget.focus === 'function') {
+      restoreTarget.focus({ preventScroll: true });
+    }
+  };
+
+  pnlModalFinalizeHandler = finalize;
+  pnlChartModal.addEventListener('transitionend', finalize);
+  pnlModalHideTimer = setTimeout(finalize, 280);
+
+  document.removeEventListener('keydown', handlePnlModalKeydown);
+}
+
 function renderPnlChart(history) {
   if (!pnlChartCanvas || typeof Chart === 'undefined') return;
 
@@ -2605,10 +2820,18 @@ function renderPnlChart(history) {
       pnlChart.destroy();
       pnlChart = null;
     }
+    lastPnlChartPayload = null;
     pnlChartCanvas.style.display = 'none';
     if (pnlEmptyState) {
       pnlEmptyState.style.display = 'flex';
     }
+    if (pnlChartWrapper) {
+      pnlChartWrapper.classList.remove('is-interactive');
+      pnlChartWrapper.removeAttribute('tabindex');
+      pnlChartWrapper.removeAttribute('role');
+      pnlChartWrapper.removeAttribute('aria-label');
+    }
+    closePnlModal();
     return;
   }
 
@@ -2645,65 +2868,20 @@ function renderPnlChart(history) {
     values.push(Number(cumulative.toFixed(2)));
   }
 
-  const styles = getComputedStyle(document.documentElement);
-  const accent = styles.getPropertyValue('--accent-strong').trim() || '#f0a94b';
-  const accentSoft = styles.getPropertyValue('--accent-soft').trim() || 'rgba(240, 169, 75, 0.18)';
-
-  const data = {
-    labels,
-    datasets: [
-      {
-        label: 'Cumulative PNL (USDT)',
-        data: values,
-        borderColor: accent,
-        backgroundColor: accentSoft,
-        tension: 0.35,
-        pointRadius: 2.5,
-        pointHoverRadius: 4,
-        pointBackgroundColor: '#0c0d12',
-        fill: true,
-      },
-    ],
+  lastPnlChartPayload = {
+    labels: labels.slice(),
+    values: values.slice(),
   };
 
-  const options = {
-    responsive: true,
-    maintainAspectRatio: false,
-    scales: {
-      x: {
-        ticks: {
-          maxRotation: 0,
-          autoSkip: true,
-          color: styles.getPropertyValue('--text-muted').trim() || '#a09889',
-        },
-        grid: {
-          display: false,
-        },
-      },
-      y: {
-        ticks: {
-          callback: (value) => `${Number(value).toFixed ? Number(value).toFixed(2) : value}`,
-          color: styles.getPropertyValue('--text-muted').trim() || '#a09889',
-        },
-        grid: {
-          color: styles.getPropertyValue('--grid-line').trim() || 'rgba(255, 232, 168, 0.08)',
-        },
-      },
-    },
-    plugins: {
-      legend: {
-        display: false,
-      },
-      tooltip: {
-        callbacks: {
-          label: (context) => {
-            const value = context.parsed.y;
-            return ` ${value >= 0 ? '+' : ''}${value.toFixed(2)} USDT`;
-          },
-        },
-      },
-    },
-  };
+  if (pnlChartWrapper) {
+    pnlChartWrapper.classList.add('is-interactive');
+    pnlChartWrapper.setAttribute('tabindex', '0');
+    pnlChartWrapper.setAttribute('role', 'button');
+    pnlChartWrapper.setAttribute('aria-label', 'Expand performance overview chart');
+  }
+
+  const data = buildPnlChartData(lastPnlChartPayload);
+  const options = buildPnlChartOptions();
 
   if (pnlChart) {
     pnlChart.data = data;
@@ -3244,6 +3422,35 @@ btnToggleEnv?.addEventListener('click', toggleEnvPanel);
 btnHeroDownload?.addEventListener('click', () => {
   downloadTradeHistory();
 });
+
+if (pnlChartWrapper) {
+  pnlChartWrapper.addEventListener('click', () => {
+    if (pnlChartWrapper.classList.contains('is-interactive')) {
+      openPnlModal();
+    }
+  });
+  pnlChartWrapper.addEventListener('keydown', (event) => {
+    if (!pnlChartWrapper.classList.contains('is-interactive')) {
+      return;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openPnlModal();
+    }
+  });
+}
+
+pnlChartModalClose?.addEventListener('click', () => {
+  closePnlModal();
+});
+
+if (pnlChartModal) {
+  pnlChartModal.addEventListener('click', (event) => {
+    if (event.target === pnlChartModal) {
+      closePnlModal();
+    }
+  });
+}
 
 modeButtons.forEach((button) => {
   button.addEventListener('click', () => {
