@@ -920,8 +920,9 @@ function normaliseActivePositions(raw) {
     ['standard', 'pro', 'ai'].forEach((mode) => {
       appendCollection(raw[mode]);
     });
-    if (collected.length === 0) {
-      appendCollection(raw.all || raw.shared);
+    appendCollection(raw.all);
+    if (raw.shared && raw.shared !== raw.all) {
+      appendCollection(raw.shared);
     }
     return collected;
   }
