@@ -545,9 +545,32 @@ function formatNumber(num, digits = 2) {
   return Number(num).toFixed(digits);
 }
 
-function formatPriceDisplay(value) {
+function formatPriceDisplay(value, options = {}) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return '–';
+
+  const { minimumFractionDigits, maximumFractionDigits } = options;
+  const hasCustomDigits =
+    (Number.isInteger(minimumFractionDigits) && minimumFractionDigits >= 0) ||
+    (Number.isInteger(maximumFractionDigits) && maximumFractionDigits >= 0);
+
+  if (hasCustomDigits) {
+    const localeOptions = {};
+    if (Number.isInteger(minimumFractionDigits) && minimumFractionDigits >= 0) {
+      localeOptions.minimumFractionDigits = minimumFractionDigits;
+    }
+    if (Number.isInteger(maximumFractionDigits) && maximumFractionDigits >= 0) {
+      localeOptions.maximumFractionDigits = maximumFractionDigits;
+    }
+    if (
+      localeOptions.minimumFractionDigits != null &&
+      localeOptions.maximumFractionDigits == null
+    ) {
+      localeOptions.maximumFractionDigits = localeOptions.minimumFractionDigits;
+    }
+    return numeric.toLocaleString(undefined, localeOptions);
+  }
+
   if (numeric >= 10000) {
     return numeric.toLocaleString(undefined, {
       maximumFractionDigits: 0,
@@ -1193,13 +1216,19 @@ function updateActivePositionsView() {
     const entryCell = document.createElement('td');
     entryCell.className = 'numeric';
     const entryField = pickNumericField(position, ACTIVE_POSITION_ALIASES.entry || []);
-    entryCell.textContent = formatPriceDisplay(entryField.numeric);
+    entryCell.textContent = formatPriceDisplay(entryField.numeric, {
+      minimumFractionDigits: 7,
+      maximumFractionDigits: 7,
+    });
     row.append(entryCell);
 
     const markCell = document.createElement('td');
     markCell.className = 'numeric';
     const markField = pickNumericField(position, ACTIVE_POSITION_ALIASES.mark || []);
-    markCell.textContent = formatPriceDisplay(markField.numeric);
+    markCell.textContent = formatPriceDisplay(markField.numeric, {
+      minimumFractionDigits: 7,
+      maximumFractionDigits: 7,
+    });
     row.append(markCell);
 
     const pnlCell = document.createElement('td');
