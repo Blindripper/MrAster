@@ -297,10 +297,16 @@ def adx_latest(kl: List[List[float]], period: int = 14) -> Tuple[float, float]:
         adx_prev = adx_last
     return adx_last, adx_last - adx_prev
 
-def round_price(symbol: str, price: float, tick: float) -> float:
+def round_price(symbol: str, price: float, tick: float, *, mode: str = "floor") -> float:
     if tick <= 0:
         return float(price)
-    steps = math.floor(price / tick + 1e-12)
+
+    if mode == "ceil":
+        steps = math.ceil(price / tick - 1e-12)
+    else:
+        # Default to flooring the value to avoid drifting past the desired level.
+        steps = math.floor(price / tick + 1e-12)
+
     return float(steps * tick)
 
 def _format_decimal(value: float) -> str:
@@ -2454,27 +2460,6 @@ class Bot:
         sl_dist = max(sl_dist, abs(px - sl))
         tp_dist = max(tp_dist, abs(tp - px))
 
-        if abs(px - sl) < 1e-8 or abs(tp - px) < 1e-8:
-            if ai_meta is not None:
-                ai_meta.setdefault("warnings", []).append("Degenerate trade levels cancelled")
-            self._log_ai_activity(
-                "decision",
-                f"Invalid AI levels for {symbol}",
-                body="Stop-loss or take-profit collapsed into the entry price; trade aborted.",
-                data={
-                    "symbol": symbol,
-                    "side": sig,
-                    "entry": float(px),
-                    "stop": float(sl),
-                    "target": float(tp),
-                    "plan_origin": plan_origin,
-                },
-                force=True,
-            )
-            if self.decision_tracker:
-                self.decision_tracker.record_rejection("invalid_levels", force=True)
-            return
-
         size_mult = clamp(size_mult, 0.0, 5.0)
         if size_mult <= 0:
             self._log_ai_activity(
@@ -2489,8 +2474,36 @@ class Bot:
             return
 
         tick = float(self.risk.symbol_filters.get(symbol, {}).get("tickSize", 0.0001) or 0.0001)
-        sl = round_price(symbol, sl, tick)
-        tp = round_price(symbol, tp, tick)
+        sl = round_price(symbol, sl, tick, mode="floor" if is_buy else "ceil")
+        tp = round_price(symbol, tp, tick, mode="ceil" if is_buy else "floor")
+
+        sl_valid = (sl < px - 1e-8) if is_buy else (sl > px + 1e-8)
+        tp_valid = (tp > px + 1e-8) if is_buy else (tp < px - 1e-8)
+        if not (sl_valid and tp_valid):
+            if ai_meta is not None:
+                warnings = ai_meta.setdefault("warnings", [])
+                if not sl_valid:
+                    warnings.append("AI stop-loss level invalid after tick rounding")
+                if not tp_valid:
+                    warnings.append("AI take-profit level invalid after tick rounding")
+                warnings.append("Degenerate trade levels cancelled")
+            self._log_ai_activity(
+                "decision",
+                f"Invalid AI levels for {symbol}",
+                body="Stop-loss or take-profit invalid after tick rounding; trade aborted.",
+                data={
+                    "symbol": symbol,
+                    "side": sig,
+                    "entry": float(px),
+                    "stop": float(sl),
+                    "target": float(tp),
+                    "plan_origin": plan_origin,
+                },
+                force=True,
+            )
+            if self.decision_tracker:
+                self.decision_tracker.record_rejection("invalid_levels", force=True)
+            return
 
         qty = self.risk.compute_qty(symbol, px, sl, size_mult)
         if qty <= 0:
