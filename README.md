@@ -1,198 +1,192 @@
 # MrAster Trading Bot
 
-MrAster ist ein vollständiges Werkzeugset für den Futures-Handel auf Binance-kompatiblen Börsen. Die Suite kombiniert einen regelbasierten
-Signal-Scanner, ein mehrarmiges Banditenmodell für Trade-Gating, robuste Order-Verwaltung sowie ein operatives Dashboard mit KI-Unterstützung.
+MrAster is a full-featured toolkit for futures trading on Binance-compatible exchanges. The suite combines a rule-based signal scanner, a multi-armed bandit model for trade gating, robust order management, and an operational dashboard with AI assistance.
 
-## Inhaltsverzeichnis
+## Table of Contents
 - [Highlights](#highlights)
-- [Architekturüberblick](#architekturüberblick)
-- [Schnellstart](#schnellstart)
-- [Konfiguration](#konfiguration)
-  - [Kernvariablen](#kernvariablen)
-  - [Strategie, Risiko und Positionierung](#strategie-risiko-und-positionierung)
-  - [KI, Automatisierung und Guardrails](#ki-automatisierung-und-guardrails)
+- [Architecture Overview](#architecture-overview)
+- [Quickstart](#quickstart)
+- [Configuration](#configuration)
+  - [Core Variables](#core-variables)
+  - [Strategy, Risk, and Positioning](#strategy-risk-and-positioning)
+  - [AI, Automation, and Guardrails](#ai-automation-and-guardrails)
 - [Dashboard](#dashboard)
-  - [Betriebsmodi](#betriebsmodi)
-  - [Konfigurations-Editor](#konfigurations-editor)
-- [Update-Hinweis](#update-hinweis)
-- [Sicherheitshinweise](#sicherheitshinweise)
+  - [Operating Modes](#operating-modes)
+  - [Configuration Editor](#configuration-editor)
+- [Update Note](#update-note)
+- [Security Notice](#security-notice)
 
 ## Highlights
 
-### Trading-Engine
-- **RSI-basierte Signale mit Trendabgleich** &ndash; alle Schwellenwerte lassen sich über `ASTER_*`-Variablen verändern.
-- **Mehrarmiger Bandit (`BanditPolicy`)** mit LinUCB und optionalem Alpha-Modell aus `ml_policy.py` entscheidet TAKE/SKIP sowie das Größen-Bucket (S/M/L).
-- **Funding- und Spread-Filter** vermeiden Trades in illiquiden oder teuren Märkten.
-- **Kline- und 24h-Ticker-Caching** reduziert API-Aufrufe und schützt vor kurzzeitigen Börsenausfällen.
+### Trading Engine
+- **RSI-based signals with trend confirmation** – all thresholds can be tuned via `ASTER_*` environment variables.
+- **Multi-armed bandit (`BanditPolicy`)** using LinUCB and an optional alpha model from `ml_policy.py` decides TAKE/SKIP as well as the size bucket (S/M/L).
+- **Funding and spread filters** avoid trades in illiquid or expensive markets.
+- **Kline and 24h ticker caching** reduces API calls and shields against temporary exchange outages.
 
-### Risiko- und Order-Management
-- **BracketGuard** (`brackets_guard.py`) repariert Stop-Loss- und Take-Profit-Orders, achtet auf `working_type` und unterstützt alte wie neue Bot-Signaturen.
-- **FastTP** reagiert auf negative Returns und trimmt Positionen mit ATR-gebundenen Checkpoints.
-- **Equity-Cache & Positions-Limits** (`ASTER_MAX_OPEN_*`, `ASTER_EQUITY_FRACTION`) halten die Gesamtrisikobelastung im Rahmen.
-- **Persistenter Zustand** (`aster_state.json`) hält offene Trades, Policy-Daten und Dashboard-Einstellungen zwischen Sessions aktuell.
+### Risk and Order Management
+- **BracketGuard** (`brackets_guard.py`) repairs stop-loss and take-profit orders, respects the `working_type`, and supports both legacy and new bot signatures.
+- **FastTP** reacts to adverse returns and trims positions using ATR-bound checkpoints.
+- **Equity cache & position limits** (`ASTER_MAX_OPEN_*`, `ASTER_EQUITY_FRACTION`) keep total risk exposure in check.
+- **Persistent state** (`aster_state.json`) stores open trades, policy data, and dashboard settings across sessions.
 
-### KI und Automatisierung
-- **AITradeAdvisor** (AI-Modus) bewertet Signale, passt Hebel & Positionsgrößen an und erklärt Entscheidungen im eigenen Activity-Feed.
-- **News Sentinel** (`ASTER_AI_SENTINEL_*`) beobachtet externe Newsfeeds und kann Trades rund um Events blockieren.
-- **Budget-Kontrolle** (`ASTER_AI_DAILY_BUDGET_USD`, `ASTER_AI_STRICT_BUDGET`) stoppt KI-Aufrufe bei Budgetüberschreitung.
+### AI and Automation
+- **AITradeAdvisor** (AI mode) evaluates signals, adjusts leverage and position size, and explains decisions in its own activity feed.
+- **News Sentinel** (`ASTER_AI_SENTINEL_*`) monitors external news feeds and can block trades around events.
+- **Budget control** (`ASTER_AI_DAILY_BUDGET_USD`, `ASTER_AI_STRICT_BUDGET`) halts AI calls when the daily budget is exceeded.
 
-### Beobachtbarkeit & Resilienz
-- **HTTP-Hardening** konfigurierbar über `ASTER_HTTP_RETRIES`, `ASTER_HTTP_BACKOFF`, `ASTER_HTTP_TIMEOUT`.
-- **Mehrpersonen-Dashboard** mit Log-Streaming, Prozess-Steuerung und Environment-Editor.
-- **Eigenständige Anforderungen**: Ein `requirements.txt` bündelt alle Abhängigkeiten, sodass `pip install -r requirements.txt` genügt.
+### Observability & Resilience
+- **HTTP hardening** configurable via `ASTER_HTTP_RETRIES`, `ASTER_HTTP_BACKOFF`, `ASTER_HTTP_TIMEOUT`.
+- **Multi-user dashboard** with log streaming, process control, and environment editing.
+- **Self-contained requirements**: a single `requirements.txt` captures all dependencies, so `pip install -r requirements.txt` is enough.
 
-## Architekturüberblick
+## Architecture Overview
 
 ```
-├── aster_multi_bot.py      # Haupteinstieg, Signale, Policy-Entscheidungen, Orderrouting
-├── brackets_guard.py       # Hintergrundprozess für Stop/TP-Reparaturen
-├── ml_policy.py            # LinUCB-Bandit & Alpha-Modell (Option)
-├── dashboard_server.py     # FastAPI-Backend, Websocket-Logs, Prozess-Steuerung
-├── dashboard_static/       # Single-Page-App mit Standard-, Pro- und KI-Modus
-└── requirements.txt        # Vollständige Python-Abhängigkeiten
+├── aster_multi_bot.py      # Main entry point, signals, policy decisions, order routing
+├── brackets_guard.py       # Background process for stop/TP repair
+├── ml_policy.py            # LinUCB bandit & optional alpha model
+├── dashboard_server.py     # FastAPI backend, websocket logs, process control
+├── dashboard_static/       # Single-page app with Standard, Pro, and AI modes
+└── requirements.txt        # Complete Python dependencies
 ```
 
-Der Bot lässt sich standalone starten oder über das Dashboard kontrollieren. Policy- und State-Dateien werden automatisch gespeichert
-und beim nächsten Start wiederhergestellt.
+The bot can run standalone or be controlled through the dashboard. Policy and state files are saved automatically and restored on the next startup.
 
-## Schnellstart
+## Quickstart
 
-### Voraussetzungen
-- Python ≥ 3.10 (empfohlen)
-- Binance- oder AsterDex-kompatibles Futures-Konto (für Live-Handel)
-- Optional: Paper-Trading-Modus funktioniert ohne API-Keys
+### Prerequisites
+- Python ≥ 3.10 (recommended)
+- Binance or AsterDex-compatible futures account (for live trading)
+- Optional: Paper-trading mode works without API keys
 
 ### Installation
 ```bash
-# Repository klonen
+# Clone the repository
 git clone https://example.com/MrAster.git
 cd MrAster
 
-# Virtuelle Umgebung anlegen
+# Create a virtual environment
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
-# Abhängigkeiten installieren
+# Install dependencies
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### Bot starten
+### Start the Bot
 ```bash
-export ASTER_PAPER=true  # Paper-Modus aktivieren
+export ASTER_PAPER=true  # enable paper mode
 python aster_multi_bot.py
 ```
 
-Mit `ASTER_RUN_ONCE=true` führt der Bot nur einen Scanzyklus aus. Ein Abbruch via `CTRL+C` (SIGINT) beendet den laufenden Durchlauf sauber.
+With `ASTER_RUN_ONCE=true`, the bot performs a single scan cycle. Stopping with `CTRL+C` (SIGINT) exits gracefully.
 
-### Dashboard starten
+### Start the Dashboard
 ```bash
 python dashboard_server.py
-# oder mit Auto-Reload:
+# or with auto-reload:
 uvicorn dashboard_server:app --host 0.0.0.0 --port 8000
 ```
 
-Die Oberfläche ist anschließend unter <http://localhost:8000> erreichbar. Log-Streams, Konfigurationsänderungen und Bot-Steuerung
-stehen direkt im Browser zur Verfügung.
+The interface becomes available at <http://localhost:8000>. Log streams, configuration changes, and bot controls are available directly in the browser.
 
-## Konfiguration
+## Configuration
 
-Alle relevanten Parameter können per Environment-Variablen gesetzt oder im Dashboard geschrieben werden (`dashboard_config.json`).
-Untenstehend eine kuratierte Übersicht. Die vollständige Liste lässt sich jederzeit über den Dashboard-Editor oder den Kopfbereich in
-`aster_multi_bot.py` einsehen.
+All relevant parameters can be set via environment variables or edited in the dashboard (`dashboard_config.json`). Below is a curated overview. You can inspect the full list anytime through the dashboard editor or at the top of `aster_multi_bot.py`.
 
-### Kernvariablen
+### Core Variables
 
-| Variable | Standardwert | Beschreibung |
+| Variable | Default | Description |
 | --- | --- | --- |
-| `ASTER_API_KEY` / `ASTER_API_SECRET` | leer | API-Zugangsdaten für den Live-Handel. |
-| `ASTER_EXCHANGE_BASE` | `https://fapi.asterdex.com` | REST-Endpunkt für Markt- und Orderdaten. |
-| `ASTER_PAPER` | `false` | Aktiviert den Paper-Trading-Adapter. |
-| `ASTER_RUN_ONCE` | `false` | Führt genau einen Scanzyklus aus. |
-| `ASTER_LOGLEVEL` | `INFO` | Logging-Verbosity (`DEBUG`, `INFO`, ...). |
-| `ASTER_MODE` | `standard` | Default-Dashboard-Modus (`standard`, `pro`, `ai`). |
-| `ASTER_LOOP_SLEEP` | `30` | Pause zwischen Scans in Sekunden. |
-| `ASTER_STATE_FILE` | `aster_state.json` | Persistenz-Datei für Bot- und KI-Zustand. |
-| `ASTER_HTTP_RETRIES` | `2` | Zusätzliche HTTP-Retry-Versuche. |
-| `ASTER_HTTP_BACKOFF` | `0.6` | Basiswartezeit (Sekunden) zwischen Retries. |
-| `ASTER_HTTP_TIMEOUT` | `20` | HTTP-Timeout in Sekunden. |
-| `ASTER_KLINE_CACHE_SEC` | `45` | Lebensdauer des Kline-Caches. |
+| `ASTER_API_KEY` / `ASTER_API_SECRET` | empty | API credentials for live trading. |
+| `ASTER_EXCHANGE_BASE` | `https://fapi.asterdex.com` | REST endpoint for market and order data. |
+| `ASTER_PAPER` | `false` | Enables the paper-trading adapter. |
+| `ASTER_RUN_ONCE` | `false` | Executes exactly one scan cycle. |
+| `ASTER_LOGLEVEL` | `INFO` | Logging verbosity (`DEBUG`, `INFO`, ...). |
+| `ASTER_MODE` | `standard` | Default dashboard mode (`standard`, `pro`, `ai`). |
+| `ASTER_LOOP_SLEEP` | `30` | Pause between scans in seconds. |
+| `ASTER_STATE_FILE` | `aster_state.json` | Persistence file for bot and AI state. |
+| `ASTER_HTTP_RETRIES` | `2` | Additional HTTP retry attempts. |
+| `ASTER_HTTP_BACKOFF` | `0.6` | Base wait time (seconds) between retries. |
+| `ASTER_HTTP_TIMEOUT` | `20` | HTTP timeout in seconds. |
+| `ASTER_KLINE_CACHE_SEC` | `45` | Lifetime of the kline cache. |
 
-### Strategie, Risiko und Positionierung
+### Strategy, Risk, and Positioning
 
-| Variable | Standardwert | Beschreibung |
+| Variable | Default | Description |
 | --- | --- | --- |
-| `ASTER_INTERVAL` / `ASTER_HTF_INTERVAL` | `5m` / `30m` | Zeitrahmen für Signal & Bestätigung. |
-| `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `52` / `48` | RSI-Grenzen für Long- bzw. Short-Einstiege. |
-| `ASTER_ALLOW_TREND_ALIGN` | `false` | Erzwingt Trendabgleich zwischen Zeitrahmen. |
-| `ASTER_TREND_BIAS` | `with` | Handelt mit oder gegen den Trend. |
-| `ASTER_MIN_QUOTE_VOL_USDT` | `75000` | Mindestvolumen für handelbare Symbole. |
-| `ASTER_SPREAD_BPS_MAX` | `0.0030` | Maximal tolerierter Bid/Ask-Spread (in Bps). |
-| `ASTER_WICKINESS_MAX` | `0.97` | Filter gegen übermäßig volatile Kerzen. |
-| `ASTER_MIN_EDGE_R` | `0.30` | Minimaler Edge (in R) zur Trade-Freigabe. |
-| `ASTER_DEFAULT_NOTIONAL` | `250` | Fallback-Notional, falls keine Berechnung möglich ist. |
-| `ASTER_RISK_PER_TRADE` | `0.006` | Anteil des Kapitals pro Trade. |
-| `ASTER_EQUITY_FRACTION` | `0.33` | Maximale Equity-Auslastung aller offenen Positionen. |
-| `ASTER_LEVERAGE` | `5` | Standardhebel für Orders. |
-| `ASTER_MAX_OPEN_GLOBAL` | `4` | Globale Obergrenze gleichzeitiger Positionen. |
-| `ASTER_MAX_OPEN_PER_SYMBOL` | `1` | Limit pro Symbol. |
-| `ASTER_SL_ATR_MULT` / `ASTER_TP_ATR_MULT` | `1.0` / `1.6` | ATR-Multiplikatoren für Stop & Take-Profit. |
-| `FAST_TP_ENABLED` | `true` | Aktiviert FastTP-Teilgewinnsicherung. |
-| `FASTTP_MIN_R` | `0.30` | Mindest-R-Gewinn bevor FastTP greift. |
-| `FAST_TP_RET1` / `FAST_TP_RET3` | `-0.0010` / `-0.0020` | Rücksetzer-Schwellen für FastTP. |
-| `FASTTP_SNAP_ATR` | `0.25` | ATR-Distanz für den Snap-Mechanismus. |
-| `FASTTP_COOLDOWN_S` | `15` | Wartezeit zwischen FastTP-Checks. |
-| `ASTER_FUNDING_FILTER_ENABLED` | `true` | Aktiviert Funding-Limitierung. |
-| `ASTER_FUNDING_MAX_LONG` / `ASTER_FUNDING_MAX_SHORT` | `0.0010` | Funding-Grenzen pro Richtung. |
+| `ASTER_INTERVAL` / `ASTER_HTF_INTERVAL` | `5m` / `30m` | Timeframes for signals and confirmation. |
+| `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `52` / `48` | RSI bounds for long and short entries. |
+| `ASTER_ALLOW_TREND_ALIGN` | `false` | Enforces trend alignment between timeframes. |
+| `ASTER_TREND_BIAS` | `with` | Trade with or against the trend. |
+| `ASTER_MIN_QUOTE_VOL_USDT` | `75000` | Minimum volume for tradable symbols. |
+| `ASTER_SPREAD_BPS_MAX` | `0.0030` | Maximum tolerated bid/ask spread (bps). |
+| `ASTER_WICKINESS_MAX` | `0.97` | Filter against overly volatile candles. |
+| `ASTER_MIN_EDGE_R` | `0.30` | Minimum edge (in R) required to approve a trade. |
+| `ASTER_DEFAULT_NOTIONAL` | `250` | Fallback notional when sizing fails. |
+| `ASTER_RISK_PER_TRADE` | `0.006` | Share of equity per trade. |
+| `ASTER_EQUITY_FRACTION` | `0.33` | Maximum equity utilization across open positions. |
+| `ASTER_LEVERAGE` | `5` | Default leverage for orders. |
+| `ASTER_MAX_OPEN_GLOBAL` | `4` | Global cap on concurrent positions. |
+| `ASTER_MAX_OPEN_PER_SYMBOL` | `1` | Per-symbol position limit. |
+| `ASTER_SL_ATR_MULT` / `ASTER_TP_ATR_MULT` | `1.0` / `1.6` | ATR multiples for stop and take-profit. |
+| `FAST_TP_ENABLED` | `true` | Enables FastTP partial-profit protection. |
+| `FASTTP_MIN_R` | `0.30` | Minimum R gain before FastTP triggers. |
+| `FAST_TP_RET1` / `FAST_TP_RET3` | `-0.0010` / `-0.0020` | Pullback thresholds for FastTP. |
+| `FASTTP_SNAP_ATR` | `0.25` | ATR distance for the snap mechanism. |
+| `FASTTP_COOLDOWN_S` | `15` | Wait time between FastTP checks. |
+| `ASTER_FUNDING_FILTER_ENABLED` | `true` | Enables funding limitations. |
+| `ASTER_FUNDING_MAX_LONG` / `ASTER_FUNDING_MAX_SHORT` | `0.0010` | Funding caps per direction. |
 
-### KI, Automatisierung und Guardrails
+### AI, Automation, and Guardrails
 
-| Variable | Standardwert | Beschreibung |
+| Variable | Default | Description |
 | --- | --- | --- |
-| `ASTER_BANDIT_ENABLED` | `true` | Aktiviert die LinUCB-Policy. |
-| `ASTER_ALPHA_ENABLED` | `true` | Schaltet das optionale Alpha-Modell hinzu. |
-| `ASTER_ALPHA_THRESHOLD` | `0.55` | Mindest-Confidence für Trade-Freigabe. |
-| `ASTER_ALPHA_PROMOTE_DELTA` | `0.15` | Zusatz-Confidence für Upsizing. |
-| `ASTER_HISTORY_MAX` | `250` | Anzahl historischer Trades für Analytics. |
-| `ASTER_OPENAI_API_KEY` | leer | API-Key für AITradeAdvisor. |
-| `ASTER_AI_MODEL` | `gpt-4o` | Modell-ID für KI-Analysen. |
-| `ASTER_AI_DAILY_BUDGET_USD` | `1000` | Tägliches Budgetlimit (USD). |
-| `ASTER_AI_STRICT_BUDGET` | `true` | Stoppt KI-Aufrufe nach Budgetverbrauch. |
-| `ASTER_AI_SENTINEL_ENABLED` | `true` | Aktiviert den News Sentinel. |
-| `ASTER_AI_SENTINEL_DECAY_MINUTES` | `90` | Lebensdauer einer News-Warnung. |
-| `ASTER_AI_NEWS_ENDPOINT` | leer | Externe Quelle für Breaking-News. |
-| `ASTER_AI_NEWS_API_KEY` | leer | API-Token für den Sentinel. |
-| `ASTER_BRACKETS_QUEUE_FILE` | `brackets_queue.json` | Queue-Datei für Guard-Reparaturen. |
+| `ASTER_BANDIT_ENABLED` | `true` | Enables the LinUCB policy. |
+| `ASTER_ALPHA_ENABLED` | `true` | Toggles the optional alpha model. |
+| `ASTER_ALPHA_THRESHOLD` | `0.55` | Minimum confidence to approve a trade. |
+| `ASTER_ALPHA_PROMOTE_DELTA` | `0.15` | Extra confidence required to upsize. |
+| `ASTER_HISTORY_MAX` | `250` | Number of historical trades for analytics. |
+| `ASTER_OPENAI_API_KEY` | empty | API key for AITradeAdvisor. |
+| `ASTER_AI_MODEL` | `gpt-4o` | Model ID for AI analysis. |
+| `ASTER_AI_DAILY_BUDGET_USD` | `1000` | Daily budget limit (USD). |
+| `ASTER_AI_STRICT_BUDGET` | `true` | Stops AI calls after hitting the budget. |
+| `ASTER_AI_SENTINEL_ENABLED` | `true` | Activates the News Sentinel. |
+| `ASTER_AI_SENTINEL_DECAY_MINUTES` | `90` | Lifetime of a news warning. |
+| `ASTER_AI_NEWS_ENDPOINT` | empty | External source for breaking news. |
+| `ASTER_AI_NEWS_API_KEY` | empty | API token for the sentinel. |
+| `ASTER_BRACKETS_QUEUE_FILE` | `brackets_queue.json` | Queue file for guard repairs. |
 
-Weitere Variablen (wie Universums-Filter, Positionsgrößen je Bucket oder Arbeitsweise des Dashboards) finden sich direkt in den Quelltexten
-oder in der UI. Jede Änderung im Dashboard wird nach Bestätigung in `dashboard_config.json` persistiert.
+Additional variables (such as universe filters, per-bucket position sizing, or dashboard behavior) can be found directly in the source code or in the UI. Every change made in the dashboard is persisted to `dashboard_config.json` once confirmed.
 
 ## Dashboard
 
-Das Dashboard (FastAPI + Single-Page-App) bietet Prozesssteuerung, Echtzeit-Logs, Konfigurationsverwaltung und KI-Insights.
+The dashboard (FastAPI + single-page app) provides process control, real-time logs, configuration management, and AI insights.
 
-### Betriebsmodi
-- **Standard-Modus**: Vorkonfigurierte Intensitäts-Presets (Low/Mid/High) mit Fokus auf Risiko-per-Trade und Hebelsteuerung.
-- **Pro-Modus**: Schaltet den vollständigen Environment-Editor frei, inklusive direkter Bearbeitung aller `ASTER_*`-Variablen und ausführlicher Debug-Logs.
-- **AI-Modus**: Aktiviert den AITradeAdvisor, der Signale bewertet, Budget- und News-Grenzen überwacht und Entscheidungen dokumentiert.
+### Operating Modes
+- **Standard mode**: Pre-configured intensity presets (Low/Mid/High) focusing on risk-per-trade and leverage controls.
+- **Pro mode**: Unlocks the full environment editor, including direct modification of all `ASTER_*` variables and verbose debug logs.
+- **AI mode**: Activates the AITradeAdvisor, which evaluates signals, enforces budget and news limits, and documents decisions.
 
-### Konfigurations-Editor
-- Alle Felder entsprechen eins-zu-eins den Environment-Variablen des Bots.
-- Änderungen werden nach dem Speichern in `dashboard_config.json` abgelegt und beim nächsten Start geladen.
-- Der State (`aster_state.json`) enthält offene Positionen, Policy-Daten, KI-Hinweise und wird sowohl vom Bot als auch vom Guard genutzt.
+### Configuration Editor
+- Every field maps one-to-one to the bot's environment variables.
+- Changes are saved to `dashboard_config.json` after confirmation and loaded on the next start.
+- The state file (`aster_state.json`) contains open positions, policy data, AI notes, and is used by both the bot and the guard.
 
-## Update-Hinweis
+## Update Note
 
-Um auf die neueste Version zu aktualisieren, ohne die virtuelle Umgebung zu löschen, empfiehlt sich:
+To update to the latest version without wiping the virtual environment, run:
 
 ```bash
 git fetch --all --prune && git reset --hard @{u} && git clean -fd -e .venv/
 ```
 
-## Sicherheitshinweise
-- Live-Handel birgt signifikante Risiken: Änderungen immer zuerst im Paper-Modus testen.
-- API-Schlüssel niemals commiten oder öffentlich teilen.
-- Auch bei aktivem Caching regelmäßig prüfen, ob Markt- und Orderdaten aktuell sind.
-- Budget- und Sentinel-Parameter bewusst setzen, um KI-Kosten und Event-Risiken zu kontrollieren.
+## Security Notice
+- Live trading carries significant risk: always test changes in paper mode first.
+- Never commit or share API keys publicly.
+- Even with caching enabled, regularly verify that market and order data are up to date.
+- Configure budget and sentinel parameters deliberately to control AI costs and event risks.
 
-Viel Erfolg & happy trading! Beiträge und Issue-Reports sind jederzeit willkommen.
+Best of luck & happy trading! Contributions and issue reports are always welcome.
