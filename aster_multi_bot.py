@@ -2477,8 +2477,20 @@ class Bot:
         sl = round_price(symbol, sl, tick, mode="floor" if is_buy else "ceil")
         tp = round_price(symbol, tp, tick, mode="ceil" if is_buy else "floor")
 
-        sl_valid = (sl < px - 1e-8) if is_buy else (sl > px + 1e-8)
-        tp_valid = (tp > px + 1e-8) if is_buy else (tp < px - 1e-8)
+        # Accept brackets that are at least one tick away from the entry price with a
+        # tolerance that scales with the symbol tick size. This keeps precision for
+        # coarse symbols while still allowing the minimum valid distance for very
+        # fine tick sizes.
+        tolerance = min(1e-8, tick * 0.5)
+        if is_buy:
+            sl_diff = px - sl
+            tp_diff = tp - px
+        else:
+            sl_diff = sl - px
+            tp_diff = px - tp
+        min_bracket = max(tick - tolerance, 0.0)
+        sl_valid = sl_diff > 0 and sl_diff + tolerance >= min_bracket
+        tp_valid = tp_diff > 0 and tp_diff + tolerance >= min_bracket
         if not (sl_valid and tp_valid):
             if ai_meta is not None:
                 warnings = ai_meta.setdefault("warnings", [])
