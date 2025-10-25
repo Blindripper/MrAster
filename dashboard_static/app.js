@@ -1689,10 +1689,6 @@ function renderTradeHistory(history) {
   if (!history || history.length === 0) {
     tradeList.style.removeProperty('max-height');
     tradeList.removeAttribute('data-viewport-locked');
-    const emptyState = document.createElement('div');
-    emptyState.className = 'trade-empty';
-    emptyState.textContent = 'No trades yet.';
-    tradeList.append(emptyState);
     return;
   }
 

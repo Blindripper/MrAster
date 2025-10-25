@@ -870,7 +870,7 @@ def _compute_stats(history: List[Dict[str, Any]]) -> TradeStats:
             win_rate=0.0,
             best_trade=None,
             worst_trade=None,
-            ai_hint="No trades yet — start the bot to collect more data.",
+            ai_hint="",
         )
     total_pnl = sum(float(h.get("pnl", 0.0) or 0.0) for h in history)
     total_r = sum(float(h.get("pnl_r", 0.0) or 0.0) for h in history)
