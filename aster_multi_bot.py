@@ -825,6 +825,9 @@ class AITradeAdvisor:
             "decision": "take",
             "decision_reason": "fallback_rules",
             "decision_note": "Signal cleared heuristics. Proceeding with adjusted sizing and risk bounds.",
+            "entry_price": float(price),
+            "stop_loss": float(price - base_sl if side == "BUY" else price + base_sl),
+            "take_profit": float(price + base_tp if side == "BUY" else price - base_tp),
         }
 
     def plan_trade(
@@ -845,8 +848,8 @@ class AITradeAdvisor:
         system_prompt = (
             "You are an execution risk manager for a crypto futures bot. "
             "Return pure JSON with fields take (boolean) or decision ('take'/'skip'), decision_reason, decision_note, "
-            "size_multiplier, sl_multiplier, tp_multiplier, leverage, risk_note, explanation, and fasttp_overrides (object "
-            "with enabled, min_r, ret1, ret3, snap_atr)."
+            "size_multiplier, sl_multiplier, tp_multiplier, leverage, risk_note, explanation, fasttp_overrides (object "
+            "with enabled, min_r, ret1, ret3, snap_atr), and optional precise levels entry_price, stop_loss, take_profit."
         )
         user_payload = {
             "symbol": symbol,
@@ -857,6 +860,7 @@ class AITradeAdvisor:
             "atr_abs": atr_abs,
             "context": ctx,
             "sentinel": sentinel,
+            "book": ctx.get("book", {}),
             "defaults": {
                 "fasttp": {
                     "min_r": FASTTP_MIN_R,
@@ -865,6 +869,17 @@ class AITradeAdvisor:
                     "snap_atr": FASTTP_SNAP_ATR,
                 },
                 "leverage": LEVERAGE,
+                "risk": {
+                    "default_notional": DEFAULT_NOTIONAL,
+                    "risk_per_trade": RISK_PER_TRADE,
+                    "sl_atr_mult": SL_ATR_MULT,
+                    "tp_atr_mult": TP_ATR_MULT,
+                    "size_multipliers": {
+                        "S": SIZE_MULT_S,
+                        "M": SIZE_MULT_M,
+                        "L": SIZE_MULT_L,
+                    },
+                },
             },
         }
         user_prompt = json.dumps(user_payload, indent=2)
@@ -933,6 +948,31 @@ class AITradeAdvisor:
             plan["explanation"] = self._ensure_bounds(explanation, fallback.get("explanation", ""))
         else:
             plan["explanation"] = fallback.get("explanation")
+
+        entry_px = (
+            parsed.get("entry_price")
+            or parsed.get("entry")
+            or parsed.get("entry_px")
+            or parsed.get("entryPrice")
+        )
+        if isinstance(entry_px, (int, float)) and entry_px > 0:
+            plan["entry_price"] = float(entry_px)
+        stop_px = (
+            parsed.get("stop_loss")
+            or parsed.get("stop")
+            or parsed.get("stopPrice")
+            or parsed.get("sl")
+        )
+        if isinstance(stop_px, (int, float)) and stop_px > 0:
+            plan["stop_loss"] = float(stop_px)
+        tp_px = (
+            parsed.get("take_profit")
+            or parsed.get("tp")
+            or parsed.get("target")
+            or parsed.get("target_price")
+        )
+        if isinstance(tp_px, (int, float)) and tp_px > 0:
+            plan["take_profit"] = float(tp_px)
         return plan
 
     def plan_trend_trade(
@@ -961,6 +1001,7 @@ class AITradeAdvisor:
             "hype_score": float(sentinel.get("hype_score", 0.0) if sentinel else 0.0),
             "side": None,
             "confidence": 0.0,
+            "entry_price": float(price),
         }
         if not self.enabled:
             return fallback
@@ -969,7 +1010,7 @@ class AITradeAdvisor:
             "You are an autonomous trend scout for a futures trading bot. "
             "Return JSON with fields take (boolean), decision, decision_reason, decision_note, side (BUY/SELL), "
             "size_multiplier, sl_multiplier, tp_multiplier, leverage, risk_note, explanation, fasttp_overrides "
-            "(object with enabled, min_r, ret1, ret3, snap_atr), and confidence (0-1)."
+            "(object with enabled, min_r, ret1, ret3, snap_atr), confidence (0-1), and optional levels entry_price, stop_loss, take_profit."
         )
         user_payload = {
             "symbol": symbol,
@@ -978,6 +1019,7 @@ class AITradeAdvisor:
             "distance": {"stop": base_sl, "target": base_tp},
             "context": ctx,
             "sentinel": sentinel,
+            "book": ctx.get("book", {}),
             "defaults": {
                 "fasttp": {
                     "min_r": FASTTP_MIN_R,
@@ -986,6 +1028,17 @@ class AITradeAdvisor:
                     "snap_atr": FASTTP_SNAP_ATR,
                 },
                 "leverage": LEVERAGE,
+                "risk": {
+                    "default_notional": DEFAULT_NOTIONAL,
+                    "risk_per_trade": RISK_PER_TRADE,
+                    "sl_atr_mult": SL_ATR_MULT,
+                    "tp_atr_mult": TP_ATR_MULT,
+                    "size_multipliers": {
+                        "S": SIZE_MULT_S,
+                        "M": SIZE_MULT_M,
+                        "L": SIZE_MULT_L,
+                    },
+                },
             },
         }
         response = self._chat(system_prompt, json.dumps(user_payload, indent=2), kind="trend")
@@ -1054,6 +1107,31 @@ class AITradeAdvisor:
             plan["explanation"] = self._ensure_bounds(explanation, fallback.get("explanation", ""))
         if isinstance(confidence, (int, float)):
             plan["confidence"] = clamp(float(confidence), 0.0, 1.0)
+
+        entry_px = (
+            parsed.get("entry_price")
+            or parsed.get("entry")
+            or parsed.get("entry_px")
+            or parsed.get("entryPrice")
+        )
+        if isinstance(entry_px, (int, float)) and entry_px > 0:
+            plan["entry_price"] = float(entry_px)
+        stop_px = (
+            parsed.get("stop_loss")
+            or parsed.get("stop")
+            or parsed.get("stopPrice")
+            or parsed.get("sl")
+        )
+        if isinstance(stop_px, (int, float)) and stop_px > 0:
+            plan["stop_loss"] = float(stop_px)
+        tp_px = (
+            parsed.get("take_profit")
+            or parsed.get("tp")
+            or parsed.get("target")
+            or parsed.get("target_price")
+        )
+        if isinstance(tp_px, (int, float)) and tp_px > 0:
+            plan["take_profit"] = float(tp_px)
         return plan
 
     def generate_postmortem(self, trade: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -2138,6 +2216,7 @@ class Bot:
         ctx.setdefault("mid_price", float(mid_px))
         ctx["book_ask"] = float(ask_px)
         ctx["book_bid"] = float(bid_px)
+        ctx["book"] = {"ask": float(ask_px), "bid": float(bid_px), "mid": float(mid_px)}
         ctx["base_signal"] = base_signal
 
         atr_hint = float(ctx.get("atr_abs") or 0.0)
@@ -2152,6 +2231,9 @@ class Bot:
         ai_meta: Optional[Dict[str, Any]] = None
         plan: Optional[Dict[str, Any]] = None
         plan_origin: Optional[str] = None
+        plan_entry: Optional[float] = None
+        plan_stop: Optional[float] = None
+        plan_take: Optional[float] = None
 
         if self.ai_advisor:
             price_for_plan = mid_px if mid_px > 0 else price
@@ -2280,6 +2362,9 @@ class Bot:
             sl_dist *= plan_sl_mult
             tp_dist *= plan_tp_mult
             leverage = plan.get("leverage")
+            plan_entry = plan.get("entry_price")
+            plan_stop = plan.get("stop_loss")
+            plan_take = plan.get("take_profit")
             ai_meta = {
                 "plan": plan,
                 "origin": plan_origin,
@@ -2300,6 +2385,12 @@ class Bot:
             if isinstance(confidence, (int, float)):
                 ai_meta["confidence"] = float(confidence)
                 ctx["ai_confidence"] = float(confidence)
+            if isinstance(plan_entry, (int, float)) and plan_entry > 0:
+                ctx["ai_entry_price"] = float(plan_entry)
+            if isinstance(plan_stop, (int, float)) and plan_stop > 0:
+                ctx["ai_stop_loss"] = float(plan_stop)
+            if isinstance(plan_take, (int, float)) and plan_take > 0:
+                ctx["ai_take_profit"] = float(plan_take)
             note_body = (
                 plan.get("decision_note")
                 or plan.get("decision_reason")
@@ -2333,10 +2424,56 @@ class Bot:
 
         is_buy = sig == "BUY"
         px = ask_px if is_buy else bid_px
-        if px <= 0:
+        if isinstance(plan_entry, (int, float)) and plan_entry > 0:
+            px = float(plan_entry)
+        elif px <= 0:
             px = mid_px if mid_px > 0 else price
+
         sl = px - sl_dist if is_buy else px + sl_dist
+        if isinstance(plan_stop, (int, float)) and plan_stop > 0:
+            stop_val = float(plan_stop)
+            valid_stop = stop_val < px if is_buy else stop_val > px
+            if valid_stop and abs(px - stop_val) >= 1e-9:
+                sl = stop_val
+                sl_dist = abs(px - sl)
+            else:
+                if ai_meta is not None:
+                    ai_meta.setdefault("warnings", []).append("Invalid AI stop-loss level ignored")
+
         tp = px + tp_dist if is_buy else px - tp_dist
+        if isinstance(plan_take, (int, float)) and plan_take > 0:
+            take_val = float(plan_take)
+            valid_tp = take_val > px if is_buy else take_val < px
+            if valid_tp and abs(px - take_val) >= 1e-9:
+                tp = take_val
+                tp_dist = abs(tp - px)
+            else:
+                if ai_meta is not None:
+                    ai_meta.setdefault("warnings", []).append("Invalid AI take-profit level ignored")
+
+        sl_dist = max(sl_dist, abs(px - sl))
+        tp_dist = max(tp_dist, abs(tp - px))
+
+        if abs(px - sl) < 1e-8 or abs(tp - px) < 1e-8:
+            if ai_meta is not None:
+                ai_meta.setdefault("warnings", []).append("Degenerate trade levels cancelled")
+            self._log_ai_activity(
+                "decision",
+                f"Invalid AI levels for {symbol}",
+                body="Stop-loss or take-profit collapsed into the entry price; trade aborted.",
+                data={
+                    "symbol": symbol,
+                    "side": sig,
+                    "entry": float(px),
+                    "stop": float(sl),
+                    "target": float(tp),
+                    "plan_origin": plan_origin,
+                },
+                force=True,
+            )
+            if self.decision_tracker:
+                self.decision_tracker.record_rejection("invalid_levels", force=True)
+            return
 
         size_mult = clamp(size_mult, 0.0, 5.0)
         if size_mult <= 0:
