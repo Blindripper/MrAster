@@ -1185,7 +1185,7 @@ function isPositionLikelyClosed(position) {
       return true;
     }
     if (flag === false) {
-      return false;
+      continue;
     }
   }
 
