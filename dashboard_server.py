@@ -2,7 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import copy
+import hashlib
+import hmac
 import json
+import logging
 import os
 import shlex
 import shutil
@@ -14,6 +18,7 @@ from collections import deque
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
+from urllib.parse import urlencode
 
 import requests
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -152,6 +157,210 @@ LOGO_CACHE: Dict[LogoCacheKey, Dict[str, Any]] = {}
 
 
 MOST_TRADED_CACHE: Dict[str, Any] = {"timestamp": 0.0, "payload": None}
+
+
+logger = logging.getLogger(__name__)
+
+
+def _is_truthy(value: Optional[str]) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _safe_float(value: Any) -> Optional[float]:
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _fetch_position_snapshot(env: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    base = (env.get("ASTER_EXCHANGE_BASE") or "https://fapi.asterdex.com").rstrip("/")
+    api_key = (env.get("ASTER_API_KEY") or "").strip()
+    api_secret = (env.get("ASTER_API_SECRET") or "").strip()
+    if not api_key or not api_secret:
+        return {}
+    if _is_truthy(env.get("ASTER_PAPER")):
+        return {}
+
+    try:
+        recv_window = int(float(env.get("ASTER_RECV_WINDOW", 10000)))
+    except (TypeError, ValueError):
+        recv_window = 10000
+
+    params = {"timestamp": int(time.time() * 1000), "recvWindow": recv_window}
+    ordered = [(k, params[k]) for k in sorted(params)]
+    qs = urlencode(ordered, doseq=True)
+    signature = hmac.new(api_secret.encode(), qs.encode(), hashlib.sha256).hexdigest()
+    url = f"{base}/fapi/v2/positionRisk?{qs}&signature={signature}"
+    headers = {"X-MBX-APIKEY": api_key, "Content-Type": "application/x-www-form-urlencoded"}
+
+    try:
+        resp = requests.get(url, headers=headers, timeout=8)
+        resp.raise_for_status()
+        payload = resp.json()
+    except Exception as exc:
+        logger.debug("position snapshot fetch failed: %s", exc)
+        return {}
+
+    if isinstance(payload, dict):
+        positions_raw = payload.get("positions") or payload.get("data") or []
+    else:
+        positions_raw = payload
+
+    snapshot: Dict[str, Dict[str, Any]] = {}
+    if not isinstance(positions_raw, list):
+        return snapshot
+
+    for item in positions_raw:
+        if not isinstance(item, dict):
+            continue
+        symbol_raw = item.get("symbol")
+        if not symbol_raw:
+            continue
+        symbol = str(symbol_raw).upper().strip()
+        if not symbol:
+            continue
+        position_amt = _safe_float(item.get("positionAmt"))
+        if position_amt is None or abs(position_amt) < 1e-12:
+            continue
+
+        entry_price = _safe_float(item.get("entryPrice"))
+        mark_price = _safe_float(item.get("markPrice"))
+        unrealized = _safe_float(item.get("unRealizedProfit"))
+        leverage = _safe_float(item.get("leverage"))
+        notional = None
+        if entry_price is not None:
+            notional = abs(position_amt) * entry_price
+
+        roe = None
+        if unrealized is not None and notional and notional > 0:
+            try:
+                roe = (unrealized / notional) * 100.0
+            except ZeroDivisionError:
+                roe = None
+
+        snapshot[symbol] = {
+            "symbol": symbol,
+            "positionAmt": position_amt,
+            "entryPrice": entry_price,
+            "markPrice": mark_price,
+            "unRealizedProfit": unrealized,
+            "leverage": leverage,
+            "roe_percent": roe,
+            "updateTime": item.get("updateTime") or item.get("update_time"),
+        }
+
+    return snapshot
+
+
+POSITION_HINT_KEYS = {"entry", "entryPrice", "qty", "quantity", "positionAmt", "side", "tp", "sl", "mark"}
+
+
+def _looks_like_position_record(candidate: Dict[str, Any]) -> bool:
+    if not isinstance(candidate, dict):
+        return False
+    if any(key in candidate for key in POSITION_HINT_KEYS):
+        return True
+    return False
+
+
+def _merge_position_record(
+    record: Dict[str, Any],
+    snapshot: Dict[str, Dict[str, Any]],
+    fallback_symbol: Optional[str] = None,
+) -> Dict[str, Any]:
+    symbol_candidates = [
+        record.get("symbol"),
+        record.get("sym"),
+        record.get("ticker"),
+        record.get("pair"),
+        fallback_symbol,
+    ]
+    symbol: Optional[str] = None
+    for candidate in symbol_candidates:
+        if candidate:
+            symbol = str(candidate).upper().strip()
+            if symbol:
+                break
+    if not symbol:
+        return record
+
+    extra = snapshot.get(symbol)
+    if not extra:
+        return record
+
+    merged = dict(record)
+
+    entry_price = extra.get("entryPrice")
+    if entry_price is not None:
+        merged.setdefault("entry", entry_price)
+        merged["entryPrice"] = entry_price
+
+    mark_price = extra.get("markPrice")
+    if mark_price is not None:
+        merged["mark_price"] = mark_price
+        merged["markPrice"] = mark_price
+        merged["mark"] = mark_price
+
+    position_amt = extra.get("positionAmt")
+    if position_amt is not None:
+        merged.setdefault("qty", position_amt)
+        merged.setdefault("size", position_amt)
+        merged["positionAmt"] = position_amt
+
+    unrealized = extra.get("unRealizedProfit")
+    if unrealized is not None:
+        merged["pnl"] = unrealized
+        merged["unrealized"] = unrealized
+        merged["unrealizedProfit"] = unrealized
+
+    roe = extra.get("roe_percent")
+    if roe is not None:
+        merged["roe"] = roe
+        merged["roe_percent"] = roe
+        merged["roi"] = roe
+        merged["roi_percent"] = roe
+
+    leverage = extra.get("leverage")
+    if leverage is not None:
+        merged.setdefault("leverage", leverage)
+
+    update_time = extra.get("updateTime")
+    if update_time is not None:
+        merged.setdefault("updateTime", update_time)
+
+    return merged
+
+
+def _merge_position_payload(payload: Any, snapshot: Dict[str, Dict[str, Any]], fallback_symbol: Optional[str] = None) -> Any:
+    if isinstance(payload, dict):
+        if _looks_like_position_record(payload):
+            return _merge_position_record(payload, snapshot, fallback_symbol)
+        merged_dict: Dict[str, Any] = {}
+        for key, value in payload.items():
+            merged_dict[key] = _merge_position_payload(value, snapshot, key)
+        return merged_dict
+    if isinstance(payload, list):
+        return [_merge_position_payload(item, snapshot, fallback_symbol) for item in payload]
+    return payload
+
+
+def enrich_open_positions(open_payload: Any, env: Dict[str, Any]) -> Any:
+    if not open_payload:
+        return open_payload
+
+    snapshot = _fetch_position_snapshot(env)
+    if not snapshot:
+        return open_payload
+
+    payload_copy = copy.deepcopy(open_payload)
+    return _merge_position_payload(payload_copy, snapshot)
 
 BINANCE_24H_URL = "https://api.binance.com/api/v3/ticker/24hr"
 BINANCE_KLINES_URL = "https://api.binance.com/api/v3/klines"
@@ -894,6 +1103,12 @@ async def trades() -> Dict[str, Any]:
         item["opened_at_iso"] = _format_ts(item.get("opened_at"))
         item["closed_at_iso"] = _format_ts(item.get("closed_at"))
     open_trades = state.get("live_trades", {})
+    env_cfg = CONFIG.get("env", {})
+    try:
+        enriched_open = await asyncio.to_thread(enrich_open_positions, open_trades, env_cfg)
+    except Exception as exc:
+        logger.debug("active position enrichment failed: %s", exc)
+        enriched_open = open_trades
     stats = _compute_stats(history)
     decision_stats = _decision_summary(state)
     ai_budget = state.get("ai_budget", {})
@@ -903,7 +1118,7 @@ async def trades() -> Dict[str, Any]:
     else:
         ai_activity = []
     return {
-        "open": open_trades,
+        "open": enriched_open,
         "history": history[::-1],
         "stats": stats.dict(),
         "decision_stats": decision_stats,
