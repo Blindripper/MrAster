@@ -71,6 +71,7 @@ let lastBotStatus = { ...DEFAULT_BOT_STATUS };
 let aiChatHistory = [];
 let aiChatPending = false;
 let activePositions = [];
+let tradesRefreshTimer = null;
 const aiChatSubmit = aiChatForm ? aiChatForm.querySelector('button[type="submit"]') : null;
 
 function buildAsterPositionUrl(symbol) {
@@ -827,7 +828,6 @@ const ACTIVE_POSITION_ALIASES = {
   roe: ['roe', 'roe_percent', 'roe_pct', 'roePercent', 'pnl_percent', 'pnl_pct'],
   pnl: ['pnl', 'unrealized', 'unrealized_pnl', 'pnl_unrealized', 'unrealizedProfit', 'pnl_usd'],
   nextTp: ['next_tp', 'tp_next', 'nextTarget', 'next_tp_price', 'tp', 'take_profit_next'],
-  tpCount: ['tp_in_position', 'tp_count', 'tpCount', 'take_profits_in_position', 'tps_in_position'],
   side: ['side', 'positionSide', 'direction'],
 };
 
@@ -1195,21 +1195,6 @@ function updateActivePositionsView() {
     nextTpCell.textContent = nextTpDisplay;
     row.append(nextTpCell);
 
-    const tpCountCell = document.createElement('td');
-    tpCountCell.className = 'numeric';
-    const tpCountField = pickFieldValue(position, ACTIVE_POSITION_ALIASES.tpCount || []);
-    let tpCountDisplay = '–';
-    if (tpCountField.value !== undefined && tpCountField.value !== null && tpCountField.value !== '') {
-      const numeric = toNumeric(tpCountField.value);
-      tpCountDisplay = Number.isFinite(numeric) ? numeric.toString() : tpCountField.value.toString();
-    } else if (Array.isArray(tpCountField.raw)) {
-      tpCountDisplay = tpCountField.raw.length.toString();
-    } else if (tpCountField.raw && typeof tpCountField.raw === 'object' && Array.isArray(tpCountField.raw.levels)) {
-      tpCountDisplay = tpCountField.raw.levels.length.toString();
-    }
-    tpCountCell.textContent = tpCountDisplay;
-    row.append(tpCountCell);
-
     activePositionsRows.append(row);
   });
 }
@@ -1322,7 +1307,7 @@ function humanizeLogLine(line, fallbackLevel = 'info') {
     label = 'Trade placed';
     severity = 'success';
     relevant = true;
-    return { text, label, severity, relevant, parsed };
+    return { text, label, severity, relevant, parsed, refreshTrades: true };
   }
 
   const exitMatch = parsed.message?.match(
@@ -1340,7 +1325,7 @@ function humanizeLogLine(line, fallbackLevel = 'info') {
     label = pnl >= 0 ? 'Trade win' : 'Trade loss';
     severity = pnl >= 0 ? 'success' : 'warning';
     relevant = true;
-    return { text, label, severity, relevant, parsed };
+    return { text, label, severity, relevant, parsed, refreshTrades: true };
   }
 
   const skipMatch = parsed.message?.match(/^SKIP (\S+): ([\w_]+)(.*)$/);
@@ -1384,7 +1369,7 @@ function humanizeLogLine(line, fallbackLevel = 'info') {
     label = 'Fast TP';
     severity = 'info';
     relevant = true;
-    return { text, label, severity, relevant, parsed };
+    return { text, label, severity, relevant, parsed, refreshTrades: true };
   }
 
   const fasttpErrMatch = parsed.message?.match(/^FASTTP (\S+) replace error: (.*)$/);
@@ -1477,6 +1462,17 @@ function humanizeLogLine(line, fallbackLevel = 'info') {
   }
 
   return { text, label, severity, relevant, parsed };
+}
+
+function scheduleTradesRefresh(delay = 0) {
+  if (tradesRefreshTimer) {
+    clearTimeout(tradesRefreshTimer);
+  }
+  const wait = Math.max(0, Number(delay) || 0);
+  tradesRefreshTimer = setTimeout(() => {
+    tradesRefreshTimer = null;
+    loadTrades().catch((err) => console.warn('Unable to refresh trades', err));
+  }, wait);
 }
 
 async function updateStatus() {
@@ -2264,6 +2260,9 @@ function renderPnlChart(history) {
 function appendCompactLog({ line, level, ts }) {
   if (!compactLogStream) return;
   const friendly = humanizeLogLine(line, level);
+  if (friendly?.refreshTrades) {
+    scheduleTradesRefresh(250);
+  }
   if (!friendly || !friendly.relevant) return;
 
   const severity = (friendly.severity || level || 'info').toLowerCase();
