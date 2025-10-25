@@ -71,8 +71,75 @@ INTERVAL = os.getenv("ASTER_INTERVAL", "5m")
 HTF_INTERVAL = os.getenv("ASTER_HTF_INTERVAL", "30m")
 KLINES = int(os.getenv("ASTER_KLINES", "360"))
 
-INCLUDE = [s for s in (os.getenv("ASTER_INCLUDE_SYMBOLS", "") or "").split(",") if s]
-EXCLUDE = set([s for s in (os.getenv("ASTER_EXCLUDE_SYMBOLS", "") or "").split(",") if s])
+DEFAULT_MARKETS_URL = os.getenv(
+    "ASTER_MARKETS_URL", f"{BASE}/fapi/v1/exchangeInfo"
+).strip()
+
+
+def _split_env_symbols(value: str) -> List[str]:
+    return [s.strip().upper() for s in value.split(",") if s.strip()]
+
+
+def _parse_symbols_from_html(text: str, default_quote: str) -> List[str]:
+    try:
+        matches = re.findall(r'data-symbol="([A-Z0-9:_-]+)"', text, flags=re.IGNORECASE)
+        if not matches:
+            matches = re.findall(r'"symbol"\s*:\s*"([A-Z0-9:_-]+)"', text, flags=re.IGNORECASE)
+    except re.error:
+        return []
+    symbols = {m.upper() for m in matches}
+    if default_quote:
+        q = default_quote.upper()
+        symbols = {s for s in symbols if s.endswith(q)}
+    return sorted(symbols)
+
+
+def _fetch_markets_symbols(default_quote: str) -> List[str]:
+    if not DEFAULT_MARKETS_URL:
+        return []
+    try:
+        resp = requests.get(DEFAULT_MARKETS_URL, timeout=10)
+        resp.raise_for_status()
+    except Exception as exc:
+        log.debug("Could not fetch markets from %s: %s", DEFAULT_MARKETS_URL, exc)
+        return []
+
+    try:
+        payload = resp.json()
+    except ValueError:
+        return _parse_symbols_from_html(resp.text, default_quote)
+
+    symbols = []
+    q = default_quote.upper() if default_quote else ""
+    for entry in payload.get("symbols", []):
+        sym = str(entry.get("symbol", "")).upper()
+        if not sym:
+            continue
+        if q and str(entry.get("quoteAsset", "")).upper() != q:
+            continue
+        status = str(entry.get("status", "")).upper()
+        if status and status != "TRADING":
+            continue
+        symbols.append(sym)
+
+    if not symbols:
+        return _parse_symbols_from_html(resp.text, default_quote)
+
+    return sorted(set(symbols))
+
+
+def _resolve_include_symbols(default_quote: str) -> List[str]:
+    env_symbols = _split_env_symbols(os.getenv("ASTER_INCLUDE_SYMBOLS", ""))
+    if env_symbols:
+        return env_symbols
+    symbols = _fetch_markets_symbols(default_quote)
+    if symbols:
+        log.info("Loaded %d default symbols from Aster markets", len(symbols))
+    return symbols
+
+
+INCLUDE = _resolve_include_symbols(QUOTE)
+EXCLUDE = set(_split_env_symbols(os.getenv("ASTER_EXCLUDE_SYMBOLS", "")))
 UNIVERSE_MAX = int(os.getenv("ASTER_UNIVERSE_MAX", "120"))
 UNIVERSE_ROTATE = os.getenv("ASTER_UNIVERSE_ROTATE", "true").lower() in ("1", "true", "yes", "on")
 
