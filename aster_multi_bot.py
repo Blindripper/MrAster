@@ -1335,6 +1335,17 @@ class Exchange:
     def get_position_risk(self) -> Any:
         return self.signed("get", "/fapi/v2/positionRisk", {})
 
+    def get_open_orders(self, symbol: str) -> Any:
+        if PAPER:
+            return []
+        return self.signed("get", "/fapi/v1/openOrders", {"symbol": symbol})
+
+    def cancel_order(self, symbol: str, order_id: int) -> Any:
+        if PAPER:
+            return {"paper": True, "symbol": symbol, "orderId": int(order_id)}
+        payload = {"symbol": symbol, "orderId": str(int(order_id))}
+        return self.signed("delete", "/fapi/v1/order", payload)
+
     def post_order(self, params: Dict[str, Any]) -> Any:
         if PAPER:
             return {"paper": True, "params": params}
