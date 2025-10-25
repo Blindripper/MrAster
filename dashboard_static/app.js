@@ -38,6 +38,8 @@ const aiBudgetModeLabel = document.getElementById('ai-budget-mode');
 const aiBudgetMeta = document.getElementById('ai-budget-meta');
 const aiBudgetFill = document.getElementById('ai-budget-fill');
 const modeButtons = document.querySelectorAll('[data-mode-select]');
+const btnHeroLaunch = document.getElementById('btn-hero-launch');
+const btnHeroDownload = document.getElementById('btn-hero-download');
 
 let currentConfig = {};
 let reconnectTimer = null;
@@ -50,6 +52,7 @@ let quickConfigPristine = true;
 let mostTradedTimer = null;
 let lastAiBudget = null;
 let lastMostTradedAssets = [];
+let latestTradesSnapshot = null;
 
 function getCurrentMode() {
   if (aiMode) return 'ai';
@@ -1937,11 +1940,50 @@ async function selectMode(mode, options = {}) {
   syncModeUi();
 }
 
+async function downloadTradeHistory() {
+  try {
+    let snapshot = latestTradesSnapshot;
+    if (!snapshot) {
+      const res = await fetch('/api/trades');
+      if (!res.ok) {
+        throw new Error('Unable to fetch trade history');
+      }
+      snapshot = await res.json();
+    }
+
+    const exportPayload = {
+      generated_at: new Date().toISOString(),
+      history: Array.isArray(snapshot?.history) ? snapshot.history : [],
+      stats: snapshot?.stats ?? {},
+      decision_stats: snapshot?.decision_stats ?? {},
+      ai_budget: snapshot?.ai_budget ?? null,
+      open: snapshot?.open ?? {},
+    };
+
+    const blob = new Blob([JSON.stringify(exportPayload, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    link.href = url;
+    link.download = `mraster-trades-${timestamp}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error(err);
+    alert(err?.message || 'Unable to download trade history');
+  }
+}
+
 async function loadTrades() {
   try {
     const res = await fetch('/api/trades');
     if (!res.ok) throw new Error('Unable to load trades');
     const data = await res.json();
+    latestTradesSnapshot = data;
     renderTradeHistory(data.history);
     renderTradeSummary(data.stats);
     renderDecisionStats(data.decision_stats);
@@ -1982,6 +2024,13 @@ btnStart.addEventListener('click', startBot);
 btnStop.addEventListener('click', stopBot);
 btnSaveAi?.addEventListener('click', saveAiConfig);
 btnApplyPreset?.addEventListener('click', saveQuickSetup);
+btnHeroLaunch?.addEventListener('click', () => {
+  const newWindow = window.open('https://www.asterdex.com/en/futures/v1/ASTERUSDT', '_blank', 'noopener,noreferrer');
+  newWindow?.focus();
+});
+btnHeroDownload?.addEventListener('click', () => {
+  downloadTradeHistory();
+});
 
 modeButtons.forEach((button) => {
   button.addEventListener('click', () => {
