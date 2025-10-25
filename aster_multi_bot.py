@@ -1587,8 +1587,11 @@ class Bot:
         self.state = {}
         try:
             if os.path.exists(STATE_FILE):
-                self.state = json.load(open(STATE_FILE, "r"))
+                with open(STATE_FILE, "r") as fh:
+                    self.state = json.load(fh)
         except Exception:
+            self.state = {}
+        if not isinstance(self.state, dict):
             self.state = {}
         self.policy: Optional[BanditPolicy] = None
         if BANDIT_ENABLED:
@@ -1628,6 +1631,7 @@ class Bot:
             recv_window=RECV_WINDOW,
         )
         self.trade_mgr = TradeManager(self.exchange, self.policy, self.state)
+        self._reset_decision_stats()
         self.fasttp = FastTP(self.exchange, self.guard, self.state)
         self.decision_tracker = DecisionTracker(self.state, self.trade_mgr.save)
         self._strategy = Strategy(self.exchange, decision_tracker=self.decision_tracker)
@@ -1642,6 +1646,26 @@ class Bot:
     @property
     def strategy(self) -> Strategy:
         return self._strategy
+
+    def _reset_decision_stats(self) -> None:
+        baseline = {
+            "taken": 0,
+            "taken_by_bucket": {},
+            "rejected": {},
+            "rejected_total": 0,
+            "last_updated": None,
+        }
+        existing = self.state.get("decision_stats")
+        self.state["decision_stats"] = baseline
+        if not getattr(self, "trade_mgr", None):
+            return
+        if existing != baseline:
+            try:
+                self.trade_mgr.save()
+                if existing:
+                    log.debug("decision stats reset on startup")
+            except Exception as exc:
+                log.debug(f"decision stats reset persist failed: {exc}")
 
     def _size_mult_from_bucket(self, bucket: str) -> float:
         return {"S": SIZE_MULT_S, "M": SIZE_MULT_M, "L": SIZE_MULT_L}.get(bucket, SIZE_MULT_S)
