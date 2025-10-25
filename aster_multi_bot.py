@@ -1551,14 +1551,14 @@ class Strategy:
                 rec = None
         return rec
 
-    def _get_qv_score(self, symbol: str) -> Tuple[float, Optional[Dict[str, Any]]]:
+    def _get_qv_score(self, symbol: str) -> Tuple[float, Optional[Dict[str, Any]], float]:
         rec = self._ticker_24(symbol)
         try:
             qvol = float(rec.get("quoteVolume", 0.0) or 0.0) if rec else 0.0
         except Exception:
             qvol = 0.0
         score = min(2.5, qvol / max(self.min_quote_vol, 1e-9)) if qvol > 0 else 0.0
-        return score, rec
+        return score, rec, float(qvol)
 
     def _skip(
         self,
@@ -1733,7 +1733,7 @@ class Strategy:
             )
         ctx_base.update({"slope_htf": float(slope_htf), "expected_r": float(expected_R)})
 
-        qv_score, t24 = self._get_qv_score(symbol)
+        qv_score, t24, quote_volume = self._get_qv_score(symbol)
         funding = 0.0
         if isinstance(t24, dict):
             try:
@@ -1741,6 +1741,17 @@ class Strategy:
             except Exception:
                 funding = 0.0
         ctx_base["qv_score"] = float(qv_score)
+        ctx_base["quote_volume"] = float(quote_volume)
+        ctx_base["min_quote_volume"] = float(self.min_quote_vol)
+        if self.min_quote_vol > 0 and quote_volume < self.min_quote_vol:
+            return self._skip(
+                "min_qvol",
+                symbol,
+                {"qvol": f"{quote_volume:.2f}", "min": f"{self.min_quote_vol:.2f}"},
+                ctx=ctx_base,
+                price=mid,
+                atr=atr,
+            )
         ctx_base["funding"] = float(funding)
 
         if FUNDING_FILTER_ENABLED and sig in ("BUY", "SELL"):
@@ -2453,6 +2464,31 @@ class Bot:
                 except (TypeError, ValueError):
                     manual_notional = None
 
+        min_qvol = float(ctx.get("min_quote_volume", self.strategy.min_quote_vol))
+        quote_volume = float(ctx.get("quote_volume", 0.0) or 0.0)
+        if min_qvol > 0 and quote_volume < min_qvol:
+            if quote_volume <= 0:
+                try:
+                    _, _, fresh_qv = self.strategy._get_qv_score(symbol)
+                    quote_volume = float(fresh_qv)
+                    ctx["quote_volume"] = quote_volume
+                except Exception:
+                    pass
+            if quote_volume < min_qvol:
+                log.info(
+                    "Skip %s — quote volume %.2f below minimum %.2f",
+                    symbol,
+                    quote_volume,
+                    min_qvol,
+                )
+                if manual_override:
+                    self._complete_manual_request(
+                        manual_req,
+                        "failed",
+                        error="Quote volume below minimum threshold",
+                    )
+                return
+
         sentinel_info = {
             "label": "green",
             "event_risk": 0.0,
@@ -2573,6 +2609,8 @@ class Bot:
         plan_take: Optional[float] = None
 
         if self.ai_advisor and not manual_override:
+            if min_qvol > 0 and float(ctx.get("quote_volume", 0.0) or 0.0) < min_qvol:
+                return
             price_for_plan = mid_px if mid_px > 0 else price
             if sig == "NONE":
                 plan = self.ai_advisor.plan_trend_trade(
