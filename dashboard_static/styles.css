@@ -656,7 +656,11 @@ body.pro-mode [data-normal-only] {
   justify-content: center;
 }
 
+.hero-launch-link,
 button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font: inherit;
   padding: 0.75rem 1.6rem;
   border-radius: 999px;
@@ -666,12 +670,18 @@ button {
   position: relative;
   font-weight: 600;
   letter-spacing: 0.02em;
+  text-decoration: none;
 }
 
+.hero-launch-link,
 button.primary {
   background: linear-gradient(135deg, var(--accent), var(--accent-strong));
   color: #2d1a07;
   box-shadow: 0 20px 45px rgba(245, 196, 107, 0.35);
+}
+
+.hero-launch-link:visited {
+  color: #2d1a07;
 }
 
 button.primary.subtle {
@@ -687,12 +697,15 @@ button.ghost {
   box-shadow: inset 0 0 0 1px rgba(245, 196, 107, 0.05);
 }
 
+.hero-launch-link:hover,
 button:hover {
   transform: translateY(-3px);
   box-shadow: 0 24px 55px rgba(245, 196, 107, 0.28);
 }
 
+.hero-actions .hero-launch-link:focus-visible,
 .hero-actions button:focus-visible,
+.hero-launch-link:focus-visible,
 button:focus-visible {
   outline: 2px solid rgba(245, 196, 107, 0.55);
   outline-offset: 2px;
