@@ -209,13 +209,27 @@
             <label>
               <span>Model</span>
               <select id="input-ai-model">
-                <option value="gpt-4o" selected>GPT-4o</option>
-                <option value="gpt-4o-mini">GPT-4o mini</option>
-                <option value="gpt-4.1">GPT-4.1</option>
-                <option value="gpt-4.1-mini">GPT-4.1 mini</option>
-                <option value="o4-mini">o4-mini</option>
-                <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                <optgroup label="GPT-5 family">
+                  <option value="gpt-5" selected>GPT-5</option>
+                  <option value="gpt-5-mini">GPT-5 mini</option>
+                </optgroup>
+                <optgroup label="GPT-4.1 family">
+                  <option value="gpt-4.1">GPT-4.1</option>
+                  <option value="gpt-4.1-mini">GPT-4.1 mini</option>
+                </optgroup>
+                <optgroup label="GPT-4o family">
+                  <option value="gpt-4o">GPT-4o</option>
+                  <option value="gpt-4o-mini">GPT-4o mini</option>
+                </optgroup>
+                <optgroup label="Reasoning models">
+                  <option value="o1">o1</option>
+                  <option value="o1-mini">o1-mini</option>
+                  <option value="o4-mini">o4-mini</option>
+                </optgroup>
+                <optgroup label="Legacy models">
+                  <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                  <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                </optgroup>
               </select>
             </label>
             <p class="ai-config-panel-hint">Choose the OpenAI foundation model that powers live analysis.</p>
