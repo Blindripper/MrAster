@@ -167,23 +167,15 @@ def _resolve_logo_sources(ticker: str, chain: Optional[str] = None, contract: Op
         return cached
 
     candidates = build_logo_candidates(key[0], key[1], key[2])
-    primary: Optional[str] = None
-    fallbacks: List[str] = []
-    for url in candidates:
-        try:
-            resp = requests.head(url, timeout=4, allow_redirects=True)
-            if resp.status_code == 200 and not primary:
-                primary = url
-                continue
-        except requests.RequestException:
-            pass
-        fallbacks.append(url)
+    primary: Optional[str]
+    fallbacks: List[str]
 
-    if not primary and candidates:
+    if candidates:
         primary = candidates[0]
-        fallbacks = [u for u in candidates[1:]]
-    elif primary:
-        fallbacks = [u for u in candidates if u != primary]
+        fallbacks = candidates[1:]
+    else:
+        primary = None
+        fallbacks = []
 
     payload = {"logo": primary, "fallbacks": fallbacks, "candidates": candidates}
     LOGO_CACHE[key] = payload
