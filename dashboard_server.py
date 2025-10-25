@@ -13,6 +13,7 @@ import shlex
 import shutil
 import signal
 import sys
+import tempfile
 import textwrap
 import time
 import uuid
@@ -845,33 +846,87 @@ async def most_traded() -> Dict[str, Any]:
     return await get_most_traded_assets()
 
 
-def _read_state() -> Dict[str, Any]:
-    if STATE_FILE.exists():
+def _read_state(*, strict: bool = False, attempts: int = 1, delay: float = 0.05) -> Dict[str, Any]:
+    if not STATE_FILE.exists():
+        return {}
+
+    tries = attempts if strict else 1
+    tries = max(1, tries)
+    last_error: Optional[Exception] = None
+
+    for attempt in range(tries):
         try:
-            return json.loads(STATE_FILE.read_text())
-        except Exception:
-            return {}
+            raw = STATE_FILE.read_text()
+            if not raw.strip():
+                return {}
+            return json.loads(raw)
+        except (json.JSONDecodeError, OSError) as exc:
+            last_error = exc
+            if not strict:
+                break
+            if attempt < tries - 1:
+                time.sleep(delay)
+
+    if strict and last_error:
+        raise RuntimeError("Could not read state file") from last_error
+
     return {}
+
+
+def _write_state(state: Dict[str, Any]) -> None:
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(state, indent=2, sort_keys=True)
+    tmp_path: Optional[Path] = None
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w", delete=False, dir=str(STATE_FILE.parent), encoding="utf-8"
+        ) as tmp_file:
+            tmp_file.write(payload)
+            tmp_path = Path(tmp_file.name)
+        tmp_path.replace(STATE_FILE)
+    finally:
+        if tmp_path and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
 
 
 def _append_manual_trade_request(request: Dict[str, Any]) -> Dict[str, Any]:
     request = dict(request)
     attempts = 0
+    last_error: Optional[Exception] = None
     while attempts < 3:
         attempts += 1
-        state = _read_state()
-        queue = state.setdefault("manual_trade_requests", [])
+        try:
+            state = _read_state(strict=True, attempts=5, delay=0.05)
+        except RuntimeError as exc:
+            last_error = exc
+            logger.debug(
+                "Failed to read state for manual trade request (attempt %s): %s",
+                attempts,
+                exc,
+            )
+            time.sleep(0.05)
+            continue
+
+        queue = state.get("manual_trade_requests")
         if not isinstance(queue, list):
             queue = []
+        else:
+            queue = list(queue)
+
         queue.append(request)
         state["manual_trade_requests"] = queue[-100:]
         try:
-            STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True))
+            _write_state(state)
             return request
         except Exception as exc:
+            last_error = exc
             logger.debug("Failed to persist manual trade request (attempt %s): %s", attempts, exc)
             time.sleep(0.05)
-    raise RuntimeError("Could not persist manual trade request")
+    raise RuntimeError("Could not persist manual trade request") from last_error
 
 
 def _format_ts(ts: Optional[float]) -> Optional[str]:
