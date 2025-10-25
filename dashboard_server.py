@@ -858,9 +858,11 @@ def _read_state(*, strict: bool = False, attempts: int = 1, delay: float = 0.05)
         try:
             raw = STATE_FILE.read_text()
             if not raw.strip():
+                if strict:
+                    raise ValueError("State file empty")
                 return {}
             return json.loads(raw)
-        except (json.JSONDecodeError, OSError) as exc:
+        except (json.JSONDecodeError, OSError, ValueError) as exc:
             last_error = exc
             if not strict:
                 break
