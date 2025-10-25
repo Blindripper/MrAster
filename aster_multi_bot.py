@@ -246,15 +246,26 @@ def format_qty(qty: float, step: float) -> str:
     return _format_decimal(q)
 
 
-def build_bracket_payload(kind: str, side: str, price: float) -> str:
-    opp_side = "SELL" if side.upper() == "BUY" else "BUY"
+def build_bracket_payload(kind: str, side: str, price: float, position_side: Optional[str] = None) -> str:
+    """Create the attached-stop/take-profit payload for the entry order.
+
+    Binance-compatible futures endpoints expect the payload to only carry the
+    trigger meta data. Passing an explicit ``side`` inside the nested JSON
+    causes Aster's API to silently drop the bracket instructions, which is why
+    we mirror the format used by ``BracketGuard`` ("closePosition" implicitly
+    closes on the opposing side). The helper also accepts an optional
+    ``position_side`` to remain compatible with hedge-mode accounts.
+    """
+
+    kind_norm = kind.upper()
     payload = {
-        "type": "STOP_MARKET" if kind.upper() == "SL" else "TAKE_PROFIT_MARKET",
+        "type": "STOP_MARKET" if kind_norm in {"SL", "STOP"} else "TAKE_PROFIT_MARKET",
         "stopPrice": _format_decimal(price),
         "workingType": WORKING_TYPE,
         "closePosition": True,
-        "side": opp_side,
     }
+    if position_side:
+        payload["positionSide"] = position_side
     return json.dumps(payload, separators=(",", ":"))
 
 
