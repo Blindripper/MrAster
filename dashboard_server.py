@@ -915,7 +915,7 @@ async def ai_chat(payload: ChatRequestPayload) -> Dict[str, Any]:
     message = (payload.message or "").strip()
     if not message:
         raise HTTPException(status_code=400, detail="Message cannot be empty")
-    return chat_engine.respond(message, payload.history)
+    return await asyncio.to_thread(chat_engine.respond, message, payload.history)
 
 
 @app.websocket("/ws/logs")
