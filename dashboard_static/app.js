@@ -51,6 +51,7 @@ const activePositionsEmpty = document.getElementById('active-positions-empty');
 const activePositionsRows = document.getElementById('active-positions-rows');
 const modeButtons = document.querySelectorAll('[data-mode-select]');
 const btnHeroDownload = document.getElementById('btn-hero-download');
+const paperModeToggle = document.getElementById('paper-mode-toggle');
 
 const DEFAULT_BOT_STATUS = { running: false, pid: null, started_at: null, uptime_s: null };
 
@@ -59,6 +60,7 @@ let reconnectTimer = null;
 let pnlChart = null;
 let proMode = false;
 let aiMode = false;
+let paperMode = false;
 let selectedPreset = 'mid';
 let autoScrollEnabled = true;
 let quickConfigPristine = true;
@@ -342,6 +344,17 @@ const FRIENDLY_LEVEL_LABELS = {
   debug: 'Detail',
 };
 
+function isTruthy(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return false;
+    return ['1', 'true', 'yes', 'on'].includes(normalized);
+  }
+  return false;
+}
+
 function configureChartDefaults() {
   if (typeof Chart === 'undefined') return;
   const styles = getComputedStyle(document.documentElement);
@@ -406,6 +419,7 @@ async function loadConfig() {
   currentConfig = await res.json();
   renderConfig(currentConfig.env);
   renderCredentials(currentConfig.env);
+  syncPaperModeFromEnv(currentConfig.env);
   syncQuickSetupFromEnv(currentConfig.env);
   await syncModeFromEnv(currentConfig.env);
 }
@@ -1386,10 +1400,10 @@ function updateActivePositionsView() {
   const hasRows = sorted.length > 0;
 
   if (activePositionsModeLabel) {
-    activePositionsModeLabel.textContent = 'All modes';
+    activePositionsModeLabel.textContent = paperMode ? 'Paper mode' : 'All modes';
   }
   if (activePositionsEmpty) {
-    activePositionsEmpty.textContent = 'No active positions.';
+    activePositionsEmpty.textContent = paperMode ? 'No paper trades yet.' : 'No active positions.';
     if (hasRows) {
       activePositionsEmpty.setAttribute('hidden', '');
     } else {
@@ -2987,6 +3001,17 @@ function setAiMode(state) {
   syncAiChatAvailability();
 }
 
+function setPaperMode(state) {
+  paperMode = Boolean(state);
+  if (document.body) {
+    document.body.classList.toggle('paper-mode', paperMode);
+  }
+  if (paperModeToggle) {
+    paperModeToggle.checked = paperMode;
+  }
+  updateActivePositionsView();
+}
+
 async function syncModeFromEnv(env) {
   const raw = (env?.ASTER_MODE || '').toString().toLowerCase();
   if (raw === 'ai') {
@@ -2996,6 +3021,11 @@ async function syncModeFromEnv(env) {
   } else {
     await selectMode('standard', { persist: false });
   }
+}
+
+function syncPaperModeFromEnv(env) {
+  const raw = env?.ASTER_PAPER;
+  setPaperMode(isTruthy(raw));
 }
 
 function setProMode(state) {
@@ -3036,6 +3066,7 @@ async function persistMode(mode) {
   renderConfig(currentConfig.env);
   renderCredentials(currentConfig.env);
   syncQuickSetupFromEnv(currentConfig.env);
+  syncPaperModeFromEnv(currentConfig.env);
 }
 
 async function selectMode(mode, options = {}) {
@@ -3060,6 +3091,25 @@ async function selectMode(mode, options = {}) {
     applyModeState(previous);
     throw err;
   }
+}
+
+async function persistPaperMode(enabled) {
+  const payload = { env: { ASTER_PAPER: enabled ? 'true' : 'false' } };
+  const res = await fetch('/api/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || 'Unable to update paper mode');
+  }
+  currentConfig = await res.json();
+  renderConfig(currentConfig.env);
+  renderCredentials(currentConfig.env);
+  syncQuickSetupFromEnv(currentConfig.env);
+  await syncModeFromEnv(currentConfig.env);
+  syncPaperModeFromEnv(currentConfig.env);
 }
 
 async function downloadTradeHistory() {
@@ -3206,6 +3256,23 @@ modeButtons.forEach((button) => {
     }
   });
 });
+
+if (paperModeToggle) {
+  paperModeToggle.addEventListener('change', () => {
+    const desired = paperModeToggle.checked;
+    const previous = paperMode;
+    setPaperMode(desired);
+    paperModeToggle.disabled = true;
+    persistPaperMode(desired)
+      .catch((err) => {
+        alert(err.message);
+        setPaperMode(previous);
+      })
+      .finally(() => {
+        paperModeToggle.disabled = false;
+      });
+  });
+}
 
 syncModeUi();
 
