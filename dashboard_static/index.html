@@ -391,6 +391,28 @@
       </section>
     </main>
 
+    <div id="pnl-modal" class="pnl-modal" hidden aria-hidden="true">
+      <div class="pnl-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="pnl-modal-title">
+        <div class="pnl-modal-header">
+          <div>
+            <h2 id="pnl-modal-title">Performance overview</h2>
+            <p class="pnl-modal-subtitle">Cumulative realized PNL across your recorded trades.</p>
+          </div>
+          <button
+            type="button"
+            id="pnl-modal-close"
+            class="pnl-modal-close"
+            aria-label="Close expanded performance chart"
+          >
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div class="pnl-modal-chart">
+          <canvas id="pnl-chart-expanded" aria-label="Expanded cumulative PNL chart"></canvas>
+        </div>
+      </div>
+    </div>
+
     <footer>
       <p>Made for Aster — adaptive trading with full transparency. Lean on live logs and AI hints to iterate with confidence.</p>
     </footer>
