@@ -176,6 +176,27 @@
         </div>
         <div class="ai-mode-window-body">
           <div class="ai-hint" id="ai-hint">Loading AI analysis…</div>
+          <div class="ai-activity-feed" id="ai-activity" aria-live="polite">
+            <div class="ai-feed-empty">Waiting for the first autonomous decisions…</div>
+          </div>
+          <div class="ai-chat-panel">
+            <div class="ai-chat-messages" id="ai-chat-messages" aria-live="polite">
+              <div class="ai-chat-empty">Sprich mit der Strategie-AI, um Entscheidungen zu diskutieren.</div>
+            </div>
+            <form id="ai-chat-form" class="ai-chat-form">
+              <label class="sr-only" for="ai-chat-input">Ask the autonomous cockpit</label>
+              <textarea
+                id="ai-chat-input"
+                rows="2"
+                placeholder="Frage die Strategie-AI nach offenen Trades, Risiken oder nächsten Schritten…"
+                autocomplete="off"
+              ></textarea>
+              <div class="ai-chat-actions">
+                <span class="ai-chat-status" id="ai-chat-status" role="status" aria-live="polite"></span>
+                <button type="submit" class="primary">Senden</button>
+              </div>
+            </form>
+          </div>
         </div>
       </section>
 
@@ -317,7 +338,7 @@
         <div id="env-settings" class="env-grid"></div>
       </section>
 
-      <section class="card logs compact" data-normal-only data-hide-when-ai>
+      <section class="card logs compact">
         <div class="card-header">
           <div>
             <h2>Activity feed</h2>

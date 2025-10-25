@@ -39,6 +39,11 @@ const aiBudgetCard = document.getElementById('ai-budget');
 const aiBudgetModeLabel = document.getElementById('ai-budget-mode');
 const aiBudgetMeta = document.getElementById('ai-budget-meta');
 const aiBudgetFill = document.getElementById('ai-budget-fill');
+const aiActivityFeed = document.getElementById('ai-activity');
+const aiChatMessages = document.getElementById('ai-chat-messages');
+const aiChatForm = document.getElementById('ai-chat-form');
+const aiChatInput = document.getElementById('ai-chat-input');
+const aiChatStatus = document.getElementById('ai-chat-status');
 const modeButtons = document.querySelectorAll('[data-mode-select]');
 const btnHeroDownload = document.getElementById('btn-hero-download');
 
@@ -58,6 +63,9 @@ let lastAiBudget = null;
 let lastMostTradedAssets = [];
 let latestTradesSnapshot = null;
 let lastBotStatus = { ...DEFAULT_BOT_STATUS };
+let aiChatHistory = [];
+let aiChatPending = false;
+const aiChatSubmit = aiChatForm ? aiChatForm.querySelector('button[type="submit"]') : null;
 
 function getCurrentMode() {
   if (aiMode) return 'ai';
@@ -1476,6 +1484,134 @@ function renderAiBudget(budget) {
   aiBudgetMeta.textContent = `Spent ${spent.toFixed(2)} / ${limit.toFixed(2)} USD · remaining ${remaining.toFixed(2)} USD`;
 }
 
+function renderAiActivity(feed) {
+  if (!aiActivityFeed) return;
+  aiActivityFeed.innerHTML = '';
+  if (!aiMode) {
+    const disabled = document.createElement('div');
+    disabled.className = 'ai-feed-empty';
+    disabled.textContent = 'Aktiviere den AI-Mode, um den Activity Feed zu sehen.';
+    aiActivityFeed.append(disabled);
+    return;
+  }
+  const items = Array.isArray(feed) ? feed.slice(0, 80) : [];
+  if (!items.length) {
+    const empty = document.createElement('div');
+    empty.className = 'ai-feed-empty';
+    empty.textContent = 'Noch keine autonomen Entscheidungen aufgezeichnet.';
+    aiActivityFeed.append(empty);
+    return;
+  }
+  items.forEach((raw) => {
+    const item = raw || {};
+    const wrapper = document.createElement('div');
+    wrapper.className = 'ai-activity-item';
+
+    const kind = document.createElement('div');
+    kind.className = 'ai-activity-kind';
+    const kindText = (item.kind || 'info').toString().toUpperCase();
+    kind.textContent = kindText;
+
+    const body = document.createElement('div');
+    const headline = document.createElement('h4');
+    headline.className = 'ai-activity-headline';
+    headline.textContent = item.headline || kindText;
+    body.append(headline);
+
+    if (item.body) {
+      const bodyText = document.createElement('p');
+      bodyText.className = 'ai-activity-body';
+      bodyText.textContent = item.body;
+      body.append(bodyText);
+    }
+
+    const meta = document.createElement('div');
+    meta.className = 'ai-activity-meta';
+    const timeText = formatRelativeTime(item.ts);
+    if (timeText) {
+      const timeEl = document.createElement('span');
+      timeEl.textContent = timeText;
+      meta.append(timeEl);
+    }
+    const summary = summariseDataRecord(item.data);
+    if (summary) {
+      const dataEl = document.createElement('span');
+      dataEl.textContent = summary;
+      meta.append(dataEl);
+    }
+    if (meta.children.length > 0) {
+      body.append(meta);
+    }
+
+    wrapper.append(kind, body);
+    aiActivityFeed.append(wrapper);
+  });
+}
+
+function appendChatMessage(role, message, meta = {}) {
+  if (!aiChatMessages) return;
+  const empty = aiChatMessages.querySelector('.ai-chat-empty');
+  if (empty) empty.remove();
+  const msg = document.createElement('div');
+  msg.className = `ai-chat-message ${role === 'user' ? 'user' : 'assistant'}`;
+  const roleLabel = document.createElement('div');
+  roleLabel.className = 'ai-chat-role';
+  roleLabel.textContent = role === 'user' ? 'Du' : 'Strategie-AI';
+  const text = document.createElement('p');
+  text.className = 'ai-chat-text';
+  text.textContent = message;
+  msg.append(roleLabel, text);
+  const metaParts = [];
+  if (meta.model) metaParts.push(meta.model);
+  if (meta.source && meta.source !== 'openai') metaParts.push(meta.source);
+  if (metaParts.length > 0) {
+    const metaEl = document.createElement('div');
+    metaEl.className = 'ai-chat-meta';
+    metaEl.textContent = metaParts.join(' • ');
+    msg.append(metaEl);
+  }
+  aiChatMessages.append(msg);
+  aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+}
+
+function setChatStatus(message) {
+  if (aiChatStatus) {
+    aiChatStatus.textContent = message || '';
+  }
+}
+
+function resetChatPlaceholder(text) {
+  if (!aiChatMessages) return;
+  aiChatMessages.innerHTML = '';
+  const empty = document.createElement('div');
+  empty.className = 'ai-chat-empty';
+  empty.textContent = text;
+  aiChatMessages.append(empty);
+}
+
+function syncAiChatAvailability() {
+  if (!aiChatInput) return;
+  if (!aiMode) {
+    aiChatInput.value = '';
+    aiChatInput.disabled = true;
+    if (aiChatSubmit) aiChatSubmit.disabled = true;
+    aiChatHistory = [];
+    resetChatPlaceholder('Der Chat ist nur im AI-Mode aktiv.');
+    setChatStatus('AI-Mode deaktiviert.');
+  } else {
+    aiChatInput.disabled = false;
+    if (aiChatSubmit) aiChatSubmit.disabled = false;
+    if (
+      aiChatMessages &&
+      !aiChatMessages.querySelector('.ai-chat-message') &&
+      !aiChatMessages.querySelector('.ai-chat-empty')
+    ) {
+      resetChatPlaceholder('Sprich mit der Strategie-AI, um Entscheidungen zu diskutieren.');
+    }
+    setChatStatus('');
+  }
+}
+
 function renderTradeSummary(stats) {
   tradeSummary.innerHTML = '';
   if (!stats) {
@@ -1764,6 +1900,34 @@ function clampValue(value, min, max) {
   return numeric;
 }
 
+function formatRelativeTime(input) {
+  if (!input) return '';
+  const ts = typeof input === 'number' ? input * 1000 : Date.parse(input);
+  if (!Number.isFinite(ts)) return String(input);
+  const now = Date.now();
+  const diffMs = now - ts;
+  if (Number.isNaN(diffMs)) return String(input);
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 5) return 'just now';
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return new Date(ts).toLocaleString();
+}
+
+function summariseDataRecord(record) {
+  if (!record || typeof record !== 'object') return '';
+  const entries = Object.entries(record)
+    .filter(([key, value]) => value !== null && value !== undefined && typeof value !== 'object')
+    .slice(0, 4)
+    .map(([key, value]) => `${key}: ${value}`);
+  return entries.join(' · ');
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -1954,6 +2118,8 @@ function setAiMode(state) {
   aiMode = Boolean(state);
   document.body.classList.toggle('ai-mode', aiMode);
   renderAiBudget(lastAiBudget);
+  renderAiActivity(latestTradesSnapshot?.ai_activity);
+  syncAiChatAvailability();
 }
 
 async function syncModeFromEnv(env) {
@@ -2079,6 +2245,7 @@ async function loadTrades() {
     renderDecisionStats(data.decision_stats);
     renderPnlChart(data.history);
     renderAiBudget(data.ai_budget);
+    renderAiActivity(data.ai_activity);
   } catch (err) {
     console.warn(err);
   }
@@ -2219,6 +2386,77 @@ if (autoScrollToggles.length > 0) {
 } else {
   autoScrollEnabled = true;
 }
+
+if (aiChatForm && aiChatInput) {
+  aiChatForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (aiChatPending) {
+      return;
+    }
+    if (!aiMode) {
+      setChatStatus('Bitte aktiviere zuerst den AI-Mode.');
+      return;
+    }
+    const message = (aiChatInput.value || '').trim();
+    if (!message) {
+      setChatStatus('Bitte gib eine Nachricht ein.');
+      return;
+    }
+    aiChatPending = true;
+    aiChatInput.disabled = true;
+    if (aiChatSubmit) aiChatSubmit.disabled = true;
+    setChatStatus('Strategie-AI denkt nach …');
+    const historyPayload = aiChatHistory.slice(-6);
+    appendChatMessage('user', message);
+    aiChatHistory.push({ role: 'user', content: message });
+    if (aiChatHistory.length > 12) {
+      aiChatHistory = aiChatHistory.slice(-12);
+    }
+    aiChatInput.value = '';
+    try {
+      const res = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, history: historyPayload }),
+      });
+      const text = await res.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch (parseErr) {
+        data = {};
+      }
+      if (!res.ok) {
+        const detail = data && typeof data === 'object' ? data.detail : null;
+        throw new Error(detail || 'Chat request failed');
+      }
+      const reply = (data.reply || '').toString() || 'Keine Antwort erhalten.';
+      appendChatMessage('assistant', reply, { model: data.model, source: data.source });
+      aiChatHistory.push({ role: 'assistant', content: reply });
+      if (aiChatHistory.length > 12) {
+        aiChatHistory = aiChatHistory.slice(-12);
+      }
+      if (data.source === 'fallback') {
+        setChatStatus('Antwort (Fallback)');
+      } else if (data.model) {
+        setChatStatus(`Antwort (${data.model})`);
+      } else {
+        setChatStatus('Antwort empfangen');
+      }
+    } catch (err) {
+      appendChatMessage('assistant', err?.message || 'Chat fehlgeschlagen.', { source: 'error' });
+      setChatStatus('Chat fehlgeschlagen.');
+    } finally {
+      aiChatPending = false;
+      if (aiMode) {
+        aiChatInput.disabled = false;
+        if (aiChatSubmit) aiChatSubmit.disabled = false;
+      }
+    }
+  });
+}
+
+syncAiChatAvailability();
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {

@@ -8,6 +8,7 @@ import shlex
 import shutil
 import signal
 import sys
+import textwrap
 import time
 from collections import deque
 from datetime import datetime
@@ -318,6 +319,16 @@ class TradeStats(BaseModel):
     ai_hint: str
 
 
+class ChatMessagePayload(BaseModel):
+    role: str
+    content: str
+
+
+class ChatRequestPayload(BaseModel):
+    message: str = Field(..., min_length=1)
+    history: List[ChatMessagePayload] = Field(default_factory=list)
+
+
 def _ensure_static_dir() -> None:
     if not STATIC_DIR.exists():
         STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -560,6 +571,7 @@ class BotRunner:
 
 loghub = LogHub()
 runner = BotRunner(loghub)
+chat_engine = AIChatEngine(CONFIG)
 
 app = FastAPI(title="Aster Bot Control Center")
 app.add_middleware(
@@ -703,6 +715,175 @@ def _decision_summary(state: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+class AIChatEngine:
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+
+    def _env(self) -> Dict[str, Any]:
+        return self.config.get("env", {})
+
+    def _current_state(
+        self,
+    ) -> Tuple[TradeStats, List[Dict[str, Any]], Dict[str, Any], List[Dict[str, Any]], Dict[str, Any]]:
+        state = _read_state()
+        history = state.get("trade_history", [])
+        stats = _compute_stats(history)
+        open_trades = state.get("live_trades", {})
+        ai_activity = state.get("ai_activity", [])
+        ai_budget = state.get("ai_budget", {})
+        return stats, history, open_trades, ai_activity, ai_budget
+
+    def _build_context_text(
+        self,
+        stats: TradeStats,
+        history: List[Dict[str, Any]],
+        open_trades: Dict[str, Any],
+        ai_activity: List[Dict[str, Any]],
+        ai_budget: Dict[str, Any],
+    ) -> str:
+        lines = [
+            "You are the AI co-pilot for the MrAster autonomous strategy cockpit.",
+            "Summarise telemetry, react to user questions, and surface concrete actions without placing orders yourself.",
+            "Mirror the user's language when possible and stay concise but actionable.",
+            (
+                f"Performance: {stats.count} trades · total PNL {stats.total_pnl:.2f} USDT · "
+                f"total R {stats.total_r:.2f} · win rate {(stats.win_rate * 100.0):.1f}%"
+            ),
+        ]
+        if stats.ai_hint:
+            lines.append(f"AI hint: {stats.ai_hint}")
+        if ai_budget:
+            limit = ai_budget.get("limit")
+            spent = ai_budget.get("spent")
+            if isinstance(limit, (int, float)) and limit:
+                lines.append(f"AI budget: {spent:.2f} / {limit:.2f} USD consumed today.")
+            elif isinstance(spent, (int, float)):
+                lines.append(f"AI budget: {spent:.2f} USD spent today (no configured cap).")
+        if open_trades:
+            open_lines = []
+            for sym, rec in list(open_trades.items())[:5]:
+                side = rec.get("side")
+                qty = rec.get("qty")
+                entry = rec.get("entry")
+                open_lines.append(f"{sym} {side} qty {qty} entry {entry}")
+            lines.append("Open trades: " + "; ".join(open_lines))
+        if history:
+            recent = history[-5:]
+            recent_lines = []
+            for trade in reversed(recent):
+                recent_lines.append(
+                    f"{trade.get('symbol')} {trade.get('side')} pnl {float(trade.get('pnl', 0.0)):.2f}USDT"
+                )
+            lines.append("Recent history: " + "; ".join(recent_lines))
+        if ai_activity:
+            activity_lines = []
+            for item in ai_activity[-5:][::-1]:
+                headline = item.get("headline") or item.get("kind")
+                body = item.get("body") or ""
+                activity_lines.append(f"{headline}: {body}")
+            lines.append("Latest AI activity: " + " | ".join(activity_lines))
+        lines.append("Be transparent about assumptions and call out if data looks stale.")
+        return "\n".join(lines)
+
+    def _fallback_reply(
+        self,
+        message: str,
+        stats: TradeStats,
+        history: List[Dict[str, Any]],
+        ai_activity: List[Dict[str, Any]],
+        open_trades: Dict[str, Any],
+        ai_budget: Dict[str, Any],
+    ) -> str:
+        parts = [
+            (
+                f"Currently tracking {stats.count} trades with {stats.total_pnl:.2f} USDT realised and "
+                f"a win rate of {(stats.win_rate * 100.0):.1f}%."
+            )
+        ]
+        if stats.ai_hint:
+            parts.append(stats.ai_hint)
+        if open_trades:
+            open_fragments = []
+            for sym, rec in list(open_trades.items())[:3]:
+                side = rec.get("side")
+                qty = rec.get("qty")
+                open_fragments.append(f"{sym} {side} ({qty}) still open")
+            parts.append("Open positions: " + ", ".join(open_fragments) + ".")
+        if history:
+            last = history[-1]
+            parts.append(
+                f"Last close: {last.get('symbol')} {last.get('side')} with {float(last.get('pnl', 0.0)):.2f} USDT PNL."
+            )
+        if ai_activity:
+            latest = ai_activity[-1]
+            parts.append(
+                f"Latest AI event: {latest.get('headline', 'update')} — {latest.get('body', 'details pending')}"
+            )
+        if ai_budget:
+            limit = ai_budget.get("limit")
+            spent = ai_budget.get("spent")
+            if isinstance(limit, (int, float)) and limit:
+                parts.append(f"AI spend {spent:.2f}/{limit:.2f} USD today.")
+            elif isinstance(spent, (int, float)):
+                parts.append(f"AI spend {spent:.2f} USD today.")
+        parts.append(
+            "LLM endpoint unreachable right now, so here's a heuristic response — focus on liquidity, risk, and your question"
+        )
+        parts.append(f"User prompt acknowledged: {message.strip()}")
+        return " ".join(parts)
+
+    def respond(self, message: str, history_payload: List[ChatMessagePayload]) -> Dict[str, Any]:
+        stats, history, open_trades, ai_activity, ai_budget = self._current_state()
+        fallback = self._fallback_reply(message, stats, history, ai_activity, open_trades, ai_budget)
+        env = self._env()
+        api_key = (env.get("ASTER_OPENAI_API_KEY") or "").strip()
+        model = (env.get("ASTER_AI_MODEL") or "gpt-4o").strip() or "gpt-4o"
+        if not api_key:
+            return {"reply": textwrap.fill(fallback, width=96), "model": "local", "source": "fallback"}
+
+        context_text = self._build_context_text(stats, history, open_trades, ai_activity, ai_budget)
+        messages: List[Dict[str, str]] = [{"role": "system", "content": context_text}]
+        for item in history_payload[-6:]:
+            role = item.role.lower().strip()
+            if role not in {"user", "assistant"}:
+                continue
+            messages.append({"role": role, "content": item.content})
+        messages.append({"role": "user", "content": message})
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": model,
+            "temperature": 0.4,
+            "messages": messages,
+            "max_tokens": 400,
+        }
+        try:
+            resp = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=30,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            choices = data.get("choices") or []
+            reply = choices[0]["message"]["content"] if choices else ""
+            reply_text = (reply or "").strip()
+            if not reply_text:
+                reply_text = fallback
+            return {"reply": reply_text, "model": model, "source": "openai", "usage": data.get("usage")}
+        except Exception as exc:
+            awaitable = getattr(loghub, "push", None)
+            if awaitable:
+                try:
+                    asyncio.create_task(loghub.push(f"AI chat fallback: {exc}", level="warning"))
+                except RuntimeError:
+                    pass
+            return {"reply": textwrap.fill(fallback, width=96), "model": model, "source": "fallback"}
+
 @app.get("/api/trades")
 async def trades() -> Dict[str, Any]:
     state = _read_state()
@@ -714,13 +895,27 @@ async def trades() -> Dict[str, Any]:
     stats = _compute_stats(history)
     decision_stats = _decision_summary(state)
     ai_budget = state.get("ai_budget", {})
+    ai_activity_raw = state.get("ai_activity", [])
+    if isinstance(ai_activity_raw, list):
+        ai_activity = list(reversed(ai_activity_raw[-120:]))
+    else:
+        ai_activity = []
     return {
         "open": open_trades,
         "history": history[::-1],
         "stats": stats.dict(),
         "decision_stats": decision_stats,
         "ai_budget": ai_budget,
+        "ai_activity": ai_activity,
     }
+
+
+@app.post("/api/ai/chat")
+async def ai_chat(payload: ChatRequestPayload) -> Dict[str, Any]:
+    message = (payload.message or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+    return chat_engine.respond(message, payload.history)
 
 
 @app.websocket("/ws/logs")
