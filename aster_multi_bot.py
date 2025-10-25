@@ -883,10 +883,13 @@ class AITradeAdvisor:
             return fallback
 
         system_prompt = (
-            "You are an execution risk manager for a crypto futures bot. "
+            "You are an autonomous crypto futures strategist. Analyse the provided EMA relationships, RSI, ADX, ATR," \
+            " order book context, and sentinel signals to decide independently whether to execute the trade. "
+            "Ignore legacy skip heuristics and make your own judgement from the indicators. "
             "Return pure JSON with fields take (boolean) or decision ('take'/'skip'), decision_reason, decision_note, "
             "size_multiplier, sl_multiplier, tp_multiplier, leverage, risk_note, explanation, fasttp_overrides (object "
-            "with enabled, min_r, ret1, ret3, snap_atr), and optional precise levels entry_price, stop_loss, take_profit."
+            "with enabled, min_r, ret1, ret3, snap_atr), and optional precise levels entry_price, stop_loss, take_profit. "
+            "If you reject the trade set take=false and leave explanation empty."
         )
         user_payload = {
             "symbol": symbol,
@@ -1044,10 +1047,12 @@ class AITradeAdvisor:
             return fallback
 
         system_prompt = (
-            "You are an autonomous trend scout for a futures trading bot. "
+            "You are an autonomous trend scout for a futures trading bot. Base your decision on the EMA alignment, HTF "
+            "trend slope, RSI, ADX, ATR, and sentinel metadata rather than fixed bot rules. "
             "Return JSON with fields take (boolean), decision, decision_reason, decision_note, side (BUY/SELL), "
             "size_multiplier, sl_multiplier, tp_multiplier, leverage, risk_note, explanation, fasttp_overrides "
-            "(object with enabled, min_r, ret1, ret3, snap_atr), confidence (0-1), and optional levels entry_price, stop_loss, take_profit."
+            "(object with enabled, min_r, ret1, ret3, snap_atr), confidence (0-1), and optional levels entry_price, stop_loss, take_profit. "
+            "If you decline the setup leave explanation empty."
         )
         user_payload = {
             "symbol": symbol,
@@ -2323,38 +2328,12 @@ class Bot:
                     "sentinel_label": sentinel_info.get("label"),
                 }
                 explanation = plan.get("explanation")
-                self._log_ai_activity(
-                    "analysis",
-                    f"{symbol} trend scan analysed",
-                    body=explanation,
-                    data={"symbol": symbol, "side": plan.get("side") or sig, **decision_summary},
-                )
                 if not bool(plan.get("take", False)):
-                    reason = (
-                        plan.get("decision_reason")
-                        or plan.get("decision_note")
-                        or (explanation if isinstance(explanation, str) else None)
-                        or "AI rejected opportunity"
-                    )
-                    self._log_ai_activity(
-                        "decision",
-                        f"AI skipped {symbol}",
-                        body=reason,
-                        data={"symbol": symbol, "side": plan.get("side") or sig, **decision_summary},
-                        force=True,
-                    )
                     if self.decision_tracker:
                         self.decision_tracker.record_rejection("ai_trend_skip", force=True)
                     return
                 side = str(plan.get("side") or "").upper()
                 if side not in {"BUY", "SELL"}:
-                    self._log_ai_activity(
-                        "decision",
-                        f"AI skipped {symbol}",
-                        body="Trend plan returned no actionable side.",
-                        data={"symbol": symbol, "side": sig, **decision_summary},
-                        force=True,
-                    )
                     if self.decision_tracker:
                         self.decision_tracker.record_rejection("ai_trend_invalid", force=True)
                     return
@@ -2362,6 +2341,13 @@ class Bot:
                 ctx["ai_generated_signal"] = True
                 ctx["ai_plan_origin"] = plan_origin
                 decision_summary["side"] = sig
+                if isinstance(explanation, str) and explanation.strip():
+                    self._log_ai_activity(
+                        "analysis",
+                        f"{symbol} trend scan analysed",
+                        body=explanation,
+                        data={"symbol": symbol, "side": sig, **decision_summary},
+                    )
             else:
                 plan = self.ai_advisor.plan_trade(
                     symbol,
@@ -2389,31 +2375,19 @@ class Bot:
                     "sentinel_label": sentinel_info.get("label"),
                 }
                 explanation = plan.get("explanation")
-                self._log_ai_activity(
-                    "analysis",
-                    f"{symbol} {sig} signal analysed",
-                    body=explanation,
-                    data={"symbol": symbol, "side": sig, **decision_summary},
-                )
                 if not bool(plan.get("take", True)):
-                    reason = (
-                        plan.get("decision_reason")
-                        or plan.get("decision_note")
-                        or (explanation if isinstance(explanation, str) else None)
-                        or "AI rejected opportunity"
-                    )
-                    self._log_ai_activity(
-                        "decision",
-                        f"AI skipped {symbol}",
-                        body=reason,
-                        data={"symbol": symbol, "side": sig, **decision_summary},
-                        force=True,
-                    )
                     if self.decision_tracker:
                         self.decision_tracker.record_rejection("ai_decision", force=True)
                     return
                 ctx["ai_plan_origin"] = plan_origin
                 decision_summary["side"] = sig
+                if isinstance(explanation, str) and explanation.strip():
+                    self._log_ai_activity(
+                        "analysis",
+                        f"{symbol} {sig} signal analysed",
+                        body=explanation,
+                        data={"symbol": symbol, "side": sig, **decision_summary},
+                    )
 
             plan_size = float(plan.get("size_multiplier", 1.0) or 0.0)
             plan_sl_mult = float(plan.get("sl_multiplier", 1.0) or 1.0)
@@ -2456,6 +2430,31 @@ class Bot:
                 or plan.get("decision_reason")
                 or (explanation if isinstance(explanation, str) else None)
             )
+            if not note_body:
+                note_parts: List[str] = []
+                ema_fast_val = ctx.get("ema_fast")
+                ema_slow_val = ctx.get("ema_slow")
+                if isinstance(ema_fast_val, (int, float)) and isinstance(ema_slow_val, (int, float)):
+                    if ema_fast_val > ema_slow_val:
+                        relation = "above"
+                    elif ema_fast_val < ema_slow_val:
+                        relation = "below"
+                    else:
+                        relation = "aligned with"
+                    note_parts.append(
+                        f"EMA fast {ema_fast_val:.4f} {relation} EMA slow {ema_slow_val:.4f}"
+                    )
+                adx_val = ctx.get("adx")
+                if isinstance(adx_val, (int, float)):
+                    note_parts.append(f"ADX {adx_val:.1f}")
+                rsi_val = ctx.get("rsi")
+                if isinstance(rsi_val, (int, float)):
+                    note_parts.append(f"RSI {rsi_val:.1f}")
+                sentinel_label = (sentinel_info or {}).get("label") if sentinel_info else None
+                if isinstance(sentinel_label, str) and sentinel_label:
+                    note_parts.append(f"Sentinel {sentinel_label}")
+                if note_parts:
+                    note_body = " · ".join(note_parts)
             self._log_ai_activity(
                 "decision",
                 f"AI approved {symbol}",
