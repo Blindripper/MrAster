@@ -1786,6 +1786,62 @@ class TradeManager:
         except Exception:
             self.history_max = 250
 
+    @staticmethod
+    def _boolish(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return False
+        if isinstance(value, (int, float)):
+            return value != 0
+        text = str(value).strip().lower()
+        if not text:
+            return False
+        return text in {"1", "true", "yes", "on"}
+
+    def _cancel_stale_exit_orders(self, symbol: str) -> None:
+        try:
+            orders = self.exchange.get_open_orders(symbol) or []
+        except Exception as exc:
+            log.debug(f"cleanup open orders fail {symbol}: {exc}")
+            return
+
+        cancelled = 0
+        for order in orders:
+            order_type = str(order.get("type") or "").upper()
+            if "STOP" not in order_type and "TAKE_PROFIT" not in order_type:
+                continue
+
+            close_position = self._boolish(order.get("closePosition"))
+            reduce_only = self._boolish(order.get("reduceOnly"))
+            if not close_position and not reduce_only:
+                continue
+
+            order_id = order.get("orderId") or order.get("id") or order.get("order_id")
+            if order_id is None:
+                continue
+
+            order_id_int: Optional[int]
+            try:
+                order_id_int = int(str(order_id).strip())
+            except Exception:
+                try:
+                    order_id_int = int(float(order_id))
+                except Exception:
+                    order_id_int = None
+
+            if order_id_int is None:
+                continue
+
+            try:
+                self.exchange.cancel_order(symbol, order_id_int)
+                cancelled += 1
+            except Exception as exc:
+                log.debug(f"cleanup cancel fail {symbol}: {exc}")
+
+        if cancelled:
+            log.debug(f"cleanup removed {cancelled} exit orders for {symbol}")
+
     def _sanitize_meta(self, meta: Dict[str, Any]) -> Dict[str, Any]:
         try:
             return json.loads(json.dumps(meta, default=lambda o: str(o)))
@@ -1881,6 +1937,8 @@ class TradeManager:
             amt = pos_map.get(sym, 0.0)
             if abs(amt) > 1e-12:
                 continue  # noch offen
+
+            self._cancel_stale_exit_orders(sym)
             entry = float(rec.get("entry")); sl = float(rec.get("sl"))
             side = rec.get("side"); qty = float(rec.get("qty"))
             # Exit-Preis näherungsweise aus Mid
