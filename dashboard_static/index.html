@@ -279,12 +279,18 @@
             <h2>Environment configuration</h2>
             <button
               id="btn-toggle-env"
-              class="ghost"
+              class="ghost collapse-toggle"
               type="button"
               aria-expanded="false"
+              aria-label="Expand environment settings"
               aria-controls="env-settings"
+              data-label-expand="Expand"
+              data-label-collapse="Collapse"
+              data-aria-expand="Expand environment settings"
+              data-aria-collapse="Collapse environment settings"
             >
-              Show settings
+              <span class="collapse-toggle__icon" aria-hidden="true"></span>
+              <span class="collapse-toggle__label" data-collapse-label>Expand</span>
             </button>
           </div>
           <button id="btn-save-config" class="primary subtle">Save</button>

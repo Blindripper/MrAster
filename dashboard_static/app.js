@@ -88,18 +88,30 @@ function syncModeUi() {
   updateAiBudgetModeLabel();
 }
 
+function syncCollapseToggle(button, collapsed) {
+  if (!button) return;
+  const expandLabel = button.dataset.labelExpand || 'Expand';
+  const collapseLabel = button.dataset.labelCollapse || 'Collapse';
+  const ariaExpand = button.dataset.ariaExpand || expandLabel;
+  const ariaCollapse = button.dataset.ariaCollapse || collapseLabel;
+  const labelTarget = button.querySelector('[data-collapse-label]');
+  if (labelTarget) {
+    labelTarget.textContent = collapsed ? expandLabel : collapseLabel;
+  } else {
+    button.textContent = collapsed ? expandLabel : collapseLabel;
+  }
+  button.setAttribute('aria-expanded', (!collapsed).toString());
+  button.setAttribute('aria-label', collapsed ? ariaExpand : ariaCollapse);
+  button.classList.toggle('is-expanded', !collapsed);
+}
+
 function setEnvCollapsed(collapsed) {
   envCollapsed = Boolean(collapsed);
   if (envPanel) {
     envPanel.classList.toggle('collapsed', envCollapsed);
   }
   if (btnToggleEnv) {
-    btnToggleEnv.setAttribute('aria-expanded', (!envCollapsed).toString());
-    btnToggleEnv.textContent = envCollapsed ? 'Show settings' : 'Hide settings';
-    btnToggleEnv.setAttribute(
-      'aria-label',
-      envCollapsed ? 'Expand environment settings' : 'Collapse environment settings',
-    );
+    syncCollapseToggle(btnToggleEnv, envCollapsed);
   }
 }
 
