@@ -1430,7 +1430,8 @@ body.ai-mode .ai-mode-window {
 }
 
 .ai-mode-window-body {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 1.2rem;
@@ -1439,6 +1440,8 @@ body.ai-mode .ai-mode-window {
   background: rgba(12, 13, 20, 0.78);
   border: 1px solid rgba(245, 196, 107, 0.12);
   box-shadow: inset 0 1px 0 rgba(245, 196, 107, 0.05);
+  max-height: clamp(360px, 65vh, 540px);
+  overflow: hidden;
 }
 
 .ai-mode-window-body .ai-hint {
@@ -1451,6 +1454,7 @@ body.ai-mode .ai-mode-window {
 
 .ai-activity-feed {
   flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
@@ -1514,13 +1518,16 @@ body.ai-mode .ai-mode-window {
   gap: 0.8rem;
   border-top: 1px solid rgba(245, 196, 107, 0.12);
   padding-top: 0.8rem;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .ai-chat-messages {
   display: flex;
   flex-direction: column;
   gap: 0.8rem;
-  max-height: 220px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   padding-right: 0.4rem;
 }
