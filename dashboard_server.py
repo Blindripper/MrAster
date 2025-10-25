@@ -1254,7 +1254,10 @@ async def trades() -> Dict[str, Any]:
     ai_budget = state.get("ai_budget", {})
     ai_activity_raw = state.get("ai_activity", [])
     if isinstance(ai_activity_raw, list):
-        ai_activity = list(reversed(ai_activity_raw[-120:]))
+        # Preserve chronological ordering so analysis entries appear before
+        # subsequent execution events in the feed. Only the most recent
+        # window is returned to keep the payload compact.
+        ai_activity = list(ai_activity_raw[-120:])
     else:
         ai_activity = []
     return {
