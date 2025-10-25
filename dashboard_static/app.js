@@ -1118,24 +1118,37 @@ function updateActivePositionsView() {
     if (sideBadge) {
       symbolWrapper.append(sideBadge);
     }
-    symbolCell.append(symbolWrapper);
-    row.append(symbolCell);
 
     const asterUrl = buildAsterPositionUrl(symbolValue);
     if (asterUrl) {
       row.dataset.asterUrl = asterUrl;
       row.classList.add('active-positions-row-link');
-      row.setAttribute('tabindex', '0');
-      row.setAttribute('role', 'link');
-      row.setAttribute('aria-label', `Open ${symbolValue} on Asterdex`);
-      row.addEventListener('click', () => openAsterPositionUrl(asterUrl));
-      row.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          openAsterPositionUrl(asterUrl);
-        }
+      const symbolLink = document.createElement('a');
+      symbolLink.className = 'active-positions-symbol-link';
+      symbolLink.href = asterUrl;
+      symbolLink.target = '_blank';
+      symbolLink.rel = 'noopener noreferrer';
+      symbolLink.setAttribute('aria-label', `Open ${symbolValue} on Asterdex`);
+      symbolLink.append(symbolWrapper);
+      symbolLink.addEventListener('focus', () => {
+        row.classList.add('active-positions-row-link-focus');
       });
+      symbolLink.addEventListener('blur', () => {
+        row.classList.remove('active-positions-row-link-focus');
+      });
+      symbolCell.append(symbolLink);
+      row.addEventListener('click', (event) => {
+        const target = event.target;
+        const targetElement = target instanceof Element ? target : target && target.parentElement;
+        const interactive =
+          targetElement && targetElement.closest('a, button, input, textarea, select');
+        if (interactive) return;
+        openAsterPositionUrl(asterUrl);
+      });
+    } else {
+      symbolCell.append(symbolWrapper);
     }
+    row.append(symbolCell);
 
     const sizeCell = document.createElement('td');
     sizeCell.className = 'numeric active-positions-size';
