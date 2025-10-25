@@ -81,7 +81,8 @@ SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.0030"))  # 0.30 %
 WICKINESS_MAX = float(os.getenv("ASTER_WICKINESS_MAX", "0.97"))
 MIN_EDGE_R = float(os.getenv("ASTER_MIN_EDGE_R", "0.30"))
 
-BANDIT_ENABLED = os.getenv("ASTER_BANDIT_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+BANDIT_FLAG = os.getenv("ASTER_BANDIT_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+BANDIT_ENABLED = BANDIT_FLAG and not AI_MODE_ENABLED
 SIZE_MULT_BASE = float(os.getenv("ASTER_SIZE_MULT", "1.00"))
 SIZE_MULT_S = float(os.getenv("ASTER_SIZE_MULT_S", str(SIZE_MULT_BASE)))
 SIZE_MULT_M = float(os.getenv("ASTER_SIZE_MULT_M", str(1.4 * SIZE_MULT_BASE)))
@@ -740,6 +741,10 @@ class AITradeAdvisor:
             "explanation": explanation,
             "event_risk": event_risk,
             "hype_score": hype_score,
+            "take": True,
+            "decision": "take",
+            "decision_reason": "fallback_rules",
+            "decision_note": "Signal cleared heuristics. Proceeding with adjusted sizing and risk bounds.",
         }
 
     def plan_trade(
@@ -759,8 +764,9 @@ class AITradeAdvisor:
 
         system_prompt = (
             "You are an execution risk manager for a crypto futures bot. "
-            "Return pure JSON with fields size_multiplier, sl_multiplier, tp_multiplier, leverage, risk_note, explanation, "
-            "and fasttp_overrides (object with enabled, min_r, ret1, ret3, snap_atr)."
+            "Return pure JSON with fields take (boolean) or decision ('take'/'skip'), decision_reason, decision_note, "
+            "size_multiplier, sl_multiplier, tp_multiplier, leverage, risk_note, explanation, and fasttp_overrides (object "
+            "with enabled, min_r, ret1, ret3, snap_atr)."
         )
         user_payload = {
             "symbol": symbol,
@@ -790,6 +796,12 @@ class AITradeAdvisor:
             return fallback
 
         plan = {**fallback}
+        plan["take"] = bool(fallback.get("take", True))
+        plan["decision"] = "take" if plan["take"] else "skip"
+        if fallback.get("decision_reason"):
+            plan["decision_reason"] = fallback.get("decision_reason")
+        if fallback.get("decision_note"):
+            plan["decision_note"] = fallback.get("decision_note")
         size_multiplier = parsed.get("size_multiplier")
         sl_multiplier = parsed.get("sl_multiplier")
         tp_multiplier = parsed.get("tp_multiplier")
@@ -797,6 +809,26 @@ class AITradeAdvisor:
         fasttp_overrides = parsed.get("fasttp_overrides")
         explanation = parsed.get("explanation")
         risk_note = parsed.get("risk_note")
+        decision_raw = parsed.get("decision")
+        take_raw = parsed.get("take")
+        decision_reason = parsed.get("decision_reason") or parsed.get("reason")
+        decision_note = parsed.get("decision_note") or parsed.get("note")
+
+        take = plan["take"]
+        if isinstance(take_raw, bool):
+            take = bool(take_raw)
+        elif isinstance(decision_raw, str):
+            token = decision_raw.strip().lower()
+            if token in {"take", "enter", "proceed", "accept", "go"}:
+                take = True
+            elif token in {"skip", "avoid", "pass", "reject", "stop"}:
+                take = False
+        plan["take"] = bool(take)
+        plan["decision"] = "take" if plan["take"] else "skip"
+        if isinstance(decision_reason, str) and decision_reason.strip():
+            plan["decision_reason"] = decision_reason.strip()
+        if isinstance(decision_note, str) and decision_note.strip():
+            plan["decision_note"] = decision_note.strip()
 
         if isinstance(size_multiplier, (int, float)):
             plan["size_multiplier"] = clamp(float(size_multiplier), 0.0, 2.0)
@@ -1593,6 +1625,8 @@ class Bot:
             self.state = {}
         if not isinstance(self.state, dict):
             self.state = {}
+        self.state.setdefault("ai_activity", [])
+        self._last_ai_activity_persist = 0.0
         self.policy: Optional[BanditPolicy] = None
         if BANDIT_ENABLED:
             pol_state = self.state.get("policy") if isinstance(self.state, dict) else None
@@ -1646,6 +1680,44 @@ class Bot:
     @property
     def strategy(self) -> Strategy:
         return self._strategy
+
+    def _log_ai_activity(
+        self,
+        kind: str,
+        headline: str,
+        *,
+        body: Optional[str] = None,
+        data: Optional[Dict[str, Any]] = None,
+        force: bool = False,
+    ) -> None:
+        if not AI_MODE_ENABLED:
+            return
+        entry: Dict[str, Any] = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "kind": str(kind or "info"),
+            "headline": str(headline or ""),
+        }
+        if body:
+            entry["body"] = str(body)
+        if data:
+            try:
+                entry["data"] = json.loads(json.dumps(data, default=lambda o: str(o)))
+            except Exception:
+                entry["data"] = data
+        feed = self.state.setdefault("ai_activity", [])
+        feed.append(entry)
+        if len(feed) > 250:
+            del feed[:-250]
+        self.state["ai_activity"] = feed
+        if not getattr(self, "trade_mgr", None):
+            return
+        now = time.time()
+        if force or (now - getattr(self, "_last_ai_activity_persist", 0.0)) >= 2.0:
+            self._last_ai_activity_persist = now
+            try:
+                self.trade_mgr.save()
+            except Exception as exc:
+                log.debug(f"ai activity persist failed: {exc}")
 
     def _reset_decision_stats(self) -> None:
         baseline = {
@@ -1710,6 +1782,18 @@ class Bot:
                 float(sentinel_info.get("event_risk", 0.0) or 0.0),
                 float(sentinel_info.get("hype_score", 0.0) or 0.0),
             )
+            self._log_ai_activity(
+                "decision",
+                f"Sentinel vetoed {symbol}",
+                body=f"Risk label {sentinel_info.get('label', 'red')} blocked the {sig} setup.",
+                data={
+                    "symbol": symbol,
+                    "side": sig,
+                    "event_risk": float(sentinel_info.get("event_risk", 0.0) or 0.0),
+                    "hype_score": float(sentinel_info.get("hype_score", 0.0) or 0.0),
+                },
+                force=True,
+            )
             if self.decision_tracker:
                 self.decision_tracker.record_rejection("sentinel_veto")
             return
@@ -1760,8 +1844,47 @@ class Bot:
         tp = px + tp_dist if is_buy else px - tp_dist
 
         ai_meta: Optional[Dict[str, Any]] = None
+        plan: Optional[Dict[str, Any]] = None
         if self.ai_advisor:
             plan = self.ai_advisor.plan_trade(symbol, sig, px, sl_dist, tp_dist, ctx, sentinel_info, atr_abs)
+            decision_summary = {
+                "decision": plan.get("decision"),
+                "take": bool(plan.get("take", True)),
+                "decision_reason": plan.get("decision_reason"),
+                "decision_note": plan.get("decision_note"),
+                "size_multiplier": plan.get("size_multiplier"),
+                "sl_multiplier": plan.get("sl_multiplier"),
+                "tp_multiplier": plan.get("tp_multiplier"),
+                "leverage": plan.get("leverage"),
+                "event_risk": plan.get("event_risk"),
+                "hype_score": plan.get("hype_score"),
+                "sentinel_label": sentinel_info.get("label"),
+            }
+            explanation = plan.get("explanation")
+            self._log_ai_activity(
+                "analysis",
+                f"{symbol} {sig} signal analysed",
+                body=explanation,
+                data={"symbol": symbol, "side": sig, **decision_summary},
+            )
+            if not bool(plan.get("take", True)):
+                reason = (
+                    plan.get("decision_reason")
+                    or plan.get("decision_note")
+                    or (explanation if isinstance(explanation, str) else None)
+                    or "AI rejected opportunity"
+                )
+                self._log_ai_activity(
+                    "decision",
+                    f"AI skipped {symbol}",
+                    body=reason,
+                    data={"symbol": symbol, "side": sig, **decision_summary},
+                    force=True,
+                )
+                if self.decision_tracker:
+                    self.decision_tracker.record_rejection("ai_decision", force=True)
+                return
+
             plan_size = float(plan.get("size_multiplier", 1.0) or 0.0)
             plan_sl_mult = float(plan.get("sl_multiplier", 1.0) or 1.0)
             plan_tp_mult = float(plan.get("tp_multiplier", 1.0) or 1.0)
@@ -1777,12 +1900,27 @@ class Bot:
                 "budget": self.ai_advisor.budget_snapshot(),
                 "generated_at": datetime.now(timezone.utc).isoformat(),
             }
-            explanation = plan.get("explanation")
             if isinstance(explanation, str) and explanation.strip():
                 ai_meta["explanation"] = explanation.strip()
+            if plan.get("decision_reason"):
+                ai_meta["decision_reason"] = plan.get("decision_reason")
+            if plan.get("decision_note"):
+                ai_meta["decision_note"] = plan.get("decision_note")
             risk_note = plan.get("risk_note")
             if isinstance(risk_note, str) and risk_note.strip():
                 ai_meta["risk_note"] = risk_note.strip()
+            note_body = (
+                plan.get("decision_note")
+                or plan.get("decision_reason")
+                or (explanation if isinstance(explanation, str) else None)
+            )
+            self._log_ai_activity(
+                "decision",
+                f"AI approved {symbol}",
+                body=note_body,
+                data={"symbol": symbol, "side": sig, **decision_summary},
+                force=True,
+            )
             if isinstance(leverage, (int, float)) and leverage > 0:
                 leverage_state = self.state.setdefault("symbol_leverage", {})
                 current = float(leverage_state.get(symbol, 0.0) or 0.0)
@@ -1799,6 +1937,13 @@ class Bot:
 
         size_mult = clamp(size_mult, 0.0, 5.0)
         if size_mult <= 0:
+            self._log_ai_activity(
+                "decision",
+                f"Sized out {symbol}",
+                body="Position sizing reduced to zero after risk controls.",
+                data={"symbol": symbol, "side": sig, "size_multiplier": size_mult},
+                force=True,
+            )
             if self.decision_tracker:
                 self.decision_tracker.record_rejection("ai_risk_zero")
             return
@@ -1809,6 +1954,13 @@ class Bot:
 
         qty = self.risk.compute_qty(symbol, px, sl, size_mult)
         if qty <= 0:
+            self._log_ai_activity(
+                "decision",
+                f"No size for {symbol}",
+                body="Risk engine returned zero quantity.",
+                data={"symbol": symbol, "side": sig, "size_multiplier": size_mult},
+                force=True,
+            )
             if self.decision_tracker:
                 self.decision_tracker.record_rejection("position_size")
             return
@@ -1850,6 +2002,21 @@ class Bot:
             )
             if ai_meta and ai_meta.get("explanation"):
                 log.info("AI plan %s: %s", symbol, ai_meta.get("explanation"))
+            self._log_ai_activity(
+                "execution",
+                f"Executed {symbol} {sig}",
+                body=f"qty={q_str} @≈{px:.6f} (SL {sl:.6f} · TP {tp:.6f})",
+                data={
+                    "symbol": symbol,
+                    "side": sig,
+                    "qty": q_str,
+                    "entry": float(px),
+                    "sl": float(sl),
+                    "tp": float(tp),
+                    "bucket": bucket,
+                },
+                force=True,
+            )
         except Exception as e:
             log.debug(f"entry fail {symbol}: {e}")
             if self.decision_tracker:
