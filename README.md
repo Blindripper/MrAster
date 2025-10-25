@@ -1,27 +1,26 @@
 # MrAster Trading Bot
 
-MrAster is a full-featured toolkit for futures trading on Binance-compatible exchanges. The suite combines a rule-based signal scanner, a multi-armed bandit model for trade gating, robust order management, and an operational dashboard with AI assistance.
+MrAster is a full-featured toolkit for futures trading on Binance-compatible exchanges. The current release puts the interactive dashboard at the center of the workflow: start the backend once, control the bot from the browser, and only fall back to the CLI when you need a headless session.
 
 ## Table of Contents
 - [Highlights](#highlights)
+- [Dashboard-First Workflow](#dashboard-first-workflow)
+  - [Quick Launch](#quick-launch)
+  - [What You Can Do in the Dashboard](#what-you-can-do-in-the-dashboard)
+  - [Optional CLI Operation](#optional-cli-operation)
 - [Architecture Overview](#architecture-overview)
-- [Quickstart](#quickstart)
 - [Configuration](#configuration)
   - [Core Variables](#core-variables)
   - [Strategy, Risk, and Positioning](#strategy-risk-and-positioning)
   - [AI, Automation, and Guardrails](#ai-automation-and-guardrails)
-- [Dashboard](#dashboard)
-  - [Operating Modes](#operating-modes)
-  - [Configuration Editor](#configuration-editor)
-- [Update Note](#update-note)
 - [Security Notice](#security-notice)
 
 ## Highlights
 
 ### Trading Engine
-- **RSI-based signals with trend confirmation** – all thresholds can be tuned via `ASTER_*` environment variables.
+- **RSI-based signals with trend confirmation** – thresholds and confirmation windows are controlled via `ASTER_*` environment variables or the dashboard editor.
 - **Multi-armed bandit (`BanditPolicy`)** using LinUCB and an optional alpha model from `ml_policy.py` decides TAKE/SKIP as well as the size bucket (S/M/L).
-- **Funding and spread filters** avoid trades in illiquid or expensive markets.
+- **Funding and spread filters** avoid trades in illiquid or expensive markets, while wickiness guards filter noisy candles.
 - **Kline and 24h ticker caching** reduces API calls and shields against temporary exchange outages.
 
 ### Risk and Order Management
@@ -37,8 +36,45 @@ MrAster is a full-featured toolkit for futures trading on Binance-compatible exc
 
 ### Observability & Resilience
 - **HTTP hardening** configurable via `ASTER_HTTP_RETRIES`, `ASTER_HTTP_BACKOFF`, `ASTER_HTTP_TIMEOUT`.
-- **Multi-user dashboard** with log streaming, process control, and environment editing.
-- **Self-contained requirements**: a single `requirements.txt` captures all dependencies, so `pip install -r requirements.txt` is enough.
+- **Dashboard-native monitoring** with log streaming, bot process control, environment editing, AI chat, and analytics cards.
+- **Self-contained requirements**: `pip install -r requirements.txt` is sufficient to get going.
+
+## Dashboard-First Workflow
+
+### Quick Launch
+1. **Install dependencies**
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # Windows: .venv\Scripts\activate
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+2. **Start the dashboard backend**
+   ```bash
+   python dashboard_server.py
+   # or with uvicorn hot reload
+   uvicorn dashboard_server:app --host 0.0.0.0 --port 8000
+   ```
+3. **Open the web UI** at <http://localhost:8000> and finish the setup from the browser.
+
+### What You Can Do in the Dashboard
+- **Start, stop, and relaunch the bot** with a single click. The backend supervises the `aster_multi_bot.py` process and surfaces the PID, uptime, and exit reasons.
+- **Watch the live logs** in detailed or compact form, toggle auto-scroll, and download the latest snapshot for audits.
+- **Tune risk with presets**. Standard mode provides Low/Mid/High presets plus sliders for risk-per-trade and leverage; switching to Pro mode reveals every `ASTER_*` variable.
+- **Edit configuration safely**. The environment editor writes to `dashboard_config.json`, validates keys, and syncs changes back into the running bot.
+- **Manage credentials**. Dedicated inputs store exchange API keys and OpenAI credentials, isolating them from general config edits.
+- **Track trading performance** through the PnL chart, trade history list, and aggregated trade summary.
+- **Monitor the market** via the rolling "most traded" ticker strip and active position cards. Positions are refreshed directly from the exchange when credentials are present.
+- **Use the AI copilots**. The AI activity feed shows automated decisions, budget consumption is visualized in the budget card, and the in-dashboard chat lets you ask the AI advisor contextual questions.
+- **Stay informed**. News Sentinel warnings, budget guard status, and AI mode indicators are surfaced as soon as they update in the state file.
+
+### Optional CLI Operation
+You can still run the bot headlessly for cron jobs or servers without browsers:
+```bash
+export ASTER_PAPER=true        # optional paper trading
+python aster_multi_bot.py
+```
+Set `ASTER_RUN_ONCE=true` to execute a single scan cycle. Use the CLI when the dashboard is unavailable; otherwise, the dashboard remains the recommended control center.
 
 ## Architecture Overview
 
@@ -52,45 +88,6 @@ MrAster is a full-featured toolkit for futures trading on Binance-compatible exc
 ```
 
 The bot can run standalone or be controlled through the dashboard. Policy and state files are saved automatically and restored on the next startup.
-
-## Quickstart
-
-### Prerequisites
-- Python ≥ 3.10 (recommended)
-- Binance or AsterDex-compatible futures account (for live trading)
-- Optional: Paper-trading mode works without API keys
-
-### Installation
-```bash
-# Clone the repository
-git clone https://example.com/MrAster.git
-cd MrAster
-
-# Create a virtual environment
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-
-# Install dependencies
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-### Start the Bot
-```bash
-export ASTER_PAPER=true  # enable paper mode
-python aster_multi_bot.py
-```
-
-With `ASTER_RUN_ONCE=true`, the bot performs a single scan cycle. Stopping with `CTRL+C` (SIGINT) exits gracefully.
-
-### Start the Dashboard
-```bash
-python dashboard_server.py
-# or with auto-reload:
-uvicorn dashboard_server:app --host 0.0.0.0 --port 8000
-```
-
-The interface becomes available at <http://localhost:8000>. Log streams, configuration changes, and bot controls are available directly in the browser.
 
 ## Configuration
 
@@ -160,28 +157,6 @@ All relevant parameters can be set via environment variables or edited in the da
 | `ASTER_BRACKETS_QUEUE_FILE` | `brackets_queue.json` | Queue file for guard repairs. |
 
 Additional variables (such as universe filters, per-bucket position sizing, or dashboard behavior) can be found directly in the source code or in the UI. Every change made in the dashboard is persisted to `dashboard_config.json` once confirmed.
-
-## Dashboard
-
-The dashboard (FastAPI + single-page app) provides process control, real-time logs, configuration management, and AI insights.
-
-### Operating Modes
-- **Standard mode**: Pre-configured intensity presets (Low/Mid/High) focusing on risk-per-trade and leverage controls.
-- **Pro mode**: Unlocks the full environment editor, including direct modification of all `ASTER_*` variables and verbose debug logs.
-- **AI mode**: Activates the AITradeAdvisor, which evaluates signals, enforces budget and news limits, and documents decisions.
-
-### Configuration Editor
-- Every field maps one-to-one to the bot's environment variables.
-- Changes are saved to `dashboard_config.json` after confirmation and loaded on the next start.
-- The state file (`aster_state.json`) contains open positions, policy data, AI notes, and is used by both the bot and the guard.
-
-## Update Note
-
-To update to the latest version without wiping the virtual environment, run:
-
-```bash
-git fetch --all --prune && git reset --hard @{u} && git clean -fd -e .venv/
-```
 
 ## Security Notice
 - Live trading carries significant risk: always test changes in paper mode first.
