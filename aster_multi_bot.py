@@ -68,6 +68,7 @@ SENTINEL_ENABLED = os.getenv("ASTER_AI_SENTINEL_ENABLED", "true").lower() in ("1
 SENTINEL_DECAY_MINUTES = float(os.getenv("ASTER_AI_SENTINEL_DECAY_MINUTES", "90") or 90)
 SENTINEL_NEWS_ENDPOINT = os.getenv("ASTER_AI_NEWS_ENDPOINT", "").strip()
 SENTINEL_NEWS_TOKEN = os.getenv("ASTER_AI_NEWS_API_KEY", "").strip()
+AI_MIN_INTERVAL_SECONDS = float(os.getenv("ASTER_AI_MIN_INTERVAL_SECONDS", "8") or 0.0)
 
 QUOTE = os.getenv("ASTER_QUOTE", "USDT")
 INTERVAL = os.getenv("ASTER_INTERVAL", "5m")
@@ -664,6 +665,7 @@ class AITradeAdvisor:
         "default": {"input": 0.000001, "output": 0.000003},
     }
     CACHE_LIMIT = 64
+    RECENT_PLAN_LIMIT = 160
 
     def __init__(
         self,
@@ -681,6 +683,8 @@ class AITradeAdvisor:
         self._temperature_supported = True
         self._temperature_override = self._resolve_temperature()
         self._cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+        self._recent_plans: "OrderedDict[str, Tuple[float, Dict[str, Any]]]" = OrderedDict()
+        self._min_interval = max(0.0, AI_MIN_INTERVAL_SECONDS)
 
     def _coerce_float(self, value: Any) -> Optional[float]:
         if isinstance(value, bool):
@@ -751,8 +755,26 @@ class AITradeAdvisor:
             return None
         return value
 
+    def _normalize_payload(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {k: self._normalize_payload(value[k]) for k in sorted(value)}
+        if isinstance(value, (list, tuple)):
+            return [self._normalize_payload(v) for v in value]
+        if isinstance(value, float):
+            if not math.isfinite(value):
+                return 0.0
+            return round(value, 6)
+        if isinstance(value, (int, bool)):
+            return value
+        return value
+
     def _cache_key(self, kind: str, system_prompt: str, payload: Dict[str, Any]) -> str:
-        serial = json.dumps({"kind": kind, "system": system_prompt, "payload": payload}, sort_keys=True, separators=(",", ":"))
+        normalized = {
+            "kind": kind,
+            "system": system_prompt,
+            "payload": self._normalize_payload(payload),
+        }
+        serial = json.dumps(normalized, sort_keys=True, separators=(",", ":"))
         return hashlib.sha1(serial.encode("utf-8")).hexdigest()
 
     def _cache_lookup(self, key: str) -> Optional[Dict[str, Any]]:
@@ -766,6 +788,29 @@ class AITradeAdvisor:
         self._cache.move_to_end(key)
         while len(self._cache) > self.CACHE_LIMIT:
             self._cache.popitem(last=False)
+
+    def _recent_plan_lookup(self, key: str, now: Optional[float] = None) -> Optional[Dict[str, Any]]:
+        if self._min_interval <= 0:
+            return None
+        if key not in self._recent_plans:
+            return None
+        if now is None:
+            now = time.time()
+        ts, plan = self._recent_plans[key]
+        if now - ts > self._min_interval:
+            return None
+        self._recent_plans.move_to_end(key)
+        return copy.deepcopy(plan)
+
+    def _recent_plan_store(self, key: str, plan: Dict[str, Any], now: Optional[float] = None) -> None:
+        if self._min_interval <= 0:
+            return
+        if now is None:
+            now = time.time()
+        self._recent_plans[key] = (now, copy.deepcopy(plan))
+        self._recent_plans.move_to_end(key)
+        while len(self._recent_plans) > self.RECENT_PLAN_LIMIT:
+            self._recent_plans.popitem(last=False)
 
     def _ensure_bounds(self, text: str, fallback: str) -> str:
         base_words = [w for w in re.split(r"\s+", (text or "").strip()) if w]
@@ -960,6 +1005,7 @@ class AITradeAdvisor:
     ) -> Dict[str, Any]:
         fallback = self._fallback_plan(symbol, side, price, base_sl, base_tp, ctx, sentinel, atr_abs)
         if not self.enabled:
+            self._recent_plan_store(f"plan::{symbol.upper()}::{side.upper()}", fallback)
             return fallback
 
         sentinel_label = str((sentinel or {}).get("label", "")).lower()
@@ -983,7 +1029,14 @@ class AITradeAdvisor:
                     ),
                 }
             )
+            self._recent_plan_store(f"plan::{symbol.upper()}::{side.upper()}", fallback)
             return fallback
+
+        throttle_key = f"plan::{symbol.upper()}::{side.upper()}"
+        now = time.time()
+        recent_plan = self._recent_plan_lookup(throttle_key, now)
+        if recent_plan is not None:
+            return recent_plan
 
         system_prompt = (
             "You advise a futures bot. Use the indicator stats and sentinel hints to decide if the trade should run. "
@@ -1014,12 +1067,15 @@ class AITradeAdvisor:
         cache_key = self._cache_key("plan", system_prompt, user_payload)
         cached_plan = self._cache_lookup(cache_key)
         if cached_plan is not None:
+            self._recent_plan_store(throttle_key, cached_plan, now)
             return cached_plan
         response = self._chat(system_prompt, user_prompt, kind="plan")
         if not response:
+            self._recent_plan_store(throttle_key, fallback, now)
             return fallback
         parsed = self._parse_structured(response)
         if not isinstance(parsed, dict):
+            self._recent_plan_store(throttle_key, fallback, now)
             return fallback
 
         plan = {**fallback}
@@ -1106,6 +1162,7 @@ class AITradeAdvisor:
         if isinstance(tp_px, (int, float)) and tp_px > 0:
             plan["take_profit"] = float(tp_px)
         self._cache_store(cache_key, plan)
+        self._recent_plan_store(throttle_key, plan, now)
         return plan
 
     def plan_trend_trade(
@@ -1137,6 +1194,7 @@ class AITradeAdvisor:
             "entry_price": float(price),
         }
         if not self.enabled:
+            self._recent_plan_store(f"trend::{symbol.upper()}", fallback)
             return fallback
 
         sentinel_label = str((sentinel or {}).get("label", "")).lower()
@@ -1157,7 +1215,14 @@ class AITradeAdvisor:
                     "explanation": "",
                 }
             )
+            self._recent_plan_store(f"trend::{symbol.upper()}", fallback)
             return fallback
+
+        throttle_key = f"trend::{symbol.upper()}"
+        now = time.time()
+        recent_plan = self._recent_plan_lookup(throttle_key, now)
+        if recent_plan is not None:
+            return recent_plan
 
         system_prompt = (
             "You scout autonomous trends for a futures bot. Weigh indicator stats and sentinel risk to decide on a trade. "
@@ -1186,12 +1251,15 @@ class AITradeAdvisor:
         cache_key = self._cache_key("trend", system_prompt, user_payload)
         cached_plan = self._cache_lookup(cache_key)
         if cached_plan is not None:
+            self._recent_plan_store(throttle_key, cached_plan, now)
             return cached_plan
         response = self._chat(system_prompt, user_prompt, kind="trend")
         if not response:
+            self._recent_plan_store(throttle_key, fallback, now)
             return fallback
         parsed = self._parse_structured(response)
         if not isinstance(parsed, dict):
+            self._recent_plan_store(throttle_key, fallback, now)
             return fallback
 
         plan = {**fallback}
@@ -1279,6 +1347,7 @@ class AITradeAdvisor:
         if isinstance(tp_px, (int, float)) and tp_px > 0:
             plan["take_profit"] = float(tp_px)
         self._cache_store(cache_key, plan)
+        self._recent_plan_store(throttle_key, plan, now)
         return plan
 
     def generate_postmortem(self, trade: Dict[str, Any]) -> Optional[Dict[str, Any]]:

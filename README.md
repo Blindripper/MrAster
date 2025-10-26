@@ -229,6 +229,7 @@ All relevant parameters can be set via environment variables or edited in the da
 | `ASTER_AI_MODEL` | `gpt-4o` | Model ID for AI analysis. |
 | `ASTER_AI_DAILY_BUDGET_USD` | `20` | Daily budget limit (USD). |
 | `ASTER_AI_STRICT_BUDGET` | `true` | Stops AI calls after hitting the budget. |
+| `ASTER_AI_MIN_INTERVAL_SECONDS` | `8` | Cooldown before the AI re-evaluates the same symbol. |
 | `ASTER_AI_SENTINEL_ENABLED` | `true` | Activates the News Sentinel. |
 | `ASTER_AI_SENTINEL_DECAY_MINUTES` | `90` | Lifetime of a news warning. |
 | `ASTER_AI_NEWS_ENDPOINT` | empty | External source for breaking news. |
