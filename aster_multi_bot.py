@@ -26,9 +26,12 @@ import logging
 import signal
 import textwrap
 import re
+import copy
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 from typing import Dict, List, Tuple, Optional, Any, Callable
+
+from collections import OrderedDict
 
 import requests
 
@@ -660,6 +663,7 @@ class AITradeAdvisor:
         "gpt-5": {"input": 0.000004, "output": 0.000012},
         "default": {"input": 0.000001, "output": 0.000003},
     }
+    CACHE_LIMIT = 64
 
     def __init__(
         self,
@@ -675,6 +679,8 @@ class AITradeAdvisor:
         self.enabled = bool(enabled and self.api_key)
         self._session = requests.Session() if self.enabled else None
         self._temperature_supported = True
+        self._temperature_override = self._resolve_temperature()
+        self._cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 
     def _coerce_float(self, value: Any) -> Optional[float]:
         if isinstance(value, bool):
@@ -731,20 +737,50 @@ class AITradeAdvisor:
             + completion_tokens * pricing.get("output", 0.0)
         )
 
+    def _resolve_temperature(self) -> Optional[float]:
+        raw = os.getenv("ASTER_AI_TEMPERATURE")
+        if raw is None or not raw.strip():
+            return 0.3
+        raw = raw.strip()
+        try:
+            value = float(raw)
+        except ValueError:
+            log.debug("Invalid ASTER_AI_TEMPERATURE=%s — using default 0.3", raw)
+            return 0.3
+        if abs(value - 1.0) <= 1e-6:
+            return None
+        return value
+
+    def _cache_key(self, kind: str, system_prompt: str, payload: Dict[str, Any]) -> str:
+        serial = json.dumps({"kind": kind, "system": system_prompt, "payload": payload}, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha1(serial.encode("utf-8")).hexdigest()
+
+    def _cache_lookup(self, key: str) -> Optional[Dict[str, Any]]:
+        if key not in self._cache:
+            return None
+        self._cache.move_to_end(key)
+        return copy.deepcopy(self._cache[key])
+
+    def _cache_store(self, key: str, value: Dict[str, Any]) -> None:
+        self._cache[key] = copy.deepcopy(value)
+        self._cache.move_to_end(key)
+        while len(self._cache) > self.CACHE_LIMIT:
+            self._cache.popitem(last=False)
+
     def _ensure_bounds(self, text: str, fallback: str) -> str:
         base_words = [w for w in re.split(r"\s+", (text or "").strip()) if w]
-        if len(base_words) < 40:
+        if len(base_words) < 12:
             filler = [w for w in re.split(r"\s+", (fallback or "").strip()) if w]
             idx = 0
-            while len(base_words) < 40 and filler:
+            while len(base_words) < 12 and filler:
                 base_words.append(filler[idx % len(filler)])
                 idx += 1
-        if len(base_words) < 40:
-            base_words.extend(["trade", "context", "risk", "sizing", "adjustment"])
+        if len(base_words) < 6:
+            base_words.extend(["trade", "context", "risk", "sizing", "check"])
         if len(base_words) > 70:
             base_words = base_words[:70]
         text = " ".join(base_words).strip()
-        if not text.endswith("."):
+        if text and not text.endswith("."):
             text += "."
         return text
 
@@ -775,20 +811,8 @@ class AITradeAdvisor:
                 timeout=30,
             )
 
-        if self._temperature_supported:
-            temperature_override = os.getenv("ASTER_AI_TEMPERATURE")
-            if temperature_override:
-                try:
-                    temp_value = float(temperature_override)
-                except ValueError:
-                    temp_value = None
-                    log.debug("Invalid ASTER_AI_TEMPERATURE=%s — ignoring", temperature_override)
-                else:
-                    if abs(temp_value - 1.0) > 1e-6:
-                        payload["temperature"] = temp_value
-            else:
-                # Default to deterministic responses for legacy models that still accept it.
-                payload["temperature"] = 0.3
+        if self._temperature_supported and self._temperature_override is not None:
+            payload["temperature"] = self._temperature_override
 
         try:
             attempt = 0
@@ -938,14 +962,34 @@ class AITradeAdvisor:
         if not self.enabled:
             return fallback
 
+        sentinel_label = str((sentinel or {}).get("label", "")).lower()
+        size_factor = 1.0
+        if isinstance(sentinel, dict):
+            try:
+                size_factor = float(sentinel.get("actions", {}).get("size_factor", 1.0) or 1.0)
+            except (TypeError, ValueError):
+                size_factor = 1.0
+
+        if sentinel_label == "red" or size_factor <= 0:
+            fallback.update(
+                {
+                    "take": False,
+                    "decision": "skip",
+                    "decision_reason": "sentinel_block",
+                    "decision_note": "Sentinel flagged hard risk; skipped without AI call.",
+                    "explanation": self._ensure_bounds(
+                        "Sentinel reported a red risk state so the trade was skipped immediately.",
+                        fallback.get("explanation", ""),
+                    ),
+                }
+            )
+            return fallback
+
         system_prompt = (
-            "You are an autonomous crypto futures strategist. Analyse the provided indicator statistics (EMA relationships, "
-            "trend slope, RSI, ADX, ATR, expected edge) together with sentinel risk hints to decide independently whether "
-            "to execute the trade. Ignore legacy skip heuristics and make your own judgement from the indicators. Return "
-            "pure JSON with fields take (boolean) or decision ('take'/'skip'), decision_reason, decision_note, "
-            "size_multiplier, sl_multiplier, tp_multiplier, leverage, risk_note, explanation, fasttp_overrides (object "
-            "with enabled, min_r, ret1, ret3, snap_atr), and optional precise levels entry_price, stop_loss, take_profit. "
-            "If you reject the trade set take=false and leave explanation empty."
+            "You advise a futures bot. Use the indicator stats and sentinel hints to decide if the trade should run. "
+            "Return compact JSON with: take (bool), decision, decision_reason, decision_note, size_multiplier, sl_multiplier, "
+            "tp_multiplier, leverage, risk_note, explanation, fasttp_overrides (enabled,min_r,ret1,ret3,snap_atr) and optional "
+            "levels entry_price, stop_loss, take_profit. If you reject set take=false and leave explanation empty."
         )
         stats_block = self._extract_stat_block(ctx)
         sentinel_payload = self._summarize_sentinel(sentinel)
@@ -959,13 +1003,18 @@ class AITradeAdvisor:
             "base_stop": base_sl,
             "base_target": base_tp,
             "atr_abs": atr_abs,
-            "stats": stats_block,
         }
+        if stats_block:
+            user_payload["stats"] = stats_block
         if sentinel_payload:
             user_payload["sentinel"] = sentinel_payload
         if constraints:
             user_payload["constraints"] = constraints
-        user_prompt = json.dumps(user_payload, indent=2)
+        user_prompt = json.dumps(user_payload, sort_keys=True, separators=(",", ":"))
+        cache_key = self._cache_key("plan", system_prompt, user_payload)
+        cached_plan = self._cache_lookup(cache_key)
+        if cached_plan is not None:
+            return cached_plan
         response = self._chat(system_prompt, user_prompt, kind="plan")
         if not response:
             return fallback
@@ -1056,6 +1105,7 @@ class AITradeAdvisor:
         )
         if isinstance(tp_px, (int, float)) and tp_px > 0:
             plan["take_profit"] = float(tp_px)
+        self._cache_store(cache_key, plan)
         return plan
 
     def plan_trend_trade(
@@ -1089,13 +1139,31 @@ class AITradeAdvisor:
         if not self.enabled:
             return fallback
 
+        sentinel_label = str((sentinel or {}).get("label", "")).lower()
+        size_factor = 1.0
+        if isinstance(sentinel, dict):
+            try:
+                size_factor = float(sentinel.get("actions", {}).get("size_factor", 1.0) or 1.0)
+            except (TypeError, ValueError):
+                size_factor = 1.0
+
+        if sentinel_label == "red" or size_factor <= 0:
+            fallback.update(
+                {
+                    "take": False,
+                    "decision": "skip",
+                    "decision_reason": "sentinel_block",
+                    "decision_note": "Sentinel blocked autonomous scan; skipped without AI call.",
+                    "explanation": "",
+                }
+            )
+            return fallback
+
         system_prompt = (
-            "You are an autonomous trend scout for a futures trading bot. Base your decision on the provided indicator "
-            "statistics (EMA alignment, trend slope, RSI, ADX, ATR, expected edge) and sentinel risk hints instead of fixed "
-            "bot rules. Return JSON with fields take (boolean), decision, decision_reason, decision_note, side (BUY/SELL), "
-            "size_multiplier, sl_multiplier, tp_multiplier, leverage, risk_note, explanation, fasttp_overrides (object with "
-            "enabled, min_r, ret1, ret3, snap_atr), confidence (0-1), and optional levels entry_price, stop_loss, take_profit. "
-            "If you decline the setup leave explanation empty."
+            "You scout autonomous trends for a futures bot. Weigh indicator stats and sentinel risk to decide on a trade. "
+            "Return JSON with take (bool), decision, decision_reason, decision_note, side (BUY/SELL), size_multiplier, "
+            "sl_multiplier, tp_multiplier, leverage, risk_note, explanation, fasttp_overrides (enabled,min_r,ret1,ret3,snap_atr), "
+            "confidence (0-1) and optional levels entry_price, stop_loss, take_profit. Declines should leave explanation empty."
         )
         stats_block = self._extract_stat_block(ctx)
         sentinel_payload = self._summarize_sentinel(sentinel)
@@ -1107,13 +1175,19 @@ class AITradeAdvisor:
             "price": price,
             "atr_abs": atr_abs,
             "distance": {"stop": base_sl, "target": base_tp},
-            "stats": stats_block,
         }
+        if stats_block:
+            user_payload["stats"] = stats_block
         if sentinel_payload:
             user_payload["sentinel"] = sentinel_payload
         if constraints:
             user_payload["constraints"] = constraints
-        response = self._chat(system_prompt, json.dumps(user_payload, indent=2), kind="trend")
+        user_prompt = json.dumps(user_payload, sort_keys=True, separators=(",", ":"))
+        cache_key = self._cache_key("trend", system_prompt, user_payload)
+        cached_plan = self._cache_lookup(cache_key)
+        if cached_plan is not None:
+            return cached_plan
+        response = self._chat(system_prompt, user_prompt, kind="trend")
         if not response:
             return fallback
         parsed = self._parse_structured(response)
@@ -1204,6 +1278,7 @@ class AITradeAdvisor:
         )
         if isinstance(tp_px, (int, float)) and tp_px > 0:
             plan["take_profit"] = float(tp_px)
+        self._cache_store(cache_key, plan)
         return plan
 
     def generate_postmortem(self, trade: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -1233,7 +1308,7 @@ class AITradeAdvisor:
             "You are a trading coach. Analyse the trade JSON and respond with a 40-70 word paragraph summarising what went right, "
             "what could improve, and one actionable tweak."
         )
-        user_prompt = json.dumps(trade, indent=2)
+        user_prompt = json.dumps(trade, sort_keys=True, separators=(",", ":"))
         response = self._chat(system_prompt, user_prompt, kind="postmortem")
         if not response:
             return fallback
