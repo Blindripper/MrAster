@@ -2550,6 +2550,9 @@ class Bot:
                 except (TypeError, ValueError):
                     manual_notional = None
 
+        if not manual_override and base_signal == "NONE":
+            return
+
         min_qvol = float(ctx.get("min_quote_volume", self.strategy.min_quote_vol))
         quote_volume = float(ctx.get("quote_volume", 0.0) or 0.0)
         if min_qvol > 0 and quote_volume < min_qvol:
