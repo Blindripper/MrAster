@@ -2111,10 +2111,10 @@ function renderTradeHistory(history) {
     rSpan.className = `trade-r ${rTone === 'neutral' ? '' : rTone}`.trim();
     const rLabel = document.createElement('strong');
     rLabel.textContent = 'R multiple';
-    const rValue = document.createElement('span');
-    rValue.className = 'trade-value';
-    rValue.textContent = rDisplay;
-    rSpan.append(rLabel, rValue);
+    const rValueEl = document.createElement('span');
+    rValueEl.className = 'trade-value';
+    rValueEl.textContent = rDisplay;
+    rSpan.append(rLabel, rValueEl);
     resultBlock.append(pnlSpan, rSpan);
 
     const timeBlock = document.createElement('div');
