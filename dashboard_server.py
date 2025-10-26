@@ -184,6 +184,24 @@ def _safe_float(value: Any) -> Optional[float]:
         return None
 
 
+def _split_config_symbols(value: Any) -> List[str]:
+    if not value:
+        return []
+    if isinstance(value, str):
+        parts = re.split(r"[,\s]+", value)
+        return [part.strip().upper() for part in parts if part and part.strip()]
+    if isinstance(value, (list, tuple, set)):
+        result: List[str] = []
+        for item in value:
+            if item is None:
+                continue
+            text = str(item).strip().upper()
+            if text:
+                result.append(text)
+        return result
+    return []
+
+
 def _fetch_position_snapshot(env: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     base = (env.get("ASTER_EXCHANGE_BASE") or "https://fapi.asterdex.com").rstrip("/")
     api_key = (env.get("ASTER_API_KEY") or "").strip()
@@ -1132,14 +1150,39 @@ class AIChatEngine:
         if not message:
             return None
         default_quote = str(env.get("ASTER_QUOTE") or "USDT").upper() or "USDT"
+        allowed_symbols = self._configured_symbol_universe(env, default_quote)
+
+        def _normalise_symbol(symbol: str) -> Optional[str]:
+            if not symbol:
+                return None
+            candidate = symbol.upper()
+            if not candidate.endswith(default_quote):
+                return None
+            if allowed_symbols and candidate not in allowed_symbols:
+                return None
+            return candidate
+
+        allowed_bases: Set[str] = set()
+        if allowed_symbols:
+            suffix_len = len(default_quote)
+            allowed_bases = {
+                sym[:-suffix_len]
+                for sym in allowed_symbols
+                if sym.endswith(default_quote) and len(sym) > suffix_len
+            }
+
         uppercase = message.upper()
         direct = re.findall(r"\b([A-Z]{2,12}USDT)\b", uppercase)
         if direct:
-            return direct[0]
+            candidate = _normalise_symbol(direct[0])
+            if candidate:
+                return candidate
         slash_pairs = re.findall(r"\b([A-Z]{2,10})/([A-Z]{2,10})\b", uppercase)
         for base, quote in slash_pairs:
             if quote in {default_quote, "USDT", "USD"}:
-                return f"{base}{quote if quote.endswith('T') else default_quote}"
+                candidate = _normalise_symbol(f"{base}{quote if quote.endswith('T') else default_quote}")
+                if candidate:
+                    return candidate
         tokens = re.findall(r"[A-Za-z]{3,12}", message)
         stopwords = {
             "OPEN",
@@ -1189,16 +1232,55 @@ class AIChatEngine:
             filtered_tokens.append(token)
         for token in filtered_tokens:
             if token.endswith(default_quote):
-                return token
+                candidate = _normalise_symbol(token)
+                if candidate:
+                    return candidate
         for token in filtered_tokens:
             if len(token) < 2:
                 continue
             if token.endswith("USD"):
-                return token + "T"
+                candidate = _normalise_symbol(token + ("" if token.endswith("T") else "T"))
+                if candidate:
+                    return candidate
             if token == default_quote:
                 continue
-            return f"{token}{default_quote}"
+            if allowed_bases and token in allowed_bases:
+                candidate = _normalise_symbol(f"{token}{default_quote}")
+                if candidate:
+                    return candidate
         return None
+
+    def _configured_symbol_universe(self, env: Dict[str, Any], default_quote: str) -> Set[str]:
+        include_sources = [
+            env.get("ASTER_INCLUDE_SYMBOLS"),
+            env.get("manual_symbol_whitelist"),
+            env.get("symbol_universe"),
+            env.get("symbols"),
+        ]
+        allowed: Set[str] = set()
+        for source in include_sources:
+            for entry in _split_config_symbols(source):
+                candidate = entry.upper()
+                if candidate.endswith(default_quote):
+                    allowed.add(candidate)
+                    continue
+                if candidate.endswith("USD") and default_quote.endswith("USDT") and not candidate.endswith("USDT"):
+                    allowed.add(candidate + "T")
+                    continue
+                if re.fullmatch(r"[A-Z0-9]{2,10}", candidate):
+                    allowed.add(f"{candidate}{default_quote}")
+        exclude: Set[str] = set()
+        for entry in _split_config_symbols(env.get("ASTER_EXCLUDE_SYMBOLS")):
+            candidate = entry.upper()
+            if candidate.endswith(default_quote):
+                exclude.add(candidate)
+            elif candidate.endswith("USD") and default_quote.endswith("USDT") and not candidate.endswith("USDT"):
+                exclude.add(candidate + "T")
+            elif re.fullmatch(r"[A-Z0-9]{2,10}", candidate):
+                exclude.add(f"{candidate}{default_quote}")
+        if exclude:
+            allowed.difference_update(exclude)
+        return allowed
 
     def _infer_size_multiplier(self, lower: str) -> Optional[float]:
         size_map = {
