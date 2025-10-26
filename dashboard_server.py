@@ -304,8 +304,9 @@ def _merge_position_record(
 
     entry_price = extra.get("entryPrice")
     if entry_price is not None:
-        merged.setdefault("entry", entry_price)
+        merged["entry"] = entry_price
         merged["entryPrice"] = entry_price
+        merged["entry_price"] = entry_price
 
     mark_price = extra.get("markPrice")
     if mark_price is not None:
