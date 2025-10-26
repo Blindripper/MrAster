@@ -248,7 +248,12 @@
               <span>OpenAI API key</span>
               <input id="input-openai-key" type="password" autocomplete="off" placeholder="sk-..." />
             </label>
-            <p class="ai-config-panel-hint">Stored securely on your machine. Required for autonomous execution.</p>
+            <p class="ai-config-panel-hint">Stored securely on your machine. Required for autonomous execution of trades.</p>
+            <label>
+              <span>Dashboard chat API key (optional)</span>
+              <input id="input-chat-openai-key" type="password" autocomplete="off" placeholder="sk-..." />
+            </label>
+            <p class="ai-config-panel-hint">Use a second OpenAI key dedicated to the chat so the bot can keep using the original one. Leave blank to reuse the trading key and avoid pasting the same key twice.</p>
           </div>
           <div class="ai-config-panel">
             <h3>Daily budget</h3>

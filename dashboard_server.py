@@ -106,6 +106,7 @@ ENV_DEFAULTS: Dict[str, str] = {
     "ASTER_AI_SENTINEL_DECAY_MINUTES": "90",
     "ASTER_AI_NEWS_ENDPOINT": "",
     "ASTER_AI_NEWS_API_KEY": "",
+    "ASTER_CHAT_OPENAI_API_KEY": "",
 }
 
 ALLOWED_ENV_KEYS = set(ENV_DEFAULTS.keys())
@@ -1370,7 +1371,8 @@ class AIChatEngine:
         stats, history, open_trades, ai_activity, ai_budget = self._current_state()
         fallback = self._fallback_reply(message, stats, history, ai_activity, open_trades, ai_budget)
         env = self._env()
-        api_key = (env.get("ASTER_OPENAI_API_KEY") or "").strip()
+        chat_api_key = (env.get("ASTER_CHAT_OPENAI_API_KEY") or "").strip()
+        api_key = chat_api_key or (env.get("ASTER_OPENAI_API_KEY") or "").strip()
         model = (env.get("ASTER_AI_MODEL") or "gpt-4o").strip() or "gpt-4o"
         if not api_key:
             return {"reply": self._format_local_reply(fallback), "model": "local", "source": "fallback"}
