@@ -97,6 +97,49 @@ To activate AI mode safely:
 - Optionally supply `ASTER_AI_NEWS_ENDPOINT` + token to enrich the sentinel with external events.
 - Confirm that the dashboard shows an active AI budget and that the AI activity feed is producing decisions before letting it run unattended.
 
+### NewsTrendSentinel Deep Dive
+
+`NewsTrendSentinel` acts as a real-time risk gate before any AI or policy logic places a trade. It evaluates market volatility, trading activity, and optional external news per symbol, then produces the hype and event-risk scores that power the green/yellow/red labels in the dashboard.
+
+#### Configuration
+
+You configure the sentinel entirely through environment variables:
+
+- `ASTER_AI_SENTINEL_ENABLED` (default `true`): Turns the module on, even when AI mode is disabled.
+- `ASTER_AI_SENTINEL_DECAY_MINUTES` (default `90`): Retention period for cached evaluations.
+- `ASTER_AI_NEWS_ENDPOINT`: Optional HTTP endpoint that returns the latest headlines for a symbol.
+- `ASTER_AI_NEWS_API_KEY`: Optional bearer token that is passed as the `Authorization` header when calling the news endpoint.
+
+When a news endpoint is present, the sentinel fetches up to six headlines per symbol. It accepts either a plain JSON array or an object with an `items`/`results` array. Network or parsing errors only generate log entries; the sentinel falls back to pure market data.
+
+#### Data sources and caching
+
+Every evaluation starts with the 24h ticker from the configured exchange. The raw ticker result is cached for 45 seconds to avoid rate limits. Completed sentinel evaluations are cached for 30 seconds, so repeated calls within that window return immediately. The optional `refresh()` helper pre-fills both caches during each bot cycle to keep the data warm.
+
+#### Scoring and labeling
+
+From the ticker payload the sentinel derives price change, quote volume, taker-buy ratio, high/low range, and intraday volatility. These metrics feed into:
+
+- **Event risk** – A blend of volatility and trend strength. Large drawdowns (worse than −9 %) automatically escalate the label to at least orange/red.
+- **Hype score** – Volume factor, price momentum, and buying pressure combined.
+- **Label** – Green for low risk, yellow for medium risk or strong momentum, red for severe events (hard block). The sentinel also emits contextual events ("rally > 8 %", "high intraday volatility", …) that appear in the dashboard feed.
+- **Actions** – `size_factor` scales later position sizes between 0 and 1.45, while `hard_block` aborts trades outright.
+
+#### External news integration
+
+If news is enabled, each headline contributes source, title, and a `severity`. Critical items bump event risk by 0.2, force the label to red, and activate the hard block so that no trade is opened while the alert is active.
+
+#### State and downstream consumers
+
+Each evaluation is written to `state["sentinel"][symbol]` with an ISO timestamp. The summary fields (`sentinel_event_risk`, `sentinel_hype`, `sentinel_label`) are injected into the execution context (`ctx`) so that the AI prompt, dashboard, and logs all have immediate access. `handle_symbol()` checks the sentinel before triggering AI calls; a red label stops the workflow instantly, while yellow labels throttle sizing and enforce stricter guardrails.
+
+#### Typical usage
+
+1. Set the relevant `ASTER_AI_SENTINEL_*` variables and (optionally) provide a news endpoint with authentication.
+2. Start the bot or dashboard backend; the sentinel initializes automatically and keeps the cache fresh as part of each scan cycle.
+3. Monitor the dashboard: yellow and red labels appear next to affected symbols, and hard blocks prevent the AI or manual execution from submitting orders during elevated risk.
+4. Review the combined ticker/news events in the dashboard activity feed and post-mortem reports to understand why trades were throttled or vetoed.
+
 ## Architecture Overview
 
 ```
