@@ -33,6 +33,7 @@ MrAster is a full-featured toolkit for futures trading on Binance-compatible exc
 - **AITradeAdvisor** (AI mode) evaluates signals, adjusts leverage and position size, and explains decisions in its own activity feed.
 - **News Sentinel** (`ASTER_AI_SENTINEL_*`) monitors external news feeds and can block trades around events.
 - **Budget control** (`ASTER_AI_DAILY_BUDGET_USD`, `ASTER_AI_STRICT_BUDGET`) halts AI calls when the daily budget is exceeded.
+- **Machine-learning policy** (`ml_policy.py`) combines contextual bandits with an optional alpha classifier to govern trade admission and sizing.
 
 ### Observability & Resilience
 - **HTTP hardening** configurable via `ASTER_HTTP_RETRIES`, `ASTER_HTTP_BACKOFF`, `ASTER_HTTP_TIMEOUT`.
@@ -139,6 +140,20 @@ Each evaluation is written to `state["sentinel"][symbol]` with an ISO timestamp.
 2. Start the bot or dashboard backend; the sentinel initializes automatically and keeps the cache fresh as part of each scan cycle.
 3. Monitor the dashboard: yellow and red labels appear next to affected symbols, and hard blocks prevent the AI or manual execution from submitting orders during elevated risk.
 4. Review the combined ticker/news events in the dashboard activity feed and post-mortem reports to understand why trades were throttled or vetoed.
+
+### ML Policy Deep Dive
+
+The ML policy in `ml_policy.py` mixes two LinUCB contextual bandits with an optional logistic alpha classifier. All of them consume the same ten-dimensional feature vector that `_vec_from_ctx` extracts from the bot context (ADX, ATR%, RSI, spreads, and more).
+
+**Gate bandit (take vs. skip).** The first LinUCB instance decides whether a trade candidate should be taken. It keeps a feature covariance matrix `A` and a reward vector `b`, initialized with an L2 prior. For every decision it computes the expected reward plus an uncertainty bonus (`μ + α·s`). If that upper confidence bound drops below configurable margins the candidate is skipped. The gate supports ε-greedy exploration, warm-up boosts, and a "skip push" penalty to bias it toward caution when needed.
+
+**Sizing bandit (S/M/L).** A second LinUCB instance picks the position bucket. Each size is treated as an arm by scaling the feature vector with a bucket-specific multiplier before evaluation. The arm with the highest UCB score wins; if sizing control is disabled, the policy defaults to the smallest bucket.
+
+**Optional alpha model.** When `alpha_enabled` is set, a logistic regression model adds a probabilistic risk view. It performs online standardization (rolling mean/variance), appends a bias term, and outputs a confidence score through a sigmoid. Low confidence below a configurable threshold can force a skip, while high confidence may promote the chosen bucket to a larger size once sufficient warm-up data exists.
+
+**Learning loop.** Training happens in the `note_exit` hook after every closed trade, using rewards derived from keywords such as realized R-multiples. The gate and sizing bandits update their `A` and `b` matrices with the outer product of the context vector and the received reward. The alpha model performs a weighted logistic gradient step (with L2 regularization) on positive or negative examples derived from reward margins.
+
+**Persistence.** Each component implements `to_dict`/`from_dict`, so the full training state—including covariance matrices, reward vectors, scaler statistics, and alpha weights—can be serialized and restored between sessions.
 
 ## Architecture Overview
 
