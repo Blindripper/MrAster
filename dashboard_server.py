@@ -166,6 +166,7 @@ MOST_TRADED_CACHE: Dict[str, Any] = {"timestamp": 0.0, "payload": None}
 
 
 logger = logging.getLogger(__name__)
+log = logging.getLogger("dashboard.ai.chat")
 
 
 def _is_truthy(value: Optional[str]) -> bool:
@@ -1002,6 +1003,121 @@ class AIChatEngine:
     def _env(self) -> Dict[str, Any]:
         return self.config.get("env", {})
 
+    def _call_openai_responses(
+        self,
+        headers: Dict[str, str],
+        model: str,
+        messages: List[Dict[str, str]],
+        temperature: Optional[float],
+    ) -> Tuple[str, Optional[Dict[str, Any]]]:
+        payload: Dict[str, Any] = {
+            "model": model,
+            "input": messages,
+            "max_output_tokens": 400,
+        }
+        if temperature is not None:
+            payload["temperature"] = temperature
+
+        resp = requests.post(
+            "https://api.openai.com/v1/responses",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+        if resp.status_code >= 400:
+            resp.raise_for_status()
+
+        data = resp.json()
+        text_chunks: List[str] = []
+        for item in data.get("output", []):
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") != "message":
+                continue
+            contents = item.get("content") or []
+            for piece in contents:
+                if not isinstance(piece, dict):
+                    continue
+                piece_type = piece.get("type")
+                if piece_type in {"output_text", "text"}:
+                    text_chunks.append(piece.get("text", ""))
+        if not text_chunks:
+            output_text = data.get("output_text")
+            if isinstance(output_text, list):
+                text_chunks.extend(str(part) for part in output_text if part)
+            elif isinstance(output_text, str):
+                text_chunks.append(output_text)
+        reply_text = "\n".join(chunk.strip() for chunk in text_chunks if str(chunk).strip())
+        return reply_text.strip(), data.get("usage")
+
+    def _call_openai_legacy_chat(
+        self,
+        headers: Dict[str, str],
+        model: str,
+        messages: List[Dict[str, str]],
+        temperature: Optional[float],
+        prior_exc: Optional[Exception] = None,
+    ) -> Tuple[str, Optional[Dict[str, Any]]]:
+        payload: Dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": 400,
+        }
+        if temperature is not None and self._temperature_supported:
+            payload["temperature"] = temperature
+
+        attempt = 0
+        while True:
+            resp = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=30,
+            )
+            if resp.status_code < 400:
+                data = resp.json()
+                choices = data.get("choices") or []
+                reply = choices[0]["message"].get("content") if choices else ""
+                return (reply or "").strip(), data.get("usage")
+
+            body_snippet = (resp.text or "")[:160]
+            lower_body = body_snippet.lower()
+            if (
+                self._temperature_supported
+                and temperature is not None
+                and "temperature" in payload
+                and "temperature" in lower_body
+                and "default" in lower_body
+                and attempt == 0
+            ):
+                payload.pop("temperature", None)
+                attempt += 1
+                self._temperature_supported = False
+                log.debug("Dashboard AI model rejected temperature override; retrying without it.")
+                continue
+
+            try:
+                resp.raise_for_status()
+            except Exception as exc:
+                if prior_exc:
+                    raise exc from prior_exc
+                raise
+
+    def _call_openai_chat(
+        self,
+        headers: Dict[str, str],
+        model: str,
+        messages: List[Dict[str, str]],
+        temperature: Optional[float],
+    ) -> Tuple[str, Optional[Dict[str, Any]]]:
+        last_exc: Optional[Exception] = None
+        try:
+            return self._call_openai_responses(headers, model, messages, temperature)
+        except Exception as exc:
+            last_exc = exc
+
+        return self._call_openai_legacy_chat(headers, model, messages, temperature, prior_exc=last_exc)
+
     def _current_state(
         self,
     ) -> Tuple[TradeStats, List[Dict[str, Any]], Dict[str, Any], List[Dict[str, Any]], Dict[str, Any]]:
@@ -1390,12 +1506,7 @@ class AIChatEngine:
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
-        payload = {
-            "model": model,
-            "messages": messages,
-            "max_tokens": 400,
-        }
-
+        temperature_override: Optional[float] = None
         if self._temperature_supported:
             dash_temp = os.getenv("ASTER_DASHBOARD_AI_TEMPERATURE")
             if dash_temp:
@@ -1406,9 +1517,9 @@ class AIChatEngine:
                     log.debug("Invalid ASTER_DASHBOARD_AI_TEMPERATURE=%s — ignoring", dash_temp)
                 else:
                     if abs(parsed_temp - 1.0) > 1e-6:
-                        payload["temperature"] = parsed_temp
+                        temperature_override = parsed_temp
             else:
-                payload["temperature"] = 0.4
+                temperature_override = 0.4
 
         _append_ai_activity_entry(
             "chat",
@@ -1422,36 +1533,12 @@ class AIChatEngine:
         )
 
         try:
-            attempt = 0
-            while True:
-                resp = requests.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers=headers,
-                    json=payload,
-                    timeout=30,
-                )
-                if resp.status_code < 400:
-                    break
-                body_snippet = (resp.text or "")[:160]
-                lower_body = body_snippet.lower()
-                if (
-                    self._temperature_supported
-                    and "temperature" in payload
-                    and "temperature" in lower_body
-                    and "default" in lower_body
-                    and attempt == 0
-                ):
-                    payload.pop("temperature", None)
-                    attempt += 1
-                    self._temperature_supported = False
-                    log.debug("Dashboard AI model rejected temperature override; retrying without it.")
-                    continue
-                resp.raise_for_status()
-
-            data = resp.json()
-            choices = data.get("choices") or []
-            reply = choices[0]["message"]["content"] if choices else ""
-            reply_text = (reply or "").strip()
+            reply_text, usage = self._call_openai_chat(
+                headers,
+                model,
+                messages,
+                temperature_override,
+            )
             if not reply_text:
                 reply_text = self._format_local_reply(fallback)
             action_payload = self._extract_action(reply_text)
@@ -1460,7 +1547,7 @@ class AIChatEngine:
                 "reply": reply_text,
                 "model": model,
                 "source": "openai",
-                "usage": data.get("usage"),
+                "usage": usage,
             }
             if queued_action:
                 response["queued_action"] = queued_action
@@ -1470,7 +1557,6 @@ class AIChatEngine:
                 "direction": "inbound",
                 "model": model,
             }
-            usage = data.get("usage")
             if usage:
                 log_data["usage"] = usage
             if queued_action:
