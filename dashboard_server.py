@@ -904,7 +904,8 @@ def _update_state(mutator: Callable[[Dict[str, Any]], T], *, label: str, retries
         attempts += 1
         handle = None
         try:
-            handle = open(STATE_FILE, "a+", encoding="utf-8")
+            mode = "r+" if STATE_FILE.exists() else "w+"
+            handle = open(STATE_FILE, mode, encoding="utf-8")
             _lock_state_file(handle)
             handle.seek(0)
             raw = handle.read()
