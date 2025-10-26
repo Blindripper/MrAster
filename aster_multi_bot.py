@@ -2702,6 +2702,19 @@ class Bot:
                 return
             price_for_plan = mid_px if mid_px > 0 else price
             if sig == "NONE":
+                self._log_ai_activity(
+                    "query",
+                    f"AI trend scan requested for {symbol}",
+                    body="Consulting the strategy AI for an autonomous opportunity.",
+                    data={
+                        "symbol": symbol,
+                        "origin": "trend",
+                        "sentinel_label": sentinel_info.get("label"),
+                        "event_risk": float(sentinel_info.get("event_risk", 0.0) or 0.0),
+                        "hype_score": float(sentinel_info.get("hype_score", 0.0) or 0.0),
+                    },
+                    force=True,
+                )
                 plan = self.ai_advisor.plan_trend_trade(
                     symbol,
                     price_for_plan,
@@ -2748,6 +2761,20 @@ class Bot:
                         data={"symbol": symbol, "side": sig, **decision_summary},
                     )
             else:
+                self._log_ai_activity(
+                    "query",
+                    f"AI review requested for {symbol}",
+                    body=f"Consulting the strategy AI for the {sig} signal.",
+                    data={
+                        "symbol": symbol,
+                        "side": sig,
+                        "origin": "signal",
+                        "sentinel_label": sentinel_info.get("label"),
+                        "event_risk": float(sentinel_info.get("event_risk", 0.0) or 0.0),
+                        "hype_score": float(sentinel_info.get("hype_score", 0.0) or 0.0),
+                    },
+                    force=True,
+                )
                 plan = self.ai_advisor.plan_trade(
                     symbol,
                     sig,
