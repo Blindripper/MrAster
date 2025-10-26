@@ -76,6 +76,27 @@ python aster_multi_bot.py
 ```
 Set `ASTER_RUN_ONCE=true` to execute a single scan cycle. Use the CLI when the dashboard is unavailable; otherwise, the dashboard remains the recommended control center.
 
+### AI Mode Explained
+
+AI mode turns the strategy into an autonomous co-pilot that continuously supervises every trade candidate. Once you toggle the dashboard to **AI** (or set `ASTER_MODE=ai` / `ASTER_AI_MODE=true` in the environment) and provide an OpenAI API key, the bot instantiates the `AITradeAdvisor` and a `DailyBudgetTracker`. From that point on the workflow changes as follows:
+
+1. **Signal intake** – The regular scanner still computes momentum, RSI, ATR, spread, funding, and trend context. These metrics are injected into the AI prompt together with the current bid/ask, base stop/take-profit distances, and per-symbol risk limits.
+2. **Sentinel context** – The `NewsTrendSentinel` keeps a rolling cache of 24h ticker stats and optional external news. It adds hype and event-risk scores plus veto flags into the AI payload. A red sentinel label hard-blocks trades even before an AI request is made.
+3. **AI decision** – For a classical signal the advisor calls `plan_trade()`. When no deterministic signal exists, it may still propose a discretionary trend trade via `plan_trend_trade()`. In both cases the model returns structured JSON that contains:
+   - `take` / `decision` – whether to execute or skip the setup.
+   - Sizing overrides (`size_multiplier`) that scale the standard bucket allocation, plus optional leverage hints.
+   - Risk adjustments such as stop-loss / take-profit multipliers, FastTP tweaks, or explicit price levels.
+   - A short `risk_note` and human-readable `explanation` that are shown in the dashboard activity feed.
+4. **Budget enforcement** – Every completion is cost-estimated using the built-in pricing table. `DailyBudgetTracker` checks the projected spend before issuing a request and records the actual cost afterwards. If the configured daily limit is reached (and `ASTER_AI_STRICT_BUDGET=true`), further AI calls are skipped until the UTC day rolls over.
+5. **Execution & telemetry** – Approved trades inherit the AI adjustments. The resulting rationale, sentinel state, and budget snapshot are persisted in `aster_state.json`, surfaced in the AI cockpit (decision feed, budget card, and chat), and included in post-mortems if a trade later hits a guardrail.
+
+To activate AI mode safely:
+
+- Provide `ASTER_OPENAI_API_KEY` (and optionally `ASTER_AI_MODEL`, `ASTER_AI_TEMPERATURE`, or dashboard overrides) in the AI control panel.
+- Set a realistic `ASTER_AI_DAILY_BUDGET_USD` and choose whether the limit is strict.
+- Optionally supply `ASTER_AI_NEWS_ENDPOINT` + token to enrich the sentinel with external events.
+- Confirm that the dashboard shows an active AI budget and that the AI activity feed is producing decisions before letting it run unattended.
+
 ## Architecture Overview
 
 ```
