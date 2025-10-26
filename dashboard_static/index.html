@@ -204,11 +204,16 @@
     <main class="layout">
       <section class="card ai-mode-window" data-ai-only>
         <div class="ai-mode-window-header">
-          <span class="ai-mode-label">AI COCKPIT</span>
-          <div class="ai-mode-window-title">
-            <h2>Autonomous Strategy Cockpit</h2>
-            <p class="ai-mode-window-subtitle">Discuss live market moves with the strategy AI while automated insights continue to appear in the activity feed.</p>
+          <div class="ai-mode-window-header-main">
+            <span class="ai-mode-label">AI COCKPIT</span>
+            <div class="ai-mode-window-title">
+              <h2>Autonomous Strategy Cockpit</h2>
+              <p class="ai-mode-window-subtitle">Discuss live market moves with the strategy AI while automated insights continue to appear in the activity feed.</p>
+            </div>
           </div>
+          <label class="toggle ai-mode-autoscroll" for="autoscroll-ai"
+            ><input type="checkbox" id="autoscroll-ai" data-autoscroll checked /> Auto-scroll</label
+          >
         </div>
         <div class="ai-mode-window-body">
           <div class="ai-hint" id="ai-hint" hidden></div>
