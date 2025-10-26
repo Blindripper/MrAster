@@ -2274,7 +2274,7 @@ body.pro-mode .log-stream {
   color: inherit;
   width: 100%;
   text-align: left;
-  font-size: 0.95rem;
+  font-size: 0.88rem;
 }
 
 .trade-item-summary:focus-visible {
@@ -2314,7 +2314,7 @@ body.pro-mode .log-stream {
   align-content: center;
   gap: 0.3rem;
   color: var(--text-subtle);
-  font-size: 0.82rem;
+  font-size: 0.76rem;
   letter-spacing: 0.02em;
   text-align: right;
   flex-shrink: 0;
@@ -2327,7 +2327,7 @@ body.pro-mode .log-stream {
 
 .trade-outcome {
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.84rem;
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
@@ -2353,7 +2353,7 @@ body.pro-mode .log-stream {
 
 .trade-symbol {
   font-weight: 600;
-  font-size: 1rem;
+  font-size: 0.94rem;
   letter-spacing: 0.005em;
   color: var(--text);
 }
