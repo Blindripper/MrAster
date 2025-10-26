@@ -2886,6 +2886,8 @@ body.pro-mode .log-stream {
   padding: clamp(0.85rem, 2vw, 1.5rem);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   display: flex;
+  position: relative;
+  overflow: hidden;
 }
 
 .pnl-modal-chart canvas {
