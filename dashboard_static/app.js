@@ -33,6 +33,7 @@ const leverageValue = document.getElementById('leverage-value');
 const inputApiKey = document.getElementById('input-api-key');
 const inputApiSecret = document.getElementById('input-api-secret');
 const inputOpenAiKey = document.getElementById('input-openai-key');
+const inputChatOpenAiKey = document.getElementById('input-chat-openai-key');
 const inputAiBudget = document.getElementById('input-ai-budget');
 const inputAiModel = document.getElementById('input-ai-model');
 const decisionSummary = document.getElementById('decision-summary');
@@ -447,6 +448,9 @@ function renderCredentials(env) {
   if (inputOpenAiKey) {
     inputOpenAiKey.value = env?.ASTER_OPENAI_API_KEY ?? '';
   }
+  if (inputChatOpenAiKey) {
+    inputChatOpenAiKey.value = env?.ASTER_CHAT_OPENAI_API_KEY ?? '';
+  }
   if (inputAiBudget) {
     inputAiBudget.value = env?.ASTER_AI_DAILY_BUDGET_USD ?? '20';
   }
@@ -496,6 +500,9 @@ function gatherAiPayload() {
   const payload = {};
   if (inputOpenAiKey) {
     payload.ASTER_OPENAI_API_KEY = inputOpenAiKey.value.trim();
+  }
+  if (inputChatOpenAiKey) {
+    payload.ASTER_CHAT_OPENAI_API_KEY = inputChatOpenAiKey.value.trim();
   }
   if (inputAiBudget) {
     const value = inputAiBudget.value.trim();

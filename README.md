@@ -93,7 +93,7 @@ AI mode turns the strategy into an autonomous co-pilot that continuously supervi
 
 To activate AI mode safely:
 
-- Provide `ASTER_OPENAI_API_KEY` (and optionally `ASTER_AI_MODEL`, `ASTER_AI_TEMPERATURE`, or dashboard overrides) in the AI control panel.
+- Provide `ASTER_OPENAI_API_KEY` (and optionally `ASTER_CHAT_OPENAI_API_KEY`, `ASTER_AI_MODEL`, `ASTER_AI_TEMPERATURE`, or dashboard overrides) in the AI control panel.
 - Set a realistic `ASTER_AI_DAILY_BUDGET_USD` and choose whether the limit is strict.
 - Optionally supply `ASTER_AI_NEWS_ENDPOINT` + token to enrich the sentinel with external events.
 - Confirm that the dashboard shows an active AI budget and that the AI activity feed is producing decisions before letting it run unattended.
@@ -226,6 +226,7 @@ All relevant parameters can be set via environment variables or edited in the da
 | `ASTER_ALPHA_PROMOTE_DELTA` | `0.15` | Extra confidence required to upsize. |
 | `ASTER_HISTORY_MAX` | `250` | Number of historical trades for analytics. |
 | `ASTER_OPENAI_API_KEY` | empty | API key for AITradeAdvisor. |
+| `ASTER_CHAT_OPENAI_API_KEY` | empty | Optional dashboard chat-only OpenAI key. Falls back to `ASTER_OPENAI_API_KEY` when blank. |
 | `ASTER_AI_MODEL` | `gpt-4o` | Model ID for AI analysis. |
 | `ASTER_AI_DAILY_BUDGET_USD` | `20` | Daily budget limit (USD). |
 | `ASTER_AI_STRICT_BUDGET` | `true` | Stops AI calls after hitting the budget. |
