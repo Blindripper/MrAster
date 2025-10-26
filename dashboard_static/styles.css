@@ -2411,9 +2411,9 @@ body.pro-mode .log-stream {
   color: var(--text-subtle);
 }
 
-.trade-price-block span,
-.trade-result-block span,
-.trade-time-block span {
+.trade-price-block > span,
+.trade-result-block > span,
+.trade-time-block > span {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
@@ -2427,22 +2427,22 @@ body.pro-mode .log-stream {
   color: inherit;
 }
 
-.trade-price-block strong,
-.trade-result-block span strong,
-.trade-time-block span strong {
+.trade-price-block > span strong,
+.trade-result-block > span strong,
+.trade-time-block > span strong {
   font-weight: 600;
   color: var(--text);
 }
 
-.trade-result-block span,
-.trade-time-block span {
+.trade-result-block > span,
+.trade-time-block > span {
   flex-direction: column;
   align-items: flex-start;
   gap: 0.25rem;
 }
 
-.trade-result-block span strong,
-.trade-time-block span strong {
+.trade-result-block > span strong,
+.trade-time-block > span strong {
   font-size: 0.75rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
