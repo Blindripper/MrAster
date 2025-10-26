@@ -1031,6 +1031,7 @@ class AIChatEngine:
         open_trades: Dict[str, Any],
         ai_budget: Dict[str, Any],
     ) -> str:
+        env = self._env()
         parts = [
             (
                 f"Currently tracking {stats.count} trades with {stats.total_pnl:.2f} USDT realised and "
@@ -1063,11 +1064,197 @@ class AIChatEngine:
                 parts.append(f"AI spend {spent:.2f}/{limit:.2f} USD today.")
             elif isinstance(spent, (int, float)):
                 parts.append(f"AI spend {spent:.2f} USD today.")
+        action_payload = self._infer_trade_action(message, env)
+        if action_payload:
+            parts.append(
+                "Primary AI endpoint is offline; queuing obvious trade instructions heuristically."
+            )
         parts.append(
             "LLM endpoint unreachable right now, so here's a heuristic response — focus on liquidity, risk, and your question"
         )
         parts.append(f"User prompt acknowledged: {message.strip()}")
-        return " ".join(parts)
+        summary = " ".join(parts)
+        if action_payload:
+            action_json = json.dumps(action_payload, separators=(",", ":"))
+            summary = f"{summary}\nACTION: {action_json}"
+        return summary
+
+    def _infer_trade_action(self, message: str, env: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if not message:
+            return None
+        text = message.strip()
+        if not text:
+            return None
+        lower = text.lower()
+        request_triggers = (
+            "open",
+            "place",
+            "start",
+            "enter",
+            "execute",
+            "initiate",
+            "add",
+            "put on",
+            "queue",
+        )
+        go_long_short = re.search(r"\bgo\s+(long|short)\b", lower)
+        take_long_short = re.search(r"\btake\s+(the\s+)?(long|short)\b", lower)
+        direct_request = any(trigger in lower for trigger in request_triggers)
+        if not (direct_request or go_long_short or take_long_short or "buy" in lower or "sell" in lower):
+            return None
+        if "?" in text and not re.search(r"\b(can you|could you|please|let's|lets)\b", lower):
+            return None
+        side: Optional[str] = None
+        if re.search(r"\bshort\b", lower) or re.search(r"\bsell\b", lower):
+            side = "SELL"
+        if re.search(r"\blong\b", lower) or re.search(r"\bbuy\b", lower):
+            if side and side != "BUY":
+                return None
+            side = "BUY"
+        if not side:
+            return None
+        if not (direct_request or go_long_short or take_long_short or (side == "BUY" and "buy" in lower) or (side == "SELL" and "sell" in lower)):
+            return None
+        symbol = self._extract_symbol_from_text(text, env)
+        if not symbol:
+            return None
+        action: Dict[str, Any] = {"type": "open_trade", "symbol": symbol, "side": side}
+        size_multiplier = self._infer_size_multiplier(lower)
+        if size_multiplier is not None:
+            action["size_multiplier"] = size_multiplier
+        notional = self._infer_notional(lower)
+        if notional is not None:
+            action["notional"] = notional
+        action["note"] = "Heuristic fallback while primary AI unavailable"
+        return action
+
+    def _extract_symbol_from_text(self, message: str, env: Dict[str, Any]) -> Optional[str]:
+        if not message:
+            return None
+        default_quote = str(env.get("ASTER_QUOTE") or "USDT").upper() or "USDT"
+        uppercase = message.upper()
+        direct = re.findall(r"\b([A-Z]{2,12}USDT)\b", uppercase)
+        if direct:
+            return direct[0]
+        slash_pairs = re.findall(r"\b([A-Z]{2,10})/([A-Z]{2,10})\b", uppercase)
+        for base, quote in slash_pairs:
+            if quote in {default_quote, "USDT", "USD"}:
+                return f"{base}{quote if quote.endswith('T') else default_quote}"
+        tokens = re.findall(r"[A-Za-z]{3,12}", message)
+        stopwords = {
+            "OPEN",
+            "BUY",
+            "SELL",
+            "LONG",
+            "SHORT",
+            "PLEASE",
+            "SMALL",
+            "MEDIUM",
+            "LARGE",
+            "TINY",
+            "POSITION",
+            "TRADE",
+            "ENTRY",
+            "EXIT",
+            "CAN",
+            "YOU",
+            "ME",
+            "FOR",
+            "THE",
+            "A",
+            "AN",
+            "LET",
+            "LETS",
+            "US",
+            "NOW",
+            "TODAY",
+            "PLEASE",
+            "QUEUE",
+            "PLACE",
+            "START",
+            "INITIATE",
+            "EXECUTE",
+            "ADD",
+            "PUT",
+            "ON",
+            "SMALLER",
+            "BIGGER",
+            "HEDGE",
+        }
+        filtered_tokens: List[str] = []
+        for raw in tokens:
+            token = raw.upper()
+            if token in stopwords:
+                continue
+            filtered_tokens.append(token)
+        for token in filtered_tokens:
+            if token.endswith(default_quote):
+                return token
+        for token in filtered_tokens:
+            if len(token) < 2:
+                continue
+            if token.endswith("USD"):
+                return token + "T"
+            if token == default_quote:
+                continue
+            return f"{token}{default_quote}"
+        return None
+
+    def _infer_size_multiplier(self, lower: str) -> Optional[float]:
+        size_map = {
+            "tiny": 0.25,
+            "small": 0.5,
+            "starter": 0.5,
+            "light": 0.5,
+            "half": 0.6,
+            "medium": 1.0,
+            "base": 1.0,
+            "standard": 1.0,
+            "full": 1.2,
+            "large": 1.5,
+            "bigger": 1.5,
+            "heavy": 1.7,
+            "aggressive": 1.8,
+            "double": 2.0,
+            "max": 2.0,
+        }
+        for keyword, value in size_map.items():
+            if keyword in lower:
+                return value
+        mult_match = re.search(r"(\d+(?:\.\d+)?)x", lower)
+        if mult_match:
+            try:
+                return float(mult_match.group(1))
+            except ValueError:
+                return None
+        return None
+
+    def _infer_notional(self, lower: str) -> Optional[float]:
+        notional_match = re.search(r"(\d+(?:\.\d+)?)\s*(usdt|usd|dollars?)\b", lower)
+        if notional_match:
+            try:
+                return float(notional_match.group(1))
+            except ValueError:
+                return None
+        currency_match = re.search(r"\b(?:notional|size|amount)\s*(\d+(?:\.\d+)?)\b", lower)
+        if currency_match:
+            try:
+                return float(currency_match.group(1))
+            except ValueError:
+                return None
+        return None
+
+    def _format_local_reply(self, text: str) -> str:
+        lines = []
+        for segment in text.split("\n"):
+            stripped = segment.strip()
+            if not stripped:
+                continue
+            if stripped.upper().startswith("ACTION:"):
+                lines.append(stripped)
+            else:
+                lines.append(textwrap.fill(stripped, width=96))
+        return "\n".join(lines)
 
     def _extract_action(self, text: str) -> Optional[Dict[str, Any]]:
         if not text:
@@ -1142,7 +1329,7 @@ class AIChatEngine:
         api_key = (env.get("ASTER_OPENAI_API_KEY") or "").strip()
         model = (env.get("ASTER_AI_MODEL") or "gpt-4o").strip() or "gpt-4o"
         if not api_key:
-            return {"reply": textwrap.fill(fallback, width=96), "model": "local", "source": "fallback"}
+            return {"reply": self._format_local_reply(fallback), "model": "local", "source": "fallback"}
 
         context_text = self._build_context_text(stats, history, open_trades, ai_activity, ai_budget)
         messages: List[Dict[str, str]] = [{"role": "system", "content": context_text}]
@@ -1209,7 +1396,7 @@ class AIChatEngine:
             reply = choices[0]["message"]["content"] if choices else ""
             reply_text = (reply or "").strip()
             if not reply_text:
-                reply_text = fallback
+                reply_text = self._format_local_reply(fallback)
             action_payload = self._extract_action(reply_text)
             queued_action = self._queue_trade_action(action_payload, message) if action_payload else None
             response: Dict[str, Any] = {
@@ -1228,7 +1415,7 @@ class AIChatEngine:
                     asyncio.create_task(loghub.push(f"AI chat fallback: {exc}", level="warning"))
                 except RuntimeError:
                     pass
-            reply_text = textwrap.fill(fallback, width=96)
+            reply_text = self._format_local_reply(fallback)
             action_payload = self._extract_action(reply_text)
             queued_action = self._queue_trade_action(action_payload, message) if action_payload else None
             response = {"reply": reply_text, "model": model, "source": "fallback"}
