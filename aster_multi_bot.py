@@ -718,6 +718,17 @@ class AITradeAdvisor:
         hype_score = self._coerce_float(sentinel.get("hype_score"))
         if hype_score is not None and math.isfinite(hype_score):
             summary["hype_score"] = hype_score
+        actions = sentinel.get("actions")
+        if isinstance(actions, dict):
+            sanitized_actions: Dict[str, Any] = {}
+            size_factor = self._coerce_float(actions.get("size_factor"))
+            if size_factor is not None and math.isfinite(size_factor):
+                sanitized_actions["size_factor"] = size_factor
+            hard_block = actions.get("hard_block")
+            if isinstance(hard_block, bool):
+                sanitized_actions["hard_block"] = hard_block
+            if sanitized_actions:
+                summary["actions"] = sanitized_actions
         return summary
 
     def _pricing(self) -> Dict[str, float]:
