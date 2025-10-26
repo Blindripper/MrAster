@@ -2591,30 +2591,6 @@ class Bot:
             except Exception as exc:
                 log.debug(f"sentinel evaluate fail {symbol}: {exc}")
         actions = sentinel_info.get("actions", {}) or {}
-        if actions.get("hard_block") and not manual_override:
-            veto_target = base_signal if base_signal != "NONE" else "opportunity"
-            log.info(
-                "Sentinel veto %s due to %s risk (event=%.2f, hype=%.2f)",
-                symbol,
-                sentinel_info.get("label", "red"),
-                float(sentinel_info.get("event_risk", 0.0) or 0.0),
-                float(sentinel_info.get("hype_score", 0.0) or 0.0),
-            )
-            self._log_ai_activity(
-                "decision",
-                f"Sentinel vetoed {symbol}",
-                body=f"Risk label {sentinel_info.get('label', 'red')} blocked the {veto_target} setup.",
-                data={
-                    "symbol": symbol,
-                    "side": base_signal,
-                    "event_risk": float(sentinel_info.get("event_risk", 0.0) or 0.0),
-                    "hype_score": float(sentinel_info.get("hype_score", 0.0) or 0.0),
-                },
-                force=True,
-            )
-            if self.decision_tracker:
-                self.decision_tracker.record_rejection("sentinel_veto")
-            return
 
         # Policy: Gate + Size
         size_mult = SIZE_MULT_S
@@ -2655,6 +2631,31 @@ class Bot:
         ctx["sentinel_event_risk"] = float(sentinel_info.get("event_risk", 0.0) or 0.0)
         ctx["sentinel_hype"] = float(sentinel_info.get("hype_score", 0.0) or 0.0)
         ctx["sentinel_label"] = sentinel_info.get("label", "green")
+
+        if actions.get("hard_block") and not manual_override:
+            veto_target = sig if sig != "NONE" else base_signal if base_signal != "NONE" else "opportunity"
+            log.info(
+                "Sentinel veto %s due to %s risk (event=%.2f, hype=%.2f)",
+                symbol,
+                sentinel_info.get("label", "red"),
+                float(sentinel_info.get("event_risk", 0.0) or 0.0),
+                float(sentinel_info.get("hype_score", 0.0) or 0.0),
+            )
+            self._log_ai_activity(
+                "decision",
+                f"Sentinel vetoed {symbol}",
+                body=f"Risk label {sentinel_info.get('label', 'red')} blocked the {veto_target} setup.",
+                data={
+                    "symbol": symbol,
+                    "side": veto_target,
+                    "event_risk": float(sentinel_info.get("event_risk", 0.0) or 0.0),
+                    "hype_score": float(sentinel_info.get("hype_score", 0.0) or 0.0),
+                },
+                force=True,
+            )
+            if self.decision_tracker:
+                self.decision_tracker.record_rejection("sentinel_veto")
+            return
 
         # Entry/SL/TP foundation
         try:
