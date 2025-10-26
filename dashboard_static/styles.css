@@ -1035,7 +1035,8 @@ button:focus-visible {
   }
 
   .ai-mode-window-body {
-    min-height: clamp(360px, 64vh, 560px);
+    height: clamp(420px, 68vh, 600px);
+    max-height: clamp(420px, 68vh, 600px);
   }
 }
 
@@ -1544,8 +1545,17 @@ body.ai-mode .ai-mode-window {
 
 .ai-mode-window-header {
   display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1.2rem 2rem;
+}
+
+.ai-mode-window-header-main {
+  display: flex;
   flex-direction: column;
   gap: 1.1rem;
+  flex: 1 1 280px;
 }
 
 .ai-mode-label {
@@ -1582,7 +1592,8 @@ body.ai-mode .ai-mode-window {
 
 .ai-mode-window-body {
   flex: 1 1 auto;
-  min-height: clamp(420px, 70vh, 640px);
+  height: clamp(520px, 70vh, 680px);
+  max-height: clamp(520px, 70vh, 680px);
   display: flex;
   flex-direction: column;
   gap: 1.2rem;
@@ -1591,8 +1602,17 @@ body.ai-mode .ai-mode-window {
   background: rgba(12, 13, 20, 0.78);
   border: 1px solid rgba(245, 196, 107, 0.12);
   box-shadow: inset 0 1px 0 rgba(245, 196, 107, 0.05);
-  overflow: visible;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable both-edges;
   padding-bottom: calc(1.4rem + env(safe-area-inset-bottom, 0px));
+}
+
+.ai-mode-autoscroll {
+  align-self: flex-start;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .ai-mode-window-body .ai-hint {

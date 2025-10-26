@@ -2429,7 +2429,7 @@ if (typeof window !== 'undefined' && tradeList) {
 
 function renderAiActivity(feed) {
   if (!aiActivityFeed) return;
-  const shouldAutoScroll = isScrolledToBottom(aiActivityFeed);
+  const shouldAutoScroll = autoScrollEnabled && isScrolledToBottom(aiActivityFeed);
   aiActivityFeed.innerHTML = '';
   if (!aiMode) {
     const disabled = document.createElement('div');
@@ -2513,6 +2513,7 @@ function appendChatMessage(role, message, meta = {}) {
   if (!aiChatMessages) return;
   const empty = aiChatMessages.querySelector('.ai-chat-empty');
   if (empty) empty.remove();
+  const shouldAutoScroll = autoScrollEnabled && isScrolledToBottom(aiChatMessages);
   const msg = document.createElement('div');
   msg.className = `ai-chat-message ${role === 'user' ? 'user' : 'assistant'}`;
   const roleLabel = document.createElement('div');
@@ -2532,7 +2533,10 @@ function appendChatMessage(role, message, meta = {}) {
     msg.append(metaEl);
   }
   aiChatMessages.append(msg);
-  aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+  if (shouldAutoScroll) {
+    const behavior = aiChatMessages.scrollHeight > aiChatMessages.clientHeight ? 'smooth' : 'auto';
+    scrollToBottom(aiChatMessages, behavior);
+  }
 }
 
 function setChatStatus(message) {
