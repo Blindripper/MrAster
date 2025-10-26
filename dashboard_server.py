@@ -17,7 +17,7 @@ import textwrap
 import time
 import uuid
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlencode
@@ -878,6 +878,50 @@ def _append_manual_trade_request(request: Dict[str, Any]) -> Dict[str, Any]:
     raise RuntimeError("Could not persist manual trade request")
 
 
+def _append_ai_activity_entry(
+    kind: str,
+    headline: str,
+    *,
+    body: Optional[str] = None,
+    data: Optional[Dict[str, Any]] = None,
+) -> None:
+    entry: Dict[str, Any] = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "kind": str(kind or "info"),
+        "headline": str(headline or kind or "info"),
+    }
+    if body:
+        entry["body"] = str(body)
+    if data is not None:
+        try:
+            entry["data"] = json.loads(json.dumps(data, default=lambda o: str(o)))
+        except Exception:
+            entry["data"] = data
+
+    attempts = 0
+    while attempts < 3:
+        attempts += 1
+        state = _read_state()
+        feed = state.get("ai_activity")
+        if not isinstance(feed, list):
+            feed = []
+        feed.append(entry)
+        state["ai_activity"] = feed[-250:]
+        try:
+            STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True))
+            return
+        except Exception as exc:
+            logger.debug("Failed to persist AI activity (attempt %s): %s", attempts, exc)
+            time.sleep(0.05)
+
+
+def _summarize_text(text: str, limit: int = 220) -> str:
+    snippet = (text or "").strip()
+    if len(snippet) <= limit:
+        return snippet
+    return snippet[: max(0, limit - 1)].rstrip() + "…"
+
+
 def _format_ts(ts: Optional[float]) -> Optional[str]:
     if not ts:
         return None
@@ -1364,6 +1408,17 @@ class AIChatEngine:
             else:
                 payload["temperature"] = 0.4
 
+        _append_ai_activity_entry(
+            "chat",
+            "Chat prompt sent to AI",
+            body=_summarize_text(message, 260),
+            data={
+                "source": "dashboard_chat",
+                "direction": "outbound",
+                "history_messages": len(messages) - 1,
+            },
+        )
+
         try:
             attempt = 0
             while True:
@@ -1407,6 +1462,23 @@ class AIChatEngine:
             }
             if queued_action:
                 response["queued_action"] = queued_action
+
+            log_data: Dict[str, Any] = {
+                "source": "dashboard_chat",
+                "direction": "inbound",
+                "model": model,
+            }
+            usage = data.get("usage")
+            if usage:
+                log_data["usage"] = usage
+            if queued_action:
+                log_data["queued_action"] = queued_action
+            _append_ai_activity_entry(
+                "chat",
+                "AI chat response received",
+                body=_summarize_text(reply_text, 260),
+                data=log_data,
+            )
             return response
         except Exception as exc:
             awaitable = getattr(loghub, "push", None)
@@ -1421,6 +1493,17 @@ class AIChatEngine:
             response = {"reply": reply_text, "model": model, "source": "fallback"}
             if queued_action:
                 response["queued_action"] = queued_action
+            _append_ai_activity_entry(
+                "warning",
+                "Chat fallback response used",
+                body=_summarize_text(reply_text, 260),
+                data={
+                    "source": "dashboard_chat",
+                    "direction": "inbound",
+                    "model": model,
+                    "error": str(exc),
+                },
+            )
             return response
 
 
