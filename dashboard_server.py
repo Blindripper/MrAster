@@ -19,7 +19,7 @@ import uuid
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, TypeVar
 from urllib.parse import urlencode
 
 import requests
@@ -28,6 +28,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+
+try:  # pragma: no cover - platform-specific imports
+    import fcntl  # type: ignore
+except ImportError:  # pragma: no cover - Windows fallback
+    fcntl = None
+
+try:  # pragma: no cover - platform-specific imports
+    import msvcrt  # type: ignore
+except ImportError:  # pragma: no cover - POSIX fallback
+    msvcrt = None
 
 ROOT_DIR = Path(__file__).resolve().parent
 STATE_FILE = ROOT_DIR / os.getenv("ASTER_STATE_FILE", "aster_state.json")
@@ -858,24 +868,84 @@ def _read_state() -> Dict[str, Any]:
     return {}
 
 
+def _lock_state_file(handle: Any) -> None:
+    if handle is None:
+        return
+    try:
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        elif msvcrt is not None and os.name == "nt":
+            # Lock the first byte to coordinate with other writers on Windows.
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+    except Exception:
+        # Best effort locking; continue without crashing on systems that do not support it.
+        pass
+
+
+def _unlock_state_file(handle: Any) -> None:
+    if handle is None:
+        return
+    try:
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        elif msvcrt is not None and os.name == "nt":
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+    except Exception:
+        pass
+
+
+T = TypeVar("T")
+
+
+def _update_state(mutator: Callable[[Dict[str, Any]], T], *, label: str, retries: int = 3) -> T:
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    attempts = 0
+    while attempts < retries:
+        attempts += 1
+        handle = None
+        try:
+            handle = open(STATE_FILE, "a+", encoding="utf-8")
+            _lock_state_file(handle)
+            handle.seek(0)
+            raw = handle.read()
+            try:
+                state = json.loads(raw) if raw else {}
+            except Exception:
+                state = {}
+            result = mutator(state)
+            handle.seek(0)
+            json.dump(state, handle, indent=2, sort_keys=True)
+            handle.truncate()
+            handle.flush()
+            try:
+                os.fsync(handle.fileno())
+            except OSError:
+                pass
+            return result
+        except Exception as exc:
+            logger.debug("Failed to persist %s (attempt %s): %s", label, attempts, exc)
+            time.sleep(0.05)
+        finally:
+            if handle is not None:
+                try:
+                    _unlock_state_file(handle)
+                finally:
+                    handle.close()
+    raise RuntimeError(f"Could not persist {label}")
+
+
 def _append_manual_trade_request(request: Dict[str, Any]) -> Dict[str, Any]:
     request = dict(request)
-    attempts = 0
-    while attempts < 3:
-        attempts += 1
-        state = _read_state()
-        queue = state.setdefault("manual_trade_requests", [])
+    
+    def mutator(state: Dict[str, Any]) -> Dict[str, Any]:
+        queue = state.get("manual_trade_requests")
         if not isinstance(queue, list):
             queue = []
         queue.append(request)
         state["manual_trade_requests"] = queue[-100:]
-        try:
-            STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True))
-            return request
-        except Exception as exc:
-            logger.debug("Failed to persist manual trade request (attempt %s): %s", attempts, exc)
-            time.sleep(0.05)
-    raise RuntimeError("Could not persist manual trade request")
+        return request
+
+    return _update_state(mutator, label="manual trade request")
 
 
 def _append_ai_activity_entry(
@@ -898,21 +968,14 @@ def _append_ai_activity_entry(
         except Exception:
             entry["data"] = data
 
-    attempts = 0
-    while attempts < 3:
-        attempts += 1
-        state = _read_state()
+    def mutator(state: Dict[str, Any]) -> None:
         feed = state.get("ai_activity")
         if not isinstance(feed, list):
             feed = []
         feed.append(entry)
         state["ai_activity"] = feed[-250:]
-        try:
-            STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True))
-            return
-        except Exception as exc:
-            logger.debug("Failed to persist AI activity (attempt %s): %s", attempts, exc)
-            time.sleep(0.05)
+
+    _update_state(mutator, label="AI activity")
 
 
 def _summarize_text(text: str, limit: int = 220) -> str:
