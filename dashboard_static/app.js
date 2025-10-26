@@ -2101,22 +2101,42 @@ function renderTradeHistory(history) {
     resultBlock.className = 'trade-result-block';
     const pnlSpan = document.createElement('span');
     pnlSpan.className = `trade-pnl ${pnlTone === 'neutral' ? '' : pnlTone}`.trim();
-    pnlSpan.textContent = pnlDisplay;
+    const pnlLabel = document.createElement('strong');
+    pnlLabel.textContent = pnlTone === 'profit' ? 'Profit' : pnlTone === 'loss' ? 'Loss' : 'PNL';
+    const pnlValue = document.createElement('span');
+    pnlValue.className = 'trade-value';
+    pnlValue.textContent = pnlDisplay;
+    pnlSpan.append(pnlLabel, pnlValue);
     const rSpan = document.createElement('span');
     rSpan.className = `trade-r ${rTone === 'neutral' ? '' : rTone}`.trim();
-    rSpan.textContent = rDisplay;
+    const rLabel = document.createElement('strong');
+    rLabel.textContent = 'R multiple';
+    const rValue = document.createElement('span');
+    rValue.className = 'trade-value';
+    rValue.textContent = rDisplay;
+    rSpan.append(rLabel, rValue);
     resultBlock.append(pnlSpan, rSpan);
 
     const timeBlock = document.createElement('div');
     timeBlock.className = 'trade-time-block';
     const timeRange = document.createElement('span');
     timeRange.className = 'trade-time-range';
-    timeRange.textContent = `${formatTimeShort(trade.opened_at_iso)} → ${formatTimeShort(trade.closed_at_iso)}`;
+    const timeRangeLabel = document.createElement('strong');
+    timeRangeLabel.textContent = 'Window';
+    const timeRangeValue = document.createElement('span');
+    timeRangeValue.className = 'trade-value';
+    timeRangeValue.textContent = `${formatTimeShort(trade.opened_at_iso)} → ${formatTimeShort(trade.closed_at_iso)}`;
+    timeRange.append(timeRangeLabel, timeRangeValue);
     timeBlock.append(timeRange);
     if (Number.isFinite(durationSeconds)) {
       const durationLabel = document.createElement('span');
       durationLabel.className = 'trade-duration';
-      durationLabel.textContent = `Duration ${formatDuration(durationSeconds)}`;
+      const durationStrong = document.createElement('strong');
+      durationStrong.textContent = 'Duration';
+      const durationValue = document.createElement('span');
+      durationValue.className = 'trade-value';
+      durationValue.textContent = formatDuration(durationSeconds);
+      durationLabel.append(durationStrong, durationValue);
       timeBlock.append(durationLabel);
     }
 

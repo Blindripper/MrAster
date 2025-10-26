@@ -2400,16 +2400,20 @@ body.pro-mode .log-stream {
 }
 
 
-.trade-price-block {
+.trade-price-block,
+.trade-result-block,
+.trade-time-block {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 0.35rem 1.2rem;
   padding: 0.2rem 0;
   font-size: 0.84rem;
   color: var(--text-subtle);
 }
 
-.trade-price-block span {
+.trade-price-block span,
+.trade-result-block span,
+.trade-time-block span {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
@@ -2420,27 +2424,34 @@ body.pro-mode .log-stream {
   border: 1px solid rgba(148, 163, 184, 0.12);
   font-variant-numeric: tabular-nums;
   font-size: 0.92em;
+  color: inherit;
 }
 
-.trade-price-block strong {
+.trade-price-block strong,
+.trade-result-block span strong,
+.trade-time-block span strong {
   font-weight: 600;
   color: var(--text);
 }
 
-.trade-result-block {
-  display: flex;
+.trade-result-block span,
+.trade-time-block span {
   flex-direction: column;
-  justify-content: center;
-  align-items: flex-end;
-  gap: 0.35rem;
-  padding: 0.9rem 1.1rem;
-  border-radius: 0.95rem;
-  background: rgba(18, 22, 36, 0.72);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
+.trade-result-block span strong,
+.trade-time-block span strong {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+
+.trade-result-block {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  font-size: 0.88rem;
 }
 
 .trade-result-block .profit {
@@ -2451,41 +2462,33 @@ body.pro-mode .log-stream {
   color: var(--danger);
 }
 
-.trade-result-block .trade-pnl {
+.trade-result-block .trade-value {
   font-size: 1.05rem;
   letter-spacing: 0.01em;
 }
 
-.trade-result-block .trade-r {
-  font-size: 0.88rem;
+.trade-result-block .trade-r .trade-value {
+  font-size: 0.92rem;
   color: var(--text-muted);
-}
-
-.trade-time-block {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: flex-end;
-  gap: 0.35rem;
-  padding: 0.85rem 1rem;
-  border-radius: 0.95rem;
-  background: rgba(14, 17, 28, 0.72);
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  color: var(--text-subtle);
-  font-size: 0.8rem;
-  font-variant-numeric: tabular-nums;
 }
 
 .trade-time-range {
-  font-weight: 600;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-  font-size: 0.96em;
+  font-size: 1rem;
 }
 
 .trade-duration {
-  font-size: 0.78rem;
+  font-size: 0.86rem;
   color: var(--text-muted);
+}
+
+.trade-time-range .trade-value {
+  color: var(--text);
+  font-size: 0.98rem;
+}
+
+.trade-duration .trade-value {
+  color: var(--text-muted);
+  font-size: 0.88rem;
 }
 
 .trade-item-overview {
