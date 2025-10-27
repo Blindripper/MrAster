@@ -420,6 +420,27 @@
       </section>
     </main>
 
+    <div id="trade-modal" class="trade-modal" hidden aria-hidden="true">
+      <div
+        id="trade-modal-dialog"
+        class="trade-modal-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="trade-modal-title"
+      >
+        <div class="trade-modal-header">
+          <div>
+            <h2 id="trade-modal-title">Trade details</h2>
+            <p class="trade-modal-subtitle" id="trade-modal-subtitle"></p>
+          </div>
+          <button type="button" id="trade-modal-close" class="trade-modal-close" aria-label="Close trade details">
+            Close
+          </button>
+        </div>
+        <div class="trade-modal-body" id="trade-modal-body"></div>
+      </div>
+    </div>
+
     <div id="pnl-modal" class="pnl-modal" hidden aria-hidden="true">
       <div class="pnl-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="pnl-modal-title">
         <div class="pnl-modal-header">
