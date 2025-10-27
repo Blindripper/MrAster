@@ -621,7 +621,13 @@ async function saveAiConfig() {
     renderCredentials(currentConfig.env);
     syncQuickSetupFromEnv(currentConfig.env);
     await syncModeFromEnv(currentConfig.env);
-    btnSaveAi.textContent = 'Saved ✓';
+    let restarted = false;
+    try {
+      restarted = await restartBotIfNeeded({ allowAi: true, button: btnSaveAi });
+    } catch (restartErr) {
+      throw new Error(`Bot restart failed: ${restartErr.message}`);
+    }
+    btnSaveAi.textContent = restarted ? 'Restarted ✓' : 'Saved ✓';
     setTimeout(() => (btnSaveAi.textContent = 'Save'), 1500);
   } catch (err) {
     btnSaveAi.textContent = 'Error';
@@ -3666,7 +3672,7 @@ async function saveQuickSetup() {
     syncQuickSetupFromEnv(currentConfig.env);
     let restarted = false;
     try {
-      restarted = await restartBotIfNeeded();
+      restarted = await restartBotIfNeeded({ button: btnApplyPreset });
     } catch (restartErr) {
       throw new Error(`Bot restart failed: ${restartErr.message}`);
     }
@@ -3910,8 +3916,10 @@ async function waitForBotState(targetRunning, options = {}) {
   throw new Error(`Timed out waiting for bot to ${targetRunning ? 'start' : 'stop'}`);
 }
 
-async function restartBotIfNeeded() {
-  if (getCurrentMode() !== 'standard') {
+async function restartBotIfNeeded(options = {}) {
+  const { allowAi = false, button = null } = options;
+  const mode = getCurrentMode();
+  if (mode !== 'standard' && !(allowAi && mode === 'ai')) {
     return false;
   }
   await updateStatus();
@@ -3919,8 +3927,9 @@ async function restartBotIfNeeded() {
     return false;
   }
 
-  if (btnApplyPreset) {
-    btnApplyPreset.textContent = 'Restarting…';
+  const statusButton = button || (mode === 'standard' ? btnApplyPreset : null);
+  if (statusButton) {
+    statusButton.textContent = 'Restarting…';
   }
 
   const stopRes = await fetch('/api/bot/stop', { method: 'POST' });
