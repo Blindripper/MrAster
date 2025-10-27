@@ -3255,22 +3255,41 @@ function buildShareText(snapshot) {
   const totalPnl = Number(snapshot?.totalPnl ?? 0) || 0;
   const positive = totalPnl >= 0;
 
-  const headline = positive
-    ? '🚀 Locked in fresh gains with MrAster'
-    : '🛠️ MrAster is recalibrating after a choppy run';
-
   const statsBlock = [
     `Trades executed: ${totalTrades.toLocaleString()}`,
     `Total PnL: ${totalPnlDisplay}`,
     `Win rate: ${winRateDisplay}`,
   ].join('\n');
 
-  const vibeLine = positive
-    ? 'Momentum mode: riding the green candles with automated precision.'
-    : 'Comeback loading: tightening risk screws and plotting the next breakout.';
-  const hashtags = '#MrAster #CryptoTrading #AutomatedTrading';
+  const positiveVariants = [
+    (stats) => `🚀 Locked in fresh gains with MrAster\n${stats}\n\nStill letting the bots chase the breakout while I sip coffee.`,
+    (stats) => `📈 Automation for the win.\n${stats}\n\nMrAster kept the momentum rolling today.`,
+    (stats) => `🟢 Another green session banked.\n${stats}\n\nLetting MrAster steer the trades feels good.`,
+    (stats) => `🤖 MrAster kept the edge alive.\n${stats}\n\nStaying disciplined and letting signals lead.`,
+    (stats) => `✅ Stats checkpoint with MrAster.\n${stats}\n\nAlgorithm humming along nicely.`,
+    (stats) => `🔥 Heat check passed.\n${stats}\n\nAuto strategies locking in smart entries.`,
+    (stats) => `🌟 Another run in the green.\n${stats}\n\nPatience plus automation keeps stacking results.`,
+    (stats) => `🎯 Precision day for the bot.\n${stats}\n\nSignals synced, execution tight.`,
+    (stats) => `⚡ Momentum captured.\n${stats}\n\nMrAster dialed in on the right side of the move.`,
+    (stats) => `💹 Portfolio glow-up courtesy of MrAster.\n${stats}\n\nOn to the next setup.`,
+  ];
 
-  return [headline, statsBlock, '', vibeLine, hashtags].join('\n');
+  const negativeVariants = [
+    (stats) => `🛠️ MrAster is recalibrating after a choppy run.\n${stats}\n\nTightening the screws and respecting risk.`,
+    (stats) => `📉 Tough tape today.\n${stats}\n\nReviewing signals and keeping losses contained.`,
+    (stats) => `🔄 Reset mode engaged.\n${stats}\n\nMrAster is adapting the playbook for the next swing.`,
+    (stats) => `🧭 Course correction underway.\n${stats}\n\nSticking with the system, trusting the data.`,
+    (stats) => `🪫 Battery low, but recharging.\n${stats}\n\nLetting the bot re-evaluate setups before the next push.`,
+    (stats) => `🌧️ Weathered a red session.\n${stats}\n\nRisk controls held—looking for clearer skies.`,
+    (stats) => `🧠 Lessons logged.\n${stats}\n\nAdjusting parameters and preparing for the rebound.`,
+    (stats) => `🚧 Drawdown alert.\n${stats}\n\nMrAster is trimming exposure until the tape calms.`,
+    (stats) => `⏸️ Pause for recalibration.\n${stats}\n\nDiscipline first, recovery next.`,
+    (stats) => `🧰 Tooling up for a comeback.\n${stats}\n\nStaying systematic through the rough patch.`,
+  ];
+
+  const variants = positive ? positiveVariants : negativeVariants;
+  const pick = variants[Math.floor(Math.random() * variants.length)];
+  return pick(statsBlock);
 }
 
 async function copyShareText(text) {
@@ -3305,7 +3324,6 @@ function openTweetComposer(text) {
   if (!text) return false;
   const url = new URL('https://twitter.com/intent/tweet');
   url.searchParams.set('text', text);
-  url.searchParams.set('hashtags', 'MrAster,CryptoTrading,AutomatedTrading');
   const popup = window.open(url.toString(), '_blank', 'width=600,height=840');
   if (popup) {
     popup.opener = null;
