@@ -3458,24 +3458,43 @@ function generateMemeCard(snapshot) {
   ctx.font = '600 38px "Inter", "Segoe UI", sans-serif';
   ctx.fillText('MrAster - Autonomous trading suite', size / 2, size - 100);
 
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+  const variants = {
+    low: canvas.toDataURL('image/jpeg', 0.6),
+    normal: canvas.toDataURL('image/jpeg', 0.82),
+    high: canvas.toDataURL('image/jpeg', 0.94),
+  };
+
   return {
     tier,
-    dataUrl,
+    variants,
     alt: `MrAster ${tier} meme summarising trading stats`,
   };
 }
 
 function openMemePreview(meme) {
-  if (!meme?.dataUrl) return false;
-  const preview = window.open('', '_blank', 'noopener,width=960,height=1080');
+  const variants = meme?.variants || {};
+  const displayUrl = variants.high || variants.normal || meme?.dataUrl;
+  if (!displayUrl) return false;
+  const preview = window.open('', '_blank', 'width=960,height=1080');
   if (!preview) {
     return false;
   }
+  preview.opener = null;
+
+  const downloadLinks = Object.entries(variants)
+    .filter(([, url]) => Boolean(url))
+    .map(
+      ([quality, url]) =>
+        `<a href="${url}" download="mraster-${meme.tier}-meme-${quality}.jpg" style="display:inline-flex;align-items:center;gap:10px;padding:12px 22px;border-radius:999px;background:#f5c46b;color:#0b0f16;text-decoration:none;font-weight:600;min-width:220px;justify-content:center;">Download ${quality}</a>`
+    )
+    .join('<div style="height:8px"></div>');
+
   preview.document.write(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" /><title>MrAster Meme</title></head><body style="margin:0;background:#0b0f16;color:#f5c46b;font-family: 'Inter', 'Segoe UI', sans-serif;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:24px;padding:40px;">
-    <img src="${meme.dataUrl}" alt="${meme.alt}" style="max-width:min(90vw,900px);height:auto;border-radius:28px;box-shadow:0 24px 62px rgba(0,0,0,0.55);" />
+    <img src="${displayUrl}" alt="${meme.alt}" style="max-width:min(90vw,900px);height:auto;border-radius:28px;box-shadow:0 24px 62px rgba(0,0,0,0.55);" />
     <p style="max-width:680px;text-align:center;line-height:1.6;">Right-click or tap-and-hold the image to save it, then attach it to your X post. Meme tier: <strong>${meme.tier.toUpperCase()}</strong>.</p>
-    <a href="${meme.dataUrl}" download="mraster-${meme.tier}-meme.jpg" style="display:inline-flex;align-items:center;gap:10px;padding:12px 22px;border-radius:999px;background:#f5c46b;color:#0b0f16;text-decoration:none;font-weight:600;">Download meme</a>
+    <div style="display:flex;flex-direction:column;align-items:center;width:100%;max-width:340px;gap:8px;">
+      ${downloadLinks}
+    </div>
   </body></html>`);
   preview.document.close();
   return true;
@@ -3486,8 +3505,12 @@ function openTweetComposer(text) {
   const url = new URL('https://twitter.com/intent/tweet');
   url.searchParams.set('text', text);
   url.searchParams.set('hashtags', 'MrAster,CryptoTrading,AutomatedTrading');
-  const popup = window.open(url.toString(), '_blank', 'noopener');
-  return Boolean(popup);
+  const popup = window.open(url.toString(), '_blank', 'width=600,height=840');
+  if (popup) {
+    popup.opener = null;
+    return true;
+  }
+  return false;
 }
 
 async function handlePostToX() {
@@ -3501,17 +3524,13 @@ async function handlePostToX() {
   try {
     const meme = generateMemeCard(snapshot);
     const clipboardSuccess = await copyShareText(shareText);
-    const tweetOpened = openTweetComposer(shareText);
+    openTweetComposer(shareText);
     const memeOpened = openMemePreview(meme);
 
     if (clipboardSuccess) {
       setShareFeedback('Post text copied! A new tab opened with the meme so you can attach it on X.');
     } else {
       setShareFeedback('Compose window opened. Copy the stats manually if clipboard access is blocked.');
-    }
-
-    if (!tweetOpened) {
-      setShareFeedback('Please allow pop-ups so we can open the X composer for you.', { tone: 'warn' });
     }
 
     if (!memeOpened) {
