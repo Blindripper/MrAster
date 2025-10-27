@@ -129,6 +129,10 @@ body::after {
   background-image: url('./flags/ru.svg');
 }
 
+.language-flag-zh {
+  background-image: url('./flags/zh.svg');
+}
+
 .market-ticker {
   display: flex;
   gap: 1.8rem;
