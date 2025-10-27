@@ -1010,6 +1010,22 @@ class AIChatEngine:
     def _env(self) -> Dict[str, Any]:
         return self.config.get("env", {})
 
+    def _beta_header_for_model(self, model: str) -> Optional[str]:
+        normalized = (model or "").strip().lower()
+        if not normalized:
+            return None
+
+        beta_requirements = (
+            ("gpt-5", "gpt-5"),
+            ("gpt-4.1", "gpt-4.1"),
+            ("o4", "o4"),
+            ("o3", "o3"),
+        )
+        for prefix, header_value in beta_requirements:
+            if normalized.startswith(prefix):
+                return header_value
+        return None
+
     def _call_openai_responses(
         self,
         headers: Dict[str, str],
@@ -1513,6 +1529,9 @@ class AIChatEngine:
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
+        beta_header = self._beta_header_for_model(model)
+        if beta_header:
+            headers["OpenAI-Beta"] = beta_header
         temperature_override: Optional[float] = None
         if self._temperature_supported:
             dash_temp = os.getenv("ASTER_DASHBOARD_AI_TEMPERATURE")
