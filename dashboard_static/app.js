@@ -3601,8 +3601,14 @@ async function shareMemeToX(meme, shareText) {
     files: [new File([blob], `mraster-${meme.tier || 'share'}.jpeg`, { type: blob.type || 'image/jpeg' })],
   };
 
-  if (navigator.canShare && !navigator.canShare(shareData)) {
-    return false;
+  if (typeof navigator.canShare === 'function') {
+    try {
+      if (!navigator.canShare(shareData)) {
+        console.warn('navigator.canShare reported files unsupported. Attempting share anyway.');
+      }
+    } catch (error) {
+      console.warn('navigator.canShare threw unexpectedly', error);
+    }
   }
 
   try {
