@@ -2574,6 +2574,8 @@ class Bot:
     ) -> None:
         if not AI_MODE_ENABLED:
             return
+        if data and data.get("ai_request") is False:
+            return
         entry: Dict[str, Any] = {
             "ts": datetime.now(timezone.utc).isoformat(),
             "kind": str(kind or "info"),
