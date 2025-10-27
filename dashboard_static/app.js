@@ -20,6 +20,11 @@ const tradeModalClose = document.getElementById('trade-modal-close');
 const tradeModalBody = document.getElementById('trade-modal-body');
 const tradeModalTitle = document.getElementById('trade-modal-title');
 const tradeModalSubtitle = document.getElementById('trade-modal-subtitle');
+const decisionModal = document.getElementById('decision-modal');
+const decisionModalClose = document.getElementById('decision-modal-close');
+const decisionModalBody = document.getElementById('decision-modal-body');
+const decisionModalTitle = document.getElementById('decision-modal-title');
+const decisionModalSubtitle = document.getElementById('decision-modal-subtitle');
 const aiHint = document.getElementById('ai-hint');
 const pnlChartCanvas = document.getElementById('pnl-chart');
 const pnlChartWrapper = document.querySelector('.pnl-chart-wrapper');
@@ -99,6 +104,11 @@ let pnlModalReturnTarget = null;
 let tradeModalHideTimer = null;
 let tradeModalFinalizeHandler = null;
 let tradeModalReturnTarget = null;
+let decisionModalHideTimer = null;
+let decisionModalFinalizeHandler = null;
+let decisionModalReturnTarget = null;
+const decisionReasonEvents = new Map();
+const DECISION_REASON_EVENT_LIMIT = 40;
 
 function hasDashboardChatKey() {
   const stored = (currentConfig?.env?.ASTER_CHAT_OPENAI_API_KEY || '').trim();
@@ -1907,7 +1917,16 @@ function humanizeLogLine(line, fallbackLevel = 'info') {
     label = 'Skipped trade';
     severity = 'warning';
     relevant = true;
-    return { text, label, severity, relevant, parsed, reason };
+    return {
+      text,
+      label,
+      severity,
+      relevant,
+      parsed,
+      reason,
+      symbol: symbol ? symbol.toString().toUpperCase() : undefined,
+      detail,
+    };
   }
 
   const policyMatch = parsed.message?.match(/^policy skip (\S+):\s*alpha=([\d.]+)\s+conf=([\d.]+)/i);
@@ -1919,7 +1938,15 @@ function humanizeLogLine(line, fallbackLevel = 'info') {
     label = 'AI filter';
     severity = 'warning';
     relevant = true;
-    return { text, label, severity, relevant, parsed, reason: 'policy_filter' };
+    return {
+      text,
+      label,
+      severity,
+      relevant,
+      parsed,
+      reason: 'policy_filter',
+      symbol: symbol ? symbol.toString().toUpperCase() : undefined,
+    };
   }
 
   const entryFailMatch = parsed.message?.match(/^entry fail (\S+):\s*(.*)$/i);
@@ -1929,7 +1956,15 @@ function humanizeLogLine(line, fallbackLevel = 'info') {
     label = 'Order issue';
     severity = 'error';
     relevant = true;
-    return { text, label, severity, relevant, parsed, reason: 'order_failed' };
+    return {
+      text,
+      label,
+      severity,
+      relevant,
+      parsed,
+      reason: 'order_failed',
+      symbol: symbol ? symbol.toString().toUpperCase() : undefined,
+    };
   }
 
   const fasttpOkMatch = parsed.message?.match(/^FASTTP (\S+) .*→ exit ([\d.]+)/);
@@ -2685,6 +2720,192 @@ function closeTradeModal() {
   document.removeEventListener('keydown', handleTradeModalKeydown);
 }
 
+function handleDecisionModalKeydown(event) {
+  if (event.key === 'Escape') {
+    closeDecisionModal();
+  }
+}
+
+function renderDecisionModalEvents(events, reasonLabel) {
+  const list = document.createElement('ul');
+  list.className = 'decision-modal-list';
+
+  events.forEach((event) => {
+    const item = document.createElement('li');
+    item.className = 'decision-modal-event';
+
+    const header = document.createElement('div');
+    header.className = 'decision-modal-event-header';
+
+    const symbol = document.createElement('span');
+    symbol.className = 'decision-modal-symbol';
+    symbol.textContent = event.symbol || reasonLabel || '—';
+    header.append(symbol);
+
+    const time = document.createElement('span');
+    time.className = 'decision-modal-time';
+    if (event.occurredAtIso) {
+      time.textContent = formatRelativeTime(event.occurredAtIso);
+      time.title = new Date(event.occurredAtIso).toLocaleString();
+    } else if (Number.isFinite(event.occurredAt)) {
+      time.textContent = formatRelativeTime(event.occurredAt);
+      time.title = new Date(event.occurredAt * 1000).toLocaleString();
+    } else {
+      time.textContent = 'Time unavailable';
+    }
+    header.append(time);
+
+    item.append(header);
+
+    if (event.message) {
+      const message = document.createElement('p');
+      message.className = 'decision-modal-message';
+      message.textContent = event.message;
+      item.append(message);
+    }
+
+    if (event.detail) {
+      const detail = document.createElement('p');
+      detail.className = 'decision-modal-detail';
+      detail.textContent = event.detail;
+      item.append(detail);
+    }
+
+    if (event.trade) {
+      const actionRow = document.createElement('div');
+      actionRow.className = 'decision-modal-actions';
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'decision-modal-view-trade';
+      button.textContent = 'View trade details';
+      button.addEventListener('click', () => {
+        closeDecisionModal();
+        openTradeModal(event.trade, button);
+      });
+      actionRow.append(button);
+      item.append(actionRow);
+    }
+
+    list.append(item);
+  });
+
+  return list;
+}
+
+function openDecisionModal(reason, options = {}) {
+  if (!decisionModal || !decisionModalBody) return;
+  const { label: labelOverride, count, returnTarget } = options;
+  const reasonLabel = labelOverride || friendlyReason(reason);
+  const events = collectDecisionEvents(reason);
+
+  const active =
+    returnTarget instanceof HTMLElement
+      ? returnTarget
+      : document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+  decisionModalReturnTarget = active && active !== document.body ? active : null;
+
+  if (decisionModalHideTimer) {
+    clearTimeout(decisionModalHideTimer);
+    decisionModalHideTimer = null;
+  }
+  if (decisionModalFinalizeHandler) {
+    decisionModal.removeEventListener('transitionend', decisionModalFinalizeHandler);
+    decisionModalFinalizeHandler = null;
+  }
+
+  decisionModalBody.innerHTML = '';
+
+  if (decisionModalTitle) {
+    decisionModalTitle.textContent = reasonLabel || 'Trade decision reason';
+  }
+
+  const subtitleParts = [];
+  if (Number.isFinite(count)) {
+    subtitleParts.push(`${count} total skips recorded`);
+  }
+  if (events.length > 0) {
+    subtitleParts.push(`Showing ${events.length} recent ${events.length === 1 ? 'entry' : 'entries'}`);
+  } else {
+    subtitleParts.push('No recorded trades for this reason yet.');
+  }
+  if (decisionModalSubtitle) {
+    decisionModalSubtitle.textContent = subtitleParts.join(' · ');
+  }
+
+  if (events.length > 0) {
+    decisionModalBody.append(renderDecisionModalEvents(events, reasonLabel));
+  } else {
+    const empty = document.createElement('p');
+    empty.className = 'decision-modal-empty';
+    empty.textContent = 'No recorded trades for this reason yet. Check back after the next decision.';
+    decisionModalBody.append(empty);
+  }
+
+  decisionModal.removeAttribute('hidden');
+  decisionModal.removeAttribute('aria-hidden');
+  requestAnimationFrame(() => {
+    decisionModal.classList.add('is-active');
+  });
+  document.body.classList.add('modal-open');
+  document.addEventListener('keydown', handleDecisionModalKeydown);
+  if (decisionModalClose) {
+    setTimeout(() => decisionModalClose.focus(), 120);
+  }
+}
+
+function closeDecisionModal() {
+  if (!decisionModal) {
+    return;
+  }
+
+  if (decisionModalHideTimer) {
+    clearTimeout(decisionModalHideTimer);
+    decisionModalHideTimer = null;
+  }
+
+  if (decisionModalFinalizeHandler) {
+    decisionModal.removeEventListener('transitionend', decisionModalFinalizeHandler);
+    decisionModalFinalizeHandler = null;
+  }
+
+  if (decisionModal.hasAttribute('hidden')) {
+    return;
+  }
+
+  decisionModal.classList.remove('is-active');
+  decisionModal.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('modal-open');
+
+  const finalize = () => {
+    if (decisionModalHideTimer) {
+      clearTimeout(decisionModalHideTimer);
+      decisionModalHideTimer = null;
+    }
+    if (!decisionModal.hasAttribute('hidden')) {
+      decisionModal.setAttribute('hidden', '');
+    }
+    if (decisionModalFinalizeHandler) {
+      decisionModal.removeEventListener('transitionend', decisionModalFinalizeHandler);
+      decisionModalFinalizeHandler = null;
+    }
+    const restoreTarget =
+      decisionModalReturnTarget && typeof decisionModalReturnTarget.focus === 'function'
+        ? decisionModalReturnTarget
+        : null;
+    decisionModalReturnTarget = null;
+    if (restoreTarget) {
+      restoreTarget.focus({ preventScroll: true });
+    }
+  };
+
+  decisionModalFinalizeHandler = finalize;
+  decisionModal.addEventListener('transitionend', finalize);
+  decisionModalHideTimer = setTimeout(finalize, 280);
+  document.removeEventListener('keydown', handleDecisionModalKeydown);
+}
+
 function renderAiBudget(budget) {
   if (!aiBudgetCard || !aiBudgetModeLabel || !aiBudgetMeta || !aiBudgetFill) return;
   lastAiBudget = budget || null;
@@ -3046,6 +3267,11 @@ function renderDecisionStats(stats) {
   for (const item of items) {
     const li = document.createElement('li');
     li.dataset.reason = item.reason;
+    li.dataset.count = item.count.toString();
+    li.dataset.label = item.label;
+    li.setAttribute('role', 'button');
+    li.setAttribute('tabindex', '0');
+    li.setAttribute('aria-label', `Show trades affected by ${item.label}`);
     const labelEl = document.createElement('span');
     labelEl.className = 'reason-label';
     labelEl.textContent = item.label;
@@ -3055,6 +3281,131 @@ function renderDecisionStats(stats) {
     li.append(labelEl, countEl);
     decisionReasons.append(li);
   }
+}
+
+function normaliseDecisionReason(reason) {
+  return (reason || '')
+    .toString()
+    .trim()
+    .toLowerCase();
+}
+
+function recordDecisionEvent(reason, event = {}) {
+  const key = normaliseDecisionReason(reason);
+  if (!key || !event) return;
+  const entry = { ...event };
+  entry.reason = key;
+  if (entry.occurredAt === undefined || entry.occurredAt === null) {
+    if (entry.occurredAtIso) {
+      const parsed = Date.parse(entry.occurredAtIso);
+      entry.occurredAt = Number.isFinite(parsed) ? parsed / 1000 : undefined;
+    } else if (entry.parsed?.timestamp) {
+      const parsed = Date.parse(entry.parsed.timestamp);
+      entry.occurredAt = Number.isFinite(parsed) ? parsed / 1000 : undefined;
+    }
+  }
+  if (entry.occurredAt !== undefined && entry.occurredAt !== null) {
+    entry.occurredAt = Number(entry.occurredAt);
+    if (!Number.isFinite(entry.occurredAt)) {
+      entry.occurredAt = undefined;
+    }
+  }
+  const existing = decisionReasonEvents.get(key) || [];
+  existing.push(entry);
+  while (existing.length > DECISION_REASON_EVENT_LIMIT) {
+    existing.shift();
+  }
+  decisionReasonEvents.set(key, existing);
+}
+
+function buildDecisionEventFromTrade(trade) {
+  if (!trade || typeof trade !== 'object') return null;
+  const timestamp = getTradeTimestamp(trade);
+  const occurredAt = Number.isFinite(timestamp) ? timestamp / 1000 : undefined;
+  const messageParts = [];
+  const aiMeta = trade.ai && typeof trade.ai === 'object' ? trade.ai : null;
+  if (aiMeta?.decision_note) {
+    messageParts.push(aiMeta.decision_note);
+  } else if (aiMeta?.decision_reason) {
+    messageParts.push(`Reason: ${friendlyReason(aiMeta.decision_reason)}`);
+  } else if (trade.decision_note) {
+    messageParts.push(trade.decision_note);
+  }
+  const message = messageParts.join(' ');
+  return {
+    type: 'trade',
+    symbol: trade.symbol || '—',
+    occurredAt,
+    occurredAtIso: trade.closed_at_iso || trade.opened_at_iso || null,
+    message,
+    trade,
+  };
+}
+
+function collectDecisionEvents(reason) {
+  const key = normaliseDecisionReason(reason);
+  if (!key) return [];
+  const combined = [];
+  const seen = new Set();
+  const pushEvent = (event) => {
+    if (!event) return;
+    const symbol = event.symbol || '';
+    const message = event.message || '';
+    const occurredAt = Number.isFinite(event.occurredAt) ? event.occurredAt : '';
+    const signature = `${event.type || 'log'}|${key}|${symbol}|${occurredAt}|${message}`;
+    if (seen.has(signature)) return;
+    seen.add(signature);
+    combined.push(event);
+  };
+
+  const stored = decisionReasonEvents.get(key) || [];
+  stored.forEach((event) => pushEvent({ ...event, type: event.type || 'log' }));
+
+  const history = Array.isArray(latestTradesSnapshot?.history) ? latestTradesSnapshot.history : [];
+  history.forEach((trade) => {
+    if (!trade || typeof trade !== 'object') return;
+    const aiMeta = trade.ai && typeof trade.ai === 'object' ? trade.ai : null;
+    const reasonCandidates = [
+      aiMeta?.decision_reason,
+      trade.decision_reason,
+      aiMeta?.plan?.decision_reason,
+    ];
+    const tradeReason = normaliseDecisionReason(reasonCandidates.find((value) => value));
+    if (tradeReason && tradeReason === key) {
+      pushEvent(buildDecisionEventFromTrade(trade));
+    }
+  });
+
+  combined.sort((a, b) => {
+    const aTs = Number.isFinite(a?.occurredAt) ? a.occurredAt : -Infinity;
+    const bTs = Number.isFinite(b?.occurredAt) ? b.occurredAt : -Infinity;
+    if (bTs !== aTs) return bTs - aTs;
+    return (b?.symbol || '').localeCompare(a?.symbol || '');
+  });
+
+  return combined;
+}
+
+function findDecisionReasonItem(element) {
+  if (!element) return null;
+  if (element instanceof HTMLElement) {
+    return element.closest('li[data-reason]');
+  }
+  return null;
+}
+
+function activateDecisionReasonItem(item) {
+  if (!item) return;
+  const reason = item.dataset.reason;
+  if (!reason) return;
+  const label = item.dataset.label;
+  const countRaw = Number(item.dataset.count);
+  const count = Number.isFinite(countRaw) ? countRaw : undefined;
+  openDecisionModal(reason, {
+    label,
+    count,
+    returnTarget: item,
+  });
 }
 
 function getPnlChartPalette() {
@@ -3362,6 +3713,22 @@ function appendCompactLog({ line, level, ts }) {
   const friendly = humanizeLogLine(line, level);
   if (friendly?.refreshTrades) {
     scheduleTradesRefresh(250);
+  }
+  if (friendly?.reason) {
+    const timestampSeconds = Number.isFinite(ts)
+      ? Number(ts)
+      : friendly.parsed?.timestamp
+        ? Date.parse(friendly.parsed.timestamp) / 1000
+        : undefined;
+    recordDecisionEvent(friendly.reason, {
+      type: 'log',
+      symbol: friendly.symbol,
+      message: friendly.text,
+      detail: friendly.detail,
+      occurredAt: Number.isFinite(timestampSeconds) ? timestampSeconds : undefined,
+      occurredAtIso: friendly.parsed?.timestamp || null,
+      parsed: friendly.parsed,
+    });
   }
   if (!friendly || !friendly.relevant) return;
 
@@ -4147,6 +4514,24 @@ if (pnlChartWrapper) {
   });
 }
 
+if (decisionReasons) {
+  decisionReasons.addEventListener('click', (event) => {
+    const item = findDecisionReasonItem(event.target);
+    if (!item) return;
+    event.preventDefault();
+    activateDecisionReasonItem(item);
+  });
+  decisionReasons.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return;
+    }
+    const item = findDecisionReasonItem(event.target);
+    if (!item) return;
+    event.preventDefault();
+    activateDecisionReasonItem(item);
+  });
+}
+
 tradeModalClose?.addEventListener('click', () => {
   closeTradeModal();
 });
@@ -4167,6 +4552,18 @@ if (pnlChartModal) {
   pnlChartModal.addEventListener('click', (event) => {
     if (event.target === pnlChartModal) {
       closePnlModal();
+    }
+  });
+}
+
+decisionModalClose?.addEventListener('click', () => {
+  closeDecisionModal();
+});
+
+if (decisionModal) {
+  decisionModal.addEventListener('click', (event) => {
+    if (event.target === decisionModal) {
+      closeDecisionModal();
     }
   });
 }

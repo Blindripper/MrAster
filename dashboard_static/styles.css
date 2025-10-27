@@ -1682,6 +1682,22 @@ body.ai-mode .status .decision-metric {
   background: rgba(29, 29, 42, 0.72);
   border: 1px solid rgba(245, 196, 107, 0.1);
   font-size: 0.92rem;
+  cursor: default;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.decision-reasons li[role='button'] {
+  cursor: pointer;
+}
+
+.decision-reasons li[role='button']:hover {
+  background: rgba(42, 42, 62, 0.82);
+  transform: translateY(-1px);
+}
+
+.decision-reasons li[role='button']:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
 }
 
 .decision-reasons .reason-label {
@@ -1700,6 +1716,91 @@ body.ai-mode .status .decision-metric {
   border-style: dashed;
   background: transparent;
   padding: 1rem;
+}
+
+.decision-modal .trade-modal-dialog {
+  max-width: 560px;
+}
+
+.decision-modal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.decision-modal-event {
+  background: rgba(18, 19, 28, 0.92);
+  border: 1px solid rgba(245, 196, 107, 0.12);
+  border-radius: 1rem;
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.decision-modal-event-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.decision-modal-symbol {
+  font-weight: 600;
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+}
+
+.decision-modal-time {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+.decision-modal-message,
+.decision-modal-detail {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.decision-modal-detail {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+.decision-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.decision-modal-view-trade {
+  padding: 0.55rem 1rem;
+  border-radius: 999px;
+  border: 1px solid rgba(245, 196, 107, 0.28);
+  background: rgba(245, 196, 107, 0.16);
+  color: var(--text);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.decision-modal-view-trade:hover,
+.decision-modal-view-trade:focus-visible {
+  background: rgba(245, 196, 107, 0.28);
+  transform: translateY(-1px);
+}
+
+.decision-modal-empty {
+  margin: 0;
+  padding: 1rem;
+  text-align: center;
+  border-radius: 1rem;
+  border: 1px dashed rgba(245, 196, 107, 0.25);
+  color: var(--text-muted);
+  background: rgba(17, 18, 26, 0.7);
 }
 
 .label {
