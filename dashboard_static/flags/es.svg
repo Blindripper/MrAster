@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 40" role="img" aria-label="Flag of Spain">
+  <title>Flag of Spain</title>
+  <rect width="60" height="40" fill="#c60b1e" />
+  <rect y="10" width="60" height="20" fill="#ffc400" />
+  <rect x="12" y="16" width="8" height="12" rx="1.6" fill="#c60b1e" />
+  <circle cx="16" cy="22" r="2" fill="#ffc400" />
+</svg>
