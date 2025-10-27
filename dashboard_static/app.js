@@ -784,15 +784,44 @@ function buildTickerLogo(asset) {
   return wrapper;
 }
 
-function createTickerItem(asset) {
+function formatTickerRank(position) {
+  const numeric = Number(position);
+  if (!Number.isFinite(numeric) || numeric <= 0) return '';
+  const value = Math.floor(numeric);
+  const mod100 = value % 100;
+  if (mod100 >= 11 && mod100 <= 13) {
+    return `${value}th`;
+  }
+  switch (value % 10) {
+    case 1:
+      return `${value}st`;
+    case 2:
+      return `${value}nd`;
+    case 3:
+      return `${value}rd`;
+    default:
+      return `${value}th`;
+  }
+}
+
+function createTickerItem(asset, rank) {
   const item = document.createElement('div');
   item.className = 'ticker-item';
   item.setAttribute('role', 'listitem');
+  item.dataset.symbol = (asset.symbol || asset.base || '').toString().toUpperCase();
+  item.tabIndex = 0;
 
   const logo = buildTickerLogo(asset);
 
   const meta = document.createElement('div');
   meta.className = 'ticker-meta';
+
+  const header = document.createElement('div');
+  header.className = 'ticker-symbol-line';
+
+  const rankLabel = document.createElement('span');
+  rankLabel.className = 'ticker-rank';
+  rankLabel.textContent = formatTickerRank(rank);
 
   const symbol = document.createElement('span');
   symbol.className = 'ticker-symbol';
@@ -802,7 +831,9 @@ function createTickerItem(asset) {
   price.className = 'ticker-price';
   price.textContent = formatPriceDisplay(asset.price);
 
-  meta.append(symbol, price);
+  header.append(rankLabel, symbol);
+
+  meta.append(header, price);
 
   const stats = document.createElement('div');
   stats.className = 'ticker-stats';
@@ -868,17 +899,65 @@ function renderMostTradedTicker(assets, { error } = {}) {
   }
 
   const fragment = document.createDocumentFragment();
-  const doubled = assets.concat(assets);
-  doubled.forEach((asset, index) => {
-    const node = createTickerItem(asset);
-    if (index >= assets.length) {
-      node.classList.add('ticker-item-duplicate');
-      node.setAttribute('aria-hidden', 'true');
-    }
-    fragment.appendChild(node);
+  assets.forEach((asset, index) => {
+    fragment.appendChild(createTickerItem(asset, index + 1));
   });
   tickerTrack.appendChild(fragment);
-  computeTickerMetrics(assets);
+
+  const baseCount = assets.length;
+  if (baseCount === 0) return;
+
+  const ensureTickerFill = () => {
+    const baseNodes = Array.from(tickerTrack.children).slice(0, baseCount);
+    if (baseNodes.length === 0) return;
+    const styles = window.getComputedStyle(tickerTrack);
+    const gap = parseFloat(styles.columnGap || styles.gap || '0');
+    const baseWidth = baseNodes.reduce((sum, node) => sum + node.getBoundingClientRect().width, 0);
+    const totalBaseWidth = baseWidth + gap * Math.max(0, baseNodes.length - 1);
+    const viewportWidth = tickerTrack.parentElement
+      ? tickerTrack.parentElement.getBoundingClientRect().width
+      : 0;
+    const minTrackWidth = Math.max(totalBaseWidth * 2, viewportWidth + totalBaseWidth);
+
+    while (tickerTrack.scrollWidth < minTrackWidth) {
+      baseNodes.forEach((node) => {
+        const clone = node.cloneNode(true);
+        clone.classList.add('ticker-item-duplicate');
+        clone.setAttribute('aria-hidden', 'true');
+        clone.tabIndex = -1;
+        clone.setAttribute('tabindex', '-1');
+        tickerTrack.appendChild(clone);
+      });
+    }
+
+    computeTickerMetrics(assets);
+  };
+
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(ensureTickerFill);
+  });
+}
+
+function handleTickerActivation(event) {
+  if (!tickerTrack) return;
+  const item = event.target.closest('.ticker-item');
+  if (!item) return;
+  const symbol = item.dataset.symbol;
+  const url = buildAsterPositionUrl(symbol);
+  if (!url) return;
+  openAsterPositionUrl(url);
+}
+
+if (tickerTrack) {
+  tickerTrack.addEventListener('click', (event) => {
+    handleTickerActivation(event);
+  });
+  tickerTrack.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      handleTickerActivation(event);
+    }
+  });
 }
 
 async function loadMostTradedCoins() {
