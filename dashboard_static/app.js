@@ -80,7 +80,254 @@ const heroTotalWinRate = document.getElementById('hero-total-win-rate');
 const shareFeedback = document.getElementById('share-feedback');
 const MR_ASTER_REPO_URL = 'https://github.com/Blindripper/MrAster';
 
+const languageButtons = document.querySelectorAll('.language-button[data-lang]');
+const i18nElements = document.querySelectorAll('[data-i18n]');
+
+if (btnSaveConfig) btnSaveConfig.dataset.state = 'idle';
+if (btnSaveCredentials) btnSaveCredentials.dataset.state = 'idle';
+if (btnSaveAi) btnSaveAi.dataset.state = 'idle';
+if (btnApplyPreset) btnApplyPreset.dataset.state = 'idle';
+
 const DEFAULT_BOT_STATUS = { running: false, pid: null, started_at: null, uptime_s: null };
+
+const DEFAULT_LANGUAGE = 'en';
+const SUPPORTED_LANGUAGES = ['en', 'ru'];
+
+const TRANSLATIONS = {
+  ru: {
+    'language.english': 'Английский',
+    'language.russian': 'Русский',
+    'language.switcher': 'Выбор языка',
+    'ticker.label': 'Самые торгуемые монеты · Топ 20:',
+    'ticker.empty': 'Собираем лидеров рынка…',
+    'ticker.noData': 'Сейчас нет рыночных данных.',
+    'hero.badge': 'MrAster – автономный торговый комплекс',
+    'hero.heading': 'Улавливайте каждое движение рынка с автоматизацией на базе ИИ.',
+    'hero.description':
+      'Запускайте криптоботов за секунды, транслируйте телеметрию в реальном времени и перенастраивайте стратегии с помощью ИИ-ассистентов, которые сохраняют полную прозрачность исполнения в режимах Standard, Pro и AI.',
+    'hero.launch': 'Открыть Aster',
+    'hero.download': 'Скачать сделки',
+    'hero.share': 'Опубликовать в X',
+    'hero.metrics.trades': 'Всего сделок',
+    'hero.metrics.pnl': 'Совокупный PNL',
+    'hero.metrics.winrate': 'Общий винрейт',
+    'hero.mode.label': 'Режим',
+    'hero.mode.standard': 'Стандарт',
+    'hero.mode.pro': 'Профессиональный',
+    'hero.mode.ai': 'ИИ',
+    'hero.mode.paper': 'Активировать бумажный режим',
+    'active.title': 'Активные позиции',
+    'active.subtitle': 'Текущее покрытие во всех режимах.',
+    'active.mode': 'Все режимы',
+    'active.mode.paper': 'Бумажный режим',
+    'active.empty': 'Нет активных позиций.',
+    'active.empty.paper': 'Пока нет бумажных сделок.',
+    'active.table.symbol': 'Символ',
+    'active.table.size': 'Размер',
+    'active.table.entry': 'Цена входа',
+    'active.table.mark': 'Маркет-прайс',
+    'active.table.pnl': 'PNL (ROE%)',
+    'active.table.tpsl': 'TP/SL позиции',
+    'status.title': 'Статус',
+    'status.state': 'Состояние',
+    'status.pid': 'PID',
+    'status.started': 'Запущен',
+    'status.uptime': 'Время работы',
+    'status.indicator.running': 'Работает',
+    'status.indicator.stopped': 'Остановлен',
+    'status.indicator.offline': 'Оффлайн',
+    'status.aiBudget': 'Бюджет ИИ (день)',
+    'status.aiBudget.standard': 'Стандарт',
+    'status.aiBudget.pro': 'Про-режим',
+    'status.aiBudget.paper': 'Бумажный режим',
+    'status.aiBudgetMeta': 'Бюджет не настроен.',
+    'status.aiBudgetMeta.disabled': 'AI-режим отключён.',
+    'status.aiBudgetMeta.unlimited': 'Расход за день {{spent}} USD · лимит отсутствует',
+    'status.aiBudgetMeta.limited': 'Расход за день {{spent}} / {{limit}} USD · остаток {{remaining}} USD',
+    'status.aiBudgetMeta.paper': 'Бумажный режим не использует бюджет.',
+    'status.tradeDecisions': 'Решения по сделкам',
+    'status.decisions.accepted': 'Принято:',
+    'status.decisions.skipped': 'Пропущено:',
+    'status.decisions.empty': 'Решений по сделкам пока нет.',
+    'status.decisions.noneSkipped': 'Пропущенных сделок не зафиксировано.',
+    'status.decisions.noneYet': 'Решений по сделкам пока нет.',
+    'status.decisions.noReason': 'Для этой причины ещё нет сделок. Загляните после следующего решения.',
+    'status.decisions.noReasonShort': 'Для этой причины ещё нет сделок.',
+    'credentials.title': 'Биржевые ключи',
+    'credentials.apiKey.label': 'ASTER_API_KEY',
+    'credentials.apiKey.placeholder': 'Введите API-ключ',
+    'credentials.apiSecret.label': 'ASTER_API_SECRET',
+    'credentials.apiSecret.placeholder': 'Введите секретный ключ',
+    'credentials.start': 'Старт',
+    'credentials.stop': 'Стоп',
+    'credentials.save': 'Сохранить',
+    'credentials.saving': 'Сохранение…',
+    'credentials.saved': 'Сохранено ✓',
+    'credentials.error': 'Ошибка',
+    'trades.title': 'История сделок',
+    'trades.subtitle': 'Последние исполнения и результат одним взглядом.',
+    'trades.empty': 'Сделок пока нет.',
+    'trades.viewDetails': 'Подробнее',
+    'trades.summary.placeholder.label': 'Эффективность',
+    'trades.summary.placeholder.value': 'Данных пока нет',
+    'trades.summary.hint': 'Подсказка ИИ появится, когда поступит новая телеметрия.',
+    'trades.metric.trades': 'Сделки',
+    'trades.metric.totalPnl': 'Совокупный PNL',
+    'trades.metric.winRate': 'Винрейт',
+    'trades.metric.avgR': 'Средний R',
+    'trades.modal.noMetadata': 'Дополнительные данные отсутствуют.',
+    'pnl.title': 'Обзор эффективности',
+    'pnl.subtitle': 'Совокупный реализованный PNL по вашим сделкам.',
+    'pnl.empty': 'Данных PNL пока нет. Выполните сделки, чтобы заполнить график.',
+    'pnl.expandAria': 'Открыть расширенный график эффективности',
+    'ai.feed.label': 'Автопоток',
+    'ai.feed.title': 'Автономный кокпит стратегии',
+    'ai.feed.subtitle':
+      'Здесь отображается телеметрия стратегии и автономные действия ИИ. Разговоры перенесены в отдельный чат дашборда.',
+    'ai.feed.disabled': 'Включите AI-режим, чтобы увидеть ленту активности.',
+    'ai.feed.empty': 'Автономные решения появятся здесь в реальном времени по мере событий.',
+    'common.autoScroll': 'Автопрокрутка',
+    'common.close': 'Закрыть',
+    'common.save': 'Сохранить',
+    'common.saving': 'Сохранение…',
+    'common.saved': 'Сохранено ✓',
+    'common.error': 'Ошибка',
+    'common.expand': 'Развернуть',
+    'common.collapse': 'Свернуть',
+    'common.analyze': 'Анализ рынка',
+    'chat.label': 'Чат дашборда',
+    'chat.title': 'Стратегический помощник',
+    'chat.subtitle':
+      'Общайтесь с трейдинг-ассистентом в рабочем пространстве в стиле ChatGPT. Для консоли нужен отдельный API-ключ.',
+    'chat.empty': 'Укажите API-ключ чат-дашборда, чтобы начать разговор.',
+    'chat.inputLabel': 'Спросите стратегический ИИ',
+    'chat.placeholder': 'Отправьте сообщение своему помощнику…',
+    'chat.analyze': 'Анализ рынка',
+    'chat.analyzing': 'Анализ…',
+    'chat.analyze.hint': 'Добавьте ключ OpenAI в настройках AI, чтобы анализировать рынок.',
+    'chat.analyze.pending': 'Анализ рынка выполняется…',
+    'chat.send': 'Отправить',
+    'chat.sending': 'Отправка…',
+    'chat.status.analyzing': 'Анализ рынка…',
+    'chat.status.disabled': 'AI-режим отключён.',
+    'chat.status.keyRequired': 'Требуется ключ OpenAI.',
+    'chat.status.fallback': 'Анализ рынка (резервный режим).',
+    'chat.status.ready': 'Анализ рынка готов.',
+    'chat.status.failed': 'Не удалось выполнить анализ рынка.',
+    'chat.status.enableAi': 'Сначала включите AI-режим.',
+    'chat.status.emptyMessage': 'Введите сообщение.',
+    'chat.status.thinking': 'Стратегический ИИ размышляет…',
+    'chat.status.error': 'Чат недоступен.',
+    'chat.placeholder.disabled': 'Включите AI-режим, чтобы использовать чат дашборда.',
+    'chat.placeholder.key': 'Добавьте ключ OpenAI в настройках AI, чтобы начать разговор.',
+    'chat.placeholder.prompt': 'Спросите стратегического помощника о своих сделках.',
+    'chat.analysis.none': 'Анализ не получен.',
+    'chat.reply.none': 'Ответ не получен.',
+    'chat.key.ready': 'Ключ чата активен.',
+    'chat.role.analysis': 'Рыночный анализ',
+    'ai.config.title': 'Настройки AI-режима',
+    'ai.config.subtitle': 'Укажите ключи OpenAI и ограничения, чтобы бот мог управлять сделками автономно.',
+    'ai.config.save': 'Сохранить',
+    'ai.config.saving': 'Сохранение…',
+    'ai.config.saved': 'Сохранено ✓',
+    'ai.config.error': 'Ошибка',
+    'ai.config.access.title': 'Доступ',
+    'ai.config.access.openai': 'Ключ OpenAI API',
+    'ai.config.access.openaiPlaceholder': 'sk-...',
+    'ai.config.access.openaiHint': 'Хранится локально. Нужен для автономного исполнения сделок.',
+    'ai.config.access.chat': 'Ключ чат-дашборда',
+    'ai.config.access.chatPlaceholder': 'sk-...',
+    'ai.config.access.chatHint':
+      'Этот отдельный ключ OpenAI питает чат и изолирует торговые запросы. Окно чата отключено, пока ключ не сохранён.',
+    'ai.config.budget.title': 'Дневной бюджет',
+    'ai.config.budget.label': 'Дневной бюджет (USD)',
+    'ai.config.budget.placeholder': '20',
+    'ai.config.budget.hint': 'Задайте лимит расходов на ИИ, чтобы автономия оставалась в рамках бюджета.',
+    'ai.config.model.title': 'Модель',
+    'ai.config.model.label': 'Модель',
+    'ai.config.model.group.gpt5': 'Семейство GPT-5',
+    'ai.config.model.group.gpt41': 'Семейство GPT-4.1',
+    'ai.config.model.group.gpt4o': 'Семейство GPT-4o',
+    'ai.config.model.group.reasoning': 'Reasoning-модели',
+    'ai.config.model.group.legacy': 'Устаревшие модели',
+    'ai.config.model.hint': 'Выберите модель OpenAI, которая будет анализировать рынок в реальном времени.',
+    'ai.config.baseline.title': 'Базовый объём',
+    'ai.config.baseline.label': 'Базовая сумма на сделку (USDT)',
+    'ai.config.baseline.placeholder': '250',
+    'ai.config.baseline.hint':
+      'Определяет <code>ASTER_DEFAULT_NOTIONAL</code>: минимум USDT, на который ИИ ориентируется перед своими множителями и ограничениями по риску.',
+    'ai.config.footer':
+      'Когда AI-режим активен, движок стратегии постоянно настраивает размер позиций, плечо, стопы и FastTP, соблюдая дневной бюджет.',
+    'quick.title': 'Быстрый запуск стратегии',
+    'quick.subtitle': 'Выберите пресет и подстройте риск с плечом под свой комфорт.',
+    'quick.apply': 'Применить пресет',
+    'quick.applyChanges': 'Применить изменения',
+    'quick.applyProgress': 'Применение…',
+    'quick.applyRestarting': 'Перезапуск…',
+    'quick.applySuccess': 'Применено ✓',
+    'quick.applyRestarted': 'Перезапущено ✓',
+    'quick.applyError': 'Ошибка',
+    'quick.presets.low.title': 'Low',
+    'quick.presets.low.subtitle': 'Мало сделок · низкий риск',
+    'quick.presets.mid.title': 'Mid',
+    'quick.presets.mid.subtitle': 'Сбалансированная торговля',
+    'quick.presets.high.title': 'High',
+    'quick.presets.high.subtitle': 'Часто · агрессивно',
+    'quick.presets.att.title': 'ATT',
+    'quick.presets.att.subtitle': 'Против тренда',
+    'quick.description': 'Выберите профиль, чтобы загрузить рекомендованные параметры риска.',
+    'quick.risk.label': 'Риск на сделку',
+    'quick.risk.aria': 'Риск на сделку (%)',
+    'quick.risk.min': '0.25%',
+    'quick.risk.max': '5%',
+    'quick.leverage.label': 'Плечо',
+    'quick.leverage.aria': 'Множитель плеча',
+    'quick.leverage.min': '1×',
+    'quick.leverage.max': 'Максимум 5×',
+    'quick.baseline.label': 'Базовая ставка на сделку (USDT)',
+    'quick.baseline.placeholder': '250',
+    'quick.baseline.unit': 'USDT',
+    'quick.baseline.hint':
+      'Задаёт <code>ASTER_DEFAULT_NOTIONAL</code> — базовый объём, который бот выделяет на каждую сделку до ограничений по риску.',
+    'quick.funding.title': 'Фильтры по фандингу',
+    'quick.funding.details': 'Контроль фандинга зависит от выбранного пресета.',
+    'quick.ml.title': 'ML-политика',
+    'quick.ml.empty': 'Детали ML-политики появятся после загрузки пресета.',
+    'quick.ml.none': 'Для этого пресета нет описания ML-политики.',
+    'env.title': 'Конфигурация окружения',
+    'env.expand': 'Развернуть',
+    'env.collapse': 'Свернуть',
+    'env.save': 'Сохранить',
+    'env.saving': 'Сохранение…',
+    'env.saved': 'Сохранено ✓',
+    'env.error': 'Ошибка',
+    'env.subtitle': 'Изменяйте любые параметры <code>ASTER_*</code> без перезапуска сервиса. Изменения сохраняются автоматически.',
+    'logs.activity.title': 'Лента активности',
+    'logs.activity.subtitle': 'Ключевые сделки, предупреждения и события высокого сигнала.',
+    'logs.debug.title': 'Отладочные логи в реальном времени',
+    'modals.decision.title': 'Причина торгового решения',
+    'modals.trade.title': 'Детали сделки',
+    'modals.pnl.title': 'Обзор эффективности',
+    'modals.pnl.subtitle': 'Совокупный реализованный PNL по вашим сделкам.',
+    'footer.note': 'Создано для Aster — адаптивная торговля с полной прозрачностью. Используйте живые логи и подсказки ИИ, чтобы уверенно улучшать стратегию.',
+  },
+};
+
+let currentLanguage = DEFAULT_LANGUAGE;
+const i18nRegistry = Array.from(i18nElements).map((element) => {
+  const key = element.dataset.i18n;
+  const attr = element.dataset.i18nAttr || null;
+  if (!key) {
+    return null;
+  }
+  const defaultValue = attr ? element.getAttribute(attr) ?? '' : element.innerHTML ?? '';
+  if (attr) {
+    element.dataset.i18nDefaultAttr = defaultValue;
+  } else {
+    element.dataset.i18nDefault = defaultValue;
+  }
+  return { element, key, attr };
+}).filter(Boolean);
 
 let currentConfig = {};
 let reconnectTimer = null;
@@ -97,6 +344,7 @@ let mostTradedTimer = null;
 let lastAiBudget = null;
 let lastMostTradedAssets = [];
 let latestTradesSnapshot = null;
+let lastTradeStats = null;
 let lastBotStatus = { ...DEFAULT_BOT_STATUS };
 let aiChatHistory = [];
 let aiChatPending = false;
@@ -104,8 +352,9 @@ let aiAnalyzePending = false;
 let activePositions = [];
 let tradesRefreshTimer = null;
 let tradeViewportSyncHandle = null;
+let lastDecisionStats = null;
 const aiChatSubmit = aiChatForm ? aiChatForm.querySelector('button[type="submit"]') : null;
-const analyzeButtonDefaultLabel = btnAnalyzeMarket ? btnAnalyzeMarket.textContent : 'Analyze Market';
+let analyzeButtonDefaultLabel = btnAnalyzeMarket ? btnAnalyzeMarket.textContent : 'Analyze Market';
 let lastPnlChartPayload = null;
 let pnlModalHideTimer = null;
 let pnlModalFinalizeHandler = null;
@@ -125,6 +374,181 @@ let heroMetricsSnapshot = {
   winRate: 0,
   winRateDisplay: '0.0%',
 };
+
+function formatTemplate(template, replacements = {}) {
+  if (typeof template !== 'string') {
+    return template;
+  }
+  return Object.keys(replacements).reduce((acc, key) => {
+    const value = replacements[key];
+    const pattern = new RegExp(`{{\\s*${key}\\s*}}`, 'g');
+    return acc.replace(pattern, value);
+  }, template);
+}
+
+function translate(key, fallback, replacements = {}, lang = currentLanguage) {
+  const pack = TRANSLATIONS[lang] || {};
+  let template = pack[key];
+  if (template === undefined) {
+    if (lang !== DEFAULT_LANGUAGE) {
+      return translate(key, fallback, replacements, DEFAULT_LANGUAGE);
+    }
+    template = fallback !== undefined ? fallback : key;
+  }
+  return formatTemplate(template, replacements);
+}
+
+function getDefaultValueForEntry(entry) {
+  if (entry.attr) {
+    return entry.element.dataset.i18nDefaultAttr ?? '';
+  }
+  return entry.element.dataset.i18nDefault ?? '';
+}
+
+function applyTranslations(lang) {
+  const targetLang = SUPPORTED_LANGUAGES.includes(lang) ? lang : DEFAULT_LANGUAGE;
+  currentLanguage = targetLang;
+  document.documentElement.setAttribute('lang', targetLang === 'ru' ? 'ru' : 'en');
+  i18nRegistry.forEach((entry) => {
+    const fallback = getDefaultValueForEntry(entry);
+    const value = targetLang === DEFAULT_LANGUAGE ? fallback : translate(entry.key, fallback, {}, targetLang);
+    if (entry.attr) {
+      entry.element.setAttribute(entry.attr, value);
+    } else {
+      entry.element.innerHTML = value;
+    }
+  });
+  updateLanguageButtonsState();
+  refreshEnvironmentToggleLabels();
+  analyzeButtonDefaultLabel = translate('chat.analyze', getDefaultAnalyzeLabel(), {}, targetLang);
+  if (btnAnalyzeMarket) {
+    btnAnalyzeMarket.textContent = aiAnalyzePending
+      ? translate('chat.analyzing', 'Analyzing…')
+      : analyzeButtonDefaultLabel;
+  }
+  updateModeButtons();
+  updateAiBudgetModeLabel();
+  updateActivePositionsView();
+  renderTradeSummary(lastTradeStats);
+  renderDecisionStats(lastDecisionStats);
+  renderAiBudget(lastAiBudget);
+  if (btnSaveConfig) {
+    const state = btnSaveConfig.dataset.state || 'idle';
+    if (state === 'saving') {
+      btnSaveConfig.textContent = translate('common.saving', 'Saving…');
+    } else if (state === 'saved') {
+      btnSaveConfig.textContent = translate('common.saved', 'Saved ✓');
+    } else if (state === 'error') {
+      btnSaveConfig.textContent = translate('common.error', 'Error');
+    } else {
+      btnSaveConfig.textContent = translate('env.save', 'Save');
+    }
+  }
+  if (btnSaveCredentials) {
+    const state = btnSaveCredentials.dataset.state || 'idle';
+    if (state === 'saving') {
+      btnSaveCredentials.textContent = translate('common.saving', 'Saving…');
+    } else if (state === 'saved') {
+      btnSaveCredentials.textContent = translate('common.saved', 'Saved ✓');
+    } else if (state === 'error') {
+      btnSaveCredentials.textContent = translate('common.error', 'Error');
+    } else {
+      btnSaveCredentials.textContent = translate('credentials.save', 'Save');
+    }
+  }
+  if (btnSaveAi) {
+    const state = btnSaveAi.dataset.state || 'idle';
+    if (state === 'saving') {
+      btnSaveAi.textContent = translate('common.saving', 'Saving…');
+    } else if (state === 'saved') {
+      btnSaveAi.textContent = translate('common.saved', 'Saved ✓');
+    } else if (state === 'error') {
+      btnSaveAi.textContent = translate('common.error', 'Error');
+    } else {
+      btnSaveAi.textContent = translate('ai.config.save', 'Save');
+    }
+  }
+  if (btnApplyPreset) {
+    const state = btnApplyPreset.dataset.state || 'idle';
+    switch (state) {
+      case 'applying':
+        btnApplyPreset.textContent = translate('quick.applyProgress', 'Applying…');
+        break;
+      case 'restarting':
+        btnApplyPreset.textContent = translate('quick.applyRestarting', 'Restarting…');
+        break;
+      case 'restarted':
+        btnApplyPreset.textContent = translate('quick.applyRestarted', 'Restarted ✓');
+        break;
+      case 'applied':
+        btnApplyPreset.textContent = translate('quick.applySuccess', 'Applied ✓');
+        break;
+      case 'error':
+        btnApplyPreset.textContent = translate('quick.applyError', 'Error');
+        break;
+      case 'dirty':
+        btnApplyPreset.textContent = translate('quick.applyChanges', 'Apply changes');
+        break;
+      default:
+        btnApplyPreset.textContent = translate('quick.apply', 'Apply preset');
+        break;
+    }
+  }
+  syncAiChatAvailability();
+}
+
+function getDefaultAnalyzeLabel() {
+  if (!btnAnalyzeMarket) return 'Analyze Market';
+  const fallback = btnAnalyzeMarket.dataset.i18nDefault || btnAnalyzeMarket.textContent || 'Analyze Market';
+  return fallback.trim() ? fallback : 'Analyze Market';
+}
+
+function updateLanguageButtonsState() {
+  languageButtons.forEach((button) => {
+    const lang = button.dataset.lang;
+    const isActive = lang === currentLanguage;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+}
+
+function refreshEnvironmentToggleLabels() {
+  if (!btnToggleEnv) return;
+  const defaultExpand = btnToggleEnv.dataset.i18nDefaultExpand || btnToggleEnv.dataset.labelExpand || 'Expand';
+  const defaultCollapse = btnToggleEnv.dataset.i18nDefaultCollapse || btnToggleEnv.dataset.labelCollapse || 'Collapse';
+  const defaultAriaExpand = btnToggleEnv.dataset.i18nDefaultAriaExpand || btnToggleEnv.dataset.ariaExpand || defaultExpand;
+  const defaultAriaCollapse = btnToggleEnv.dataset.i18nDefaultAriaCollapse || btnToggleEnv.dataset.ariaCollapse || defaultCollapse;
+  btnToggleEnv.dataset.labelExpand = translate('env.expand', defaultExpand);
+  btnToggleEnv.dataset.labelCollapse = translate('env.collapse', defaultCollapse);
+  btnToggleEnv.dataset.ariaExpand = translate('env.expand', defaultAriaExpand);
+  btnToggleEnv.dataset.ariaCollapse = translate('env.collapse', defaultAriaCollapse);
+  if (!btnToggleEnv.dataset.i18nDefaultExpand) {
+    btnToggleEnv.dataset.i18nDefaultExpand = defaultExpand;
+  }
+  if (!btnToggleEnv.dataset.i18nDefaultCollapse) {
+    btnToggleEnv.dataset.i18nDefaultCollapse = defaultCollapse;
+  }
+  if (!btnToggleEnv.dataset.i18nDefaultAriaExpand) {
+    btnToggleEnv.dataset.i18nDefaultAriaExpand = defaultAriaExpand;
+  }
+  if (!btnToggleEnv.dataset.i18nDefaultAriaCollapse) {
+    btnToggleEnv.dataset.i18nDefaultAriaCollapse = defaultAriaCollapse;
+  }
+  syncCollapseToggle(btnToggleEnv, envCollapsed);
+}
+
+function setLanguage(lang) {
+  applyTranslations(lang);
+}
+
+languageButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const lang = button.dataset.lang;
+    setLanguage(lang);
+  });
+});
+
+applyTranslations(currentLanguage);
 
 function hasDashboardChatKey() {
   const env = currentConfig?.env || {};
@@ -183,9 +607,9 @@ function updateAiBudgetModeLabel() {
   aiBudgetModeLabel.style.display = '';
   aiBudgetModeLabel.removeAttribute('aria-hidden');
   if (active === 'pro') {
-    aiBudgetModeLabel.textContent = 'Pro-Mode';
+    aiBudgetModeLabel.textContent = translate('status.aiBudget.pro', 'Pro-Mode');
   } else {
-    aiBudgetModeLabel.textContent = 'Standard';
+    aiBudgetModeLabel.textContent = translate('status.aiBudget.standard', 'Standard');
   }
 }
 
@@ -593,7 +1017,8 @@ function gatherAiPayload() {
 async function saveConfig() {
   const payload = gatherConfigPayload();
   btnSaveConfig.disabled = true;
-  btnSaveConfig.textContent = 'Saving…';
+  btnSaveConfig.textContent = translate('common.saving', 'Saving…');
+  btnSaveConfig.dataset.state = 'saving';
   try {
     const res = await fetch('/api/config', {
       method: 'PUT',
@@ -607,12 +1032,20 @@ async function saveConfig() {
     currentConfig = await res.json();
     renderCredentials(currentConfig.env);
     syncQuickSetupFromEnv(currentConfig.env);
-    btnSaveConfig.textContent = 'Saved ✓';
-    setTimeout(() => (btnSaveConfig.textContent = 'Save'), 1500);
+    btnSaveConfig.textContent = translate('common.saved', 'Saved ✓');
+    btnSaveConfig.dataset.state = 'saved';
+    setTimeout(() => {
+      btnSaveConfig.dataset.state = 'idle';
+      btnSaveConfig.textContent = translate('env.save', 'Save');
+    }, 1500);
   } catch (err) {
-    btnSaveConfig.textContent = 'Error';
+    btnSaveConfig.textContent = translate('common.error', 'Error');
+    btnSaveConfig.dataset.state = 'error';
     alert(err.message);
-    setTimeout(() => (btnSaveConfig.textContent = 'Save'), 2000);
+    setTimeout(() => {
+      btnSaveConfig.dataset.state = 'idle';
+      btnSaveConfig.textContent = translate('env.save', 'Save');
+    }, 2000);
   } finally {
     btnSaveConfig.disabled = false;
   }
@@ -622,7 +1055,8 @@ async function saveCredentials() {
   const payload = gatherCredentialPayload();
   if (!btnSaveCredentials) return;
   btnSaveCredentials.disabled = true;
-  btnSaveCredentials.textContent = 'Saving…';
+  btnSaveCredentials.textContent = translate('common.saving', 'Saving…');
+  btnSaveCredentials.dataset.state = 'saving';
   try {
     const res = await fetch('/api/config', {
       method: 'PUT',
@@ -637,12 +1071,20 @@ async function saveCredentials() {
     renderCredentials(currentConfig.env);
     renderConfig(currentConfig.env);
     syncQuickSetupFromEnv(currentConfig.env);
-    btnSaveCredentials.textContent = 'Saved ✓';
-    setTimeout(() => (btnSaveCredentials.textContent = 'Save'), 1500);
+    btnSaveCredentials.textContent = translate('common.saved', 'Saved ✓');
+    btnSaveCredentials.dataset.state = 'saved';
+    setTimeout(() => {
+      btnSaveCredentials.dataset.state = 'idle';
+      btnSaveCredentials.textContent = translate('credentials.save', 'Save');
+    }, 1500);
   } catch (err) {
-    btnSaveCredentials.textContent = 'Error';
+    btnSaveCredentials.textContent = translate('common.error', 'Error');
+    btnSaveCredentials.dataset.state = 'error';
     alert(err.message);
-    setTimeout(() => (btnSaveCredentials.textContent = 'Save'), 2000);
+    setTimeout(() => {
+      btnSaveCredentials.dataset.state = 'idle';
+      btnSaveCredentials.textContent = translate('credentials.save', 'Save');
+    }, 2000);
   } finally {
     btnSaveCredentials.disabled = false;
   }
@@ -652,7 +1094,8 @@ async function saveAiConfig() {
   if (!btnSaveAi) return;
   const payload = gatherAiPayload();
   btnSaveAi.disabled = true;
-  btnSaveAi.textContent = 'Saving…';
+  btnSaveAi.textContent = translate('common.saving', 'Saving…');
+  btnSaveAi.dataset.state = 'saving';
   try {
     const res = await fetch('/api/config', {
       method: 'PUT',
@@ -667,12 +1110,20 @@ async function saveAiConfig() {
     renderCredentials(currentConfig.env);
     syncQuickSetupFromEnv(currentConfig.env);
     await syncModeFromEnv(currentConfig.env);
-    btnSaveAi.textContent = 'Saved ✓';
-    setTimeout(() => (btnSaveAi.textContent = 'Save'), 1500);
+    btnSaveAi.textContent = translate('common.saved', 'Saved ✓');
+    btnSaveAi.dataset.state = 'saved';
+    setTimeout(() => {
+      btnSaveAi.dataset.state = 'idle';
+      btnSaveAi.textContent = translate('ai.config.save', 'Save');
+    }, 1500);
   } catch (err) {
-    btnSaveAi.textContent = 'Error';
+    btnSaveAi.textContent = translate('common.error', 'Error');
+    btnSaveAi.dataset.state = 'error';
     alert(err.message);
-    setTimeout(() => (btnSaveAi.textContent = 'Save'), 2000);
+    setTimeout(() => {
+      btnSaveAi.dataset.state = 'idle';
+      btnSaveAi.textContent = translate('ai.config.save', 'Save');
+    }, 2000);
   } finally {
     btnSaveAi.disabled = false;
   }
@@ -934,7 +1385,7 @@ function renderMostTradedTicker(assets, { error } = {}) {
 
   if (!hasAssets) {
     if (tickerEmpty) {
-      tickerEmpty.textContent = error || 'No market data available right now.';
+      tickerEmpty.textContent = error || translate('ticker.noData', 'No market data available right now.');
     }
     return;
   }
@@ -1017,7 +1468,7 @@ async function loadMostTradedCoins() {
   if (!tickerContainer) return;
   try {
     if (tickerEmpty) {
-      tickerEmpty.textContent = 'Gathering market leaders…';
+    tickerEmpty.textContent = translate('ticker.empty', 'Gathering market leaders…');
     }
     const res = await fetch('/api/markets/most-traded');
     if (!res.ok) {
@@ -1636,10 +2087,14 @@ function updateActivePositionsView() {
   const hasRows = sorted.length > 0;
 
   if (activePositionsModeLabel) {
-    activePositionsModeLabel.textContent = paperMode ? 'Paper mode' : 'All modes';
+    activePositionsModeLabel.textContent = paperMode
+      ? translate('active.mode.paper', 'Paper mode')
+      : translate('active.mode', 'All modes');
   }
   if (activePositionsEmpty) {
-    activePositionsEmpty.textContent = paperMode ? 'No paper trades yet.' : 'No active positions.';
+    activePositionsEmpty.innerHTML = paperMode
+      ? translate('active.empty.paper', 'No paper trades yet.')
+      : translate('active.empty', 'No active positions.');
     if (hasRows) {
       activePositionsEmpty.setAttribute('hidden', '');
     } else {
@@ -2105,7 +2560,9 @@ async function updateStatus() {
     const data = await res.json();
     lastBotStatus = data;
     const running = data.running;
-    statusIndicator.textContent = running ? 'Running' : 'Stopped';
+    statusIndicator.textContent = running
+      ? translate('status.indicator.running', 'Running')
+      : translate('status.indicator.stopped', 'Stopped');
     statusIndicator.className = `pill ${running ? 'running' : 'stopped'}`;
     statusPid.textContent = data.pid ?? '–';
     statusStarted.textContent = data.started_at ? new Date(data.started_at * 1000).toLocaleString() : '–';
@@ -2114,7 +2571,7 @@ async function updateStatus() {
     btnStop.disabled = !running;
   } catch {
     lastBotStatus = { ...DEFAULT_BOT_STATUS };
-    statusIndicator.textContent = 'Offline';
+    statusIndicator.textContent = translate('status.indicator.offline', 'Offline');
     statusIndicator.className = 'pill stopped';
     statusPid.textContent = '–';
     statusStarted.textContent = '–';
@@ -2529,7 +2986,7 @@ function buildTradeSummaryCard(trade) {
 
   const hint = document.createElement('span');
   hint.className = 'trade-card-hint';
-  hint.textContent = 'View details';
+  hint.textContent = translate('trades.viewDetails', 'View details');
   actions.append(hint);
 
   bottom.append(info, actions);
@@ -2601,7 +3058,7 @@ function renderTradeHistory(history) {
   if (!history || history.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'trade-empty';
-    empty.textContent = 'No trades yet.';
+    empty.textContent = translate('trades.empty', 'No trades yet.');
     tradeList.append(empty);
     tradeList.style.removeProperty('max-height');
     tradeList.removeAttribute('data-viewport-locked');
@@ -2652,7 +3109,9 @@ function openTradeModal(trade, returnTarget) {
   }
   subtitleParts.push(`${outcomeLabel} ${pnlDisplay}`);
   if (tradeModalSubtitle) {
-    tradeModalSubtitle.textContent = subtitleParts.filter(Boolean).join(' · ') || 'No additional metadata available.';
+    tradeModalSubtitle.textContent =
+      subtitleParts.filter(Boolean).join(' · ') ||
+      translate('trades.modal.noMetadata', 'No additional metadata available.');
   }
 
   const active =
@@ -2836,7 +3295,7 @@ function openDecisionModal(reason, options = {}) {
   decisionModalBody.innerHTML = '';
 
   if (decisionModalTitle) {
-    decisionModalTitle.textContent = reasonLabel || 'Trade decision reason';
+    decisionModalTitle.textContent = reasonLabel || translate('modals.decision.title', 'Trade decision reason');
   }
 
   const subtitleParts = [];
@@ -2846,7 +3305,7 @@ function openDecisionModal(reason, options = {}) {
   if (events.length > 0) {
     subtitleParts.push(`Showing ${events.length} recent ${events.length === 1 ? 'entry' : 'entries'}`);
   } else {
-    subtitleParts.push('No recorded trades for this reason yet.');
+    subtitleParts.push(translate('status.decisions.noReasonShort', 'No recorded trades for this reason yet.'));
   }
   if (decisionModalSubtitle) {
     decisionModalSubtitle.textContent = subtitleParts.join(' · ');
@@ -2857,7 +3316,10 @@ function openDecisionModal(reason, options = {}) {
   } else {
     const empty = document.createElement('p');
     empty.className = 'decision-modal-empty';
-    empty.textContent = 'No recorded trades for this reason yet. Check back after the next decision.';
+    empty.textContent = translate(
+      'status.decisions.noReason',
+      'No recorded trades for this reason yet. Check back after the next decision.'
+    );
     decisionModalBody.append(empty);
   }
 
@@ -2929,9 +3391,14 @@ function renderAiBudget(budget) {
   lastAiBudget = budget || null;
   aiBudgetCard.classList.toggle('active', aiMode);
   updateAiBudgetModeLabel();
+  if (paperMode) {
+    aiBudgetFill.style.width = '0%';
+    aiBudgetMeta.textContent = translate('status.aiBudgetMeta.paper', 'Paper mode does not use a budget.');
+    return;
+  }
   if (!aiMode) {
     aiBudgetFill.style.width = '0%';
-    aiBudgetMeta.textContent = 'AI-Mode disabled.';
+    aiBudgetMeta.textContent = translate('status.aiBudgetMeta.disabled', 'AI-Mode disabled.');
     return;
   }
   let limit = Number((budget && budget.limit) ?? 0);
@@ -2946,13 +3413,21 @@ function renderAiBudget(budget) {
   aiBudgetCard.classList.toggle('unlimited', !hasLimit);
   if (!hasLimit) {
     aiBudgetFill.style.width = '0%';
-    aiBudgetMeta.textContent = `Spent ${spent.toFixed(2)} USD · unlimited budget`;
+    aiBudgetMeta.textContent = translate(
+      'status.aiBudgetMeta.unlimited',
+      `Spent ${spent.toFixed(2)} USD · unlimited budget`,
+      { spent: spent.toFixed(2) }
+    );
     return;
   }
   const pct = clampValue(limit > 0 ? (spent / limit) * 100 : 0, 0, 100);
   aiBudgetFill.style.width = `${pct.toFixed(1)}%`;
   const remaining = Math.max(0, limit - spent);
-  aiBudgetMeta.textContent = `Spent ${spent.toFixed(2)} / ${limit.toFixed(2)} USD · remaining ${remaining.toFixed(2)} USD`;
+  aiBudgetMeta.textContent = translate(
+    'status.aiBudgetMeta.limited',
+    `Spent ${spent.toFixed(2)} / ${limit.toFixed(2)} USD · remaining ${remaining.toFixed(2)} USD`,
+    { spent: spent.toFixed(2), limit: limit.toFixed(2), remaining: remaining.toFixed(2) }
+  );
 }
 
 function isScrolledToBottom(element, threshold = 24) {
@@ -3032,7 +3507,7 @@ function renderAiActivity(feed) {
   if (!aiMode) {
     const disabled = document.createElement('div');
     disabled.className = 'ai-feed-empty';
-    disabled.textContent = 'Enable AI mode to see the activity feed.';
+    disabled.textContent = translate('ai.feed.disabled', 'Enable AI mode to see the activity feed.');
     aiActivityFeed.append(disabled);
     return;
   }
@@ -3040,7 +3515,10 @@ function renderAiActivity(feed) {
   if (!items.length) {
     const empty = document.createElement('p');
     empty.className = 'ai-feed-empty';
-    empty.textContent = 'Autonomous decisions appear here in real time as new actions occur.';
+    empty.textContent = translate(
+      'ai.feed.empty',
+      'Autonomous decisions appear here in real time as new actions occur.'
+    );
     aiActivityFeed.append(empty);
     return;
   }
@@ -3154,9 +3632,12 @@ function updateAnalyzeButtonAvailability() {
   const shouldDisable = !hasKey || aiAnalyzePending;
   btnAnalyzeMarket.disabled = shouldDisable;
   if (!hasKey) {
-    btnAnalyzeMarket.title = 'Add an OpenAI API key in the AI controls to analyze the market.';
+    btnAnalyzeMarket.title = translate(
+      'chat.analyze.hint',
+      'Add an OpenAI API key in the AI controls to analyze the market.'
+    );
   } else if (aiAnalyzePending) {
-    btnAnalyzeMarket.title = 'Market analysis in progress…';
+    btnAnalyzeMarket.title = translate('chat.analyze.pending', 'Market analysis in progress…');
   } else {
     btnAnalyzeMarket.title = '';
   }
@@ -3184,9 +3665,9 @@ function syncAiChatAvailability() {
     if (aiChatSubmit) aiChatSubmit.disabled = true;
     aiChatHistory = [];
     aiChatPending = false;
-    resetChatPlaceholder('Enable AI-Mode to access the dashboard chat.');
-    setChatStatus('AI-Mode disabled.');
-    setChatKeyIndicator('disabled', 'AI-Mode disabled');
+    resetChatPlaceholder(translate('chat.placeholder.disabled', 'Enable AI-Mode to access the dashboard chat.'));
+    setChatStatus(translate('chat.status.disabled', 'AI-Mode disabled.'));
+    setChatKeyIndicator('disabled', translate('chat.status.disabled', 'AI-Mode disabled.'));
     return;
   }
 
@@ -3196,9 +3677,11 @@ function syncAiChatAvailability() {
     if (aiChatSubmit) aiChatSubmit.disabled = true;
     aiChatHistory = [];
     aiChatPending = false;
-    resetChatPlaceholder('Add an OpenAI API key in the AI controls to start a conversation.');
-    setChatStatus('OpenAI key required.');
-    setChatKeyIndicator('missing', 'OpenAI key required');
+    resetChatPlaceholder(
+      translate('chat.placeholder.key', 'Add an OpenAI API key in the AI controls to start a conversation.')
+    );
+    setChatStatus(translate('chat.status.keyRequired', 'OpenAI key required.'));
+    setChatKeyIndicator('missing', translate('chat.status.keyRequired', 'OpenAI key required.'));
     return;
   }
 
@@ -3209,10 +3692,19 @@ function syncAiChatAvailability() {
     !aiChatMessages.querySelector('.ai-chat-message') &&
     !aiChatMessages.querySelector('.ai-chat-empty')
   ) {
-    resetChatPlaceholder('Ask the strategy copilot anything about your trades.');
+    resetChatPlaceholder(
+      translate('chat.placeholder.prompt', 'Ask the strategy copilot anything about your trades.')
+    );
+  }
+  const existingPlaceholder = aiChatMessages?.querySelector('.ai-chat-empty');
+  if (existingPlaceholder) {
+    existingPlaceholder.textContent = translate(
+      'chat.placeholder.prompt',
+      'Ask the strategy copilot anything about your trades.'
+    );
   }
   setChatStatus('');
-  setChatKeyIndicator('ready', 'Dedicated chat key active');
+  setChatKeyIndicator('ready', translate('chat.key.ready', 'Dedicated chat key active'));
 }
 
 function renderHeroMetrics(cumulativeStats, sessionStats) {
@@ -3492,34 +3984,40 @@ async function handlePostToX(event) {
 }
 
 function renderTradeSummary(stats) {
+  lastTradeStats = stats || null;
   tradeSummary.innerHTML = '';
   if (!stats) {
     const placeholder = document.createElement('div');
     placeholder.className = 'trade-metric muted';
-    placeholder.innerHTML = `<span class="metric-label">Performance</span><span class="metric-value">No data yet</span>`;
+    placeholder.innerHTML = `
+      <span class="metric-label">${translate('trades.summary.placeholder.label', 'Performance')}</span>
+      <span class="metric-value">${translate('trades.summary.placeholder.value', 'No data yet')}</span>
+    `;
     tradeSummary.append(placeholder);
-    setAiHintMessage('AI insight will appear once new telemetry is available.');
+    setAiHintMessage(
+      translate('trades.summary.hint', 'AI insight will appear once new telemetry is available.')
+    );
     return;
   }
   const avgR = stats.count ? stats.total_r / stats.count : 0;
   const metrics = [
     {
-      label: 'Trades',
+      label: translate('trades.metric.trades', 'Trades'),
       value: stats.count ?? 0,
       tone: 'neutral',
     },
     {
-      label: 'Total PNL',
+      label: translate('trades.metric.totalPnl', 'Total PNL'),
       value: `${stats.total_pnl > 0 ? '+' : ''}${formatNumber(stats.total_pnl, 2)} USDT`,
       tone: stats.total_pnl > 0 ? 'profit' : stats.total_pnl < 0 ? 'loss' : 'neutral',
     },
     {
-      label: 'Win rate',
+      label: translate('trades.metric.winRate', 'Win rate'),
       value: `${((stats.win_rate ?? 0) * 100).toFixed(1)}%`,
       tone: 'neutral',
     },
     {
-      label: 'Avg R',
+      label: translate('trades.metric.avgR', 'Avg R'),
       value: formatNumber(avgR, 2),
       tone: avgR > 0 ? 'profit' : avgR < 0 ? 'loss' : 'neutral',
     },
@@ -3537,6 +4035,7 @@ function renderTradeSummary(stats) {
 }
 
 function renderDecisionStats(stats) {
+  lastDecisionStats = stats || null;
   if (!decisionSummary || !decisionReasons) return;
   const takenMetric = decisionSummary.querySelector('[data-metric="taken"] strong');
   const skippedMetric = decisionSummary.querySelector('[data-metric="skipped"] strong');
@@ -3567,7 +4066,9 @@ function renderDecisionStats(stats) {
   if (!items.length) {
     const li = document.createElement('li');
     li.className = 'empty';
-    li.textContent = taken > 0 ? 'No skipped trades recorded.' : 'No trade decisions yet.';
+    li.textContent = taken > 0
+      ? translate('status.decisions.noneSkipped', 'No skipped trades recorded.')
+      : translate('status.decisions.noneYet', 'No trade decisions yet.');
     decisionReasons.append(li);
     return;
   }
@@ -4001,7 +4502,10 @@ function renderPnlChart(history) {
     pnlChartWrapper.classList.add('is-interactive');
     pnlChartWrapper.setAttribute('tabindex', '0');
     pnlChartWrapper.setAttribute('role', 'button');
-    pnlChartWrapper.setAttribute('aria-label', 'Expand performance overview chart');
+    pnlChartWrapper.setAttribute(
+      'aria-label',
+      translate('pnl.expandAria', 'Expand performance overview chart')
+    );
   }
 
   const data = buildPnlChartData(lastPnlChartPayload);
@@ -4364,7 +4868,7 @@ function renderPresetMeta(presetKey = selectedPreset) {
     if (!presetMlDetails.children.length) {
       const empty = document.createElement('li');
       empty.className = 'preset-meta-empty';
-      empty.textContent = 'No ML policy details available for this preset.';
+      empty.textContent = translate('quick.ml.none', 'No ML policy details available for this preset.');
       presetMlDetails.append(empty);
     }
   }
@@ -4397,14 +4901,20 @@ function updateLeverageValue() {
 function resetQuickConfigButton() {
   quickConfigPristine = true;
   if (btnApplyPreset && !btnApplyPreset.disabled) {
-    btnApplyPreset.textContent = 'Apply preset';
+    btnApplyPreset.textContent = translate('quick.apply', 'Apply preset');
+  }
+  if (btnApplyPreset) {
+    btnApplyPreset.dataset.state = 'idle';
   }
 }
 
 function markQuickConfigDirty() {
   quickConfigPristine = false;
   if (btnApplyPreset && !btnApplyPreset.disabled) {
-    btnApplyPreset.textContent = 'Apply changes';
+    btnApplyPreset.textContent = translate('quick.applyChanges', 'Apply changes');
+  }
+  if (btnApplyPreset) {
+    btnApplyPreset.dataset.state = 'dirty';
   }
 }
 
@@ -4485,7 +4995,8 @@ async function saveQuickSetup() {
   if (!btnApplyPreset) return;
   const payload = buildQuickSetupPayload();
   btnApplyPreset.disabled = true;
-  btnApplyPreset.textContent = 'Applying…';
+  btnApplyPreset.textContent = translate('quick.applyProgress', 'Applying…');
+  btnApplyPreset.dataset.state = 'applying';
   try {
     const res = await fetch('/api/config', {
       method: 'PUT',
@@ -4506,18 +5017,23 @@ async function saveQuickSetup() {
     } catch (restartErr) {
       throw new Error(`Bot restart failed: ${restartErr.message}`);
     }
-    btnApplyPreset.textContent = restarted ? 'Restarted ✓' : 'Applied ✓';
+    btnApplyPreset.textContent = restarted
+      ? translate('quick.applyRestarted', 'Restarted ✓')
+      : translate('quick.applySuccess', 'Applied ✓');
+    btnApplyPreset.dataset.state = restarted ? 'restarted' : 'applied';
     setTimeout(() => {
       if (btnApplyPreset && !btnApplyPreset.disabled) {
         resetQuickConfigButton();
       }
     }, 1800);
   } catch (err) {
-    btnApplyPreset.textContent = 'Error';
+    btnApplyPreset.textContent = translate('quick.applyError', 'Error');
+    btnApplyPreset.dataset.state = 'error';
     alert(err.message);
     setTimeout(() => {
       if (btnApplyPreset && !btnApplyPreset.disabled) {
-        btnApplyPreset.textContent = 'Apply changes';
+        btnApplyPreset.textContent = translate('quick.applyChanges', 'Apply changes');
+        btnApplyPreset.dataset.state = 'dirty';
       }
     }, 2000);
   } finally {
@@ -4758,7 +5274,8 @@ async function restartBotIfNeeded() {
   }
 
   if (btnApplyPreset) {
-    btnApplyPreset.textContent = 'Restarting…';
+    btnApplyPreset.textContent = translate('quick.applyRestarting', 'Restarting…');
+    btnApplyPreset.dataset.state = 'restarting';
   }
 
   const stopRes = await fetch('/api/bot/stop', { method: 'POST' });
@@ -4994,14 +5511,14 @@ if (btnAnalyzeMarket) {
       return;
     }
     if (!hasDashboardChatKey()) {
-      setChatStatus('OpenAI key required.');
-      setChatKeyIndicator('missing', 'OpenAI key required');
+      setChatStatus(translate('chat.status.keyRequired', 'OpenAI key required.'));
+      setChatKeyIndicator('missing', translate('chat.status.keyRequired', 'OpenAI key required.'));
       return;
     }
     aiAnalyzePending = true;
-    btnAnalyzeMarket.textContent = 'Analyzing…';
+    btnAnalyzeMarket.textContent = translate('chat.analyzing', 'Analyzing…');
     updateAnalyzeButtonAvailability();
-    setChatStatus('Analyzing market…');
+      setChatStatus(translate('chat.status.analyzing', 'Analyzing market…'));
     try {
       const res = await fetch('/api/ai/analyze', { method: 'POST' });
       const text = await res.text();
@@ -5015,22 +5532,31 @@ if (btnAnalyzeMarket) {
         const detail = data && typeof data === 'object' ? data.detail || data.message : null;
         throw new Error(detail || 'Market analysis failed');
       }
-      const analysis = (data.analysis || '').toString().trim() || 'No analysis returned.';
+      const analysis =
+        (data.analysis || '').toString().trim() || translate('chat.analysis.none', 'No analysis returned.');
       appendChatMessage('assistant', analysis, {
         model: data.model,
         source: data.source || 'analysis',
-        roleLabel: 'Market Analysis',
+        roleLabel: translate('chat.role.analysis', 'Market Analysis'),
       });
       if (data.source === 'fallback') {
-        setChatStatus('Market analysis (fallback).');
+        setChatStatus(translate('chat.status.fallback', 'Market analysis (fallback).'));
       } else {
-        setChatStatus('Market analysis ready.');
+        setChatStatus(translate('chat.status.ready', 'Market analysis ready.'));
       }
-      setChatKeyIndicator('ready', 'Dedicated chat key active');
+      setChatKeyIndicator('ready', translate('chat.key.ready', 'Dedicated chat key active'));
     } catch (err) {
-      const errorMessage = err?.message || 'Market analysis failed.';
-      appendChatMessage('assistant', errorMessage, { source: 'error', roleLabel: 'Market Analysis' });
-      setChatStatus('Market analysis failed.');
+      const defaultError = translate('chat.status.failed', 'Market analysis failed.');
+      const rawMessage = (err?.message || '').trim();
+      const errorMessage =
+        rawMessage && rawMessage !== 'Market analysis failed' && rawMessage !== 'Market analysis failed.'
+          ? rawMessage
+          : defaultError;
+      appendChatMessage('assistant', errorMessage, {
+        source: 'error',
+        roleLabel: translate('chat.role.analysis', 'Market Analysis'),
+      });
+      setChatStatus(translate('chat.status.failed', 'Market analysis failed.'));
     } finally {
       aiAnalyzePending = false;
       btnAnalyzeMarket.textContent = analyzeButtonDefaultLabel;
@@ -5046,23 +5572,23 @@ if (aiChatForm && aiChatInput) {
       return;
     }
     if (!aiMode) {
-      setChatStatus('Please enable AI-Mode first.');
+      setChatStatus(translate('chat.status.enableAi', 'Please enable AI-Mode first.'));
       return;
     }
     if (!hasDashboardChatKey()) {
-      setChatStatus('OpenAI key required.');
-      setChatKeyIndicator('missing', 'OpenAI key required');
+      setChatStatus(translate('chat.status.keyRequired', 'OpenAI key required.'));
+      setChatKeyIndicator('missing', translate('chat.status.keyRequired', 'OpenAI key required.'));
       return;
     }
     const message = (aiChatInput.value || '').trim();
     if (!message) {
-      setChatStatus('Please enter a message.');
+      setChatStatus(translate('chat.status.emptyMessage', 'Please enter a message.'));
       return;
     }
     aiChatPending = true;
     aiChatInput.disabled = true;
     if (aiChatSubmit) aiChatSubmit.disabled = true;
-    setChatStatus('Strategy AI is thinking…');
+    setChatStatus(translate('chat.status.thinking', 'Strategy AI is thinking…'));
     const historyPayload = aiChatHistory.slice(-6);
     appendChatMessage('user', message);
     aiChatHistory.push({ role: 'user', content: message });
@@ -5087,7 +5613,7 @@ if (aiChatForm && aiChatInput) {
         const detail = data && typeof data === 'object' ? data.detail : null;
         throw new Error(detail || 'Chat request failed');
       }
-      const reply = (data.reply || '').toString() || 'No reply received.';
+      const reply = (data.reply || '').toString() || translate('chat.reply.none', 'No reply received.');
       appendChatMessage('assistant', reply, { model: data.model, source: data.source });
       aiChatHistory.push({ role: 'assistant', content: reply });
       if (aiChatHistory.length > 12) {
@@ -5109,7 +5635,7 @@ if (aiChatForm && aiChatInput) {
       setChatStatus(statusMessage);
     } catch (err) {
       appendChatMessage('assistant', err?.message || 'Chat failed.', { source: 'error' });
-      setChatStatus('Chat failed.');
+      setChatStatus(translate('chat.status.error', 'Chat failed.'));
     } finally {
       aiChatPending = false;
       if (aiMode) {

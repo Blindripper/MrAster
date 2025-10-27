@@ -66,6 +66,54 @@ body::after {
   gap: clamp(2rem, 5vw, 3.5rem);
 }
 
+.language-switcher {
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  padding: 0.25rem;
+  border-radius: 999px;
+  background: rgba(15, 18, 32, 0.7);
+  border: 1px solid rgba(245, 196, 107, 0.18);
+  box-shadow: 0 4px 20px rgba(5, 6, 15, 0.35);
+  backdrop-filter: blur(6px);
+}
+
+.language-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: none;
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  background: transparent;
+  color: inherit;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.language-button .language-label {
+  white-space: nowrap;
+}
+
+.language-button.active {
+  background: rgba(245, 196, 107, 0.16);
+  color: var(--accent);
+}
+
+.language-button:hover,
+.language-button:focus-visible {
+  background: rgba(245, 196, 107, 0.1);
+  outline: none;
+}
+
+.language-button:focus-visible {
+  box-shadow: 0 0 0 2px rgba(245, 196, 107, 0.35);
+}
+
 .market-ticker {
   display: flex;
   gap: 1.8rem;

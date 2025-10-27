@@ -12,21 +12,38 @@
     <div class="market-ticker" id="market-ticker">
       <div class="ticker-label" aria-hidden="true">
         <span class="ticker-dot"></span>
-        <span>Most traded Coins · Top 20:</span>
+        <span data-i18n="ticker.label">Most traded Coins · Top 20:</span>
       </div>
       <div class="ticker-viewport" aria-live="polite">
         <div class="ticker-track" id="ticker-track" role="list"></div>
-        <div class="ticker-empty" id="ticker-empty">Gathering market leaders…</div>
+        <div class="ticker-empty" id="ticker-empty" data-i18n="ticker.empty">Gathering market leaders…</div>
       </div>
+    </div>
+
+    <div
+      class="language-switcher"
+      role="group"
+      aria-label="Select language"
+      data-i18n="language.switcher"
+      data-i18n-attr="aria-label"
+    >
+      <button type="button" class="language-button active" data-lang="en">
+        <span aria-hidden="true">🇺🇸</span>
+        <span class="language-label" data-i18n="language.english">English</span>
+      </button>
+      <button type="button" class="language-button" data-lang="ru">
+        <span aria-hidden="true">🇷🇺</span>
+        <span class="language-label" data-i18n="language.russian">Русский</span>
+      </button>
     </div>
 
     <header class="hero">
       <div class="hero-inner">
         <div class="hero-header">
           <div class="hero-lede">
-            <span class="hero-badge">MrAster – Autonomous trading suite</span>
-            <h1>Seize every market move with AI-tuned automation.</h1>
-            <p>
+            <span class="hero-badge" data-i18n="hero.badge">MrAster – Autonomous trading suite</span>
+            <h1 data-i18n="hero.heading">Seize every market move with AI-tuned automation.</h1>
+            <p data-i18n="hero.description">
               Deploy crypto bots in seconds, stream live telemetry, and recalibrate strategies with AI copilots that keep
               every execution crystal-clear across Standard, Pro, and AI modes.
             </p>
@@ -38,23 +55,23 @@
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Launch Aster
+                <span data-i18n="hero.launch">Launch Aster</span>
               </a>
-              <button class="ghost hero-secondary" id="btn-hero-download">Download Trades</button>
-              <button class="ghost hero-share" id="btn-post-x">Post on X</button>
+              <button class="ghost hero-secondary" id="btn-hero-download" data-i18n="hero.download">Download Trades</button>
+              <button class="ghost hero-share" id="btn-post-x" data-i18n="hero.share">Post on X</button>
             </div>
             <p class="share-feedback" id="share-feedback" role="status" aria-live="polite"></p>
             <dl class="hero-metrics">
               <div class="hero-metric">
-                <dt>Total trades</dt>
+                <dt data-i18n="hero.metrics.trades">Total trades</dt>
                 <dd id="hero-total-trades">0</dd>
               </div>
               <div class="hero-metric">
-                <dt>Total PNL</dt>
+                <dt data-i18n="hero.metrics.pnl">Total PNL</dt>
                 <dd id="hero-total-pnl">0 USDT</dd>
               </div>
               <div class="hero-metric">
-                <dt>Total win rate</dt>
+                <dt data-i18n="hero.metrics.winrate">Total win rate</dt>
                 <dd id="hero-total-win-rate">0.0%</dd>
               </div>
             </dl>
@@ -64,15 +81,15 @@
               <div class="hero-orbit-core"></div>
             </div>
             <div class="hero-mode-panel" role="group" aria-label="Select mode">
-              <span class="hero-mode-label">Mode</span>
+              <span class="hero-mode-label" data-i18n="hero.mode.label">Mode</span>
               <div class="hero-mode-toggle">
-                <button class="mode-button active" data-mode-select="standard" aria-pressed="true">Standard</button>
-                <button class="mode-button" data-mode-select="pro" aria-pressed="false">Pro</button>
-                <button class="mode-button mode-highlight" data-mode-select="ai" aria-pressed="false">AI</button>
+                <button class="mode-button active" data-mode-select="standard" aria-pressed="true" data-i18n="hero.mode.standard">Standard</button>
+                <button class="mode-button" data-mode-select="pro" aria-pressed="false" data-i18n="hero.mode.pro">Pro</button>
+                <button class="mode-button mode-highlight" data-mode-select="ai" aria-pressed="false" data-i18n="hero.mode.ai">AI</button>
               </div>
               <label class="hero-paper-toggle" for="paper-mode-toggle">
                 <input type="checkbox" id="paper-mode-toggle" />
-                <span>Activate Paper Mode</span>
+                <span data-i18n="hero.mode.paper">Activate Paper Mode</span>
               </label>
             </div>
           </div>
@@ -85,25 +102,25 @@
         >
           <div class="card-header">
             <div>
-              <h2>Active positions</h2>
-              <p class="card-subtitle">Live exposure across all modes.</p>
+              <h2 data-i18n="active.title">Active positions</h2>
+              <p class="card-subtitle" data-i18n="active.subtitle">Live exposure across all modes.</p>
             </div>
-            <span class="active-positions-mode" id="active-positions-mode">All modes</span>
+            <span class="active-positions-mode" id="active-positions-mode" data-i18n="active.mode">All modes</span>
           </div>
           <div class="active-positions-body">
-            <div class="active-positions-empty" id="active-positions-empty">
+            <div class="active-positions-empty" id="active-positions-empty" data-i18n="active.empty">
               No active positions.
             </div>
             <div class="active-positions-table-wrapper" id="active-positions-wrapper" hidden>
               <table class="active-positions-table" aria-live="polite">
                 <thead>
                   <tr>
-                    <th scope="col">Symbol</th>
-                    <th scope="col" class="numeric">Size</th>
-                    <th scope="col" class="numeric">Entry price</th>
-                    <th scope="col" class="numeric">Mark price</th>
-                    <th scope="col" class="numeric">PNL (ROE%)</th>
-                    <th scope="col" class="numeric">TP/SL for position</th>
+                    <th scope="col" data-i18n="active.table.symbol">Symbol</th>
+                    <th scope="col" class="numeric" data-i18n="active.table.size">Size</th>
+                    <th scope="col" class="numeric" data-i18n="active.table.entry">Entry price</th>
+                    <th scope="col" class="numeric" data-i18n="active.table.mark">Mark price</th>
+                    <th scope="col" class="numeric" data-i18n="active.table.pnl">PNL (ROE%)</th>
+                    <th scope="col" class="numeric" data-i18n="active.table.tpsl">TP/SL for position</th>
                   </tr>
                 </thead>
                 <tbody id="active-positions-rows"></tbody>
@@ -114,71 +131,91 @@
 
         <div class="hero-overview-grid">
           <section class="card status" aria-label="Bot status overview">
-            <h2>Status</h2>
+            <h2 data-i18n="status.title">Status</h2>
             <div class="status-grid">
               <div>
-                <span class="label">State</span>
+                <span class="label" data-i18n="status.state">State</span>
                 <span id="status-indicator" class="pill neutral">–</span>
               </div>
               <div>
-                <span class="label">PID</span>
+                <span class="label" data-i18n="status.pid">PID</span>
                 <span id="status-pid">–</span>
               </div>
               <div>
-                <span class="label">Started</span>
+                <span class="label" data-i18n="status.started">Started</span>
                 <span id="status-started">–</span>
               </div>
               <div>
-                <span class="label">Uptime</span>
+                <span class="label" data-i18n="status.uptime">Uptime</span>
                 <span id="status-uptime">–</span>
               </div>
             </div>
             <div class="ai-budget" id="ai-budget" data-ai-only>
               <div class="ai-budget-header">
-                <span class="label">AI budget (daily)</span>
+                <span class="label" data-i18n="status.aiBudget">AI budget (daily)</span>
                 <span class="ai-budget-mode" id="ai-budget-mode">Standard</span>
               </div>
               <div class="ai-budget-bar">
                 <div class="ai-budget-fill" id="ai-budget-fill" style="width: 0%"></div>
               </div>
-              <div class="ai-budget-meta" id="ai-budget-meta">Budget not configured.</div>
+              <div class="ai-budget-meta" id="ai-budget-meta" data-i18n="status.aiBudgetMeta">Budget not configured.</div>
             </div>
             <div class="status-stats">
               <div class="status-stats-header">
-                <span class="label">Trade decisions</span>
+                <span class="label" data-i18n="status.tradeDecisions">Trade decisions</span>
                 <div class="decision-summary" id="decision-summary">
-                  <span class="decision-metric" data-metric="taken">Accepted: <strong>0</strong></span>
-                  <span class="decision-metric" data-metric="skipped">Skipped: <strong>0</strong></span>
+                  <span class="decision-metric" data-metric="taken">
+                    <span data-i18n="status.decisions.accepted">Accepted:</span>
+                    <strong>0</strong>
+                  </span>
+                  <span class="decision-metric" data-metric="skipped">
+                    <span data-i18n="status.decisions.skipped">Skipped:</span>
+                    <strong>0</strong>
+                  </span>
                 </div>
               </div>
               <ul class="decision-reasons" id="decision-reasons">
-                <li class="empty">No trade decisions yet.</li>
+                <li class="empty" data-i18n="status.decisions.empty">No trade decisions yet.</li>
               </ul>
             </div>
           </section>
 
           <section class="card hero-credentials" role="group" aria-label="Exchange credentials">
-            <div class="hero-credentials-title">Exchange credentials</div>
+            <div class="hero-credentials-title" data-i18n="credentials.title">Exchange credentials</div>
             <label class="hero-credential">
-              <span>ASTER_API_KEY</span>
-              <input id="input-api-key" type="text" autocomplete="off" placeholder="Enter API key" />
+              <span data-i18n="credentials.apiKey.label">ASTER_API_KEY</span>
+              <input
+                id="input-api-key"
+                type="text"
+                autocomplete="off"
+                placeholder="Enter API key"
+                data-i18n="credentials.apiKey.placeholder"
+                data-i18n-attr="placeholder"
+              />
             </label>
             <label class="hero-credential">
-              <span>ASTER_API_SECRET</span>
-              <input id="input-api-secret" type="password" autocomplete="off" placeholder="Enter API secret" />
+              <span data-i18n="credentials.apiSecret.label">ASTER_API_SECRET</span>
+              <input
+                id="input-api-secret"
+                type="password"
+                autocomplete="off"
+                placeholder="Enter API secret"
+                data-i18n="credentials.apiSecret.placeholder"
+                data-i18n-attr="placeholder"
+              />
             </label>
             <div class="hero-credentials-actions">
-              <button id="btn-start" class="primary">Start</button>
-              <button id="btn-stop" class="ghost">Stop</button>
-              <button id="btn-save-credentials" class="primary subtle">Save</button>
+              <button id="btn-start" class="primary" data-i18n="credentials.start">Start</button>
+              <button id="btn-stop" class="ghost" data-i18n="credentials.stop">Stop</button>
+              <button id="btn-save-credentials" class="primary subtle" data-i18n="credentials.save">Save</button>
             </div>
           </section>
 
           <section class="card trades hero-overview-card" aria-label="Recent trade history">
             <div class="card-header trade-header">
               <div class="trade-title">
-                <h2>Trade history</h2>
-                <p class="card-subtitle">Latest fills and realized performance at a glance.</p>
+                <h2 data-i18n="trades.title">Trade history</h2>
+                <p class="card-subtitle" data-i18n="trades.subtitle">Latest fills and realized performance at a glance.</p>
               </div>
               <div class="trade-overview" id="trade-summary"></div>
             </div>
@@ -190,13 +227,15 @@
           <section class="card pnl-card hero-overview-card" aria-label="Performance overview">
             <div class="card-header">
               <div>
-                <h2>Performance overview</h2>
-                <p class="card-subtitle">Cumulative realized PNL across your recorded trades.</p>
+                <h2 data-i18n="pnl.title">Performance overview</h2>
+                <p class="card-subtitle" data-i18n="pnl.subtitle">Cumulative realized PNL across your recorded trades.</p>
               </div>
             </div>
             <div class="pnl-chart-wrapper">
               <canvas id="pnl-chart" aria-label="Cumulative PNL chart" style="display: none;"></canvas>
-              <div id="pnl-empty" class="empty-state">No PNL data yet. Execute trades to populate the performance graph.</div>
+              <div id="pnl-empty" class="empty-state" data-i18n="pnl.empty">
+                No PNL data yet. Execute trades to populate the performance graph.
+              </div>
             </div>
           </section>
         </div>
@@ -207,16 +246,17 @@
       <section class="card ai-mode-window" data-ai-only>
         <div class="ai-mode-window-header">
           <div class="ai-mode-window-header-main">
-            <span class="ai-mode-label">Autonomous feed</span>
+            <span class="ai-mode-label" data-i18n="ai.feed.label">Autonomous feed</span>
             <div class="ai-mode-window-title">
-              <h2>Autonomous Strategy Cockpit</h2>
-              <p class="ai-mode-window-subtitle">
+              <h2 data-i18n="ai.feed.title">Autonomous Strategy Cockpit</h2>
+              <p class="ai-mode-window-subtitle" data-i18n="ai.feed.subtitle">
                 Live strategy telemetry and autonomous AI actions stream here. Manual conversations moved to the dedicated dashboard chat console.
               </p>
             </div>
           </div>
           <label class="toggle ai-mode-autoscroll" for="autoscroll-ai"
-            ><input type="checkbox" id="autoscroll-ai" data-autoscroll checked /> Auto-scroll</label
+            ><input type="checkbox" id="autoscroll-ai" data-autoscroll checked />
+            <span data-i18n="common.autoScroll">Auto-scroll</span></label
           >
         </div>
         <div class="ai-mode-window-body">
@@ -234,10 +274,10 @@
       <section class="card chat-window" data-ai-only>
         <div class="chat-window-header">
           <div class="chat-window-header-main">
-            <span class="chat-window-label">Dashboard chat</span>
+            <span class="chat-window-label" data-i18n="chat.label">Dashboard chat</span>
             <div class="chat-window-title">
-              <h2>Strategy copilot</h2>
-              <p class="chat-window-subtitle">
+              <h2 data-i18n="chat.title">Strategy copilot</h2>
+              <p class="chat-window-subtitle" data-i18n="chat.subtitle">
                 Chat with the trading copilot in a focused workspace inspired by ChatGPT. This console requires the dedicated Dashboard chat API key.
               </p>
             </div>
@@ -246,20 +286,22 @@
         </div>
         <div class="chat-window-body ai-chat-panel">
           <div class="ai-chat-messages" id="ai-chat-messages" aria-live="polite">
-            <div class="ai-chat-empty">Provide the Dashboard chat API key to start a conversation.</div>
+            <div class="ai-chat-empty" data-i18n="chat.empty">Provide the Dashboard chat API key to start a conversation.</div>
           </div>
           <form id="ai-chat-form" class="ai-chat-form">
-            <label class="sr-only" for="ai-chat-input">Ask the strategy AI</label>
+            <label class="sr-only" for="ai-chat-input" data-i18n="chat.inputLabel">Ask the strategy AI</label>
             <textarea
               id="ai-chat-input"
               rows="2"
               placeholder="Send a message to your strategy copilot…"
+              data-i18n="chat.placeholder"
+              data-i18n-attr="placeholder"
               autocomplete="off"
             ></textarea>
             <div class="ai-chat-actions">
               <span class="ai-chat-status" id="ai-chat-status" role="status" aria-live="polite"></span>
-              <button type="button" class="ghost" id="btn-analyze-market">Analyze Market</button>
-              <button type="submit" class="primary">Send</button>
+              <button type="button" class="ghost" id="btn-analyze-market" data-i18n="chat.analyze">Analyze Market</button>
+              <button type="submit" class="primary" data-i18n="chat.send">Send</button>
             </div>
           </form>
         </div>
@@ -268,149 +310,218 @@
       <section class="card mode-panel ai-config" data-ai-only>
         <div class="card-header">
           <div>
-            <h2>AI-Mode controls</h2>
-            <p class="card-subtitle">Provide your OpenAI credentials and guardrails to let the bot orchestrate trades autonomously.</p>
+            <h2 data-i18n="ai.config.title">AI-Mode controls</h2>
+            <p class="card-subtitle" data-i18n="ai.config.subtitle">
+              Provide your OpenAI credentials and guardrails to let the bot orchestrate trades autonomously.
+            </p>
           </div>
-          <button id="btn-save-ai" class="primary subtle">Save</button>
+          <button id="btn-save-ai" class="primary subtle" data-i18n="ai.config.save">Save</button>
         </div>
         <div class="ai-config-panels">
           <div class="ai-config-panel">
-            <h3>Access</h3>
+            <h3 data-i18n="ai.config.access.title">Access</h3>
             <label>
-              <span>OpenAI API key</span>
-              <input id="input-openai-key" type="password" autocomplete="off" placeholder="sk-..." />
+              <span data-i18n="ai.config.access.openai">OpenAI API key</span>
+              <input
+                id="input-openai-key"
+                type="password"
+                autocomplete="off"
+                placeholder="sk-..."
+                data-i18n="ai.config.access.openaiPlaceholder"
+                data-i18n-attr="placeholder"
+              />
             </label>
-            <p class="ai-config-panel-hint">Stored securely on your machine. Required for autonomous execution of trades.</p>
+            <p class="ai-config-panel-hint" data-i18n="ai.config.access.openaiHint">
+              Stored securely on your machine. Required for autonomous execution of trades.
+            </p>
             <label>
-              <span>Dashboard chat API key</span>
-              <input id="input-chat-openai-key" type="password" autocomplete="off" placeholder="sk-..." />
+              <span data-i18n="ai.config.access.chat">Dashboard chat API key</span>
+              <input
+                id="input-chat-openai-key"
+                type="password"
+                autocomplete="off"
+                placeholder="sk-..."
+                data-i18n="ai.config.access.chatPlaceholder"
+                data-i18n-attr="placeholder"
+              />
             </label>
-            <p class="ai-config-panel-hint">This separate OpenAI key powers the dashboard chat console and keeps trading calls isolated. The chat window is disabled until this key is saved.</p>
+            <p class="ai-config-panel-hint" data-i18n="ai.config.access.chatHint">
+              This separate OpenAI key powers the dashboard chat console and keeps trading calls isolated. The chat window is disabled until this key is saved.
+            </p>
           </div>
           <div class="ai-config-panel">
-            <h3>Daily budget</h3>
+            <h3 data-i18n="ai.config.budget.title">Daily budget</h3>
             <label>
-              <span>Daily budget (USD)</span>
-              <input id="input-ai-budget" type="number" min="0" step="1" placeholder="20" value="20" />
+              <span data-i18n="ai.config.budget.label">Daily budget (USD)</span>
+              <input
+                id="input-ai-budget"
+                type="number"
+                min="0"
+                step="1"
+                placeholder="20"
+                value="20"
+                data-i18n="ai.config.budget.placeholder"
+                data-i18n-attr="placeholder"
+              />
             </label>
-            <p class="ai-config-panel-hint">Set a daily AI spend limit so autonomous actions stay within budget.</p>
+            <p class="ai-config-panel-hint" data-i18n="ai.config.budget.hint">
+              Set a daily AI spend limit so autonomous actions stay within budget.
+            </p>
           </div>
           <div class="ai-config-panel">
-            <h3>Model</h3>
+            <h3 data-i18n="ai.config.model.title">Model</h3>
             <label>
-              <span>Model</span>
+              <span data-i18n="ai.config.model.label">Model</span>
               <select id="input-ai-model">
-                <optgroup label="GPT-5 family">
+                <optgroup label="GPT-5 family" data-i18n="ai.config.model.group.gpt5">
                   <option value="gpt-5" selected>GPT-5</option>
                   <option value="gpt-5-mini">GPT-5 mini</option>
                 </optgroup>
-                <optgroup label="GPT-4.1 family">
+                <optgroup label="GPT-4.1 family" data-i18n="ai.config.model.group.gpt41">
                   <option value="gpt-4.1">GPT-4.1</option>
                   <option value="gpt-4.1-mini">GPT-4.1 mini</option>
                 </optgroup>
-                <optgroup label="GPT-4o family">
+                <optgroup label="GPT-4o family" data-i18n="ai.config.model.group.gpt4o">
                   <option value="gpt-4o">GPT-4o</option>
                   <option value="gpt-4o-mini">GPT-4o mini</option>
                 </optgroup>
-                <optgroup label="Reasoning models">
+                <optgroup label="Reasoning models" data-i18n="ai.config.model.group.reasoning">
                   <option value="o1">o1</option>
                   <option value="o1-mini">o1-mini</option>
                   <option value="o4-mini">o4-mini</option>
                 </optgroup>
-                <optgroup label="Legacy models">
+                <optgroup label="Legacy models" data-i18n="ai.config.model.group.legacy">
                   <option value="gpt-4-turbo">GPT-4 Turbo</option>
                   <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
                 </optgroup>
               </select>
             </label>
-            <p class="ai-config-panel-hint">Choose the OpenAI foundation model that powers live analysis.</p>
+            <p class="ai-config-panel-hint" data-i18n="ai.config.model.hint">Choose the OpenAI foundation model that powers live analysis.</p>
           </div>
           <div class="ai-config-panel">
-            <h3>Baseline stake</h3>
+            <h3 data-i18n="ai.config.baseline.title">Baseline stake</h3>
             <label>
-              <span>Baseline notional per trade (USDT)</span>
-              <input id="input-ai-default-notional" type="number" min="0" step="0.01" placeholder="250" />
+              <span data-i18n="ai.config.baseline.label">Baseline notional per trade (USDT)</span>
+              <input
+                id="input-ai-default-notional"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="250"
+                data-i18n="ai.config.baseline.placeholder"
+                data-i18n-attr="placeholder"
+              />
             </label>
-            <p class="ai-config-panel-hint">
+            <p class="ai-config-panel-hint" data-i18n="ai.config.baseline.hint">
               Defines <code>ASTER_DEFAULT_NOTIONAL</code>: the minimum USDT the AI targets per trade before applying its own multipliers or encountering risk-based limits.
             </p>
           </div>
         </div>
-        <p class="ai-config-hint">When AI-Mode is active, the strategy engine continuously calibrates position sizing, leverage, protective stops, and FastTP with your chosen model while honoring the daily spend limit.</p>
+        <p class="ai-config-hint" data-i18n="ai.config.footer">
+          When AI-Mode is active, the strategy engine continuously calibrates position sizing, leverage, protective stops, and FastTP with your chosen model while honoring the daily spend limit.
+        </p>
       </section>
 
       <section class="card mode-panel quick-setup" data-normal-only data-hide-when-ai>
         <div class="card-header">
           <div>
-            <h2>Quick strategy setup</h2>
-            <p class="card-subtitle">Select a preset, then fine-tune risk and leverage for your comfort zone.</p>
+            <h2 data-i18n="quick.title">Quick strategy setup</h2>
+            <p class="card-subtitle" data-i18n="quick.subtitle">Select a preset, then fine-tune risk and leverage for your comfort zone.</p>
           </div>
-          <button id="btn-apply-preset" class="primary subtle">Apply preset</button>
+          <button id="btn-apply-preset" class="primary subtle" data-i18n="quick.apply">Apply preset</button>
         </div>
         <div class="preset-buttons" role="group" aria-label="Risk presets">
           <button class="preset" data-preset="low">
-            <span class="preset-title">Low</span>
-            <span class="preset-subtitle">Few trades · low risk</span>
+            <span class="preset-title" data-i18n="quick.presets.low.title">Low</span>
+            <span class="preset-subtitle" data-i18n="quick.presets.low.subtitle">Few trades · low risk</span>
           </button>
           <button class="preset" data-preset="mid">
-            <span class="preset-title">Mid</span>
-            <span class="preset-subtitle">Balanced trading</span>
+            <span class="preset-title" data-i18n="quick.presets.mid.title">Mid</span>
+            <span class="preset-subtitle" data-i18n="quick.presets.mid.subtitle">Balanced trading</span>
           </button>
           <button class="preset" data-preset="high">
-            <span class="preset-title">High</span>
-            <span class="preset-subtitle">Frequent · aggressive</span>
+            <span class="preset-title" data-i18n="quick.presets.high.title">High</span>
+            <span class="preset-subtitle" data-i18n="quick.presets.high.subtitle">Frequent · aggressive</span>
           </button>
           <button class="preset" data-preset="att">
-            <span class="preset-title">ATT</span>
-            <span class="preset-subtitle">Against the trend</span>
+            <span class="preset-title" data-i18n="quick.presets.att.title">ATT</span>
+            <span class="preset-subtitle" data-i18n="quick.presets.att.subtitle">Against the trend</span>
           </button>
         </div>
-        <div id="preset-description" class="preset-description">Pick a profile to load recommended risk controls.</div>
+        <div id="preset-description" class="preset-description" data-i18n="quick.description">Pick a profile to load recommended risk controls.</div>
         <div class="risk-controls">
           <div class="risk-control">
             <div class="risk-control-header">
-              <span>Risk per trade</span>
+              <span data-i18n="quick.risk.label">Risk per trade</span>
               <span id="risk-value" class="risk-value">1.0%</span>
             </div>
-            <input type="range" id="risk-slider" min="0.25" max="5" step="0.25" value="1.0" aria-label="Risk per trade (%)" />
+            <input
+              type="range"
+              id="risk-slider"
+              min="0.25"
+              max="5"
+              step="0.25"
+              value="1.0"
+              aria-label="Risk per trade (%)"
+              data-i18n="quick.risk.aria"
+              data-i18n-attr="aria-label"
+            />
             <div class="risk-scale">
-              <span>0.25%</span>
-              <span>5%</span>
+              <span data-i18n="quick.risk.min">0.25%</span>
+              <span data-i18n="quick.risk.max">5%</span>
             </div>
           </div>
           <div class="risk-control">
             <div class="risk-control-header">
-              <span>Leverage</span>
+              <span data-i18n="quick.leverage.label">Leverage</span>
               <span id="leverage-value" class="risk-value">1×</span>
             </div>
-            <input type="range" id="leverage-slider" min="1" max="5" step="1" value="1" aria-label="Leverage multiplier" />
+            <input
+              type="range"
+              id="leverage-slider"
+              min="1"
+              max="5"
+              step="1"
+              value="1"
+              aria-label="Leverage multiplier"
+              data-i18n="quick.leverage.aria"
+              data-i18n-attr="aria-label"
+            />
             <div class="risk-scale">
-              <span>1×</span>
-              <span>5× max</span>
+              <span data-i18n="quick.leverage.min">1×</span>
+              <span data-i18n="quick.leverage.max">5× max</span>
             </div>
           </div>
         </div>
         <div class="quick-setup-baseline">
           <label class="quick-setup-field" for="input-default-notional">
-            <span class="quick-setup-label">Baseline stake per trade (USDT)</span>
+            <span class="quick-setup-label" data-i18n="quick.baseline.label">Baseline stake per trade (USDT)</span>
             <div class="quick-setup-input">
-              <input id="input-default-notional" type="number" min="0" step="0.01" placeholder="250" />
-              <span class="quick-setup-unit">USDT</span>
+              <input
+                id="input-default-notional"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="250"
+                data-i18n="quick.baseline.placeholder"
+                data-i18n-attr="placeholder"
+              />
+              <span class="quick-setup-unit" data-i18n="quick.baseline.unit">USDT</span>
             </div>
           </label>
-          <p class="quick-setup-field-hint">
+          <p class="quick-setup-field-hint" data-i18n="quick.baseline.hint">
             Sets <code>ASTER_DEFAULT_NOTIONAL</code> — the baseline amount the bot aims to allocate to every trade before risk caps or multipliers adjust the final size.
           </p>
         </div>
         <div class="preset-meta" id="preset-meta">
           <div class="preset-meta-block">
-            <h3>Funding filters</h3>
-            <p id="preset-funding-details">Funding controls are derived from the selected preset.</p>
+            <h3 data-i18n="quick.funding.title">Funding filters</h3>
+            <p id="preset-funding-details" data-i18n="quick.funding.details">Funding controls are derived from the selected preset.</p>
           </div>
           <div class="preset-meta-block">
-            <h3>ML policy</h3>
+            <h3 data-i18n="quick.ml.title">ML policy</h3>
             <ul id="preset-ml-details">
-              <li class="preset-meta-empty">ML policy details will appear once presets load.</li>
+              <li class="preset-meta-empty" data-i18n="quick.ml.empty">ML policy details will appear once presets load.</li>
             </ul>
           </div>
         </div>
@@ -419,7 +530,7 @@
       <section id="env-config-panel" class="card mode-panel config" data-pro-only>
         <div class="card-header">
           <div class="card-header-main">
-            <h2>Environment configuration</h2>
+            <h2 data-i18n="env.title">Environment configuration</h2>
             <button
               id="btn-toggle-env"
               class="ghost collapse-toggle"
@@ -433,30 +544,38 @@
               data-aria-collapse="Collapse environment settings"
             >
               <span class="collapse-toggle__icon" aria-hidden="true"></span>
-              <span class="collapse-toggle__label" data-collapse-label>Expand</span>
+              <span class="collapse-toggle__label" data-collapse-label data-i18n="env.expand">Expand</span>
             </button>
           </div>
-          <button id="btn-save-config" class="primary subtle">Save</button>
+          <button id="btn-save-config" class="primary subtle" data-i18n="env.save">Save</button>
         </div>
-        <p class="card-subtitle">Adjust every relevant <code>ASTER_*</code> parameter without restarting the service. Changes persist automatically.</p>
+        <p class="card-subtitle" data-i18n="env.subtitle">
+          Adjust every relevant <code>ASTER_*</code> parameter without restarting the service. Changes persist automatically.
+        </p>
         <div id="env-settings" class="env-grid"></div>
       </section>
 
       <section class="card logs compact">
         <div class="card-header">
           <div>
-            <h2>Activity feed</h2>
-            <p class="card-subtitle">Key fills, warnings, and high-signal events.</p>
+            <h2 data-i18n="logs.activity.title">Activity feed</h2>
+            <p class="card-subtitle" data-i18n="logs.activity.subtitle">Key fills, warnings, and high-signal events.</p>
           </div>
-          <label class="toggle"><input type="checkbox" id="autoscroll-normal" data-autoscroll checked /> Auto-scroll</label>
+          <label class="toggle"
+            ><input type="checkbox" id="autoscroll-normal" data-autoscroll checked />
+            <span data-i18n="common.autoScroll">Auto-scroll</span></label
+          >
         </div>
         <div id="log-brief" class="log-stream compact"></div>
       </section>
 
       <section class="card logs" data-pro-only>
         <div class="card-header">
-          <h2>Debug live logs</h2>
-          <label class="toggle"><input type="checkbox" id="autoscroll-pro" data-autoscroll checked /> Auto-scroll</label>
+          <h2 data-i18n="logs.debug.title">Debug live logs</h2>
+          <label class="toggle"
+            ><input type="checkbox" id="autoscroll-pro" data-autoscroll checked />
+            <span data-i18n="common.autoScroll">Auto-scroll</span></label
+          >
         </div>
         <div id="log-stream" class="log-stream compact"></div>
       </section>
@@ -472,7 +591,7 @@
       >
         <div class="trade-modal-header">
           <div>
-            <h2 id="decision-modal-title">Trade decision reason</h2>
+            <h2 id="decision-modal-title" data-i18n="modals.decision.title">Trade decision reason</h2>
             <p class="trade-modal-subtitle" id="decision-modal-subtitle"></p>
           </div>
           <button
@@ -481,7 +600,7 @@
             class="trade-modal-close"
             aria-label="Close trade decision details"
           >
-            Close
+            <span data-i18n="common.close">Close</span>
           </button>
         </div>
         <div class="trade-modal-body" id="decision-modal-body"></div>
@@ -498,11 +617,11 @@
       >
         <div class="trade-modal-header">
           <div>
-            <h2 id="trade-modal-title">Trade details</h2>
+            <h2 id="trade-modal-title" data-i18n="modals.trade.title">Trade details</h2>
             <p class="trade-modal-subtitle" id="trade-modal-subtitle"></p>
           </div>
           <button type="button" id="trade-modal-close" class="trade-modal-close" aria-label="Close trade details">
-            Close
+            <span data-i18n="common.close">Close</span>
           </button>
         </div>
         <div class="trade-modal-body" id="trade-modal-body"></div>
@@ -513,8 +632,8 @@
       <div class="pnl-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="pnl-modal-title">
         <div class="pnl-modal-header">
           <div>
-            <h2 id="pnl-modal-title">Performance overview</h2>
-            <p class="pnl-modal-subtitle">Cumulative realized PNL across your recorded trades.</p>
+            <h2 id="pnl-modal-title" data-i18n="modals.pnl.title">Performance overview</h2>
+            <p class="pnl-modal-subtitle" data-i18n="modals.pnl.subtitle">Cumulative realized PNL across your recorded trades.</p>
           </div>
           <button
             type="button"
@@ -532,7 +651,7 @@
     </div>
 
     <footer>
-      <p>Made for Aster — adaptive trading with full transparency. Lean on live logs and AI hints to iterate with confidence.</p>
+      <p data-i18n="footer.note">Made for Aster — adaptive trading with full transparency. Lean on live logs and AI hints to iterate with confidence.</p>
     </footer>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
