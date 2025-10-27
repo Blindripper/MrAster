@@ -1160,7 +1160,7 @@ button:focus-visible {
   .ai-mode-window-body {
     height: clamp(520px, 72vh, 720px);
     max-height: clamp(520px, 72vh, 720px);
-    overflow-y: auto;
+    overflow: hidden;
   }
 }
 
@@ -1808,8 +1808,7 @@ body.ai-mode .ai-mode-window {
   background: rgba(12, 13, 20, 0.78);
   border: 1px solid rgba(245, 196, 107, 0.12);
   box-shadow: inset 0 1px 0 rgba(245, 196, 107, 0.05);
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
   scrollbar-gutter: stable both-edges;
   padding-bottom: calc(1.4rem + env(safe-area-inset-bottom, 0px));
 }
