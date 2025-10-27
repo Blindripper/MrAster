@@ -4962,6 +4962,234 @@ function appendChatMessage(role, message, meta = {}) {
   }
 }
 
+function appendTradeProposalCard(proposal) {
+  if (!aiChatMessages || !proposal || !proposal.id) return;
+  const updateCardState = (cardEl, data) => {
+    if (!cardEl || !data) return;
+    const statusText = (data.status || '').toString().toLowerCase();
+    if (statusText === 'queued' || statusText === 'executed' || statusText === 'completed') {
+      cardEl.classList.add('queued');
+      const statusEl = cardEl.querySelector('.ai-trade-proposal__status');
+      if (statusEl) {
+        statusEl.textContent = translate('chat.proposal.statusQueued', 'Manual trade queued for execution.');
+      }
+      const actionBtn = cardEl.querySelector('.ai-trade-proposal__action');
+      if (actionBtn) {
+        actionBtn.disabled = true;
+        actionBtn.textContent = translate('chat.proposal.queued', 'Manual trade queued');
+      }
+    }
+  };
+  const existing = aiChatMessages.querySelector(
+    `.ai-trade-proposal[data-proposal-id="${proposal.id}"]`
+  );
+  if (existing) {
+    updateCardState(existing, proposal);
+    return;
+  }
+  const empty = aiChatMessages.querySelector('.ai-chat-empty');
+  if (empty) empty.remove();
+  const shouldAutoScroll = autoScrollEnabled && isScrolledToBottom(aiChatMessages);
+
+  const card = document.createElement('div');
+  card.className = 'ai-trade-proposal';
+  card.dataset.proposalId = proposal.id;
+
+  const symbol = (proposal.symbol || '').toString().toUpperCase();
+  const direction = (proposal.direction || '').toString().toUpperCase();
+  if (direction === 'LONG') {
+    card.classList.add('long');
+  } else if (direction === 'SHORT') {
+    card.classList.add('short');
+  }
+
+  const header = document.createElement('div');
+  header.className = 'ai-trade-proposal__header';
+  const title = document.createElement('div');
+  title.className = 'ai-trade-proposal__title';
+  if (symbol && direction) {
+    title.textContent = `${symbol} ${direction}`;
+  } else if (symbol) {
+    title.textContent = symbol;
+  } else if (direction) {
+    title.textContent = direction;
+  } else {
+    title.textContent = translate('chat.proposal.idea', 'Trade Idea');
+  }
+  header.append(title);
+  card.append(header);
+
+  const grid = document.createElement('div');
+  grid.className = 'ai-trade-proposal__grid';
+
+  const addCell = (label, value) => {
+    const cell = document.createElement('div');
+    cell.className = 'ai-trade-proposal__cell';
+    const labelEl = document.createElement('span');
+    labelEl.className = 'ai-trade-proposal__label';
+    labelEl.textContent = label;
+    const valueEl = document.createElement('span');
+    valueEl.className = 'ai-trade-proposal__value';
+    valueEl.textContent = value;
+    cell.append(labelEl, valueEl);
+    grid.append(cell);
+  };
+
+  const formatNumber = (value, { maximumFractionDigits = 4 } = {}) => {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return '—';
+    const opts = {
+      maximumFractionDigits,
+      minimumFractionDigits: 0,
+    };
+    if (Math.abs(num) >= 1000) {
+      opts.maximumFractionDigits = Math.min(opts.maximumFractionDigits, 2);
+    } else if (Math.abs(num) >= 1) {
+      opts.maximumFractionDigits = Math.min(opts.maximumFractionDigits, 3);
+    } else {
+      opts.maximumFractionDigits = Math.min(opts.maximumFractionDigits, 6);
+    }
+    return num.toLocaleString(undefined, opts);
+  };
+
+  const formatEntry = () => {
+    const entryKind = (proposal.entry_kind || '').toString().toLowerCase();
+    const entryLabel = (proposal.entry_label || '').toString();
+    const entryPrice = Number(proposal.entry_price);
+    let base = '';
+    if (entryKind === 'limit' && Number.isFinite(entryPrice)) {
+      base = `${translate('chat.proposal.entry.limit', 'Limit')} ${formatNumber(entryPrice)}`;
+    } else {
+      base = translate('chat.proposal.entry.market', 'Market');
+    }
+    if (entryLabel) {
+      base = `${base} · ${entryLabel}`;
+    }
+    return base;
+  };
+
+  const formatPrice = (raw) => {
+    if (raw === null || raw === undefined) return '—';
+    return formatNumber(raw);
+  };
+
+  const formatSizing = () => {
+    const notional = Number(proposal.notional);
+    if (Number.isFinite(notional) && notional > 0) {
+      return `${formatNumber(notional, { maximumFractionDigits: 2 })} USDT`;
+    }
+    const mult = Number(proposal.size_multiplier);
+    if (Number.isFinite(mult) && mult > 0) {
+      return `${formatNumber(mult, { maximumFractionDigits: 2 })}×`;
+    }
+    return '—';
+  };
+
+  const formatConfidence = () => {
+    const value = Number(proposal.confidence);
+    if (!Number.isFinite(value)) return '—';
+    return `${Math.round(Math.min(Math.max(value, 0), 1) * 100)}%`;
+  };
+
+  const formatString = (raw) => {
+    if (!raw) return '—';
+    const text = raw.toString().trim();
+    return text || '—';
+  };
+
+  addCell(translate('chat.proposal.entry', 'Entry'), formatEntry());
+  addCell(translate('chat.proposal.stop', 'Stop-Loss'), formatPrice(proposal.stop_loss));
+  addCell(translate('chat.proposal.take', 'Take-Profit'), formatPrice(proposal.take_profit));
+  addCell(translate('chat.proposal.size', 'Position Size'), formatSizing());
+  addCell(translate('chat.proposal.confidence', 'Confidence'), formatConfidence());
+  addCell(translate('chat.proposal.timeframe', 'Timeframe'), formatString(proposal.timeframe));
+
+  if (proposal.risk_reward !== undefined) {
+    const rr = Number(proposal.risk_reward);
+    if (Number.isFinite(rr) && rr > 0) {
+      addCell(translate('chat.proposal.riskReward', 'R/R'), formatNumber(rr, { maximumFractionDigits: 2 }));
+    }
+  }
+
+  card.append(grid);
+
+  if (proposal.note) {
+    const note = proposal.note.toString().trim();
+    if (note) {
+      const noteEl = document.createElement('div');
+      noteEl.className = 'ai-trade-proposal__note';
+      noteEl.textContent = note;
+      card.append(noteEl);
+    }
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'ai-trade-proposal__actions';
+  const actionBtn = document.createElement('button');
+  actionBtn.type = 'button';
+  actionBtn.className = 'ai-trade-proposal__action';
+  const idleLabel = translate('chat.proposal.execute', 'Execute with bot');
+  const workingLabel = translate('chat.proposal.executing', 'Queuing…');
+  const successLabel = translate('chat.proposal.queued', 'Manual trade queued');
+  const retryLabel = translate('chat.proposal.retry', 'Retry');
+  actionBtn.textContent = idleLabel;
+  actions.append(actionBtn);
+  card.append(actions);
+
+  const statusEl = document.createElement('div');
+  statusEl.className = 'ai-trade-proposal__status';
+  statusEl.textContent = translate('chat.proposal.statusPending', 'Ready to hand off to the bot.');
+  card.append(statusEl);
+
+  actionBtn.addEventListener('click', async () => {
+    if (!proposal.id) return;
+    actionBtn.disabled = true;
+    actionBtn.textContent = workingLabel;
+    statusEl.textContent = translate('chat.proposal.statusExecuting', 'Sending proposal to the bot…');
+    setChatStatus(translate('chat.proposal.statusExecuting', 'Sending proposal to the bot…'));
+    try {
+      const res = await fetch('/api/ai/proposals/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proposalId: proposal.id }),
+      });
+      const text = await res.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch (parseErr) {
+        data = {};
+      }
+      if (!res.ok) {
+        const detail = data && typeof data === 'object' ? data.detail : null;
+        throw new Error(detail || 'Failed to queue trade proposal');
+      }
+      const payload = data && typeof data === 'object' ? data.proposal || {} : {};
+      updateCardState(card, payload);
+      if (!card.classList.contains('queued')) {
+        card.classList.add('queued');
+        actionBtn.textContent = successLabel;
+        statusEl.textContent = translate('chat.proposal.statusQueued', 'Manual trade queued for execution.');
+      }
+      setChatStatus(translate('chat.proposal.statusQueued', 'Manual trade queued for execution.'));
+    } catch (err) {
+      const message =
+        (err?.message || '').trim() || translate('chat.proposal.statusFailed', 'Failed to queue trade proposal.');
+      statusEl.textContent = message;
+      setChatStatus(message);
+      actionBtn.disabled = false;
+      actionBtn.textContent = retryLabel;
+    }
+  });
+
+  aiChatMessages.append(card);
+  updateCardState(card, proposal);
+  if (shouldAutoScroll) {
+    const behavior = aiChatMessages.scrollHeight > aiChatMessages.clientHeight ? 'smooth' : 'auto';
+    scrollToBottom(aiChatMessages, behavior);
+  }
+}
+
 function setChatStatus(message) {
   if (aiChatStatus) {
     aiChatStatus.textContent = message || '';
@@ -6588,6 +6816,9 @@ async function loadTrades() {
     renderAiBudget(data.ai_budget);
     renderAiActivity(data.ai_activity);
     renderActivePositions(data.open);
+    if (Array.isArray(data.ai_trade_proposals)) {
+      data.ai_trade_proposals.forEach((proposal) => appendTradeProposalCard(proposal));
+    }
   } catch (err) {
     console.warn(err);
   }
@@ -6887,6 +7118,9 @@ if (btnAnalyzeMarket) {
         setChatStatus(translate('chat.status.ready', 'Market analysis ready.'));
       }
       setChatKeyIndicator('ready', translate('chat.key.ready', 'Dedicated chat key active'));
+      if (Array.isArray(data.trade_proposals) && data.trade_proposals.length > 0) {
+        data.trade_proposals.forEach((proposal) => appendTradeProposalCard(proposal));
+      }
     } catch (err) {
       const defaultError = translate('chat.status.failed', 'Market analysis failed.');
       const rawMessage = (err?.message || '').trim();
