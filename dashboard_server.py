@@ -1143,22 +1143,27 @@ class AIChatEngine:
             if isinstance(raw_content, str):
                 stripped = raw_content.strip()
                 if stripped:
-                    content_parts.append({"type": "input_text", "text": stripped})
+                    content_parts.append({"type": "text", "text": stripped})
             elif isinstance(raw_content, list):
                 for part in raw_content:
                     if isinstance(part, dict):
                         p_type = part.get("type")
                         text = part.get("text")
                         if isinstance(text, str) and text.strip():
-                            # Respect explicit types if provided by the caller.
+                            # Respect explicit types if provided by the caller, while
+                            # normalising legacy ``input_text`` segments to the modern
+                            # ``text`` type expected by the Responses API.
+                            normalized_type = str(p_type or "text")
+                            if normalized_type == "input_text":
+                                normalized_type = "text"
                             content_parts.append(
                                 {
-                                    "type": str(p_type or "input_text"),
+                                    "type": normalized_type,
                                     "text": text.strip(),
                                 }
                             )
                     elif isinstance(part, str) and part.strip():
-                        content_parts.append({"type": "input_text", "text": part.strip()})
+                        content_parts.append({"type": "text", "text": part.strip()})
             if not content_parts:
                 continue
             normalized_input.append({"role": role, "content": content_parts})
