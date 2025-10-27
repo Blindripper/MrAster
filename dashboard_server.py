@@ -1102,6 +1102,30 @@ class AIChatEngine:
                 return header_value
         return None
 
+    def _model_traits(self, model: str) -> Dict[str, Any]:
+        normalized = (model or "").strip().lower()
+        traits = {
+            "modalities": None,
+            "reasoning": None,
+            "legacy_supported": True,
+        }
+        if not normalized:
+            return traits
+
+        if normalized.startswith("gpt-5") or normalized.startswith("o4"):
+            traits["modalities"] = ["text"]
+            traits["reasoning"] = {"effort": "medium"}
+            traits["legacy_supported"] = False
+        elif normalized.startswith("o3"):
+            traits["modalities"] = ["text"]
+            traits["reasoning"] = {"effort": "medium"}
+            traits["legacy_supported"] = False
+        elif normalized.startswith("gpt-4.1"):
+            traits["modalities"] = ["text"]
+            traits["legacy_supported"] = False
+
+        return traits
+
     def _call_openai_responses(
         self,
         headers: Dict[str, str],
@@ -1139,11 +1163,17 @@ class AIChatEngine:
                 continue
             normalized_input.append({"role": role, "content": content_parts})
 
+        traits = self._model_traits(model)
+
         payload: Dict[str, Any] = {
             "model": model,
             "input": normalized_input,
             "max_output_tokens": 400,
         }
+        if traits["modalities"]:
+            payload["modalities"] = traits["modalities"]
+        if traits["reasoning"]:
+            payload["reasoning"] = traits["reasoning"]
         if temperature is not None:
             payload["temperature"] = temperature
 
@@ -1240,10 +1270,16 @@ class AIChatEngine:
         temperature: Optional[float],
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
         last_exc: Optional[Exception] = None
+        traits = self._model_traits(model)
         try:
             return self._call_openai_responses(headers, model, messages, temperature)
         except Exception as exc:
             last_exc = exc
+
+        if not traits.get("legacy_supported", True):
+            if last_exc:
+                raise last_exc
+            raise
 
         return self._call_openai_legacy_chat(headers, model, messages, temperature, prior_exc=last_exc)
 
