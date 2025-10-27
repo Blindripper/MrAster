@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 40" role="img" aria-label="Flag of South Korea">
+  <title>Flag of South Korea</title>
+  <rect width="60" height="40" fill="#ffffff" rx="2"/>
+  <defs>
+    <clipPath id="taegukgi-emblem">
+      <circle cx="30" cy="20" r="8.5" />
+    </clipPath>
+  </defs>
+  <g clip-path="url(#taegukgi-emblem)" transform="rotate(-23 30 20)">
+    <rect x="21.5" y="11.5" width="17" height="8.5" fill="#cd2e3a"/>
+    <rect x="21.5" y="20" width="17" height="8.5" fill="#0047a0"/>
+    <circle cx="26.5" cy="20" r="4.5" fill="#cd2e3a"/>
+    <circle cx="34.5" cy="20" r="4.5" fill="#0047a0"/>
+  </g>
+  <g fill="#000000">
+    <g transform="translate(12.5 9.5)">
+      <rect x="-6" y="-5.2" width="12" height="1.8" rx="0.4"/>
+      <rect x="-6" y="-1.5" width="12" height="1.8" rx="0.4"/>
+      <rect x="-6" y="2.2" width="12" height="1.8" rx="0.4"/>
+    </g>
+    <g transform="translate(47.5 9.5)">
+      <rect x="-6" y="-5.2" width="12" height="1.8" rx="0.4"/>
+      <rect x="-6" y="-1.5" width="5" height="1.8" rx="0.4"/>
+      <rect x="1" y="-1.5" width="5" height="1.8" rx="0.4"/>
+      <rect x="-6" y="2.2" width="12" height="1.8" rx="0.4"/>
+    </g>
+    <g transform="translate(12.5 30.5)">
+      <rect x="-6" y="-5.2" width="5" height="1.8" rx="0.4"/>
+      <rect x="1" y="-5.2" width="5" height="1.8" rx="0.4"/>
+      <rect x="-6" y="-1.5" width="12" height="1.8" rx="0.4"/>
+      <rect x="-6" y="2.2" width="5" height="1.8" rx="0.4"/>
+      <rect x="1" y="2.2" width="5" height="1.8" rx="0.4"/>
+    </g>
+    <g transform="translate(47.5 30.5)">
+      <rect x="-6" y="-5.2" width="5" height="1.8" rx="0.4"/>
+      <rect x="1" y="-5.2" width="5" height="1.8" rx="0.4"/>
+      <rect x="-6" y="-1.5" width="5" height="1.8" rx="0.4"/>
+      <rect x="1" y="-1.5" width="5" height="1.8" rx="0.4"/>
+      <rect x="-6" y="2.2" width="5" height="1.8" rx="0.4"/>
+      <rect x="1" y="2.2" width="5" height="1.8" rx="0.4"/>
+    </g>
+  </g>
+</svg>
