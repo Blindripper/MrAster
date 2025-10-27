@@ -2515,6 +2515,14 @@ function formatContextValue(key, raw) {
   return raw.toString();
 }
 
+function getTradeTimestamp(trade) {
+  if (!trade || typeof trade !== 'object') return 0;
+  const closed = Date.parse(trade.closed_at_iso);
+  if (Number.isFinite(closed)) return closed;
+  const opened = Date.parse(trade.opened_at_iso);
+  return Number.isFinite(opened) ? opened : 0;
+}
+
 function renderTradeHistory(history) {
   if (!tradeList) return;
   tradeList.innerHTML = '';
@@ -2529,7 +2537,9 @@ function renderTradeHistory(history) {
     return;
   }
 
-  history.forEach((trade) => {
+  const sortedHistory = [...history].sort((a, b) => getTradeTimestamp(b) - getTradeTimestamp(a));
+
+  sortedHistory.forEach((trade) => {
     const card = buildTradeSummaryCard(trade);
     tradeList.append(card);
   });
@@ -2707,13 +2717,13 @@ function parsePxValue(value) {
 function syncTradeListViewport() {
   if (!tradeList || typeof window === 'undefined') return;
   const items = Array.from(tradeList.querySelectorAll('.trade-card'));
-  if (items.length <= 3) {
+  if (items.length <= 2) {
     tradeList.style.removeProperty('max-height');
     tradeList.removeAttribute('data-viewport-locked');
     return;
   }
 
-  const sample = items.slice(0, 3);
+  const sample = items.slice(0, 2);
   let visibleHeight = 0;
   sample.forEach((item) => {
     visibleHeight += item.getBoundingClientRect().height;
