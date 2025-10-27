@@ -34,6 +34,11 @@ STATE_FILE = ROOT_DIR / os.getenv("ASTER_STATE_FILE", "aster_state.json")
 STATIC_DIR = ROOT_DIR / "dashboard_static"
 CONFIG_FILE = ROOT_DIR / "dashboard_config.json"
 
+SHARE_IMAGES = {
+    "high": ROOT_DIR / "high.jpg",
+    "low": ROOT_DIR / "low.jpg",
+}
+
 ENV_DEFAULTS: Dict[str, str] = {
     "ASTER_EXCHANGE_BASE": "https://fapi.asterdex.com",
     "ASTER_API_KEY": "",
@@ -805,6 +810,15 @@ async def index() -> FileResponse:
     if not index_file.exists():
         raise HTTPException(status_code=404, detail="Dashboard build not found")
     return FileResponse(index_file)
+
+
+@app.get("/share/{variant}")
+async def get_share_image(variant: str) -> FileResponse:
+    key = (variant or "").strip().lower()
+    path = SHARE_IMAGES.get(key)
+    if not path or not path.exists():
+        raise HTTPException(status_code=404, detail="Share image not found")
+    return FileResponse(path)
 
 
 @app.get("/api/config")
