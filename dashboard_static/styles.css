@@ -1035,8 +1035,8 @@ button:focus-visible {
   }
 
   .ai-mode-window-body {
-    height: clamp(420px, 68vh, 600px);
-    max-height: clamp(420px, 68vh, 600px);
+    height: clamp(520px, 72vh, 720px);
+    max-height: clamp(520px, 72vh, 720px);
   }
 }
 
@@ -1592,8 +1592,8 @@ body.ai-mode .ai-mode-window {
 
 .ai-mode-window-body {
   flex: 1 1 auto;
-  height: clamp(520px, 70vh, 680px);
-  max-height: clamp(520px, 70vh, 680px);
+  height: clamp(620px, 75vh, 820px);
+  max-height: clamp(620px, 75vh, 820px);
   display: flex;
   flex-direction: column;
   gap: 1.2rem;
@@ -3303,7 +3303,7 @@ footer p {
   }
 
   .ai-mode-window-body {
-    min-height: clamp(320px, 60vh, 520px);
+    min-height: clamp(420px, 68vh, 620px);
     padding: 0.95rem;
   }
 }
