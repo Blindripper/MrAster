@@ -1160,6 +1160,7 @@ button:focus-visible {
   .ai-mode-window-body {
     height: clamp(520px, 72vh, 720px);
     max-height: clamp(520px, 72vh, 720px);
+    overflow-y: auto;
   }
 }
 
@@ -1796,8 +1797,9 @@ body.ai-mode .ai-mode-window {
 
 .ai-mode-window-body {
   flex: 1 1 auto;
-  height: clamp(620px, 75vh, 820px);
-  max-height: clamp(620px, 75vh, 820px);
+  min-height: 620px;
+  height: auto;
+  max-height: none;
   display: flex;
   flex-direction: column;
   gap: 1.2rem;
@@ -1807,7 +1809,7 @@ body.ai-mode .ai-mode-window {
   border: 1px solid rgba(245, 196, 107, 0.12);
   box-shadow: inset 0 1px 0 rgba(245, 196, 107, 0.05);
   overflow-x: hidden;
-  overflow-y: auto;
+  overflow-y: visible;
   scrollbar-gutter: stable both-edges;
   padding-bottom: calc(1.4rem + env(safe-area-inset-bottom, 0px));
 }
