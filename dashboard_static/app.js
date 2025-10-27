@@ -15,6 +15,11 @@ const compactLogStream = document.getElementById('log-brief');
 const autoScrollToggles = document.querySelectorAll('input[data-autoscroll]');
 const tradeList = document.getElementById('trade-list');
 const tradeSummary = document.getElementById('trade-summary');
+const tradeModal = document.getElementById('trade-modal');
+const tradeModalClose = document.getElementById('trade-modal-close');
+const tradeModalBody = document.getElementById('trade-modal-body');
+const tradeModalTitle = document.getElementById('trade-modal-title');
+const tradeModalSubtitle = document.getElementById('trade-modal-subtitle');
 const aiHint = document.getElementById('ai-hint');
 const pnlChartCanvas = document.getElementById('pnl-chart');
 const pnlChartWrapper = document.querySelector('.pnl-chart-wrapper');
@@ -88,6 +93,9 @@ let lastPnlChartPayload = null;
 let pnlModalHideTimer = null;
 let pnlModalFinalizeHandler = null;
 let pnlModalReturnTarget = null;
+let tradeModalHideTimer = null;
+let tradeModalFinalizeHandler = null;
+let tradeModalReturnTarget = null;
 
 function buildAsterPositionUrl(symbol) {
   if (!symbol) return null;
@@ -1987,6 +1995,347 @@ function createMetric(label, value, tone = 'neutral') {
   return metric;
 }
 
+function createTradeDetail(label, value, options = {}) {
+  const { tone = 'neutral', muted = false, monospace = false } = options;
+  const container = document.createElement('span');
+  container.className = 'trade-detail';
+  if (tone && tone !== 'neutral') {
+    container.classList.add(tone);
+  }
+  if (muted) {
+    container.classList.add('muted');
+  }
+  if (monospace) {
+    container.classList.add('monospace');
+  }
+
+  const labelEl = document.createElement('span');
+  labelEl.className = 'trade-detail-label';
+  labelEl.textContent = label;
+  const valueEl = document.createElement('span');
+  valueEl.className = 'trade-detail-value';
+  valueEl.textContent = value ?? '–';
+
+  container.append(labelEl, valueEl);
+  return container;
+}
+
+function buildTradeDetailContent(trade) {
+  const pnl = Number(trade.pnl ?? 0);
+  const pnlTone = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'neutral';
+  const pnlDisplay = `${pnl > 0 ? '+' : ''}${formatNumber(pnl, 2)} USDT`;
+  const rValue = Number(trade.pnl_r ?? 0);
+  const rTone = rValue > 0 ? 'profit' : rValue < 0 ? 'loss' : 'neutral';
+  const rDisplay = `${rValue > 0 ? '+' : ''}${formatNumber(rValue, 2)} R`;
+  const durationSeconds = computeDurationSeconds(trade.opened_at_iso, trade.closed_at_iso);
+
+  const container = document.createElement('div');
+  container.className = 'trade-modal-content';
+
+  const highlight = document.createElement('div');
+  highlight.className = 'trade-modal-highlight';
+
+  const priceGroup = document.createElement('div');
+  priceGroup.className = 'trade-detail-group';
+  priceGroup.append(
+    createTradeDetail('Entry', formatNumber(trade.entry, 4)),
+    createTradeDetail('Exit', formatNumber(trade.exit, 4))
+  );
+  highlight.append(priceGroup);
+
+  const resultGroup = document.createElement('div');
+  resultGroup.className = 'trade-detail-group';
+  const pnlLabel = pnlTone === 'profit' ? 'Profit' : pnlTone === 'loss' ? 'Loss' : 'PNL';
+  resultGroup.append(
+    createTradeDetail(pnlLabel, pnlDisplay, { tone: pnlTone }),
+    createTradeDetail('R multiple', rDisplay, { tone: rTone, muted: rTone === 'neutral' })
+  );
+  highlight.append(resultGroup);
+
+  const timeGroup = document.createElement('div');
+  timeGroup.className = 'trade-detail-group';
+  const windowStart = formatTimeShort(trade.opened_at_iso);
+  const windowEnd = formatTimeShort(trade.closed_at_iso);
+  if (windowStart !== '–' || windowEnd !== '–') {
+    timeGroup.append(
+      createTradeDetail('Window', `${windowStart} → ${windowEnd}`, {
+        monospace: true,
+      })
+    );
+  }
+  if (Number.isFinite(durationSeconds)) {
+    timeGroup.append(createTradeDetail('Duration', formatDuration(durationSeconds), { muted: true }));
+  }
+  if (timeGroup.children.length > 0) {
+    highlight.append(timeGroup);
+  }
+
+  container.append(highlight);
+
+  const metricGrid = document.createElement('div');
+  metricGrid.className = 'trade-metric-grid';
+  const metrics = [
+    createMetric('PNL (USDT)', pnlDisplay, pnlTone),
+    createMetric('R multiple', rDisplay, rTone),
+    createMetric('Size', formatNumber(trade.qty, 4)),
+    createMetric('Bandit bucket', trade.bucket ? trade.bucket.toString().toUpperCase() : '–'),
+    createMetric('Opened', formatTimestamp(trade.opened_at_iso)),
+    createMetric('Closed', formatTimestamp(trade.closed_at_iso)),
+    createMetric('Entry', formatNumber(trade.entry, 4)),
+    createMetric('Exit', formatNumber(trade.exit, 4)),
+  ];
+  if (Number.isFinite(durationSeconds)) {
+    metrics.splice(6, 0, createMetric('Duration', formatDuration(durationSeconds)));
+  }
+  metrics.forEach((metric) => metricGrid.append(metric));
+  container.append(metricGrid);
+
+  const context = trade.context && typeof trade.context === 'object' ? trade.context : null;
+  if (context) {
+    const keys = CONTEXT_KEYS.filter((key) => context[key] !== undefined && context[key] !== null);
+    if (keys.length > 0) {
+      const contextWrapper = document.createElement('div');
+      contextWrapper.className = 'trade-context-wrapper';
+      const title = document.createElement('h4');
+      title.textContent = 'Signal context';
+      const dl = document.createElement('dl');
+      dl.className = 'trade-context';
+      keys.forEach((key) => {
+        const dt = document.createElement('dt');
+        dt.textContent = CONTEXT_LABELS[key] || key;
+        const dd = document.createElement('dd');
+        dd.textContent = formatContextValue(key, context[key]);
+        dl.append(dt, dd);
+      });
+      contextWrapper.append(title, dl);
+      container.append(contextWrapper);
+    }
+  }
+
+  const aiMeta = trade.ai && typeof trade.ai === 'object' ? trade.ai : null;
+  if (aiMeta) {
+    const aiSection = document.createElement('div');
+    aiSection.className = 'trade-ai-section';
+
+    const header = document.createElement('div');
+    header.className = 'trade-ai-header';
+    const title = document.createElement('h4');
+    title.textContent = 'AI rationale';
+    header.append(title);
+
+    const sentinel = aiMeta.sentinel && typeof aiMeta.sentinel === 'object' ? aiMeta.sentinel : null;
+    if (sentinel && sentinel.label) {
+      const badge = document.createElement('span');
+      badge.className = `sentinel-badge sentinel-${sentinel.label}`;
+      badge.textContent = sentinel.label.toString().toUpperCase();
+      header.append(badge);
+    }
+    aiSection.append(header);
+
+    if (aiMeta.explanation) {
+      const explanation = document.createElement('p');
+      explanation.className = 'trade-ai-explanation';
+      explanation.textContent = aiMeta.explanation;
+      aiSection.append(explanation);
+    }
+
+    const plan = aiMeta.plan && typeof aiMeta.plan === 'object' ? aiMeta.plan : null;
+    if (plan) {
+      const planList = document.createElement('ul');
+      planList.className = 'trade-ai-plan';
+      const planEntries = [
+        ['Size multiplier', plan.size_multiplier, '×'],
+        ['SL multiplier', plan.sl_multiplier, '×'],
+        ['TP multiplier', plan.tp_multiplier, '×'],
+        ['Leverage', plan.leverage, '×'],
+      ];
+      planEntries.forEach(([label, raw, suffix]) => {
+        if (raw === undefined || raw === null) return;
+        const value = Number(raw);
+        if (!Number.isFinite(value)) return;
+        const li = document.createElement('li');
+        li.innerHTML = `<span>${label}</span><strong>${value.toFixed(2)}${suffix || ''}</strong>`;
+        planList.append(li);
+      });
+      if (planList.children.length > 0) {
+        aiSection.append(planList);
+      }
+    }
+
+    if (sentinel) {
+      const sentinelMeta = document.createElement('div');
+      sentinelMeta.className = 'trade-sentinel-meta';
+      const risk = Number(sentinel.event_risk ?? sentinel.meta?.event_risk ?? 0);
+      const hype = Number(sentinel.hype_score ?? sentinel.meta?.hype_score ?? 0);
+      sentinelMeta.innerHTML = `Event risk ${(risk * 100).toFixed(1)}% · Hype ${(hype * 100).toFixed(1)}% · Size factor ${Number(
+        sentinel.actions?.size_factor ?? 1
+      ).toFixed(2)}×`;
+      aiSection.append(sentinelMeta);
+
+      if (Array.isArray(sentinel.events) && sentinel.events.length > 0) {
+        const eventList = document.createElement('ul');
+        eventList.className = 'trade-sentinel-events';
+        sentinel.events.slice(0, 3).forEach((event) => {
+          if (!event) return;
+          const item = document.createElement('li');
+          const severity = (event.severity || '').toString().toLowerCase();
+          item.className = severity ? `severity-${severity}` : '';
+          item.textContent = `${event.headline || 'Event'} (${event.source || 'news'})`;
+          eventList.append(item);
+        });
+        if (eventList.children.length > 0) {
+          aiSection.append(eventList);
+        }
+      }
+    }
+
+    if (Array.isArray(aiMeta.warnings) && aiMeta.warnings.length > 0) {
+      const warningList = document.createElement('ul');
+      warningList.className = 'trade-ai-warnings';
+      aiMeta.warnings.forEach((warning) => {
+        const li = document.createElement('li');
+        li.textContent = warning;
+        warningList.append(li);
+      });
+      aiSection.append(warningList);
+    }
+
+    const budget = aiMeta.budget && typeof aiMeta.budget === 'object' ? aiMeta.budget : null;
+    if (budget && budget.limit !== undefined) {
+      const budgetMeta = document.createElement('div');
+      budgetMeta.className = 'trade-ai-budget';
+      const limit = Number(budget.limit ?? 0);
+      const spent = Number(budget.spent ?? 0);
+      if (Number.isFinite(limit) && limit > 0) {
+        const remaining = Math.max(0, limit - spent);
+        budgetMeta.textContent = `Daily AI spend ${spent.toFixed(2)} / ${limit.toFixed(2)} USD · remaining ${remaining.toFixed(2)} USD`;
+      } else {
+        budgetMeta.textContent = `Daily AI spend ${spent.toFixed(2)} USD (no hard cap)`;
+      }
+      aiSection.append(budgetMeta);
+    }
+
+    container.append(aiSection);
+  }
+
+  const postmortem = trade.postmortem && typeof trade.postmortem === 'object' ? trade.postmortem : null;
+  if (postmortem && postmortem.analysis) {
+    const postSection = document.createElement('div');
+    postSection.className = 'trade-postmortem';
+    const heading = document.createElement('h4');
+    heading.textContent = 'Post-mortem coach';
+    const summary = document.createElement('p');
+    summary.textContent = postmortem.analysis;
+    postSection.append(heading, summary);
+    container.append(postSection);
+  }
+
+  return container;
+}
+
+function buildTradeSummaryCard(trade) {
+  const pnl = Number(trade.pnl ?? 0);
+  const pnlTone = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'neutral';
+  const pnlDisplay = `${pnl > 0 ? '+' : ''}${formatNumber(pnl, 2)} USDT`;
+  const rValue = Number(trade.pnl_r ?? 0);
+  const rTone = rValue > 0 ? 'profit' : rValue < 0 ? 'loss' : 'neutral';
+  const rDisplay = `${rValue > 0 ? '+' : ''}${formatNumber(rValue, 2)} R`;
+  const durationSeconds = computeDurationSeconds(trade.opened_at_iso, trade.closed_at_iso);
+
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'trade-card';
+  if (trade.side) {
+    card.dataset.side = trade.side.toString().toLowerCase();
+  }
+  if (pnlTone && pnlTone !== 'neutral') {
+    card.dataset.pnl = pnlTone;
+  }
+
+  const top = document.createElement('div');
+  top.className = 'trade-card-top';
+
+  const main = document.createElement('div');
+  main.className = 'trade-card-main';
+
+  const symbol = document.createElement('span');
+  symbol.className = 'trade-card-symbol';
+  symbol.textContent = trade.symbol || '–';
+  main.append(symbol);
+
+  if (trade.side) {
+    const sideBadge = document.createElement('span');
+    sideBadge.className = 'trade-card-side';
+    sideBadge.textContent = formatSideLabel(trade.side);
+    main.append(sideBadge);
+  }
+
+  const pnlEl = document.createElement('span');
+  pnlEl.className = `trade-card-pnl ${pnlTone}`.trim();
+  pnlEl.textContent = pnlDisplay;
+  top.append(main, pnlEl);
+
+  const bottom = document.createElement('div');
+  bottom.className = 'trade-card-bottom';
+
+  const info = document.createElement('div');
+  info.className = 'trade-card-info';
+
+  const timestampLabel = formatTimestamp(trade.closed_at_iso || trade.opened_at_iso);
+  if (timestampLabel && timestampLabel !== '–') {
+    const timeSpan = document.createElement('span');
+    timeSpan.textContent = `Closed ${timestampLabel}`;
+    info.append(timeSpan);
+  }
+
+  const windowStart = formatTimeShort(trade.opened_at_iso);
+  const windowEnd = formatTimeShort(trade.closed_at_iso);
+  if (windowStart !== '–' || windowEnd !== '–') {
+    const windowSpan = document.createElement('span');
+    windowSpan.className = 'trade-card-window';
+    windowSpan.textContent = `Window ${windowStart} → ${windowEnd}`;
+    info.append(windowSpan);
+  }
+
+  if (Number.isFinite(durationSeconds)) {
+    const durationSpan = document.createElement('span');
+    durationSpan.textContent = `Held ${formatDuration(durationSeconds)}`;
+    info.append(durationSpan);
+  }
+
+  if (info.children.length === 0) {
+    const placeholder = document.createElement('span');
+    placeholder.textContent = 'Timing data unavailable';
+    info.append(placeholder);
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'trade-card-actions';
+
+  const rSpan = document.createElement('span');
+  rSpan.className = `trade-card-r ${rTone}`.trim();
+  rSpan.textContent = rDisplay;
+  actions.append(rSpan);
+
+  const hint = document.createElement('span');
+  hint.className = 'trade-card-hint';
+  hint.textContent = 'View details';
+  actions.append(hint);
+
+  bottom.append(info, actions);
+
+  card.append(top, bottom);
+
+  const symbolLabel = trade.symbol || 'trade';
+  const sideLabel = trade.side ? `${formatSideLabel(trade.side)} ` : '';
+  const accessibleTime =
+    timestampLabel && timestampLabel !== '–' ? `closed ${timestampLabel}` : 'timestamp unavailable';
+  card.setAttribute('aria-label', `View ${sideLabel}${symbolLabel} details (${accessibleTime})`);
+  card.addEventListener('click', () => openTradeModal(trade, card));
+
+  return card;
+}
+
 function formatContextValue(key, raw) {
   const numeric = Number(raw);
   if (Number.isFinite(numeric)) {
@@ -2032,286 +2381,141 @@ function renderTradeHistory(history) {
   tradeList.innerHTML = '';
 
   if (!history || history.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'trade-empty';
+    empty.textContent = 'No trades yet.';
+    tradeList.append(empty);
     tradeList.style.removeProperty('max-height');
     tradeList.removeAttribute('data-viewport-locked');
     return;
   }
 
-  history.forEach((trade, index) => {
-    const pnl = Number(trade.pnl ?? 0);
-    const pnlTone = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'neutral';
-    const pnlDisplay = `${pnl > 0 ? '+' : ''}${formatNumber(pnl, 2)} USDT`;
-    const rValue = Number(trade.pnl_r ?? 0);
-    const rTone = rValue > 0 ? 'profit' : rValue < 0 ? 'loss' : 'neutral';
-    const rDisplay = `${rValue > 0 ? '+' : ''}${formatNumber(rValue, 2)} R`;
-    const durationSeconds = computeDurationSeconds(trade.opened_at_iso, trade.closed_at_iso);
-
-    const details = document.createElement('details');
-    details.className = 'trade-item';
-    if (trade.side) {
-      details.dataset.side = trade.side.toString().toLowerCase();
-    }
-    if (pnlTone && pnlTone !== 'neutral') {
-      details.dataset.pnl = pnlTone;
-    }
-
-    const summary = document.createElement('summary');
-    summary.className = 'trade-item-summary';
-
-    const heading = document.createElement('div');
-    heading.className = 'trade-item-heading';
-    const symbol = document.createElement('span');
-    symbol.className = 'trade-symbol';
-    symbol.textContent = trade.symbol || '–';
-    heading.append(symbol);
-
-    if (trade.side) {
-      const sideBadge = document.createElement('span');
-      const normalized = trade.side.toString().toLowerCase();
-      const sideClass = normalized === 'buy' ? 'long' : normalized === 'sell' ? 'short' : '';
-      sideBadge.className = `side-badge ${sideClass}`.trim();
-      sideBadge.textContent = formatSideLabel(trade.side);
-      heading.append(sideBadge);
-    }
-
-    const summaryMain = document.createElement('div');
-    summaryMain.className = 'trade-summary-main';
-    summaryMain.append(heading);
-
-    const summaryMeta = document.createElement('div');
-    summaryMeta.className = 'trade-summary-meta';
-    const tradeDate = document.createElement('span');
-    tradeDate.className = 'trade-date';
-    tradeDate.textContent = formatTimestamp(trade.closed_at_iso || trade.opened_at_iso);
-    const outcomeLabel = pnlTone === 'profit' ? 'Profit' : pnlTone === 'loss' ? 'Loss' : 'Flat';
-    const tradeOutcome = document.createElement('span');
-    tradeOutcome.className = `trade-outcome ${pnlTone}`.trim();
-    tradeOutcome.textContent = `${outcomeLabel} ${pnlDisplay}`;
-    summaryMeta.append(tradeOutcome, tradeDate);
-
-    const priceBlock = document.createElement('div');
-    priceBlock.className = 'trade-price-block';
-    const entryLine = document.createElement('span');
-    entryLine.innerHTML = `<strong>Entry</strong> ${formatNumber(trade.entry, 4)}`;
-    const exitLine = document.createElement('span');
-    exitLine.innerHTML = `<strong>Exit</strong> ${formatNumber(trade.exit, 4)}`;
-    priceBlock.append(entryLine, exitLine);
-
-    const resultBlock = document.createElement('div');
-    resultBlock.className = 'trade-result-block';
-    const pnlSpan = document.createElement('span');
-    pnlSpan.className = `trade-pnl ${pnlTone === 'neutral' ? '' : pnlTone}`.trim();
-    const pnlLabel = document.createElement('strong');
-    pnlLabel.textContent = pnlTone === 'profit' ? 'Profit' : pnlTone === 'loss' ? 'Loss' : 'PNL';
-    const pnlValue = document.createElement('span');
-    pnlValue.className = 'trade-value';
-    pnlValue.textContent = pnlDisplay;
-    pnlSpan.append(pnlLabel, pnlValue);
-    const rSpan = document.createElement('span');
-    rSpan.className = `trade-r ${rTone === 'neutral' ? '' : rTone}`.trim();
-    const rLabel = document.createElement('strong');
-    rLabel.textContent = 'R multiple';
-    const rValueEl = document.createElement('span');
-    rValueEl.className = 'trade-value';
-    rValueEl.textContent = rDisplay;
-    rSpan.append(rLabel, rValueEl);
-    resultBlock.append(pnlSpan, rSpan);
-
-    const timeBlock = document.createElement('div');
-    timeBlock.className = 'trade-time-block';
-    const timeRange = document.createElement('span');
-    timeRange.className = 'trade-time-range';
-    const timeRangeLabel = document.createElement('strong');
-    timeRangeLabel.textContent = 'Window';
-    const timeRangeValue = document.createElement('span');
-    timeRangeValue.className = 'trade-value';
-    timeRangeValue.textContent = `${formatTimeShort(trade.opened_at_iso)} → ${formatTimeShort(trade.closed_at_iso)}`;
-    timeRange.append(timeRangeLabel, timeRangeValue);
-    timeBlock.append(timeRange);
-    if (Number.isFinite(durationSeconds)) {
-      const durationLabel = document.createElement('span');
-      durationLabel.className = 'trade-duration';
-      const durationStrong = document.createElement('strong');
-      durationStrong.textContent = 'Duration';
-      const durationValue = document.createElement('span');
-      durationValue.className = 'trade-value';
-      durationValue.textContent = formatDuration(durationSeconds);
-      durationLabel.append(durationStrong, durationValue);
-      timeBlock.append(durationLabel);
-    }
-
-    summary.append(summaryMain, summaryMeta);
-    details.append(summary);
-
-    const body = document.createElement('div');
-    body.className = 'trade-item-body';
-
-    const overview = document.createElement('div');
-    overview.className = 'trade-item-overview';
-    overview.append(priceBlock, resultBlock, timeBlock);
-    body.append(overview);
-
-    const metricGrid = document.createElement('div');
-    metricGrid.className = 'trade-metric-grid';
-    const metrics = [
-      createMetric('PNL (USDT)', pnlDisplay, pnlTone),
-      createMetric('R multiple', rDisplay, rTone),
-      createMetric('Size', formatNumber(trade.qty, 4)),
-      createMetric('Bandit bucket', trade.bucket ? trade.bucket.toString().toUpperCase() : '–'),
-      createMetric('Opened', formatTimestamp(trade.opened_at_iso)),
-      createMetric('Closed', formatTimestamp(trade.closed_at_iso)),
-      createMetric('Entry', formatNumber(trade.entry, 4)),
-      createMetric('Exit', formatNumber(trade.exit, 4)),
-    ];
-    if (Number.isFinite(durationSeconds)) {
-      metrics.splice(6, 0, createMetric('Duration', formatDuration(durationSeconds)));
-    }
-    metrics.forEach((metric) => metricGrid.append(metric));
-    body.append(metricGrid);
-
-    const context = trade.context && typeof trade.context === 'object' ? trade.context : null;
-    if (context) {
-      const keys = CONTEXT_KEYS.filter((key) => context[key] !== undefined && context[key] !== null);
-      if (keys.length > 0) {
-        const contextWrapper = document.createElement('div');
-        contextWrapper.className = 'trade-context-wrapper';
-        const title = document.createElement('h4');
-        title.textContent = 'Signal context';
-        const dl = document.createElement('dl');
-        dl.className = 'trade-context';
-        keys.forEach((key) => {
-          const dt = document.createElement('dt');
-          dt.textContent = CONTEXT_LABELS[key] || key;
-          const dd = document.createElement('dd');
-          dd.textContent = formatContextValue(key, context[key]);
-          dl.append(dt, dd);
-        });
-        contextWrapper.append(title, dl);
-        body.append(contextWrapper);
-      }
-    }
-
-    const aiMeta = trade.ai && typeof trade.ai === 'object' ? trade.ai : null;
-    if (aiMeta) {
-      const aiSection = document.createElement('div');
-      aiSection.className = 'trade-ai-section';
-
-      const header = document.createElement('div');
-      header.className = 'trade-ai-header';
-      const title = document.createElement('h4');
-      title.textContent = 'AI rationale';
-      header.append(title);
-
-      const sentinel = aiMeta.sentinel && typeof aiMeta.sentinel === 'object' ? aiMeta.sentinel : null;
-      if (sentinel && sentinel.label) {
-        const badge = document.createElement('span');
-        badge.className = `sentinel-badge sentinel-${sentinel.label}`;
-        badge.textContent = sentinel.label.toString().toUpperCase();
-        header.append(badge);
-      }
-      aiSection.append(header);
-
-      if (aiMeta.explanation) {
-        const explanation = document.createElement('p');
-        explanation.className = 'trade-ai-explanation';
-        explanation.textContent = aiMeta.explanation;
-        aiSection.append(explanation);
-      }
-
-      const plan = aiMeta.plan && typeof aiMeta.plan === 'object' ? aiMeta.plan : null;
-      if (plan) {
-        const planList = document.createElement('ul');
-        planList.className = 'trade-ai-plan';
-        const planEntries = [
-          ['Size multiplier', plan.size_multiplier, '×'],
-          ['SL multiplier', plan.sl_multiplier, '×'],
-          ['TP multiplier', plan.tp_multiplier, '×'],
-          ['Leverage', plan.leverage, '×'],
-        ];
-        planEntries.forEach(([label, raw, suffix]) => {
-          if (raw === undefined || raw === null) return;
-          const value = Number(raw);
-          if (!Number.isFinite(value)) return;
-          const li = document.createElement('li');
-          li.innerHTML = `<span>${label}</span><strong>${value.toFixed(2)}${suffix || ''}</strong>`;
-          planList.append(li);
-        });
-        if (planList.children.length > 0) {
-          aiSection.append(planList);
-        }
-      }
-
-      if (sentinel) {
-        const sentinelMeta = document.createElement('div');
-        sentinelMeta.className = 'trade-sentinel-meta';
-        const risk = Number(sentinel.event_risk ?? sentinel.meta?.event_risk ?? 0);
-        const hype = Number(sentinel.hype_score ?? sentinel.meta?.hype_score ?? 0);
-        sentinelMeta.innerHTML = `Event risk ${(risk * 100).toFixed(1)}% · Hype ${(hype * 100).toFixed(1)}% · Size factor ${Number(sentinel.actions?.size_factor ?? 1).toFixed(2)}×`;
-        aiSection.append(sentinelMeta);
-
-        if (Array.isArray(sentinel.events) && sentinel.events.length > 0) {
-          const eventList = document.createElement('ul');
-          eventList.className = 'trade-sentinel-events';
-          sentinel.events.slice(0, 3).forEach((event) => {
-            if (!event) return;
-            const item = document.createElement('li');
-            const severity = (event.severity || '').toString().toLowerCase();
-            item.className = severity ? `severity-${severity}` : '';
-            item.textContent = `${event.headline || 'Event'} (${event.source || 'news'})`;
-            eventList.append(item);
-          });
-          if (eventList.children.length > 0) {
-            aiSection.append(eventList);
-          }
-        }
-      }
-
-      if (Array.isArray(aiMeta.warnings) && aiMeta.warnings.length > 0) {
-        const warningList = document.createElement('ul');
-        warningList.className = 'trade-ai-warnings';
-        aiMeta.warnings.forEach((warning) => {
-          const li = document.createElement('li');
-          li.textContent = warning;
-          warningList.append(li);
-        });
-        aiSection.append(warningList);
-      }
-
-      const budget = aiMeta.budget && typeof aiMeta.budget === 'object' ? aiMeta.budget : null;
-      if (budget && budget.limit !== undefined) {
-        const budgetMeta = document.createElement('div');
-        budgetMeta.className = 'trade-ai-budget';
-        const limit = Number(budget.limit ?? 0);
-        const spent = Number(budget.spent ?? 0);
-        if (Number.isFinite(limit) && limit > 0) {
-          const remaining = Math.max(0, limit - spent);
-          budgetMeta.textContent = `Daily AI spend ${spent.toFixed(2)} / ${limit.toFixed(2)} USD · remaining ${remaining.toFixed(2)} USD`;
-        } else {
-          budgetMeta.textContent = `Daily AI spend ${spent.toFixed(2)} USD (no hard cap)`;
-        }
-        aiSection.append(budgetMeta);
-      }
-
-      body.append(aiSection);
-    }
-
-    const postmortem = trade.postmortem && typeof trade.postmortem === 'object' ? trade.postmortem : null;
-    if (postmortem && postmortem.analysis) {
-      const postSection = document.createElement('div');
-      postSection.className = 'trade-postmortem';
-      const heading = document.createElement('h4');
-      heading.textContent = 'Post-mortem coach';
-      const summary = document.createElement('p');
-      summary.textContent = postmortem.analysis;
-      postSection.append(heading, summary);
-      body.append(postSection);
-    }
-
-    details.append(body);
-    tradeList.append(details);
+  history.forEach((trade) => {
+    const card = buildTradeSummaryCard(trade);
+    tradeList.append(card);
   });
 
   requestTradeListViewportSync();
+}
+
+function handleTradeModalKeydown(event) {
+  if (event.key === 'Escape') {
+    closeTradeModal();
+  }
+}
+
+function openTradeModal(trade, returnTarget) {
+  if (!tradeModal || !tradeModalBody) return;
+
+  const pnl = Number(trade.pnl ?? 0);
+  const pnlTone = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'neutral';
+  const pnlDisplay = `${pnl > 0 ? '+' : ''}${formatNumber(pnl, 2)} USDT`;
+  const durationSeconds = computeDurationSeconds(trade.opened_at_iso, trade.closed_at_iso);
+  const symbol = trade.symbol || 'Trade';
+  const sideLabel = trade.side ? formatSideLabel(trade.side) : null;
+  const titleParts = [symbol];
+  if (sideLabel) {
+    titleParts.push(sideLabel);
+  }
+  if (tradeModalTitle) {
+    tradeModalTitle.textContent = titleParts.join(' · ');
+  }
+
+  const outcomeLabel = pnlTone === 'profit' ? 'Profit' : pnlTone === 'loss' ? 'Loss' : 'Flat';
+  const timestampLabel = formatTimestamp(trade.closed_at_iso || trade.opened_at_iso);
+  const subtitleParts = [];
+  if (timestampLabel && timestampLabel !== '–') {
+    subtitleParts.push(`Closed ${timestampLabel}`);
+  }
+  if (Number.isFinite(durationSeconds)) {
+    subtitleParts.push(`Held ${formatDuration(durationSeconds)}`);
+  }
+  subtitleParts.push(`${outcomeLabel} ${pnlDisplay}`);
+  if (tradeModalSubtitle) {
+    tradeModalSubtitle.textContent = subtitleParts.filter(Boolean).join(' · ') || 'No additional metadata available.';
+  }
+
+  const active =
+    returnTarget instanceof HTMLElement
+      ? returnTarget
+      : document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+  tradeModalReturnTarget = active && active !== document.body ? active : null;
+
+  if (tradeModalHideTimer) {
+    clearTimeout(tradeModalHideTimer);
+    tradeModalHideTimer = null;
+  }
+  if (tradeModalFinalizeHandler) {
+    tradeModal.removeEventListener('transitionend', tradeModalFinalizeHandler);
+    tradeModalFinalizeHandler = null;
+  }
+
+  tradeModalBody.innerHTML = '';
+  const content = buildTradeDetailContent(trade);
+  tradeModalBody.append(content);
+  tradeModalBody.scrollTop = 0;
+
+  tradeModal.removeAttribute('hidden');
+  tradeModal.removeAttribute('aria-hidden');
+  requestAnimationFrame(() => {
+    tradeModal.classList.add('is-active');
+  });
+  document.body.classList.add('modal-open');
+
+  document.addEventListener('keydown', handleTradeModalKeydown);
+  if (tradeModalClose) {
+    setTimeout(() => tradeModalClose.focus(), 120);
+  }
+}
+
+function closeTradeModal() {
+  if (!tradeModal) {
+    return;
+  }
+
+  if (tradeModalHideTimer) {
+    clearTimeout(tradeModalHideTimer);
+    tradeModalHideTimer = null;
+  }
+  if (tradeModalFinalizeHandler) {
+    tradeModal.removeEventListener('transitionend', tradeModalFinalizeHandler);
+    tradeModalFinalizeHandler = null;
+  }
+  if (tradeModal.hasAttribute('hidden')) {
+    return;
+  }
+
+  tradeModal.classList.remove('is-active');
+  tradeModal.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('modal-open');
+
+  const finalize = () => {
+    if (tradeModalHideTimer) {
+      clearTimeout(tradeModalHideTimer);
+      tradeModalHideTimer = null;
+    }
+    if (!tradeModal.hasAttribute('hidden')) {
+      tradeModal.setAttribute('hidden', '');
+    }
+    if (tradeModalFinalizeHandler) {
+      tradeModal.removeEventListener('transitionend', tradeModalFinalizeHandler);
+      tradeModalFinalizeHandler = null;
+    }
+    const restoreTarget =
+      tradeModalReturnTarget && typeof tradeModalReturnTarget.focus === 'function' ? tradeModalReturnTarget : null;
+    tradeModalReturnTarget = null;
+    if (restoreTarget) {
+      restoreTarget.focus({ preventScroll: true });
+    }
+  };
+
+  tradeModalFinalizeHandler = finalize;
+  tradeModal.addEventListener('transitionend', finalize);
+  tradeModalHideTimer = setTimeout(finalize, 280);
+
+  document.removeEventListener('keydown', handleTradeModalKeydown);
 }
 
 function renderAiBudget(budget) {
@@ -2363,27 +2567,17 @@ function parsePxValue(value) {
 
 function syncTradeListViewport() {
   if (!tradeList || typeof window === 'undefined') return;
-  const items = Array.from(tradeList.querySelectorAll('.trade-item'));
+  const items = Array.from(tradeList.querySelectorAll('.trade-card'));
   if (items.length <= 3) {
     tradeList.style.removeProperty('max-height');
     tradeList.removeAttribute('data-viewport-locked');
     return;
   }
 
-  const summaries = items
-    .slice(0, 3)
-    .map((item) => item.querySelector('.trade-item-summary'))
-    .filter(Boolean);
-
-  if (summaries.length === 0) {
-    tradeList.style.removeProperty('max-height');
-    tradeList.removeAttribute('data-viewport-locked');
-    return;
-  }
-
+  const sample = items.slice(0, 3);
   let visibleHeight = 0;
-  summaries.forEach((summary) => {
-    visibleHeight += summary.getBoundingClientRect().height;
+  sample.forEach((item) => {
+    visibleHeight += item.getBoundingClientRect().height;
   });
 
   if (visibleHeight <= 0) {
@@ -2396,9 +2590,8 @@ function syncTradeListViewport() {
   const gapValue = parsePxValue(style.rowGap || style.gap || '0');
   const paddingTop = parsePxValue(style.paddingTop);
   const paddingBottom = parsePxValue(style.paddingBottom);
-  const visibleCount = summaries.length;
   const totalHeight =
-    visibleHeight + gapValue * Math.max(0, visibleCount - 1) + paddingTop + paddingBottom + 4;
+    visibleHeight + gapValue * Math.max(0, sample.length - 1) + paddingTop + paddingBottom + 4;
 
   tradeList.style.maxHeight = `${Math.round(Math.max(totalHeight, 0))}px`;
   tradeList.setAttribute('data-viewport-locked', 'true');
@@ -2423,7 +2616,6 @@ function requestTradeListViewportSync() {
 }
 
 if (typeof window !== 'undefined' && tradeList) {
-  tradeList.addEventListener('toggle', () => requestTradeListViewportSync());
   window.addEventListener('resize', () => requestTradeListViewportSync());
 }
 
@@ -3750,6 +3942,18 @@ if (pnlChartWrapper) {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       openPnlModal();
+    }
+  });
+}
+
+tradeModalClose?.addEventListener('click', () => {
+  closeTradeModal();
+});
+
+if (tradeModal) {
+  tradeModal.addEventListener('click', (event) => {
+    if (event.target === tradeModal) {
+      closeTradeModal();
     }
   });
 }
