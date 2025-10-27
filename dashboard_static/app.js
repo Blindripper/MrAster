@@ -58,6 +58,7 @@ const aiChatMessages = document.getElementById('ai-chat-messages');
 const aiChatForm = document.getElementById('ai-chat-form');
 const aiChatInput = document.getElementById('ai-chat-input');
 const aiChatStatus = document.getElementById('ai-chat-status');
+const chatKeyIndicator = document.getElementById('chat-key-indicator');
 const activePositionsCard = document.getElementById('active-positions-card');
 const activePositionsModeLabel = document.getElementById('active-positions-mode');
 const activePositionsWrapper = document.getElementById('active-positions-wrapper');
@@ -98,6 +99,22 @@ let pnlModalReturnTarget = null;
 let tradeModalHideTimer = null;
 let tradeModalFinalizeHandler = null;
 let tradeModalReturnTarget = null;
+
+function hasDashboardChatKey() {
+  const stored = (currentConfig?.env?.ASTER_CHAT_OPENAI_API_KEY || '').trim();
+  return stored.length > 0;
+}
+
+function setChatKeyIndicator(state, message) {
+  if (!chatKeyIndicator) return;
+  const text = (message || '').toString();
+  chatKeyIndicator.textContent = text;
+  if (state) {
+    chatKeyIndicator.dataset.state = state;
+  } else {
+    chatKeyIndicator.removeAttribute('data-state');
+  }
+}
 
 function buildAsterPositionUrl(symbol) {
   if (!symbol) return null;
@@ -485,6 +502,7 @@ function renderCredentials(env) {
     }
   }
   updateDefaultNotionalInputs(env?.ASTER_DEFAULT_NOTIONAL);
+  syncAiChatAvailability();
 }
 
 async function loadConfig() {
@@ -2859,14 +2877,18 @@ function appendChatMessage(role, message, meta = {}) {
   msg.className = `ai-chat-message ${role === 'user' ? 'user' : 'assistant'}`;
   const roleLabel = document.createElement('div');
   roleLabel.className = 'ai-chat-role';
-  roleLabel.textContent = role === 'user' ? 'You' : 'Strategy AI';
+  roleLabel.textContent = role === 'user' ? 'You' : 'Strategy Copilot';
   const text = document.createElement('p');
   text.className = 'ai-chat-text';
   text.textContent = message;
   msg.append(roleLabel, text);
   const metaParts = [];
   if (meta.model) metaParts.push(meta.model);
-  if (meta.source && meta.source !== 'openai') metaParts.push(meta.source);
+  if (meta.source && meta.source !== 'openai') {
+    const source = (meta.source || '').toString();
+    const label = source === 'missing_chat_key' ? 'dashboard' : source.replace(/_/g, ' ');
+    metaParts.push(label);
+  }
   if (metaParts.length > 0) {
     const metaEl = document.createElement('div');
     metaEl.className = 'ai-chat-meta';
@@ -2897,25 +2919,42 @@ function resetChatPlaceholder(text) {
 
 function syncAiChatAvailability() {
   if (!aiChatInput) return;
+  const hasKey = hasDashboardChatKey();
   if (!aiMode) {
     aiChatInput.value = '';
     aiChatInput.disabled = true;
     if (aiChatSubmit) aiChatSubmit.disabled = true;
     aiChatHistory = [];
-    resetChatPlaceholder('Chat is only available in AI-Mode.');
+    aiChatPending = false;
+    resetChatPlaceholder('Enable AI-Mode to access the dashboard chat.');
     setChatStatus('AI-Mode disabled.');
-  } else {
-    aiChatInput.disabled = false;
-    if (aiChatSubmit) aiChatSubmit.disabled = false;
-    if (
-      aiChatMessages &&
-      !aiChatMessages.querySelector('.ai-chat-message') &&
-      !aiChatMessages.querySelector('.ai-chat-empty')
-    ) {
-      resetChatPlaceholder('Chat with the Strategy AI to discuss decisions.');
-    }
-    setChatStatus('');
+    setChatKeyIndicator('disabled', 'AI-Mode disabled');
+    return;
   }
+
+  if (!hasKey) {
+    aiChatInput.value = '';
+    aiChatInput.disabled = true;
+    if (aiChatSubmit) aiChatSubmit.disabled = true;
+    aiChatHistory = [];
+    aiChatPending = false;
+    resetChatPlaceholder('Add the Dashboard chat API key to start a conversation.');
+    setChatStatus('Chat key required.');
+    setChatKeyIndicator('missing', 'Chat key required');
+    return;
+  }
+
+  aiChatInput.disabled = false;
+  if (aiChatSubmit) aiChatSubmit.disabled = false;
+  if (
+    aiChatMessages &&
+    !aiChatMessages.querySelector('.ai-chat-message') &&
+    !aiChatMessages.querySelector('.ai-chat-empty')
+  ) {
+    resetChatPlaceholder('Ask the strategy copilot anything about your trades.');
+  }
+  setChatStatus('');
+  setChatKeyIndicator('ready', 'Dedicated chat key active');
 }
 
 function renderTradeSummary(stats) {
@@ -4244,6 +4283,11 @@ if (aiChatForm && aiChatInput) {
     }
     if (!aiMode) {
       setChatStatus('Please enable AI-Mode first.');
+      return;
+    }
+    if (!hasDashboardChatKey()) {
+      setChatStatus('Chat key required.');
+      setChatKeyIndicator('missing', 'Chat key required');
       return;
     }
     const message = (aiChatInput.value || '').trim();
