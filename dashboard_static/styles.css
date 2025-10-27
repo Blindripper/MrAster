@@ -36,7 +36,7 @@ body {
   overflow-x: hidden;
   font-family: var(--font-sans);
   letter-spacing: -0.01em;
-  padding: clamp(2rem, 6vw, 4rem) clamp(1.5rem, 6vw, 4rem);
+  padding: 0 clamp(1.5rem, 6vw, 4rem) clamp(2rem, 6vw, 4rem);
 }
 
 body::before,
@@ -87,6 +87,7 @@ body::after {
   font-weight: 600;
   color: var(--accent);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .ticker-dot {
@@ -149,6 +150,16 @@ body::after {
   padding-block: 0.35rem;
   padding-inline-end: 0.4rem;
   min-width: 220px;
+  cursor: pointer;
+  border-radius: 999px;
+  outline: none;
+  text-decoration: none;
+  color: inherit;
+}
+
+.ticker-item:focus-visible {
+  outline: 2px solid rgba(245, 196, 107, 0.65);
+  outline-offset: 4px;
 }
 
 .ticker-item-duplicate {
@@ -186,6 +197,20 @@ body::after {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
+}
+
+.ticker-symbol-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.ticker-rank {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--text-subtle);
 }
 
 .ticker-symbol {
