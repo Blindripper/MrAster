@@ -29,7 +29,7 @@ import re
 import copy
 from datetime import datetime, timezone
 from urllib.parse import urlencode
-from typing import Dict, List, Tuple, Optional, Any, Callable
+from typing import Dict, List, Tuple, Optional, Any, Callable, Sequence
 
 from collections import OrderedDict
 
@@ -424,9 +424,36 @@ class NewsTrendSentinel:
         self._last_payload: Dict[str, Dict[str, Any]] = {}
         self._decay = max(60.0, float(decay_minutes or 0) * 60.0)
 
-    def refresh(self, symbols: List[str]) -> None:
+    def prime_ticker_cache(self, payload: Dict[str, Dict[str, Any]]) -> None:
+        if not payload:
+            return
+        now = time.time()
+        for sym, rec in payload.items():
+            if not sym or not isinstance(rec, dict):
+                continue
+            self._ticker_cache[sym] = {"ts": now, "payload": dict(rec)}
+
+    def refresh(self, symbols: List[str], prefetched: Optional[Dict[str, Dict[str, Any]]] = None) -> None:
         if not self.enabled:
             return
+        if prefetched:
+            self.prime_ticker_cache(prefetched)
+        elif not self._ticker_cache:
+            try:
+                bulk = self.exchange.get_ticker_24hr()
+            except Exception as exc:
+                log.debug(f"sentinel bulk ticker fetch failed: {exc}")
+                bulk = None
+            mapping: Dict[str, Dict[str, Any]] = {}
+            if isinstance(bulk, list):
+                for entry in bulk:
+                    sym = entry.get("symbol") if isinstance(entry, dict) else None
+                    if sym:
+                        mapping[sym] = entry
+            elif isinstance(bulk, dict) and bulk.get("symbol"):
+                mapping[str(bulk.get("symbol"))] = bulk
+            if mapping:
+                self.prime_ticker_cache(mapping)
         for sym in symbols:
             try:
                 self.evaluate(sym, {}, store_only=True)
@@ -1473,8 +1500,11 @@ class Exchange:
             out.append([float(k[0]), float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[5]), float(k[7])])
         return out
 
-    def get_book_ticker(self, symbol: str) -> Dict[str, Any]:
-        return self.get("/fapi/v1/ticker/bookTicker", {"symbol": symbol})
+    def get_book_ticker(self, symbol: Optional[str] = None) -> Any:
+        params = {"symbol": symbol} if symbol else None
+        if params:
+            return self.get("/fapi/v1/ticker/bookTicker", params)
+        return self.get("/fapi/v1/ticker/bookTicker")
 
     def get_position_risk(self) -> Any:
         return self.signed("get", "/fapi/v2/positionRisk", {})
@@ -1645,33 +1675,28 @@ class Strategy:
         self._t24_cache: Dict[str, dict] = {}
         self._t24_ts = 0.0
         self._t24_ttl = 120
-        self._kl_cache: Dict[Tuple[str, str, int], Tuple[float, List[List[float]]]] = {}
+        self._kl_cache: Dict[Tuple[str, str, int], Tuple[float, Tuple[Tuple[float, ...], ...]]] = {}
         self._kl_cache_ttl = KLINE_CACHE_SEC
         self._kl_cache_hits = 0
         self._kl_cache_miss = 0
 
-    def _clone_kl(self, data: List[List[float]]) -> List[List[float]]:
-        if not data:
-            return []
-        return [list(row) for row in data]
-
-    def _klines_cached(self, symbol: str, interval: str, limit: int) -> List[List[float]]:
+    def _klines_cached(self, symbol: str, interval: str, limit: int) -> Sequence[Sequence[float]]:
         key = (symbol, interval, int(limit))
         now = time.time()
         entry = self._kl_cache.get(key)
         if entry and (now - entry[0]) < self._kl_cache_ttl:
             self._kl_cache_hits += 1
-            return self._clone_kl(entry[1])
+            return entry[1]
         try:
             fresh = self.exchange.get_klines(symbol, interval, limit)
         except Exception:
             if entry:
                 self._kl_cache_hits += 1
                 log.debug(f"kl-cache fallback {symbol} {interval}")
-                return self._clone_kl(entry[1])
+                return entry[1]
             raise
         self._kl_cache_miss += 1
-        clone = self._clone_kl(fresh)
+        clone = tuple(tuple(row) for row in fresh) if fresh else tuple()
         if clone:
             self._kl_cache[key] = (now, clone)
         elif entry:
@@ -1682,16 +1707,39 @@ class Strategy:
                 self._kl_cache.pop(k, None)
         return clone
 
+    def prime_ticker_cache(
+        self, payload: Dict[str, Dict[str, Any]], *, timestamp: Optional[float] = None
+    ) -> None:
+        if not payload:
+            return
+        now = float(timestamp or time.time())
+        sanitized: Dict[str, Dict[str, Any]] = {}
+        for sym, rec in payload.items():
+            if not sym:
+                continue
+            if not isinstance(rec, dict):
+                continue
+            sanitized[sym] = dict(rec)
+        if not sanitized:
+            return
+        if not self._t24_cache:
+            self._t24_cache = sanitized
+        else:
+            self._t24_cache.update(sanitized)
+        self._t24_ts = now
+
     def _ticker_24(self, symbol: str) -> Optional[Dict[str, Any]]:
         now = time.time()
         try:
             if (now - self._t24_ts) > self._t24_ttl or not self._t24_cache:
                 data = self.exchange.get_ticker_24hr()
                 if isinstance(data, list):
-                    self._t24_cache = {d.get("symbol"): d for d in data if isinstance(d, dict)}
+                    mapping = {
+                        d.get("symbol"): d for d in data if isinstance(d, dict) and d.get("symbol")
+                    }
+                    self.prime_ticker_cache(mapping, timestamp=now)
                 elif isinstance(data, dict) and data.get("symbol"):
-                    self._t24_cache[data.get("symbol")] = data
-                self._t24_ts = now
+                    self.prime_ticker_cache({data.get("symbol"): data}, timestamp=now)
         except Exception:
             self._t24_cache = {}
             self._t24_ts = now
@@ -1747,7 +1795,9 @@ class Strategy:
             float(price or payload.get("mid_price") or payload.get("last_price") or 0.0),
         )
 
-    def compute_signal(self, symbol: str) -> Tuple[str, float, Dict[str, float], float]:
+    def compute_signal(
+        self, symbol: str, book_ticker: Optional[Dict[str, Any]] = None
+    ) -> Tuple[str, float, Dict[str, float], float]:
         try:
             kl = self._klines_cached(symbol, INTERVAL, KLINES)
             if not kl or len(kl) < 60:
@@ -1763,14 +1813,24 @@ class Strategy:
         }
 
         # Spread (adaptiv an ATR%)
-        try:
-            bt = self.exchange.get_book_ticker(symbol)
-            ask = float(bt.get("askPrice", 0.0) or 0.0)
-            bid = float(bt.get("bidPrice", 0.0) or 0.0)
-            mid = (ask + bid) / 2.0 if ask > 0 and bid > 0 else last
-            spread_bps = (ask - bid) / max(mid, 1e-9)
-        except Exception:
-            mid, spread_bps = last, 0.0
+        mid = last
+        spread_bps = 0.0
+        bt = book_ticker
+        if bt is None:
+            try:
+                bt = self.exchange.get_book_ticker(symbol)
+            except Exception:
+                bt = None
+        if isinstance(bt, dict):
+            try:
+                ask = float(bt.get("askPrice", 0.0) or 0.0)
+                bid = float(bt.get("bidPrice", 0.0) or 0.0)
+                if ask > 0 and bid > 0:
+                    mid = (ask + bid) / 2.0
+                    spread_bps = (ask - bid) / max(mid, 1e-9)
+            except Exception:
+                mid = last
+                spread_bps = 0.0
         ctx_base.update(
             {
                 "mid_price": float(mid),
@@ -2568,7 +2628,9 @@ class Bot:
     def _size_mult_from_bucket(self, bucket: str) -> float:
         return {"S": SIZE_MULT_S, "M": SIZE_MULT_M, "L": SIZE_MULT_L}.get(bucket, SIZE_MULT_S)
 
-    def handle_symbol(self, symbol: str, pos_map: Dict[str, float]):
+    def handle_symbol(
+        self, symbol: str, pos_map: Dict[str, float], book_ticker: Optional[Dict[str, Any]] = None
+    ):
         banned_map = self._banned_map()
         if symbol in banned_map:
             if self.decision_tracker:
@@ -2598,7 +2660,7 @@ class Bot:
                     self._complete_manual_request(item, "failed", error="Position already open")
             return
 
-        sig, atr_abs, ctx, price = self.strategy.compute_signal(symbol)
+        sig, atr_abs, ctx, price = self.strategy.compute_signal(symbol, book_ticker=book_ticker)
         base_signal = sig
 
         manual_req = self._pop_manual_request(symbol)
@@ -3207,9 +3269,30 @@ class Bot:
             f": {', '.join(syms[:12])}{'...' if len(syms)>12 else ''}",
         )
 
+        ticker_map: Dict[str, Dict[str, Any]] = {}
+        now = time.time()
+        need_bulk_ticker = self.sentinel is not None or (now - getattr(self.strategy, "_t24_ts", 0.0)) >= self.strategy._t24_ttl
+        if need_bulk_ticker:
+            try:
+                payload = self.exchange.get_ticker_24hr()
+            except Exception as exc:
+                log.debug(f"bulk 24h ticker fetch failed: {exc}")
+                payload = None
+            if isinstance(payload, list):
+                for item in payload:
+                    if not isinstance(item, dict):
+                        continue
+                    sym = item.get("symbol")
+                    if sym:
+                        ticker_map[str(sym)] = dict(item)
+            elif isinstance(payload, dict) and payload.get("symbol"):
+                ticker_map[str(payload.get("symbol"))] = dict(payload)
+            if ticker_map:
+                self.strategy.prime_ticker_cache(ticker_map, timestamp=now)
+
         if self.sentinel:
             try:
-                self.sentinel.refresh(syms)
+                self.sentinel.refresh(syms, prefetched=ticker_map if ticker_map else None)
             except Exception as exc:
                 log.debug(f"sentinel refresh failed: {exc}")
 
@@ -3226,18 +3309,43 @@ class Bot:
         except Exception:
             pos_map = {}
 
+        book_ticker_map: Dict[str, Dict[str, Any]] = {}
+        try:
+            book_payload = self.exchange.get_book_ticker()
+        except Exception as exc:
+            log.debug(f"bulk bookTicker fetch failed: {exc}")
+            book_payload = None
+        if isinstance(book_payload, list):
+            for entry in book_payload:
+                if not isinstance(entry, dict):
+                    continue
+                sym = entry.get("symbol")
+                if sym:
+                    book_ticker_map[str(sym)] = dict(entry)
+        elif isinstance(book_payload, dict) and book_payload.get("symbol"):
+            book_ticker_map[str(book_payload.get("symbol"))] = dict(book_payload)
+        bulk_book_available = bool(book_ticker_map)
+
         for sym in syms:
             # Preis tracken für FastTP
             mid = 0.0
-            try:
-                bt = self.exchange.get_book_ticker(sym)
-                ask = float(bt.get("askPrice", 0.0) or 0.0)
-                bid = float(bt.get("bidPrice", 0.0) or 0.0)
-                mid = (ask + bid) / 2.0 if ask > 0 and bid > 0 else 0.0
-                if mid > 0:
-                    self.fasttp.track(sym, mid)
-            except Exception:
-                pass
+            bt = book_ticker_map.get(sym)
+            if bt is None:
+                try:
+                    bt = self.exchange.get_book_ticker(sym)
+                except Exception:
+                    bt = None
+                if isinstance(bt, dict) and bt.get("symbol"):
+                    book_ticker_map[sym] = dict(bt)
+            if isinstance(bt, dict):
+                try:
+                    ask = float(bt.get("askPrice", 0.0) or 0.0)
+                    bid = float(bt.get("bidPrice", 0.0) or 0.0)
+                    mid = (ask + bid) / 2.0 if ask > 0 and bid > 0 else 0.0
+                    if mid > 0:
+                        self.fasttp.track(sym, mid)
+                except Exception:
+                    mid = 0.0
 
             amt = pos_map.get(sym, 0.0)
             if abs(amt) > 1e-12:
@@ -3249,10 +3357,12 @@ class Bot:
                 continue
 
             try:
-                self.handle_symbol(sym, pos_map)
+                self.handle_symbol(sym, pos_map, book_ticker=book_ticker_map.get(sym))
             except Exception as e:
                 log.debug(f"signal handling fail {sym}: {e}")
-            time.sleep(0.05)
+            # dynamisches Throttling: nur bremsen, falls keine Bulk-Daten vorhanden waren
+            if not bulk_book_available:
+                time.sleep(0.02)
 
         if self._manual_state_dirty:
             self.trade_mgr.save()
