@@ -859,6 +859,14 @@ body.paper-mode .hero-paper-toggle span {
   color: var(--danger);
 }
 
+.active-positions-table tbody td.tone-profit {
+  color: var(--success);
+}
+
+.active-positions-table tbody td.tone-loss {
+  color: var(--danger);
+}
+
 @media (max-width: 900px) {
   .active-positions-table {
     min-width: 640px;
