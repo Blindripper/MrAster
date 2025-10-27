@@ -1040,10 +1040,11 @@ class AIChatEngine:
             role = str(item.get("role") or "").strip() or "user"
             raw_content = item.get("content")
             content_parts: List[Dict[str, str]] = []
+            default_block_type = "output_text" if role == "assistant" else "input_text"
             if isinstance(raw_content, str):
                 stripped = raw_content.strip()
                 if stripped:
-                    content_parts.append({"type": "input_text", "text": stripped})
+                    content_parts.append({"type": default_block_type, "text": stripped})
             elif isinstance(raw_content, list):
                 for part in raw_content:
                     if isinstance(part, dict):
@@ -1053,12 +1054,17 @@ class AIChatEngine:
                             # Respect explicit types if provided by the caller.
                             content_parts.append(
                                 {
-                                    "type": str(p_type or "input_text"),
+                                    "type": str(p_type or default_block_type),
                                     "text": text.strip(),
                                 }
                             )
                     elif isinstance(part, str) and part.strip():
-                        content_parts.append({"type": "input_text", "text": part.strip()})
+                        content_parts.append(
+                            {
+                                "type": default_block_type,
+                                "text": part.strip(),
+                            }
+                        )
             if not content_parts:
                 continue
             normalized_input.append({"role": role, "content": content_parts})
