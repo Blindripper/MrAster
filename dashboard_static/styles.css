@@ -1188,31 +1188,52 @@ button:focus-visible {
 .quick-setup-input {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.8rem;
+  padding: 0.35rem 0.4rem 0.35rem 0.75rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(245, 196, 107, 0.22);
+  background: linear-gradient(140deg, rgba(26, 27, 40, 0.82), rgba(19, 21, 32, 0.65));
+  box-shadow: inset 0 0 0 1px rgba(245, 196, 107, 0.08);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.3s ease;
+}
+
+.quick-setup-input:focus-within {
+  border-color: rgba(245, 196, 107, 0.55);
+  box-shadow: 0 0 0 3px rgba(245, 196, 107, 0.18);
+  background: linear-gradient(140deg, rgba(28, 30, 44, 0.92), rgba(19, 21, 32, 0.7));
 }
 
 .quick-setup-input input {
   flex: 1;
-  padding: 0.75rem 1rem;
-  border-radius: 0.85rem;
-  border: 1px solid rgba(245, 196, 107, 0.2);
-  background: rgba(26, 27, 40, 0.65);
+  padding: 0.75rem 0.1rem;
+  border: none;
+  background: transparent;
   color: var(--text);
   font: inherit;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  min-width: 0;
 }
 
 .quick-setup-input input:focus {
-  border-color: rgba(245, 196, 107, 0.45);
-  box-shadow: 0 0 0 1px rgba(245, 196, 107, 0.28);
   outline: none;
 }
 
+.quick-setup-input input::placeholder {
+  color: rgba(255, 255, 255, 0.45);
+}
+
 .quick-setup-unit {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--text-subtle);
-  letter-spacing: 0.05em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.55rem 0.9rem;
+  border-radius: 0.8rem;
+  background: rgba(245, 196, 107, 0.15);
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow: inset 0 0 0 1px rgba(245, 196, 107, 0.22);
 }
 
 .quick-setup-field-hint {
