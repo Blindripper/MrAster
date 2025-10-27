@@ -2257,6 +2257,10 @@ class AIChatEngine:
             if not queued:
                 target["status"] = "failed"
                 state["ai_trade_proposals"] = queue
+                refreshed_state = _read_state()
+                manual_queue = refreshed_state.get("manual_trade_requests")
+                if isinstance(manual_queue, list):
+                    state["manual_trade_requests"] = manual_queue
                 try:
                     STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True))
                 except Exception:
@@ -2269,6 +2273,10 @@ class AIChatEngine:
             target["queue_ref"] = queued
             target["payload"] = normalized
             state["ai_trade_proposals"] = queue
+            refreshed_state = _read_state()
+            manual_queue = refreshed_state.get("manual_trade_requests")
+            if isinstance(manual_queue, list):
+                state["manual_trade_requests"] = manual_queue
             try:
                 STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True))
             except Exception as exc:
