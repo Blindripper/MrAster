@@ -2108,6 +2108,7 @@ body.ai-mode .ai-mode-window {
   background: rgba(10, 12, 20, 0.82);
   border: 1px solid rgba(245, 196, 107, 0.14);
   box-shadow: inset 0 1px 0 rgba(245, 196, 107, 0.04);
+  min-height: clamp(520px, 68vh, 720px);
   height: clamp(520px, 68vh, 720px);
   max-height: clamp(520px, 68vh, 720px);
 }
@@ -3656,6 +3657,7 @@ body.modal-open {
   }
 
   .chat-window-body {
+    min-height: clamp(420px, 70vh, 620px);
     height: clamp(420px, 70vh, 620px);
     max-height: clamp(420px, 70vh, 620px);
   }
@@ -3880,6 +3882,7 @@ footer p {
   }
 
   .chat-window-body {
+    min-height: clamp(320px, 68vh, 520px);
     height: clamp(320px, 68vh, 520px);
     max-height: clamp(320px, 68vh, 520px);
   }
