@@ -1127,12 +1127,12 @@ class AIChatEngine:
     @staticmethod
     def _ensure_analysis_follow_up(text: str) -> str:
         follow_up = (
-            "Um einen Trade für dich zu platzieren, benötige ich: Symbol, Richtung (LONG/SHORT), bevorzugten Einstieg "
-            "(Markt oder Limitpreis), Stop-Loss, Take-Profit und die gewünschte Positionsgröße bzw. das Notional. Soll der "
-            "Bot auf Basis dieser Analyse Trades ausführen, sobald du mir diese Details gegeben hast?"
+            "Um einen Trade für dich zu platzieren, klicke auf \"Take Trade proposals\" oder gib mir Symbol, Richtung "
+            "(LONG/SHORT), Einstieg (Markt oder Limitpreis), Stop-Loss, Take-Profit sowie die gewünschte Positionsgröße bzw. "
+            "das Notional. Soll der Bot auf Basis dieser Analyse Trades ausführen, sobald du mir diese Details gegeben hast?"
         )
         normalized = text.lower()
-        if "soll der bot" in normalized and "symbol" in normalized and "stop" in normalized:
+        if "soll der bot" in normalized and "take trade proposals" in normalized:
             return text
         if not text.strip():
             return follow_up
@@ -2529,17 +2529,23 @@ class AIChatEngine:
                 "Work across the entire set of Aster-listed perpetual pairs, not just the currently traded majors. "
             )
         prompt = (
-            "You are the strategy copilot's market analyst. Using the latest telemetry, "
-            "summarise market tone, volatility and risk in under 180 words. "
-            f"{universe_prompt}Recommend one potential LONG idea and one potential SHORT idea. For each, include the symbol, "
-            "thesis, indicative entry zone, invalidation level, and key catalysts or risks. Flag stale or missing data "
-            "explicitly. After presenting the ideas, list the exact trade inputs the bot needs (symbol, direction, entry "
-            "plan or price, stop loss, take profit, position size/notional). Then emit one ACTION line per idea using the "
-            "format ACTION: {\"type\":\"propose_trade\",...}. Include in each JSON object the symbol, direction (LONG/SHORT), "
-            "entry_kind (market/limit), entry_price for limit setups, stop_loss, take_profit, notional, timeframe, "
-            "confidence (0-1), and a concise note. These ACTION blocks register proposals for operator approval—do not use "
-            "type \"open_trade\" or assume execution authority. Finish by explicitly asking the operator to confirm "
-            "whether the bot should execute trades once those details are provided."
+            "You are the strategy copilot's market analyst. Using the latest telemetry, produce a concise report. "
+            f"{universe_prompt}Follow this structure exactly:\n"
+            "Market Summary — ≤150 words covering tone, volatility, liquidity, and risk. Reference concrete metrics from the "
+            "telemetry and name at least four tickers drawn from the provided Aster universe or most-traded list; call out "
+            "explicitly where data is stale or missing.\n"
+            "LONG Idea — Provide symbol, timeframe, thesis rooted in available numbers, entry zone with prices, invalidation, "
+            "target, catalysts, and any data caveats.\n"
+            "SHORT Idea — Same level of detail as the long idea.\n"
+            "Trade Inputs — Bullet list that enumerates every field required for execution: symbol, direction, entry_plan "
+            "(market or limit with price), entry_price, stop_loss, take_profit, position_size in USDT, timeframe, and "
+            "confidence between 0 and 1. Use numeric values; if a figure cannot be justified from telemetry, write 'n/a' "
+            "and explain why.\n"
+            "After the narrative, emit one ACTION line per idea using: ACTION: {\"type\":\"propose_trade\",...}. The JSON "
+            "must include type=\"propose_trade\", symbol, direction (LONG/SHORT), entry_kind (market/limit), entry_price (or null "
+            "for market), stop_loss, take_profit, notional (USDT), timeframe, confidence (0-1), and a concise note tying back to the "
+            "analysis. Keep each ACTION line on a single line with valid JSON. Finish by reminding the operator that they can click "
+            "\"Take trade proposals\" to queue execution."
         )
         messages: List[Dict[str, str]] = [
             {"role": "system", "content": context_text},
