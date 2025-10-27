@@ -77,6 +77,7 @@ const heroTotalTrades = document.getElementById('hero-total-trades');
 const heroTotalPnl = document.getElementById('hero-total-pnl');
 const heroTotalWinRate = document.getElementById('hero-total-win-rate');
 const shareFeedback = document.getElementById('share-feedback');
+const MR_ASTER_REPO_URL = 'https://github.com/Blindripper/MrAster';
 
 const DEFAULT_BOT_STATUS = { running: false, pid: null, started_at: null, uptime_s: null };
 
@@ -3289,7 +3290,8 @@ function buildShareText(snapshot) {
 
   const variants = positive ? positiveVariants : negativeVariants;
   const pick = variants[Math.floor(Math.random() * variants.length)];
-  return pick(statsBlock);
+  const baseText = pick(statsBlock);
+  return `${baseText}\n\n${MR_ASTER_REPO_URL}`;
 }
 
 async function copyShareText(text) {
