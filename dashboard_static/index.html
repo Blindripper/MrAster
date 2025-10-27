@@ -459,6 +459,32 @@
       </section>
     </main>
 
+    <div id="decision-modal" class="trade-modal decision-modal" hidden aria-hidden="true">
+      <div
+        class="trade-modal-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="decision-modal-title"
+        aria-describedby="decision-modal-subtitle"
+      >
+        <div class="trade-modal-header">
+          <div>
+            <h2 id="decision-modal-title">Trade decision reason</h2>
+            <p class="trade-modal-subtitle" id="decision-modal-subtitle"></p>
+          </div>
+          <button
+            type="button"
+            id="decision-modal-close"
+            class="trade-modal-close"
+            aria-label="Close trade decision details"
+          >
+            Close
+          </button>
+        </div>
+        <div class="trade-modal-body" id="decision-modal-body"></div>
+      </div>
+    </div>
+
     <div id="trade-modal" class="trade-modal" hidden aria-hidden="true">
       <div
         id="trade-modal-dialog"
