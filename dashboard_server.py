@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import os
 import re
 import shlex
@@ -1039,6 +1040,52 @@ class AIChatEngine:
     def _env(self) -> Dict[str, Any]:
         return self.config.get("env", {})
 
+    @staticmethod
+    def _safe_float(value: Any) -> Optional[float]:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(number):
+            return None
+        return number
+
+    def _recent_plan_summaries(self, raw: Any) -> List[Dict[str, Any]]:
+        summaries: List[Dict[str, Any]] = []
+        if not isinstance(raw, list):
+            return summaries
+        for entry in raw[-12:]:
+            if not isinstance(entry, dict):
+                continue
+            plan = entry.get("plan")
+            if not isinstance(plan, dict):
+                continue
+            key = str(entry.get("key") or "")
+            parts = [part for part in key.split("::") if part]
+            symbol = plan.get("symbol") or None
+            side = plan.get("side") or None
+            if len(parts) >= 2 and not symbol:
+                symbol = parts[1]
+            if len(parts) >= 3 and not side:
+                side = parts[2]
+            summary: Dict[str, Any] = {
+                "symbol": str(symbol).upper() if symbol else None,
+                "side": str(side).upper() if side else None,
+                "decision": plan.get("decision"),
+                "take": bool(plan.get("take", False)),
+                "note": plan.get("decision_note") or plan.get("risk_note"),
+                "size_multiplier": self._safe_float(plan.get("size_multiplier")),
+                "confidence": self._safe_float(plan.get("confidence")),
+                "entry_price": self._safe_float(plan.get("entry_price")),
+                "stop_loss": self._safe_float(plan.get("stop_loss")),
+                "take_profit": self._safe_float(plan.get("take_profit")),
+                "explanation": plan.get("explanation"),
+                "ts": self._safe_float(entry.get("ts")) or 0.0,
+            }
+            summaries.append(summary)
+        summaries.sort(key=lambda item: item.get("ts", 0.0), reverse=True)
+        return summaries
+
     def _beta_header_for_model(self, model: str) -> Optional[str]:
         normalized = (model or "").strip().lower()
         if not normalized:
@@ -1202,14 +1249,32 @@ class AIChatEngine:
 
     def _current_state(
         self,
-    ) -> Tuple[TradeStats, List[Dict[str, Any]], Dict[str, Any], List[Dict[str, Any]], Dict[str, Any]]:
+    ) -> Tuple[
+        TradeStats,
+        List[Dict[str, Any]],
+        Dict[str, Any],
+        List[Dict[str, Any]],
+        Dict[str, Any],
+        Dict[str, Any],
+        List[Dict[str, Any]],
+    ]:
         state = _read_state()
         history = state.get("trade_history", [])
         stats = _compute_stats(history)
         open_trades = state.get("live_trades", {})
         ai_activity = state.get("ai_activity", [])
         ai_budget = state.get("ai_budget", {})
-        return stats, history, open_trades, ai_activity, ai_budget
+        decision_stats = _decision_summary(state)
+        recent_plans = self._recent_plan_summaries(state.get("ai_recent_plans"))
+        return (
+            stats,
+            history,
+            open_trades,
+            ai_activity,
+            ai_budget,
+            decision_stats,
+            recent_plans,
+        )
 
     def _build_context_text(
         self,
@@ -1218,6 +1283,8 @@ class AIChatEngine:
         open_trades: Dict[str, Any],
         ai_activity: List[Dict[str, Any]],
         ai_budget: Dict[str, Any],
+        decision_stats: Dict[str, Any],
+        recent_plans: List[Dict[str, Any]],
     ) -> str:
         lines = [
             "You are the AI co-pilot for the MrAster autonomous strategy cockpit.",
@@ -1232,6 +1299,28 @@ class AIChatEngine:
         ]
         if stats.ai_hint:
             lines.append(f"AI hint: {stats.ai_hint}")
+        if stats.best_trade:
+            best = stats.best_trade
+            best_symbol = best.get("symbol")
+            best_side = best.get("side")
+            try:
+                best_pnl = float(best.get("pnl", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                best_pnl = 0.0
+            lines.append(
+                f"Best trade: {best_symbol} {best_side} realised {best_pnl:.2f} USDT."
+            )
+        if stats.worst_trade:
+            worst = stats.worst_trade
+            worst_symbol = worst.get("symbol")
+            worst_side = worst.get("side")
+            try:
+                worst_pnl = float(worst.get("pnl", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                worst_pnl = 0.0
+            lines.append(
+                f"Toughest trade: {worst_symbol} {worst_side} ended at {worst_pnl:.2f} USDT."
+            )
         if ai_budget:
             limit = ai_budget.get("limit")
             spent = ai_budget.get("spent")
@@ -1239,13 +1328,56 @@ class AIChatEngine:
                 lines.append(f"AI budget: {spent:.2f} / {limit:.2f} USD consumed today.")
             elif isinstance(spent, (int, float)):
                 lines.append(f"AI budget: {spent:.2f} USD spent today (no configured cap).")
+        if decision_stats:
+            taken = int(decision_stats.get("taken", 0) or 0)
+            rejected_total = int(decision_stats.get("rejected_total", 0) or 0)
+            rejected = decision_stats.get("rejected") or {}
+            top_reject: Optional[Tuple[str, int]] = None
+            if isinstance(rejected, dict):
+                items = [
+                    (str(reason), int(count or 0)) for reason, count in rejected.items()
+                ]
+                if items:
+                    items.sort(key=lambda pair: pair[1], reverse=True)
+                    top_reject = items[0]
+            summary = f"Decision stats: {taken} taken / {rejected_total} rejected"
+            if top_reject and top_reject[1] > 0:
+                summary += f" (top reject: {top_reject[0]} ×{top_reject[1]})."
+            else:
+                summary += "."
+            lines.append(summary)
         if open_trades:
             open_lines = []
             for sym, rec in list(open_trades.items())[:5]:
                 side = rec.get("side")
                 qty = rec.get("qty")
                 entry = rec.get("entry")
-                open_lines.append(f"{sym} {side} qty {qty} entry {entry}")
+                try:
+                    qty_val = float(qty)
+                except (TypeError, ValueError):
+                    qty_val = 0.0
+                try:
+                    entry_val = float(entry)
+                except (TypeError, ValueError):
+                    entry_val = 0.0
+                ctx = rec.get("ctx") or {}
+                mark = ctx.get("mid_price") or ctx.get("mid")
+                try:
+                    mark_val = float(mark)
+                except (TypeError, ValueError):
+                    mark_val = None
+                detail_bits = [f"qty {qty_val:.4f}"]
+                if entry_val:
+                    detail_bits.append(f"entry {entry_val:.4f}")
+                if mark_val and entry_val:
+                    delta = mark_val - entry_val if side == "BUY" else entry_val - mark_val
+                    detail_bits.append(f"Δ {delta:.4f}")
+                ai_meta = rec.get("ai", {})
+                if isinstance(ai_meta, dict):
+                    note = ai_meta.get("decision_note") or ai_meta.get("risk_note")
+                    if isinstance(note, str) and note.strip():
+                        detail_bits.append(note.strip())
+                open_lines.append(f"{sym} {side} ({', '.join(detail_bits)})")
             lines.append("Open trades: " + "; ".join(open_lines))
         if history:
             recent = history[-5:]
@@ -1260,8 +1392,86 @@ class AIChatEngine:
             for item in ai_activity[-5:][::-1]:
                 headline = item.get("headline") or item.get("kind")
                 body = item.get("body") or ""
-                activity_lines.append(f"{headline}: {body}")
+                data = item.get("data") or {}
+                detail_parts: List[str] = []
+                if isinstance(data, dict):
+                    symbol = data.get("symbol")
+                    if symbol:
+                        detail_parts.append(str(symbol))
+                    side = data.get("side")
+                    if side:
+                        detail_parts.append(str(side))
+                    decision = data.get("decision")
+                    if decision:
+                        detail_parts.append(f"decision={decision}")
+                    size_mult = data.get("size_multiplier")
+                    try:
+                        if size_mult is not None:
+                            detail_parts.append(f"size×{float(size_mult):.2f}")
+                    except (TypeError, ValueError):
+                        pass
+                detail = f" [{'; '.join(detail_parts)}]" if detail_parts else ""
+                activity_lines.append(f"{headline}: {body}{detail}")
             lines.append("Latest AI activity: " + " | ".join(activity_lines))
+        if recent_plans:
+            plan_lines = []
+            for plan in recent_plans[:4]:
+                symbol = plan.get("symbol") or "?"
+                side = plan.get("side") or plan.get("decision", "?")
+                take = "take" if plan.get("take") else str(plan.get("decision", "skip"))
+                details: List[str] = []
+                size_mult = plan.get("size_multiplier")
+                if isinstance(size_mult, (int, float)):
+                    details.append(f"size×{size_mult:.2f}")
+                confidence = plan.get("confidence")
+                if isinstance(confidence, (int, float)):
+                    details.append(f"confidence {confidence:.2f}")
+                entry_px = plan.get("entry_price")
+                take_px = plan.get("take_profit")
+                stop_px = plan.get("stop_loss")
+                price_bits = []
+                if isinstance(entry_px, (int, float)) and entry_px > 0:
+                    price_bits.append(f"entry {entry_px:.4f}")
+                if isinstance(take_px, (int, float)) and take_px > 0:
+                    price_bits.append(f"tp {take_px:.4f}")
+                if isinstance(stop_px, (int, float)) and stop_px > 0:
+                    price_bits.append(f"sl {stop_px:.4f}")
+                if price_bits:
+                    details.extend(price_bits)
+                note = plan.get("note") or plan.get("explanation")
+                snippet = note.strip() if isinstance(note, str) else ""
+                detail_txt = f" ({', '.join(details)})" if details else ""
+                if snippet:
+                    plan_lines.append(f"{symbol} {side} → {take}{detail_txt} :: {snippet}")
+                else:
+                    plan_lines.append(f"{symbol} {side} → {take}{detail_txt}")
+            lines.append("Recent AI plans: " + " | ".join(plan_lines))
+        most_traded_payload = MOST_TRADED_CACHE.get("payload") if MOST_TRADED_CACHE else None
+        assets = []
+        if isinstance(most_traded_payload, dict):
+            raw_assets = most_traded_payload.get("assets")
+            if isinstance(raw_assets, list):
+                assets = raw_assets[:5]
+        if assets:
+            market_bits = []
+            for asset in assets:
+                symbol = asset.get("symbol") or asset.get("base")
+                try:
+                    change = float(asset.get("change_15m", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    change = 0.0
+                try:
+                    volume = float(asset.get("volume_quote", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    volume = 0.0
+                if volume >= 1_000_000_000:
+                    volume_txt = f"{volume / 1_000_000_000:.1f}B"
+                elif volume >= 1_000_000:
+                    volume_txt = f"{volume / 1_000_000:.1f}M"
+                else:
+                    volume_txt = f"{volume:.0f}"
+                market_bits.append(f"{symbol} {change:+.2f}% · vol≈{volume_txt}")
+            lines.append("Most-traded majors: " + "; ".join(market_bits))
         lines.append("Be transparent about assumptions and call out if data looks stale.")
         return "\n".join(lines)
 
@@ -1566,8 +1776,18 @@ class AIChatEngine:
         }
 
     def respond(self, message: str, history_payload: List[ChatMessagePayload]) -> Dict[str, Any]:
-        stats, history, open_trades, ai_activity, ai_budget = self._current_state()
-        fallback = self._fallback_reply(message, stats, history, ai_activity, open_trades, ai_budget)
+        (
+            stats,
+            history,
+            open_trades,
+            ai_activity,
+            ai_budget,
+            decision_stats,
+            recent_plans,
+        ) = self._current_state()
+        fallback = self._fallback_reply(
+            message, stats, history, ai_activity, open_trades, ai_budget
+        )
         env = self._env()
         chat_api_key = (env.get("ASTER_CHAT_OPENAI_API_KEY") or "").strip()
         primary_api_key = (env.get("ASTER_OPENAI_API_KEY") or "").strip()
@@ -1589,7 +1809,15 @@ class AIChatEngine:
             }
         model = (env.get("ASTER_AI_MODEL") or "gpt-4o").strip() or "gpt-4o"
 
-        context_text = self._build_context_text(stats, history, open_trades, ai_activity, ai_budget)
+        context_text = self._build_context_text(
+            stats,
+            history,
+            open_trades,
+            ai_activity,
+            ai_budget,
+            decision_stats,
+            recent_plans,
+        )
         messages: List[Dict[str, str]] = [{"role": "system", "content": context_text}]
         for item in history_payload[-6:]:
             role = item.role.lower().strip()
