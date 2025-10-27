@@ -1511,10 +1511,18 @@ class AIChatEngine:
         fallback = self._fallback_reply(message, stats, history, ai_activity, open_trades, ai_budget)
         env = self._env()
         chat_api_key = (env.get("ASTER_CHAT_OPENAI_API_KEY") or "").strip()
-        api_key = chat_api_key or (env.get("ASTER_OPENAI_API_KEY") or "").strip()
+        if not chat_api_key:
+            notice = (
+                "Dashboard chat requires its dedicated ASTER_CHAT_OPENAI_API_KEY. "
+                "Add the key in the AI controls to start chatting with the strategy copilot."
+            )
+            return {
+                "reply": self._format_local_reply(notice),
+                "model": "local",
+                "source": "missing_chat_key",
+            }
+        api_key = chat_api_key
         model = (env.get("ASTER_AI_MODEL") or "gpt-4o").strip() or "gpt-4o"
-        if not api_key:
-            return {"reply": self._format_local_reply(fallback), "model": "local", "source": "fallback"}
 
         context_text = self._build_context_text(stats, history, open_trades, ai_activity, ai_budget)
         messages: List[Dict[str, str]] = [{"role": "system", "content": context_text}]

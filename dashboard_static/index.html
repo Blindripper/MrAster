@@ -205,10 +205,12 @@
       <section class="card ai-mode-window" data-ai-only>
         <div class="ai-mode-window-header">
           <div class="ai-mode-window-header-main">
-            <span class="ai-mode-label">AI COCKPIT</span>
+            <span class="ai-mode-label">Autonomous feed</span>
             <div class="ai-mode-window-title">
               <h2>Autonomous Strategy Cockpit</h2>
-              <p class="ai-mode-window-subtitle">Discuss live market moves with the strategy AI while automated insights continue to appear in the activity feed.</p>
+              <p class="ai-mode-window-subtitle">
+                Live strategy telemetry and autonomous AI actions stream here. Manual conversations moved to the dedicated dashboard chat console.
+              </p>
             </div>
           </div>
           <label class="toggle ai-mode-autoscroll" for="autoscroll-ai"
@@ -224,24 +226,39 @@
             aria-live="polite"
             aria-label="AI activity feed"
           ></div>
-          <div class="ai-chat-panel">
-            <div class="ai-chat-messages" id="ai-chat-messages" aria-live="polite">
-              <div class="ai-chat-empty">Start a conversation with the strategy AI to review decisions.</div>
+        </div>
+      </section>
+
+      <section class="card chat-window" data-ai-only>
+        <div class="chat-window-header">
+          <div class="chat-window-header-main">
+            <span class="chat-window-label">Dashboard chat</span>
+            <div class="chat-window-title">
+              <h2>Strategy copilot</h2>
+              <p class="chat-window-subtitle">
+                Chat with the trading copilot in a focused workspace inspired by ChatGPT. This console requires the dedicated Dashboard chat API key.
+              </p>
             </div>
-            <form id="ai-chat-form" class="ai-chat-form">
-              <label class="sr-only" for="ai-chat-input">Ask the strategy AI</label>
-              <textarea
-                id="ai-chat-input"
-                rows="2"
-                placeholder="Ask the strategy AI about open trades, risk, or the next steps…"
-                autocomplete="off"
-              ></textarea>
-              <div class="ai-chat-actions">
-                <span class="ai-chat-status" id="ai-chat-status" role="status" aria-live="polite"></span>
-                <button type="submit" class="primary">Send</button>
-              </div>
-            </form>
           </div>
+          <div class="chat-window-status" id="chat-key-indicator" role="status" aria-live="polite"></div>
+        </div>
+        <div class="chat-window-body ai-chat-panel">
+          <div class="ai-chat-messages" id="ai-chat-messages" aria-live="polite">
+            <div class="ai-chat-empty">Provide the Dashboard chat API key to start a conversation.</div>
+          </div>
+          <form id="ai-chat-form" class="ai-chat-form">
+            <label class="sr-only" for="ai-chat-input">Ask the strategy AI</label>
+            <textarea
+              id="ai-chat-input"
+              rows="2"
+              placeholder="Send a message to your strategy copilot…"
+              autocomplete="off"
+            ></textarea>
+            <div class="ai-chat-actions">
+              <span class="ai-chat-status" id="ai-chat-status" role="status" aria-live="polite"></span>
+              <button type="submit" class="primary">Send</button>
+            </div>
+          </form>
         </div>
       </section>
 
@@ -262,10 +279,10 @@
             </label>
             <p class="ai-config-panel-hint">Stored securely on your machine. Required for autonomous execution of trades.</p>
             <label>
-              <span>Dashboard chat API key (optional)</span>
+              <span>Dashboard chat API key</span>
               <input id="input-chat-openai-key" type="password" autocomplete="off" placeholder="sk-..." />
             </label>
-            <p class="ai-config-panel-hint">Use a second OpenAI key dedicated to the chat so the bot can keep using the original one. Leave blank to reuse the trading key and avoid pasting the same key twice.</p>
+            <p class="ai-config-panel-hint">This separate OpenAI key powers the dashboard chat console and keeps trading calls isolated. The chat window is disabled until this key is saved.</p>
           </div>
           <div class="ai-config-panel">
             <h3>Daily budget</h3>
