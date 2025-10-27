@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 40" role="img" aria-label="Flag of the United States">
+  <title>Flag of the United States</title>
+  <rect width="60" height="40" fill="#b22234"/>
+  <!-- white stripes -->
+  <g fill="#ffffff">
+    <rect y="3.0769" width="60" height="3.0769"/>
+    <rect y="9.2307" width="60" height="3.0769"/>
+    <rect y="15.3846" width="60" height="3.0769"/>
+    <rect y="21.5384" width="60" height="3.0769"/>
+    <rect y="27.6923" width="60" height="3.0769"/>
+    <rect y="33.8461" width="60" height="3.0769"/>
+  </g>
+  <rect width="27" height="21.5384" fill="#3c3b6e"/>
+  <g fill="#ffffff" transform="scale(0.6)">
+    <g transform="translate(2.6,2.6)">
+      <g transform="translate(0,0)">
+        <circle cx="2" cy="2" r="1"/>
+        <circle cx="7" cy="2" r="1"/>
+        <circle cx="12" cy="2" r="1"/>
+        <circle cx="17" cy="2" r="1"/>
+        <circle cx="22" cy="2" r="1"/>
+      </g>
+      <g transform="translate(0,5)">
+        <circle cx="4.5" cy="2" r="1"/>
+        <circle cx="9.5" cy="2" r="1"/>
+        <circle cx="14.5" cy="2" r="1"/>
+        <circle cx="19.5" cy="2" r="1"/>
+      </g>
+      <g transform="translate(0,10)">
+        <circle cx="2" cy="2" r="1"/>
+        <circle cx="7" cy="2" r="1"/>
+        <circle cx="12" cy="2" r="1"/>
+        <circle cx="17" cy="2" r="1"/>
+        <circle cx="22" cy="2" r="1"/>
+      </g>
+      <g transform="translate(0,15)">
+        <circle cx="4.5" cy="2" r="1"/>
+        <circle cx="9.5" cy="2" r="1"/>
+        <circle cx="14.5" cy="2" r="1"/>
+        <circle cx="19.5" cy="2" r="1"/>
+      </g>
+    </g>
+  </g>
+</svg>
