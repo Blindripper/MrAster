@@ -3315,274 +3315,125 @@ async function copyShareText(text) {
   }
 }
 
-function drawRoundedRect(ctx, x, y, width, height, radius) {
-  const effectiveRadius = Math.min(radius, width / 2, height / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + effectiveRadius, y);
-  ctx.lineTo(x + width - effectiveRadius, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + effectiveRadius);
-  ctx.lineTo(x + width, y + height - effectiveRadius);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - effectiveRadius, y + height);
-  ctx.lineTo(x + effectiveRadius, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - effectiveRadius);
-  ctx.lineTo(x, y + effectiveRadius);
-  ctx.quadraticCurveTo(x, y, x + effectiveRadius, y);
-  ctx.closePath();
-}
-
-function createMemeTheme(tier) {
-  const themes = {
-    low: {
-      gradient: ['#3d0a1c', '#120819'],
-      overlay: 'rgba(14, 10, 24, 0.75)',
-      accent: '#ff7b7b',
-      accentSoft: 'rgba(255, 123, 123, 0.18)',
-      textSoft: 'rgba(255, 233, 212, 0.8)',
-      textStrong: '#ffe7b0',
-      cardBg: 'rgba(30, 14, 38, 0.78)',
-      emoji: '😬',
-      headline: 'Drawdown Diaries',
-      quip: 'Bot says: “Was that a wick or a prank?”',
-    },
-    normal: {
-      gradient: ['#0e1b2e', '#130c1f'],
-      overlay: 'rgba(12, 16, 28, 0.78)',
-      accent: '#f5c46b',
-      accentSoft: 'rgba(245, 196, 107, 0.18)',
-      textSoft: 'rgba(240, 214, 178, 0.85)',
-      textStrong: '#fff2c9',
-      cardBg: 'rgba(18, 22, 36, 0.82)',
-      emoji: '🧠',
-      headline: 'Dialed-In Drift',
-      quip: 'Steady hands. Laser focus. Coffee optional.',
-    },
-    high: {
-      gradient: ['#051b18', '#1f4032'],
-      overlay: 'rgba(9, 18, 24, 0.7)',
-      accent: '#6bffb4',
-      accentSoft: 'rgba(107, 255, 180, 0.18)',
-      textSoft: 'rgba(227, 255, 244, 0.85)',
-      textStrong: '#e9ffe7',
-      cardBg: 'rgba(9, 28, 24, 0.82)',
-      emoji: '🚀',
-      headline: 'Alpha Unlocked',
-      quip: 'Take profits? Nah, take a victory lap.',
-    },
-  };
-  return themes[tier] || themes.normal;
-}
-
-function formatMemeMetricValue(value) {
-  if (typeof value !== 'string') return value;
-  return value.replace(/\s+/g, ' ').trim();
-}
-
-const MEME_BACKDROP_SOURCES = {
-  low: ['/static/share/low.jpeg', '/static/share/low.jpg'],
-  normal: ['/static/share/normal.png', '/static/share/normal.jpeg'],
-  high: ['/static/share/high.jpeg', '/static/share/high.jpg'],
+const SHARE_IMAGE_SOURCES = {
+  positive: ['/static/share/high.jpeg'],
+  negative: ['/static/share/low.jpeg'],
 };
 
-const MEME_VARIANT_ENCODINGS = {
-  low: 0.72,
-  normal: 0.82,
-  high: 0.94,
-};
+const shareImageCache = new Map();
 
-const memeBackdropCache = new Map();
-
-function loadMemeBackdrop(tier) {
-  if (memeBackdropCache.has(tier)) {
-    return memeBackdropCache.get(tier);
+function determineShareOutcome(snapshot) {
+  const totalPnl = Number(snapshot?.totalPnl ?? 0);
+  if (!Number.isFinite(totalPnl)) {
+    return 'negative';
   }
-  const sources = MEME_BACKDROP_SOURCES[tier];
-  const candidates = Array.isArray(sources) ? sources.filter(Boolean) : sources ? [sources] : [];
-  if (!candidates.length) {
-    const fallback = Promise.resolve(null);
-    memeBackdropCache.set(tier, fallback);
-    return fallback;
+  return totalPnl > 0 ? 'positive' : 'negative';
+}
+
+async function loadShareImage(outcome) {
+  const key = outcome || 'negative';
+  if (shareImageCache.has(key)) {
+    return shareImageCache.get(key);
   }
 
   const loadPromise = (async () => {
-    let lastError = null;
+    const candidates = SHARE_IMAGE_SOURCES[key] || SHARE_IMAGE_SOURCES.negative || [];
     for (const src of candidates) {
       try {
-        const image = await new Promise((resolve, reject) => {
-          const element = new Image();
-          element.decoding = 'async';
-          element.crossOrigin = 'anonymous';
-          element.onload = () => resolve(element);
-          element.onerror = () => reject(new Error(`Unable to load meme backdrop: ${src}`));
-          element.src = src;
-        });
-        return image;
+        const response = await fetch(src, { cache: 'force-cache' });
+        if (!response?.ok) {
+          continue;
+        }
+        const blob = await response.blob();
+        if (!blob || blob.size === 0) {
+          continue;
+        }
+        return {
+          blob,
+          outcome: key,
+          type: blob.type || 'image/jpeg',
+          fileName: `mraster-${key}.jpg`,
+          source: src,
+        };
       } catch (error) {
-        lastError = error;
+        console.warn('Failed to load share image candidate', src, error);
       }
     }
-    if (lastError) {
-      console.warn(lastError.message || lastError);
-    }
+    console.warn('Unable to load any share image for outcome', key);
     return null;
   })();
 
-  memeBackdropCache.set(tier, loadPromise);
+  shareImageCache.set(key, loadPromise);
   return loadPromise;
 }
 
-function buildMemeMetrics(snapshot) {
-  return [
-    { label: 'TOTAL TRADES', value: (snapshot?.totalTrades ?? 0).toLocaleString() },
-    { label: 'TOTAL PNL', value: formatMemeMetricValue(snapshot?.totalPnlDisplay || '0 USDT') },
-    { label: 'TOTAL WIN RATE', value: formatMemeMetricValue(snapshot?.winRateDisplay || '0.0%') },
-  ];
-}
-
-function drawMemeContents(ctx, theme, metrics) {
-  const size = 1080;
-
-  ctx.fillStyle = theme.accent;
-  ctx.font = '700 72px "Inter", "Segoe UI", sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(`${theme.emoji} ${theme.headline} ${theme.emoji}`, size / 2, 170);
-
-  ctx.font = '500 34px "Inter", "Segoe UI", sans-serif';
-  ctx.fillStyle = theme.textSoft;
-  ctx.fillText(theme.quip, size / 2, 230);
-
-  const cardWidth = size - 240;
-  const cardX = 120;
-  const cardYStart = 320;
-  const cardHeight = 150;
-  const gap = 36;
-
-  metrics.forEach((metric, index) => {
-    const y = cardYStart + index * (cardHeight + gap);
-    drawRoundedRect(ctx, cardX, y, cardWidth, cardHeight, 36);
-    ctx.fillStyle = theme.cardBg;
-    ctx.fill();
-
-    ctx.strokeStyle = theme.accentSoft;
-    ctx.lineWidth = 2;
-    drawRoundedRect(ctx, cardX, y, cardWidth, cardHeight, 36);
-    ctx.stroke();
-
-    ctx.textAlign = 'left';
-    ctx.fillStyle = theme.textSoft;
-    ctx.font = '600 30px "Inter", "Segoe UI", sans-serif';
-    ctx.fillText(metric.label, cardX + 48, y + 56);
-
-    ctx.fillStyle = theme.textStrong;
-    ctx.font = '700 72px "Inter", "Segoe UI", sans-serif';
-    ctx.fillText(metric.value, cardX + 48, y + 118);
-  });
-
-  ctx.textAlign = 'center';
-  ctx.fillStyle = theme.textSoft;
-  ctx.font = '500 30px "Inter", "Segoe UI", sans-serif';
-  ctx.fillText('Stats auto-generated by MrAster', size / 2, size - 160);
-
-  ctx.fillStyle = theme.accent;
-  ctx.font = '600 38px "Inter", "Segoe UI", sans-serif';
-  ctx.fillText('MrAster - Autonomous trading suite', size / 2, size - 100);
-}
-
-function createMemeCanvas(baseImage, theme, metrics) {
-  const baseSize = 1080;
-  const width = baseImage?.naturalWidth || baseSize;
-  const height = baseImage?.naturalHeight || baseSize;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-
-  if (baseImage) {
-    ctx.drawImage(baseImage, 0, 0, width, height);
-  } else {
-    const gradient = ctx.createLinearGradient(0, 0, width, height);
-    gradient.addColorStop(0, theme.gradient[0]);
-    gradient.addColorStop(1, theme.gradient[1]);
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, width, height);
+async function shareImageToX(image, shareText) {
+  if (!image?.blob) {
+    return { shared: false, reason: 'noImage' };
+  }
+  if (!navigator.share || typeof File === 'undefined') {
+    return { shared: false, reason: 'shareUnsupported' };
   }
 
-  ctx.save();
-  ctx.scale(width / baseSize, height / baseSize);
+  let file;
+  try {
+    file = new File([
+      image.blob,
+    ], image.fileName || `mraster-${image.outcome || 'share'}.jpg`, {
+      type: image.type || image.blob?.type || 'image/jpeg',
+    });
+  } catch (error) {
+    console.warn('Unable to prepare share file', error);
+    return { shared: false, reason: 'fileCreationFailed', error };
+  }
 
-  drawRoundedRect(ctx, 50, 50, baseSize - 100, baseSize - 100, 52);
-  ctx.fillStyle = baseImage ? 'rgba(7, 12, 22, 0.74)' : theme.overlay;
-  ctx.fill();
-
-  ctx.save();
-  ctx.globalAlpha = baseImage ? 0.2 : 0.22;
-  ctx.fillStyle = theme.accentSoft;
-  ctx.beginPath();
-  ctx.arc(baseSize * 0.75, baseSize * 0.28, 140, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(baseSize * 0.28, baseSize * 0.72, 180, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-
-  drawMemeContents(ctx, theme, metrics);
-  ctx.restore();
-
-  return canvas;
-}
-
-async function generateMemeCard(snapshot) {
-  const tier = determineMemeTier(snapshot);
-  const theme = createMemeTheme(tier);
-  const metrics = buildMemeMetrics(snapshot);
-  const baseImage = await loadMemeBackdrop(tier);
-  const canvas = createMemeCanvas(baseImage, theme, metrics);
-
-  const variants = {};
-  Object.entries(MEME_VARIANT_ENCODINGS).forEach(([quality, encoding]) => {
-    try {
-      variants[quality] = canvas.toDataURL('image/jpeg', encoding);
-    } catch (error) {
-      console.warn('Failed to encode meme variant', quality, error);
-    }
-  });
-
-  return {
-    tier,
-    variants,
-    alt: `MrAster ${tier} meme summarising trading stats`,
+  const shareData = {
+    title: 'MrAster trading stats',
+    text: shareText,
+    files: [file],
   };
+
+  if (typeof navigator.canShare === 'function') {
+    try {
+      if (!navigator.canShare(shareData)) {
+        console.warn('navigator.canShare reported files unsupported. Skipping share attempt.');
+        return { shared: false, reason: 'canShareUnsupported' };
+      }
+    } catch (error) {
+      console.warn('navigator.canShare threw unexpectedly', error);
+      return { shared: false, reason: 'canShareThrew', error };
+    }
+  }
+
+  try {
+    await navigator.share(shareData);
+    return { shared: true };
+  } catch (error) {
+    if (error?.name !== 'AbortError') {
+      console.warn('System share failed', error);
+    }
+    const message = (error?.message || '').toLowerCase();
+    if (message.includes('binary files are not supported') || message.includes('cannot share file')) {
+      return { shared: false, reason: 'binaryUnsupported', error };
+    }
+    return { shared: false, reason: error?.name === 'AbortError' ? 'shareAborted' : 'shareFailed', error };
+  }
 }
 
-function openMemePreview(meme) {
-  const variants = meme?.variants || {};
-  const displayUrl = variants.high || variants.normal || meme?.dataUrl;
-  if (!displayUrl) return false;
-  const preview = window.open('', '_blank', 'width=960,height=1080');
-  if (!preview) {
+async function copyImageToClipboard(image) {
+  if (!image?.blob || !navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
     return false;
   }
-  preview.opener = null;
-
-  const downloadLinks = Object.entries(variants)
-    .filter(([, url]) => Boolean(url))
-    .map(
-      ([quality, url]) =>
-        `<a href="${url}" download="mraster-${meme.tier}-meme-${quality}.jpg" style="display:inline-flex;align-items:center;gap:10px;padding:12px 22px;border-radius:999px;background:#f5c46b;color:#0b0f16;text-decoration:none;font-weight:600;min-width:220px;justify-content:center;">Download ${quality}</a>`
-    )
-    .join('<div style="height:8px"></div>');
-
-  preview.document.write(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" /><title>MrAster Meme</title></head><body style="margin:0;background:#0b0f16;color:#f5c46b;font-family: 'Inter', 'Segoe UI', sans-serif;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:24px;padding:40px;">
-    <img src="${displayUrl}" alt="${meme.alt}" style="max-width:min(90vw,900px);height:auto;border-radius:28px;box-shadow:0 24px 62px rgba(0,0,0,0.55);" />
-    <p style="max-width:680px;text-align:center;line-height:1.6;">If the X composer did not attach the meme automatically, save it from here and upload it manually. Meme tier: <strong>${meme.tier.toUpperCase()}</strong>.</p>
-    <div style="display:flex;flex-direction:column;align-items:center;width:100%;max-width:340px;gap:8px;">
-      ${downloadLinks}
-    </div>
-  </body></html>`);
-  preview.document.close();
-  return true;
+  try {
+    const type = image.type || image.blob.type || 'image/jpeg';
+    const item = new ClipboardItem({ [type]: image.blob });
+    await navigator.clipboard.write([item]);
+    return true;
+  } catch (error) {
+    console.warn('Clipboard image write failed', error);
+    return false;
+  }
 }
-
 function openTweetComposer(text) {
   if (!text) return false;
   const url = new URL('https://twitter.com/intent/tweet');
@@ -3596,72 +3447,6 @@ function openTweetComposer(text) {
   return false;
 }
 
-function getBestMemeVariantUrl(meme) {
-  if (!meme?.variants) return null;
-  return meme.variants.high || meme.variants.normal || meme.variants.low || null;
-}
-
-async function shareMemeToX(meme, shareText) {
-  if (!meme) return false;
-  try {
-    if (!navigator.share || typeof File === 'undefined') {
-      return false;
-    }
-  } catch (error) {
-    console.warn('Web Share API unavailable', error);
-    return false;
-  }
-
-  const variantUrl = getBestMemeVariantUrl(meme);
-  if (!variantUrl) return false;
-
-  let blob;
-  try {
-    const response = await fetch(variantUrl);
-    blob = await response.blob();
-  } catch (error) {
-    console.warn('Unable to fetch meme for sharing', error);
-    return false;
-  }
-
-  const shareData = {
-    title: 'MrAster trading stats',
-    text: shareText,
-    files: [new File([blob], `mraster-${meme.tier || 'share'}.jpeg`, { type: blob.type || 'image/jpeg' })],
-  };
-
-  if (navigator.canShare && !navigator.canShare(shareData)) {
-    return false;
-  }
-
-  try {
-    await navigator.share(shareData);
-    return true;
-  } catch (error) {
-    if (error?.name !== 'AbortError') {
-      console.warn('System share failed', error);
-    }
-    return false;
-  }
-}
-
-async function copyMemeImageToClipboard(meme) {
-  const url = getBestMemeVariantUrl(meme);
-  if (!url || !navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
-    return false;
-  }
-  try {
-    const response = await fetch(url);
-    const blob = await response.blob();
-    const item = new ClipboardItem({ [blob.type || 'image/jpeg']: blob });
-    await navigator.clipboard.write([item]);
-    return true;
-  } catch (error) {
-    console.warn('Clipboard image write failed', error);
-    return false;
-  }
-}
-
 async function handlePostToX(event) {
   if (event?.preventDefault) {
     event.preventDefault();
@@ -3669,40 +3454,52 @@ async function handlePostToX(event) {
   if (!btnPostX) return;
   const snapshot = heroMetricsSnapshot || {};
   const shareText = buildShareText(snapshot);
+  const outcome = determineShareOutcome(snapshot);
 
   btnPostX.disabled = true;
   setShareFeedback('Preparing your X post…');
 
   try {
-    const meme = await generateMemeCard(snapshot);
-    const sharedViaSystem = await shareMemeToX(meme, shareText);
+    const shareImage = await loadShareImage(outcome);
+    if (!shareImage) {
+      console.warn('Share image unavailable for outcome', outcome);
+    }
+    const shareAttempt = await shareImageToX(shareImage, shareText);
 
-    if (sharedViaSystem) {
-      setShareFeedback('System share sheet opened with the meme attached. Select X to finish your post.');
+    if (shareAttempt.shared) {
+      setShareFeedback('System share sheet opened with the stats image attached. Select X to finish your post.');
       return;
+    }
+
+    if (shareAttempt.reason === 'canShareUnsupported' || shareAttempt.reason === 'binaryUnsupported') {
+      console.warn('Falling back after share reported unsupported binary attachments');
     }
 
     const [clipboardSuccess, imageCopied] = await Promise.all([
       copyShareText(shareText),
-      copyMemeImageToClipboard(meme),
+      copyImageToClipboard(shareImage),
     ]);
 
     const composerOpened = openTweetComposer(shareText);
-    const memeOpened = openMemePreview(meme);
 
     if (clipboardSuccess && imageCopied) {
-      setShareFeedback('Post text and meme copied! The composer opened—paste the image if it does not appear automatically.');
+      setShareFeedback('Post text and image copied! The composer opened—paste the attachment to include it without downloading.');
+    } else if (shareAttempt.reason === 'binaryUnsupported' || shareAttempt.reason === 'canShareUnsupported') {
+      setShareFeedback('Dein Browser blockiert das direkte Anhängen von Bildern. Wir haben Text und Bild vorbereitet – füge sie im geöffneten X-Composer einfach per Einfügen hinzu.');
+    } else if (clipboardSuccess && shareImage) {
+      setShareFeedback('Post text copied! Use the composer to add the MrAster image manually if it was not copied.');
     } else if (clipboardSuccess) {
-      setShareFeedback('Post text copied! A meme preview opened so you can attach it if needed.');
+      setShareFeedback('Post text copied! The image could not be prepared automatically.');
+    } else if (imageCopied) {
+      setShareFeedback('Image copied to your clipboard! Paste it into the composer and add your stats manually.');
+    } else if (shareImage) {
+      setShareFeedback('Compose window opened. Copy the stats or image manually if clipboard access is blocked.');
     } else {
-      setShareFeedback('Compose window opened. Copy the stats manually if clipboard access is blocked.');
+      setShareFeedback('Compose window opened. Copy the stats manually; the share image was unavailable.');
     }
 
     if (!composerOpened) {
       console.warn('Tweet composer window blocked');
-    }
-    if (!memeOpened) {
-      console.warn('Meme preview window blocked');
     }
   } catch (error) {
     console.error('Failed to prepare X post', error);
