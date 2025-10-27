@@ -3316,8 +3316,8 @@ async function copyShareText(text) {
 }
 
 const SHARE_IMAGE_SOURCES = {
-  positive: ['/static/share/high.jpeg'],
-  negative: ['/static/share/low.jpeg'],
+  positive: ['/static/share/high.jpg', '/static/share/high.jpeg'],
+  negative: ['/static/share/low.jpg', '/static/share/low.jpeg'],
 };
 
 const shareImageCache = new Map();
@@ -3348,11 +3348,22 @@ async function loadShareImage(outcome) {
         if (!blob || blob.size === 0) {
           continue;
         }
+        const inferredName = (() => {
+          try {
+            const url = new URL(src, window.location.origin);
+            const pathname = url.pathname || '';
+            const base = pathname.split('/').filter(Boolean).pop();
+            if (base) return base;
+          } catch (error) {
+            console.warn('Failed to derive share image filename from', src, error);
+          }
+          return `mraster-${key}.jpg`;
+        })();
         return {
           blob,
           outcome: key,
           type: blob.type || 'image/jpeg',
-          fileName: `mraster-${key}.jpg`,
+          fileName: inferredName,
           source: src,
         };
       } catch (error) {
