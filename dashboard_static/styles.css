@@ -133,6 +133,10 @@ body::after {
   background-image: url('./flags/zh.svg');
 }
 
+.language-flag-ko {
+  background-image: url('./flags/ko.svg');
+}
+
 .language-flag-de {
   background-image: url('./flags/de.svg');
 }
