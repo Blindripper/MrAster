@@ -133,6 +133,10 @@ body::after {
   background-image: url('./flags/zh.svg');
 }
 
+.language-flag-de {
+  background-image: url('./flags/de.svg');
+}
+
 .market-ticker {
   display: flex;
   gap: 1.8rem;
