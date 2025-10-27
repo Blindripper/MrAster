@@ -31,7 +31,8 @@ from datetime import datetime, timezone
 from urllib.parse import urlencode
 from typing import Dict, List, Tuple, Optional, Any, Callable, Sequence
 
-from collections import OrderedDict
+from collections import OrderedDict, deque
+from concurrent.futures import Future, ThreadPoolExecutor
 
 import requests
 
@@ -69,6 +70,10 @@ SENTINEL_DECAY_MINUTES = float(os.getenv("ASTER_AI_SENTINEL_DECAY_MINUTES", "90"
 SENTINEL_NEWS_ENDPOINT = os.getenv("ASTER_AI_NEWS_ENDPOINT", "").strip()
 SENTINEL_NEWS_TOKEN = os.getenv("ASTER_AI_NEWS_API_KEY", "").strip()
 AI_MIN_INTERVAL_SECONDS = float(os.getenv("ASTER_AI_MIN_INTERVAL_SECONDS", "8") or 0.0)
+AI_CONCURRENCY = max(1, int(os.getenv("ASTER_AI_CONCURRENCY", "3") or 1))
+AI_GLOBAL_COOLDOWN = max(0.0, float(os.getenv("ASTER_AI_GLOBAL_COOLDOWN_SECONDS", "2.0") or 0.0))
+AI_PLAN_TIMEOUT = max(10.0, float(os.getenv("ASTER_AI_PLAN_TIMEOUT_SECONDS", "45") or 0.0))
+AI_PENDING_LIMIT = max(AI_CONCURRENCY, int(os.getenv("ASTER_AI_PENDING_LIMIT", str(AI_CONCURRENCY * 2)) or AI_CONCURRENCY))
 
 QUOTE = os.getenv("ASTER_QUOTE", "USDT")
 INTERVAL = os.getenv("ASTER_INTERVAL", "5m")
@@ -361,8 +366,10 @@ class DailyBudgetTracker:
             bucket["date"] = today
             bucket["spent"] = 0.0
             bucket["history"] = []
+            bucket["stats"] = {}
         bucket.setdefault("spent", 0.0)
         bucket.setdefault("history", [])
+        bucket.setdefault("stats", {})
         return bucket
 
     def spent(self) -> float:
@@ -374,8 +381,18 @@ class DailyBudgetTracker:
             return None
         return max(0.0, self.limit - self.spent())
 
-    def can_spend(self, estimate: float) -> bool:
+    def can_spend(
+        self,
+        estimate: float,
+        *,
+        kind: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> bool:
         estimate = max(0.0, float(estimate or 0.0))
+        if estimate <= 0:
+            avg = self.average_cost(kind=kind, model=model)
+            if avg is not None:
+                estimate = avg
         if self.limit <= 0:
             return True
         allowed = (self.spent() + estimate) <= self.limit
@@ -394,6 +411,25 @@ class DailyBudgetTracker:
         if len(history) > 48:
             history = history[-48:]
         bucket["history"] = history
+        stats = bucket.setdefault("stats", {})
+        model_key = str((meta or {}).get("model") or "default")
+        kind_key = str((meta or {}).get("kind") or "unknown")
+
+        def _update_stats(key: str) -> None:
+            rec = stats.setdefault(key, {"avg": 0.0, "n": 0, "last": 0.0, "updated": 0.0})
+            n = int(rec.get("n", 0) or 0)
+            avg = float(rec.get("avg", 0.0) or 0.0)
+            new_n = n + 1
+            new_avg = ((avg * n) + amount) / max(new_n, 1)
+            rec.update({"avg": float(new_avg), "n": new_n, "last": float(amount), "updated": time.time()})
+
+        for key in (
+            f"{model_key}::{kind_key}",
+            f"{model_key}::*",
+            f"*::{kind_key}",
+            "*::*",
+        ):
+            _update_stats(key)
         self._state["ai_budget"] = bucket
 
     def snapshot(self) -> Dict[str, Any]:
@@ -406,7 +442,26 @@ class DailyBudgetTracker:
             "remaining": remaining,
             "history": list(bucket.get("history") or [])[-12:],
             "strict": self.strict,
+            "stats": bucket.get("stats", {}),
         }
+
+    def average_cost(self, *, kind: Optional[str] = None, model: Optional[str] = None) -> Optional[float]:
+        stats = self._bucket().get("stats") or {}
+        keys: List[str] = []
+        model_key = str(model) if model else None
+        kind_key = str(kind) if kind else None
+        if model_key is not None and kind_key is not None:
+            keys.append(f"{model_key}::{kind_key}")
+        if model_key is not None:
+            keys.append(f"{model_key}::*")
+        if kind_key is not None:
+            keys.append(f"*::{kind_key}")
+        keys.append("*::*")
+        for key in keys:
+            rec = stats.get(key)
+            if rec and rec.get("n", 0):
+                return float(rec.get("avg", 0.0) or 0.0)
+        return None
 
 
 class NewsTrendSentinel:
@@ -699,19 +754,209 @@ class AITradeAdvisor:
         api_key: str,
         model: str,
         budget: DailyBudgetTracker,
+        state: Optional[Dict[str, Any]] = None,
         *,
         enabled: bool = True,
     ) -> None:
         self.api_key = (api_key or "").strip()
         self.model = (model or "gpt-4o").strip()
         self.budget = budget
+        self.state = state if isinstance(state, dict) else None
         self.enabled = bool(enabled and self.api_key)
-        self._session = requests.Session() if self.enabled else None
         self._temperature_supported = True
         self._temperature_override = self._resolve_temperature()
         self._cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
         self._recent_plans: "OrderedDict[str, Tuple[float, Dict[str, Any]]]" = OrderedDict()
+        self._pending_requests: Dict[str, Dict[str, Any]] = {}
+        self._pending_order: deque[str] = deque()
         self._min_interval = max(0.0, AI_MIN_INTERVAL_SECONDS)
+        self._last_global_request = 0.0
+        self._plan_timeout = AI_PLAN_TIMEOUT
+        self._pending_limit = AI_PENDING_LIMIT
+        self._executor: Optional[ThreadPoolExecutor] = None
+        if self.enabled and AI_CONCURRENCY > 0:
+            self._executor = ThreadPoolExecutor(max_workers=AI_CONCURRENCY)
+        self._load_persistent_state()
+
+    def _load_persistent_state(self) -> None:
+        if not self.state:
+            return
+        cache_blob = self.state.get("ai_plan_cache")
+        if isinstance(cache_blob, list):
+            for entry in cache_blob:
+                if not isinstance(entry, dict):
+                    continue
+                key = entry.get("key")
+                plan = entry.get("plan") or entry.get("value")
+                if not key or not isinstance(plan, dict):
+                    continue
+                self._cache[key] = copy.deepcopy(plan)
+        while len(self._cache) > self.CACHE_LIMIT:
+            self._cache.popitem(last=False)
+        recent_blob = self.state.get("ai_recent_plans")
+        if isinstance(recent_blob, list):
+            for entry in recent_blob:
+                if not isinstance(entry, dict):
+                    continue
+                key = entry.get("key")
+                plan = entry.get("plan")
+                ts = entry.get("ts")
+                if not key or not isinstance(plan, dict):
+                    continue
+                try:
+                    ts_val = float(ts)
+                except Exception:
+                    ts_val = time.time()
+                self._recent_plans[key] = (ts_val, copy.deepcopy(plan))
+        while len(self._recent_plans) > self.RECENT_PLAN_LIMIT:
+            self._recent_plans.popitem(last=False)
+
+    def _persist_state(self) -> None:
+        if not self.state:
+            return
+        cache_dump: List[Dict[str, Any]] = []
+        for key, value in list(self._cache.items())[-self.CACHE_LIMIT:]:
+            cache_dump.append({"key": key, "plan": copy.deepcopy(value)})
+        recent_dump: List[Dict[str, Any]] = []
+        for key, (ts, plan) in list(self._recent_plans.items())[-self.RECENT_PLAN_LIMIT:]:
+            recent_dump.append({"key": key, "ts": float(ts), "plan": copy.deepcopy(plan)})
+        self.state["ai_plan_cache"] = cache_dump
+        self.state["ai_recent_plans"] = recent_dump
+
+    def _register_pending_key(self, key: str) -> None:
+        if key in self._pending_order:
+            return
+        self._pending_order.append(key)
+        while len(self._pending_order) > self._pending_limit:
+            stale_key = self._pending_order.popleft()
+            info = self._pending_requests.pop(stale_key, None)
+            if info:
+                fut = info.get("future")
+                if isinstance(fut, Future) and not fut.done():
+                    fut.cancel()
+
+    def _remove_pending_entry(self, key: str) -> None:
+        self._pending_requests.pop(key, None)
+        try:
+            self._pending_order.remove(key)
+        except ValueError:
+            pass
+
+    def _active_pending(self) -> int:
+        count = 0
+        for info in self._pending_requests.values():
+            fut = info.get("future")
+            if isinstance(fut, Future) and not fut.done():
+                count += 1
+        return count
+
+    def _pending_stub(self, fallback: Dict[str, Any], reason: str, note: str) -> Dict[str, Any]:
+        plan = {**fallback}
+        plan["take"] = False
+        plan["decision"] = "skip"
+        plan["decision_reason"] = reason
+        plan["decision_note"] = note
+        plan.setdefault("explanation", "")
+        plan["_pending"] = True
+        return plan
+
+    def _estimate_tokens(self, text: str) -> float:
+        if not text:
+            return 0.0
+        # crude heuristic: average 4 characters per token
+        return max(1.0, len(text) / 4.0)
+
+    def _estimate_prospective_cost(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        completion_hint: float = 320.0,
+    ) -> float:
+        pricing = self._pricing()
+        prompt_tokens = self._estimate_tokens(system_prompt) + self._estimate_tokens(user_prompt)
+        return (
+            prompt_tokens * pricing.get("input", 0.0)
+            + completion_hint * pricing.get("output", 0.0)
+        )
+
+    def _dispatch_request(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        kind: str,
+        budget_estimate: float,
+    ) -> Optional[Future]:
+        if not self._executor:
+            return None
+        return self._executor.submit(
+            self._chat,
+            system_prompt,
+            user_prompt,
+            kind=kind,
+            budget_estimate=budget_estimate,
+        )
+
+    def _process_pending_request(
+        self,
+        throttle_key: str,
+        fallback: Dict[str, Any],
+        now: float,
+    ) -> Tuple[Optional[str], Optional[Any]]:
+        info = self._pending_requests.get(throttle_key)
+        if not info:
+            return None, None
+        kind = str(info.get("kind", "plan"))
+        note = info.get("note") or "Waiting for AI plan response"
+        future = info.get("future")
+        if future is None:
+            ready_after = float(info.get("ready_after", now) or now)
+            if ready_after <= now and self._executor:
+                cooldown_ok = AI_GLOBAL_COOLDOWN <= 0 or (now - self._last_global_request) >= AI_GLOBAL_COOLDOWN
+                concurrency_ok = self._active_pending() < AI_CONCURRENCY
+                if cooldown_ok and concurrency_ok:
+                    future = self._dispatch_request(
+                        info.get("system_prompt", ""),
+                        info.get("user_prompt", ""),
+                        kind=kind,
+                        budget_estimate=float(info.get("estimate", 0.0) or 0.0),
+                    )
+                    if future:
+                        info["future"] = future
+                        info["dispatched_at"] = now
+                        self._last_global_request = now
+                        note = "Waiting for AI plan response"
+                    else:
+                        self._remove_pending_entry(throttle_key)
+                        self._recent_plan_store(throttle_key, fallback, now)
+                        return "fallback", fallback
+                else:
+                    info["ready_after"] = now + max(0.5, AI_GLOBAL_COOLDOWN or 0.5)
+            return "pending", self._pending_stub(fallback, f"{kind}_pending", note)
+        if isinstance(future, Future) and future.done():
+            self._remove_pending_entry(throttle_key)
+            try:
+                response = future.result()
+            except Exception as exc:
+                log.debug(f"AI future exception for %s: %s", throttle_key, exc)
+                response = None
+            return "response", {"response": response, "info": info}
+        dispatched_at = float(info.get("dispatched_at", now) or now)
+        if (now - dispatched_at) > self._plan_timeout:
+            try:
+                if isinstance(future, Future):
+                    future.cancel()
+            finally:
+                self._remove_pending_entry(throttle_key)
+            timeout_plan = self._pending_stub(
+                fallback,
+                f"{kind}_timeout",
+                "AI request timed out; using fallback heuristics.",
+            )
+            self._recent_plan_store(throttle_key, fallback, now)
+            return "timeout", timeout_plan
+        return "pending", self._pending_stub(fallback, f"{kind}_pending", note)
 
     def _coerce_float(self, value: Any) -> Optional[float]:
         if isinstance(value, bool):
@@ -815,6 +1060,7 @@ class AITradeAdvisor:
         self._cache.move_to_end(key)
         while len(self._cache) > self.CACHE_LIMIT:
             self._cache.popitem(last=False)
+        self._persist_state()
 
     def _recent_plan_lookup(self, key: str, now: Optional[float] = None) -> Optional[Dict[str, Any]]:
         if self._min_interval <= 0:
@@ -838,6 +1084,7 @@ class AITradeAdvisor:
         self._recent_plans.move_to_end(key)
         while len(self._recent_plans) > self.RECENT_PLAN_LIMIT:
             self._recent_plans.popitem(last=False)
+        self._persist_state()
 
     def _ensure_bounds(self, text: str, fallback: str) -> str:
         base_words = [w for w in re.split(r"\s+", (text or "").strip()) if w]
@@ -856,11 +1103,21 @@ class AITradeAdvisor:
             text += "."
         return text
 
-    def _chat(self, system_prompt: str, user_prompt: str, *, kind: str) -> Optional[str]:
-        if not self.enabled or not self._session:
+    def _chat(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        kind: str,
+        budget_estimate: float = 0.0,
+    ) -> Optional[str]:
+        if not self.enabled:
             return None
-        if not self.budget.can_spend(0.0025):
-            log.info("AI daily budget exhausted — skipping remote call.")
+        estimate = max(0.0, float(budget_estimate or 0.0))
+        if estimate <= 0:
+            estimate = self._estimate_prospective_cost(system_prompt, user_prompt)
+        if not self.budget.can_spend(estimate, kind=kind, model=self.model):
+            log.info("AI daily budget exhausted — skipping %s request.", kind)
             return None
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -876,7 +1133,7 @@ class AITradeAdvisor:
         }
 
         def _send_chat(p: Dict[str, Any]) -> requests.Response:
-            return self._session.post(
+            return requests.post(
                 "https://api.openai.com/v1/chat/completions",
                 headers=headers,
                 json=p,
@@ -1019,92 +1276,9 @@ class AITradeAdvisor:
             "take_profit": float(price + base_tp if side == "BUY" else price - base_tp),
         }
 
-    def plan_trade(
-        self,
-        symbol: str,
-        side: str,
-        price: float,
-        base_sl: float,
-        base_tp: float,
-        ctx: Dict[str, Any],
-        sentinel: Dict[str, Any],
-        atr_abs: float,
+    def _apply_plan_overrides(
+        self, fallback: Dict[str, Any], parsed: Dict[str, Any]
     ) -> Dict[str, Any]:
-        fallback = self._fallback_plan(symbol, side, price, base_sl, base_tp, ctx, sentinel, atr_abs)
-        if not self.enabled:
-            self._recent_plan_store(f"plan::{symbol.upper()}::{side.upper()}", fallback)
-            return fallback
-
-        sentinel_label = str((sentinel or {}).get("label", "")).lower()
-        size_factor = 1.0
-        if isinstance(sentinel, dict):
-            try:
-                size_factor = float(sentinel.get("actions", {}).get("size_factor", 1.0) or 1.0)
-            except (TypeError, ValueError):
-                size_factor = 1.0
-
-        if sentinel_label == "red" or size_factor <= 0:
-            fallback.update(
-                {
-                    "take": False,
-                    "decision": "skip",
-                    "decision_reason": "sentinel_block",
-                    "decision_note": "Sentinel flagged hard risk; skipped without AI call.",
-                    "explanation": self._ensure_bounds(
-                        "Sentinel reported a red risk state so the trade was skipped immediately.",
-                        fallback.get("explanation", ""),
-                    ),
-                }
-            )
-            self._recent_plan_store(f"plan::{symbol.upper()}::{side.upper()}", fallback)
-            return fallback
-
-        throttle_key = f"plan::{symbol.upper()}::{side.upper()}"
-        now = time.time()
-        recent_plan = self._recent_plan_lookup(throttle_key, now)
-        if recent_plan is not None:
-            return recent_plan
-
-        system_prompt = (
-            "You advise a futures bot. Use the indicator stats and sentinel hints to decide if the trade should run. "
-            "Return compact JSON with: take (bool), decision, decision_reason, decision_note, size_multiplier, sl_multiplier, "
-            "tp_multiplier, leverage, risk_note, explanation, fasttp_overrides (enabled,min_r,ret1,ret3,snap_atr) and optional "
-            "levels entry_price, stop_loss, take_profit. If you reject set take=false and leave explanation empty."
-        )
-        stats_block = self._extract_stat_block(ctx)
-        sentinel_payload = self._summarize_sentinel(sentinel)
-        constraints: Dict[str, Any] = {}
-        if MAX_NOTIONAL_USDT > 0:
-            constraints["max_notional"] = MAX_NOTIONAL_USDT
-        user_payload: Dict[str, Any] = {
-            "symbol": symbol,
-            "side": side,
-            "price": price,
-            "base_stop": base_sl,
-            "base_target": base_tp,
-            "atr_abs": atr_abs,
-        }
-        if stats_block:
-            user_payload["stats"] = stats_block
-        if sentinel_payload:
-            user_payload["sentinel"] = sentinel_payload
-        if constraints:
-            user_payload["constraints"] = constraints
-        user_prompt = json.dumps(user_payload, sort_keys=True, separators=(",", ":"))
-        cache_key = self._cache_key("plan", system_prompt, user_payload)
-        cached_plan = self._cache_lookup(cache_key)
-        if cached_plan is not None:
-            self._recent_plan_store(throttle_key, cached_plan, now)
-            return cached_plan
-        response = self._chat(system_prompt, user_prompt, kind="plan")
-        if not response:
-            self._recent_plan_store(throttle_key, fallback, now)
-            return fallback
-        parsed = self._parse_structured(response)
-        if not isinstance(parsed, dict):
-            self._recent_plan_store(throttle_key, fallback, now)
-            return fallback
-
         plan = {**fallback}
         plan["take"] = bool(fallback.get("take", True))
         plan["decision"] = "take" if plan["take"] else "skip"
@@ -1151,7 +1325,11 @@ class AITradeAdvisor:
         if isinstance(fasttp_overrides, dict):
             overrides = {
                 "enabled": bool(fasttp_overrides.get("enabled", True)),
-                "min_r": float(fasttp_overrides.get("min_r", fallback.get("fasttp_overrides", {}).get("min_r", FASTTP_MIN_R))),
+                "min_r": float(
+                    fasttp_overrides.get(
+                        "min_r", fallback.get("fasttp_overrides", {}).get("min_r", FASTTP_MIN_R)
+                    )
+                ),
                 "ret1": float(fasttp_overrides.get("ret1", FAST_TP_RET1)),
                 "ret3": float(fasttp_overrides.get("ret3", FAST_TP_RET3)),
                 "snap_atr": float(fasttp_overrides.get("snap_atr", FASTTP_SNAP_ATR)),
@@ -1188,107 +1366,11 @@ class AITradeAdvisor:
         )
         if isinstance(tp_px, (int, float)) and tp_px > 0:
             plan["take_profit"] = float(tp_px)
-        self._cache_store(cache_key, plan)
-        self._recent_plan_store(throttle_key, plan, now)
         return plan
 
-    def plan_trend_trade(
-        self,
-        symbol: str,
-        price: float,
-        base_sl: float,
-        base_tp: float,
-        ctx: Dict[str, Any],
-        sentinel: Dict[str, Any],
-        atr_abs: float,
+    def _apply_trend_plan_overrides(
+        self, fallback: Dict[str, Any], parsed: Dict[str, Any]
     ) -> Dict[str, Any]:
-        fallback = {
-            "take": False,
-            "decision": "skip",
-            "decision_reason": "no_signal",
-            "decision_note": "Autonomous scan did not detect a safe opportunity.",
-            "size_multiplier": 1.0,
-            "sl_multiplier": 1.0,
-            "tp_multiplier": 1.0,
-            "leverage": LEVERAGE,
-            "risk_note": sentinel.get("label", "green") if sentinel else "green",
-            "explanation": "",
-            "fasttp_overrides": None,
-            "event_risk": float(sentinel.get("event_risk", 0.0) if sentinel else 0.0),
-            "hype_score": float(sentinel.get("hype_score", 0.0) if sentinel else 0.0),
-            "side": None,
-            "confidence": 0.0,
-            "entry_price": float(price),
-        }
-        if not self.enabled:
-            self._recent_plan_store(f"trend::{symbol.upper()}", fallback)
-            return fallback
-
-        sentinel_label = str((sentinel or {}).get("label", "")).lower()
-        size_factor = 1.0
-        if isinstance(sentinel, dict):
-            try:
-                size_factor = float(sentinel.get("actions", {}).get("size_factor", 1.0) or 1.0)
-            except (TypeError, ValueError):
-                size_factor = 1.0
-
-        if sentinel_label == "red" or size_factor <= 0:
-            fallback.update(
-                {
-                    "take": False,
-                    "decision": "skip",
-                    "decision_reason": "sentinel_block",
-                    "decision_note": "Sentinel blocked autonomous scan; skipped without AI call.",
-                    "explanation": "",
-                }
-            )
-            self._recent_plan_store(f"trend::{symbol.upper()}", fallback)
-            return fallback
-
-        throttle_key = f"trend::{symbol.upper()}"
-        now = time.time()
-        recent_plan = self._recent_plan_lookup(throttle_key, now)
-        if recent_plan is not None:
-            return recent_plan
-
-        system_prompt = (
-            "You scout autonomous trends for a futures bot. Weigh indicator stats and sentinel risk to decide on a trade. "
-            "Return JSON with take (bool), decision, decision_reason, decision_note, side (BUY/SELL), size_multiplier, "
-            "sl_multiplier, tp_multiplier, leverage, risk_note, explanation, fasttp_overrides (enabled,min_r,ret1,ret3,snap_atr), "
-            "confidence (0-1) and optional levels entry_price, stop_loss, take_profit. Declines should leave explanation empty."
-        )
-        stats_block = self._extract_stat_block(ctx)
-        sentinel_payload = self._summarize_sentinel(sentinel)
-        constraints: Dict[str, Any] = {}
-        if MAX_NOTIONAL_USDT > 0:
-            constraints["max_notional"] = MAX_NOTIONAL_USDT
-        user_payload: Dict[str, Any] = {
-            "symbol": symbol,
-            "price": price,
-            "atr_abs": atr_abs,
-            "distance": {"stop": base_sl, "target": base_tp},
-        }
-        if stats_block:
-            user_payload["stats"] = stats_block
-        if sentinel_payload:
-            user_payload["sentinel"] = sentinel_payload
-        if constraints:
-            user_payload["constraints"] = constraints
-        user_prompt = json.dumps(user_payload, sort_keys=True, separators=(",", ":"))
-        cache_key = self._cache_key("trend", system_prompt, user_payload)
-        cached_plan = self._cache_lookup(cache_key)
-        if cached_plan is not None:
-            self._recent_plan_store(throttle_key, cached_plan, now)
-            return cached_plan
-        response = self._chat(system_prompt, user_prompt, kind="trend")
-        if not response:
-            self._recent_plan_store(throttle_key, fallback, now)
-            return fallback
-        parsed = self._parse_structured(response)
-        if not isinstance(parsed, dict):
-            self._recent_plan_store(throttle_key, fallback, now)
-            return fallback
-
         plan = {**fallback}
         decision_reason = parsed.get("decision_reason") or parsed.get("reason")
         decision_note = parsed.get("decision_note") or parsed.get("note")
@@ -1304,18 +1386,18 @@ class AITradeAdvisor:
             take = bool(take_raw)
         elif isinstance(decision_raw, str):
             token = decision_raw.strip().lower()
-            if token in {"take", "enter", "buy", "sell", "long", "short", "proceed"}:
+            if token in {"take", "enter", "proceed", "buy", "sell", "long", "short"}:
                 take = True
             elif token in {"skip", "avoid", "pass", "reject", "stop"}:
                 take = False
-        plan["take"] = bool(take)
-        plan["decision"] = "take" if plan["take"] else "skip"
+        plan["take"] = take
+        plan["decision"] = "take" if take else "skip"
 
         side_raw = parsed.get("side") or parsed.get("direction")
         if isinstance(side_raw, str):
-            side = side_raw.strip().upper()
-            if side in {"BUY", "SELL"}:
-                plan["side"] = side
+            side_norm = side_raw.strip().upper()
+            if side_norm in {"BUY", "SELL"}:
+                plan["side"] = side_norm
 
         size_multiplier = parsed.get("size_multiplier")
         sl_multiplier = parsed.get("sl_multiplier")
@@ -1373,9 +1455,420 @@ class AITradeAdvisor:
         )
         if isinstance(tp_px, (int, float)) and tp_px > 0:
             plan["take_profit"] = float(tp_px)
-        self._cache_store(cache_key, plan)
-        self._recent_plan_store(throttle_key, plan, now)
         return plan
+
+    def plan_trade(
+        self,
+        symbol: str,
+        side: str,
+        price: float,
+        base_sl: float,
+        base_tp: float,
+        ctx: Dict[str, Any],
+        sentinel: Dict[str, Any],
+        atr_abs: float,
+        *,
+        async_mode: bool = True,
+    ) -> Dict[str, Any]:
+        fallback = self._fallback_plan(symbol, side, price, base_sl, base_tp, ctx, sentinel, atr_abs)
+        if not self.enabled:
+            self._recent_plan_store(f"plan::{symbol.upper()}::{side.upper()}", fallback)
+            return fallback
+
+        sentinel_label = str((sentinel or {}).get("label", "")).lower()
+        size_factor = 1.0
+        if isinstance(sentinel, dict):
+            try:
+                size_factor = float(sentinel.get("actions", {}).get("size_factor", 1.0) or 1.0)
+            except (TypeError, ValueError):
+                size_factor = 1.0
+
+        if sentinel_label == "red" or size_factor <= 0:
+            fallback.update(
+                {
+                    "take": False,
+                    "decision": "skip",
+                    "decision_reason": "sentinel_block",
+                    "decision_note": "Sentinel flagged hard risk; skipped without AI call.",
+                    "explanation": self._ensure_bounds(
+                        "Sentinel reported a red risk state so the trade was skipped immediately.",
+                        fallback.get("explanation", ""),
+                    ),
+                }
+            )
+            self._recent_plan_store(f"plan::{symbol.upper()}::{side.upper()}", fallback)
+            return fallback
+
+        throttle_key = f"plan::{symbol.upper()}::{side.upper()}"
+        now = time.time()
+        status, payload = self._process_pending_request(throttle_key, fallback, now)
+        if status in {"pending", "timeout"}:
+            return payload  # type: ignore[return-value]
+        if status == "fallback":
+            return payload  # type: ignore[return-value]
+        if status == "response":
+            bundle = payload or {}
+            response_text = bundle.get("response") if isinstance(bundle, dict) else None
+            meta = bundle.get("info") if isinstance(bundle, dict) else {}
+            cache_key_ready = meta.get("cache_key") if isinstance(meta, dict) else None
+            if not response_text:
+                self._recent_plan_store(throttle_key, fallback, now)
+                return fallback
+            parsed_pending = self._parse_structured(response_text)
+            if not isinstance(parsed_pending, dict):
+                self._recent_plan_store(throttle_key, fallback, now)
+                return fallback
+            plan_ready = self._apply_plan_overrides(fallback, parsed_pending)
+            if cache_key_ready:
+                self._cache_store(str(cache_key_ready), plan_ready)
+            self._recent_plan_store(throttle_key, plan_ready, now)
+            return plan_ready
+
+        recent_plan = self._recent_plan_lookup(throttle_key, now)
+        if recent_plan is not None:
+            return recent_plan
+
+        system_prompt = (
+            "You advise a futures bot. Use the indicator stats and sentinel hints to decide if the trade should run. "
+            "Return compact JSON with: take (bool), decision, decision_reason, decision_note, size_multiplier, sl_multiplier, "
+            "tp_multiplier, leverage, risk_note, explanation, fasttp_overrides (enabled,min_r,ret1,ret3,snap_atr) and optional "
+            "levels entry_price, stop_loss, take_profit. If you reject set take=false and leave explanation empty."
+        )
+        stats_block = self._extract_stat_block(ctx)
+        sentinel_payload = self._summarize_sentinel(sentinel)
+        constraints: Dict[str, Any] = {}
+        if MAX_NOTIONAL_USDT > 0:
+            constraints["max_notional"] = MAX_NOTIONAL_USDT
+        user_payload: Dict[str, Any] = {
+            "symbol": symbol,
+            "side": side,
+            "price": price,
+            "base_stop": base_sl,
+            "base_target": base_tp,
+            "atr_abs": atr_abs,
+        }
+        extra_context: Dict[str, Any] = {}
+        for key in (
+            "policy_bucket",
+            "policy_size_multiplier",
+            "sentinel_factor",
+            "alpha_prob",
+            "alpha_conf",
+            "budget_remaining",
+            "budget_spent",
+            "open_positions",
+            "active_positions",
+        ):
+            if key not in ctx:
+                continue
+            value = ctx.get(key)
+            if isinstance(value, (int, float, str, bool)):
+                extra_context[key] = value
+            elif key in {"open_positions", "active_positions"} and isinstance(value, dict):
+                trimmed: Dict[str, float] = {}
+                for idx, (sym_name, qty_val) in enumerate(value.items()):
+                    if idx >= 6:
+                        break
+                    try:
+                        trimmed[sym_name] = float(qty_val)
+                    except Exception:
+                        continue
+                if trimmed:
+                    extra_context[key] = trimmed
+        if extra_context:
+            user_payload["context"] = extra_context
+        if stats_block:
+            user_payload["stats"] = stats_block
+        if sentinel_payload:
+            user_payload["sentinel"] = sentinel_payload
+        if constraints:
+            user_payload["constraints"] = constraints
+        user_prompt = json.dumps(user_payload, sort_keys=True, separators=(",", ":"))
+        cache_key = self._cache_key("plan", system_prompt, user_payload)
+        cached_plan = self._cache_lookup(cache_key)
+        if cached_plan is not None:
+            self._recent_plan_store(throttle_key, cached_plan, now)
+            return cached_plan
+        estimate = self._estimate_prospective_cost(system_prompt, user_prompt)
+        if not async_mode or not self._executor:
+            response = self._chat(system_prompt, user_prompt, kind="plan", budget_estimate=estimate)
+            if not response:
+                self._recent_plan_store(throttle_key, fallback, now)
+                return fallback
+            parsed = self._parse_structured(response)
+            if not isinstance(parsed, dict):
+                self._recent_plan_store(throttle_key, fallback, now)
+                return fallback
+            plan = self._apply_plan_overrides(fallback, parsed)
+            self._cache_store(cache_key, plan)
+            self._recent_plan_store(throttle_key, plan, now)
+            return plan
+
+        if not self.budget.can_spend(estimate, kind="plan", model=self.model):
+            self._recent_plan_store(throttle_key, fallback, now)
+            return fallback
+
+        cooldown_blocked = AI_GLOBAL_COOLDOWN > 0 and (now - self._last_global_request) < AI_GLOBAL_COOLDOWN
+        if cooldown_blocked or self._active_pending() >= AI_CONCURRENCY:
+            pending_info = {
+                "future": None,
+                "fallback": fallback,
+                "system_prompt": system_prompt,
+                "user_prompt": user_prompt,
+                "cache_key": cache_key,
+                "kind": "plan",
+                "estimate": estimate,
+                "queued_at": now,
+                "ready_after": now + max(0.5, AI_GLOBAL_COOLDOWN or 0.5),
+                "note": "Queued for AI planning",
+            }
+            self._pending_requests[throttle_key] = pending_info
+            self._register_pending_key(throttle_key)
+            return self._pending_stub(
+                fallback,
+                "plan_pending",
+                "Queued for AI planning",
+            )
+
+        future = self._dispatch_request(
+            system_prompt,
+            user_prompt,
+            kind="plan",
+            budget_estimate=estimate,
+        )
+        if not future:
+            self._recent_plan_store(throttle_key, fallback, now)
+            return fallback
+        self._pending_requests[throttle_key] = {
+            "future": future,
+            "fallback": fallback,
+            "system_prompt": system_prompt,
+            "user_prompt": user_prompt,
+            "cache_key": cache_key,
+            "kind": "plan",
+            "estimate": estimate,
+            "queued_at": now,
+            "dispatched_at": now,
+        }
+        self._register_pending_key(throttle_key)
+        self._last_global_request = now
+        return self._pending_stub(
+            fallback,
+            "plan_pending",
+            "Waiting for AI plan response",
+        )
+
+    def plan_trend_trade(
+        self,
+        symbol: str,
+        price: float,
+        base_sl: float,
+        base_tp: float,
+        ctx: Dict[str, Any],
+        sentinel: Dict[str, Any],
+        atr_abs: float,
+        *,
+        async_mode: bool = True,
+    ) -> Dict[str, Any]:
+        fallback = {
+            "take": False,
+            "decision": "skip",
+            "decision_reason": "no_signal",
+            "decision_note": "Autonomous scan did not detect a safe opportunity.",
+            "size_multiplier": 1.0,
+            "sl_multiplier": 1.0,
+            "tp_multiplier": 1.0,
+            "leverage": LEVERAGE,
+            "risk_note": sentinel.get("label", "green") if sentinel else "green",
+            "explanation": "",
+            "fasttp_overrides": None,
+            "event_risk": float(sentinel.get("event_risk", 0.0) if sentinel else 0.0),
+            "hype_score": float(sentinel.get("hype_score", 0.0) if sentinel else 0.0),
+            "side": None,
+            "confidence": 0.0,
+            "entry_price": float(price),
+        }
+        if not self.enabled:
+            self._recent_plan_store(f"trend::{symbol.upper()}", fallback)
+            return fallback
+
+        sentinel_label = str((sentinel or {}).get("label", "")).lower()
+        size_factor = 1.0
+        if isinstance(sentinel, dict):
+            try:
+                size_factor = float(sentinel.get("actions", {}).get("size_factor", 1.0) or 1.0)
+            except (TypeError, ValueError):
+                size_factor = 1.0
+
+        if sentinel_label == "red" or size_factor <= 0:
+            fallback.update(
+                {
+                    "take": False,
+                    "decision": "skip",
+                    "decision_reason": "sentinel_block",
+                    "decision_note": "Sentinel blocked autonomous scan; skipped without AI call.",
+                    "explanation": "",
+                }
+            )
+            self._recent_plan_store(f"trend::{symbol.upper()}", fallback)
+            return fallback
+
+        throttle_key = f"trend::{symbol.upper()}"
+        now = time.time()
+        status, payload = self._process_pending_request(throttle_key, fallback, now)
+        if status in {"pending", "timeout"}:
+            return payload  # type: ignore[return-value]
+        if status == "fallback":
+            return payload  # type: ignore[return-value]
+        if status == "response":
+            bundle = payload or {}
+            response_text = bundle.get("response") if isinstance(bundle, dict) else None
+            meta = bundle.get("info") if isinstance(bundle, dict) else {}
+            cache_key_ready = meta.get("cache_key") if isinstance(meta, dict) else None
+            if not response_text:
+                self._recent_plan_store(throttle_key, fallback, now)
+                return fallback
+            parsed_pending = self._parse_structured(response_text)
+            if not isinstance(parsed_pending, dict):
+                self._recent_plan_store(throttle_key, fallback, now)
+                return fallback
+            plan_ready = self._apply_trend_plan_overrides(fallback, parsed_pending)
+            if cache_key_ready:
+                self._cache_store(str(cache_key_ready), plan_ready)
+            self._recent_plan_store(throttle_key, plan_ready, now)
+            return plan_ready
+
+        recent_plan = self._recent_plan_lookup(throttle_key, now)
+        if recent_plan is not None:
+            return recent_plan
+
+        system_prompt = (
+            "You scout autonomous trends for a futures bot. Weigh indicator stats and sentinel risk to decide on a trade. "
+            "Return JSON with take (bool), decision, decision_reason, decision_note, side (BUY/SELL), size_multiplier, "
+            "sl_multiplier, tp_multiplier, leverage, risk_note, explanation, fasttp_overrides (enabled,min_r,ret1,ret3,snap_atr), "
+            "confidence (0-1) and optional levels entry_price, stop_loss, take_profit. Declines should leave explanation empty."
+        )
+        stats_block = self._extract_stat_block(ctx)
+        sentinel_payload = self._summarize_sentinel(sentinel)
+        constraints: Dict[str, Any] = {}
+        if MAX_NOTIONAL_USDT > 0:
+            constraints["max_notional"] = MAX_NOTIONAL_USDT
+        user_payload: Dict[str, Any] = {
+            "symbol": symbol,
+            "price": price,
+            "atr_abs": atr_abs,
+            "distance": {"stop": base_sl, "target": base_tp},
+        }
+        extra_context: Dict[str, Any] = {}
+        for key in (
+            "policy_bucket",
+            "policy_size_multiplier",
+            "sentinel_factor",
+            "alpha_prob",
+            "alpha_conf",
+            "budget_remaining",
+            "budget_spent",
+            "open_positions",
+            "active_positions",
+        ):
+            if key not in ctx:
+                continue
+            value = ctx.get(key)
+            if isinstance(value, (int, float, str, bool)):
+                extra_context[key] = value
+            elif key in {"open_positions", "active_positions"} and isinstance(value, dict):
+                trimmed: Dict[str, float] = {}
+                for idx, (sym_name, qty_val) in enumerate(value.items()):
+                    if idx >= 6:
+                        break
+                    try:
+                        trimmed[sym_name] = float(qty_val)
+                    except Exception:
+                        continue
+                if trimmed:
+                    extra_context[key] = trimmed
+        if extra_context:
+            user_payload["context"] = extra_context
+        if stats_block:
+            user_payload["stats"] = stats_block
+        if sentinel_payload:
+            user_payload["sentinel"] = sentinel_payload
+        if constraints:
+            user_payload["constraints"] = constraints
+        user_prompt = json.dumps(user_payload, sort_keys=True, separators=(",", ":"))
+        cache_key = self._cache_key("trend", system_prompt, user_payload)
+        cached_plan = self._cache_lookup(cache_key)
+        if cached_plan is not None:
+            self._recent_plan_store(throttle_key, cached_plan, now)
+            return cached_plan
+        estimate = self._estimate_prospective_cost(system_prompt, user_prompt)
+        if not async_mode or not self._executor:
+            response = self._chat(system_prompt, user_prompt, kind="trend", budget_estimate=estimate)
+            if not response:
+                self._recent_plan_store(throttle_key, fallback, now)
+                return fallback
+            parsed = self._parse_structured(response)
+            if not isinstance(parsed, dict):
+                self._recent_plan_store(throttle_key, fallback, now)
+                return fallback
+            plan = self._apply_trend_plan_overrides(fallback, parsed)
+            self._cache_store(cache_key, plan)
+            self._recent_plan_store(throttle_key, plan, now)
+            return plan
+
+        if not self.budget.can_spend(estimate, kind="trend", model=self.model):
+            self._recent_plan_store(throttle_key, fallback, now)
+            return fallback
+
+        cooldown_blocked = AI_GLOBAL_COOLDOWN > 0 and (now - self._last_global_request) < AI_GLOBAL_COOLDOWN
+        if cooldown_blocked or self._active_pending() >= AI_CONCURRENCY:
+            pending_info = {
+                "future": None,
+                "fallback": fallback,
+                "system_prompt": system_prompt,
+                "user_prompt": user_prompt,
+                "cache_key": cache_key,
+                "kind": "trend",
+                "estimate": estimate,
+                "queued_at": now,
+                "ready_after": now + max(0.5, AI_GLOBAL_COOLDOWN or 0.5),
+                "note": "Queued for AI planning",
+            }
+            self._pending_requests[throttle_key] = pending_info
+            self._register_pending_key(throttle_key)
+            return self._pending_stub(
+                fallback,
+                "trend_pending",
+                "Queued for AI planning",
+            )
+
+        future = self._dispatch_request(
+            system_prompt,
+            user_prompt,
+            kind="trend",
+            budget_estimate=estimate,
+        )
+        if not future:
+            self._recent_plan_store(throttle_key, fallback, now)
+            return fallback
+        self._pending_requests[throttle_key] = {
+            "future": future,
+            "fallback": fallback,
+            "system_prompt": system_prompt,
+            "user_prompt": user_prompt,
+            "cache_key": cache_key,
+            "kind": "trend",
+            "estimate": estimate,
+            "queued_at": now,
+            "dispatched_at": now,
+        }
+        self._register_pending_key(throttle_key)
+        self._last_global_request = now
+        return self._pending_stub(
+            fallback,
+            "trend_pending",
+            "Waiting for AI plan response",
+        )
 
     def generate_postmortem(self, trade: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         opened = float(trade.get("opened_at", time.time()) or time.time())
@@ -2443,7 +2936,13 @@ class Bot:
         self.sentinel = NewsTrendSentinel(self.exchange, self.state, enabled=sentinel_active)
         self.ai_advisor: Optional[AITradeAdvisor] = None
         if AI_MODE_ENABLED:
-            self.ai_advisor = AITradeAdvisor(OPENAI_API_KEY, AI_MODEL, self.budget_tracker, enabled=AI_MODE_ENABLED)
+            self.ai_advisor = AITradeAdvisor(
+                OPENAI_API_KEY,
+                AI_MODEL,
+                self.budget_tracker,
+                self.state,
+                enabled=AI_MODE_ENABLED,
+            )
 
     @property
     def strategy(self) -> Strategy:
@@ -2762,8 +3261,11 @@ class Bot:
             ctx["alpha_prob"] = float(alpha_prob)
             ctx["alpha_conf"] = float(alpha_conf or 0.0)
 
+        policy_size_mult = float(size_mult)
+        ctx["policy_bucket"] = bucket
+        ctx["policy_size_multiplier"] = policy_size_mult
         sentinel_factor = float(actions.get("size_factor", 1.0) or 1.0)
-        size_mult *= sentinel_factor
+        size_mult = policy_size_mult * sentinel_factor
         ctx["sentinel_factor"] = sentinel_factor
         ctx["sentinel_event_risk"] = float(sentinel_info.get("event_risk", 0.0) or 0.0)
         ctx["sentinel_hype"] = float(sentinel_info.get("hype_score", 0.0) or 0.0)
@@ -2839,6 +3341,18 @@ class Bot:
         plan_stop: Optional[float] = None
         plan_take: Optional[float] = None
 
+        remaining_budget = self.budget_tracker.remaining()
+        if remaining_budget is not None:
+            ctx["budget_remaining"] = float(remaining_budget)
+        ctx["budget_spent"] = float(self.budget_tracker.spent())
+        open_positions_ctx = {k: float(v) for k, v in pos_map.items() if abs(float(v or 0.0)) > 1e-12}
+        if open_positions_ctx:
+            ctx["open_positions"] = open_positions_ctx
+            ctx["active_positions"] = len(open_positions_ctx)
+        else:
+            ctx.pop("open_positions", None)
+            ctx.pop("active_positions", None)
+
         if self.ai_advisor and not manual_override:
             if min_qvol > 0 and float(ctx.get("quote_volume", 0.0) or 0.0) < min_qvol:
                 return
@@ -2865,6 +3379,7 @@ class Bot:
                     ctx,
                     sentinel_info,
                     atr_abs,
+                    async_mode=True,
                 )
                 plan_origin = "trend"
                 decision_summary = {
@@ -2882,6 +3397,8 @@ class Bot:
                     "sentinel_label": sentinel_info.get("label"),
                 }
                 explanation = plan.get("explanation")
+                if plan.get("_pending"):
+                    return
                 if not bool(plan.get("take", False)):
                     if self.decision_tracker:
                         self.decision_tracker.record_rejection("ai_trend_skip", force=True)
@@ -2926,6 +3443,7 @@ class Bot:
                     ctx,
                     sentinel_info,
                     atr_abs,
+                    async_mode=True,
                 )
                 plan_origin = "signal"
                 decision_summary = {
@@ -2943,6 +3461,8 @@ class Bot:
                     "sentinel_label": sentinel_info.get("label"),
                 }
                 explanation = plan.get("explanation")
+                if plan.get("_pending"):
+                    return
                 if not bool(plan.get("take", True)):
                     if self.decision_tracker:
                         self.decision_tracker.record_rejection("ai_decision", force=True)
