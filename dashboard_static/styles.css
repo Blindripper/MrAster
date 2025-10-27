@@ -418,6 +418,19 @@ body.pro-mode [data-normal-only] {
   justify-content: center;
 }
 
+.hero-actions .hero-share {
+  border-color: rgba(245, 196, 107, 0.32);
+  background: rgba(23, 21, 36, 0.72);
+  color: var(--accent-light);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.hero-actions .hero-share:hover,
+.hero-actions .hero-share:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.28);
+}
+
 .hero-actions .hero-launch-link {
   min-width: 150px;
   justify-content: center;
@@ -436,6 +449,25 @@ body.pro-mode [data-normal-only] {
   gap: 1.4rem;
   margin: 0;
   padding: 0;
+}
+
+.hero-tagline {
+  margin: 1rem 0 0;
+  font-size: 0.85rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(245, 196, 107, 0.72);
+}
+
+.share-feedback {
+  min-height: 1.4rem;
+  margin: 0.35rem 0 1.4rem;
+  font-size: 0.82rem;
+  color: rgba(245, 196, 107, 0.86);
+}
+
+.share-feedback[data-tone='warn'] {
+  color: #ff9b73;
 }
 
 .hero-metric {
