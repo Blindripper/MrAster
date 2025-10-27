@@ -552,6 +552,13 @@ class ChatRequestPayload(BaseModel):
     history: List[ChatMessagePayload] = Field(default_factory=list)
 
 
+class ProposalExecutionRequest(BaseModel):
+    proposal_id: str = Field(..., min_length=4, alias="proposalId")
+
+    class Config:
+        allow_population_by_field_name = True
+
+
 def _ensure_static_dir() -> None:
     if not STATIC_DIR.exists():
         STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -1036,6 +1043,381 @@ class AIChatEngine:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self._temperature_supported = True
+        self._market_universe_cache: Dict[str, Any] = {"symbols": [], "ts": 0.0}
+
+    @staticmethod
+    def _split_symbols(value: Optional[str]) -> List[str]:
+        if not value:
+            return []
+        return [part.strip().upper() for part in str(value).split(",") if part.strip()]
+
+    @staticmethod
+    def _parse_symbols_from_html(text: str, default_quote: str) -> List[str]:
+        try:
+            matches = re.findall(r'data-symbol="([A-Z0-9:_-]+)"', text, flags=re.IGNORECASE)
+            if not matches:
+                matches = re.findall(r'"symbol"\s*:\s*"([A-Z0-9:_-]+)"', text, flags=re.IGNORECASE)
+        except re.error:
+            return []
+        symbols = {m.upper() for m in matches}
+        if default_quote:
+            q = default_quote.upper()
+            symbols = {s for s in symbols if s.endswith(q)}
+        return sorted(symbols)
+
+    def _fetch_markets_symbols(self, env: Dict[str, Any]) -> List[str]:
+        base = (env.get("ASTER_EXCHANGE_BASE") or ENV_DEFAULTS.get("ASTER_EXCHANGE_BASE") or "").rstrip("/")
+        quote = (env.get("ASTER_QUOTE") or ENV_DEFAULTS.get("ASTER_QUOTE", "")).strip()
+        markets_url = (env.get("ASTER_MARKETS_URL") or "").strip()
+        if not markets_url:
+            if base:
+                markets_url = f"{base}/fapi/v1/exchangeInfo"
+            else:
+                return []
+        try:
+            resp = requests.get(markets_url, timeout=10)
+            resp.raise_for_status()
+        except Exception as exc:
+            log.debug("Could not fetch markets from %s: %s", markets_url, exc)
+            return []
+
+        try:
+            payload = resp.json()
+        except ValueError:
+            return self._parse_symbols_from_html(resp.text, quote)
+
+        symbols: List[str] = []
+        q = quote.upper() if quote else ""
+        for entry in payload.get("symbols", []):
+            sym = str(entry.get("symbol", "")).upper()
+            if not sym:
+                continue
+            if q and str(entry.get("quoteAsset", "")).upper() != q:
+                continue
+            status = str(entry.get("status", "")).upper()
+            if status and status != "TRADING":
+                continue
+            symbols.append(sym)
+
+        if not symbols:
+            return self._parse_symbols_from_html(resp.text, quote)
+
+        return sorted(set(symbols))
+
+    def _market_universe_symbols(self) -> List[str]:
+        now = time.time()
+        cache = self._market_universe_cache
+        if cache and cache.get("symbols") and now - float(cache.get("ts", 0.0)) < 1800:
+            return list(cache.get("symbols", []))
+
+        env = self._env()
+        include = self._split_symbols(env.get("ASTER_INCLUDE_SYMBOLS"))
+        if include:
+            symbols = include
+        else:
+            symbols = self._fetch_markets_symbols(env)
+        exclude = set(self._split_symbols(env.get("ASTER_EXCLUDE_SYMBOLS")))
+        if exclude:
+            symbols = [sym for sym in symbols if sym not in exclude]
+
+        unique_sorted = sorted(dict.fromkeys(sym for sym in symbols if sym))
+        self._market_universe_cache = {"symbols": unique_sorted, "ts": now}
+        return list(unique_sorted)
+
+    @staticmethod
+    def _ensure_analysis_follow_up(text: str) -> str:
+        follow_up = (
+            "Um einen Trade für dich zu platzieren, benötige ich: Symbol, Richtung (LONG/SHORT), bevorzugten Einstieg "
+            "(Markt oder Limitpreis), Stop-Loss, Take-Profit und die gewünschte Positionsgröße bzw. das Notional. Soll der "
+            "Bot auf Basis dieser Analyse Trades ausführen, sobald du mir diese Details gegeben hast?"
+        )
+        normalized = text.lower()
+        if "soll der bot" in normalized and "symbol" in normalized and "stop" in normalized:
+            return text
+        if not text.strip():
+            return follow_up
+        trimmed = text.rstrip()
+        joiner = "\n\n" if trimmed else ""
+        return f"{trimmed}{joiner}{follow_up}"
+
+    @staticmethod
+    def _extract_trade_proposals(text: str) -> List[Dict[str, Any]]:
+        if not text:
+            return []
+        proposals: List[Dict[str, Any]] = []
+        action_pattern = re.compile(r"ACTION:\s*(\{.*\})", re.IGNORECASE)
+        for raw_line in text.splitlines():
+            line = raw_line.strip().strip("`>-")
+            match = action_pattern.search(line)
+            if not match:
+                continue
+            payload_text = match.group(1).strip().rstrip("`")
+            try:
+                payload = json.loads(payload_text)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            action_type = str(payload.get("type") or "").strip().lower()
+            if action_type not in {"propose_trade", "trade_proposal", "trade_plan"}:
+                continue
+            proposals.append(payload)
+        return proposals
+
+    def _normalize_trade_proposal(self, raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if not isinstance(raw, dict):
+            return None
+        symbol = str(raw.get("symbol") or raw.get("ticker") or "").upper().strip()
+        if not symbol:
+            return None
+        direction_raw = str(raw.get("direction") or raw.get("side") or "").upper().strip()
+        if direction_raw in {"BUY", "LONG"}:
+            direction = "LONG"
+        elif direction_raw in {"SELL", "SHORT"}:
+            direction = "SHORT"
+        else:
+            return None
+
+        entry_obj = raw.get("entry") if isinstance(raw.get("entry"), dict) else None
+        entry_kind_raw = (
+            (entry_obj.get("kind") if entry_obj else None)
+            or (entry_obj.get("type") if entry_obj else None)
+            or raw.get("entry_kind")
+            or raw.get("entry_type")
+            or raw.get("entry_plan")
+            or raw.get("execution")
+        )
+        entry_kind = str(entry_kind_raw or "").strip().lower()
+        entry_price = None
+        entry_label = None
+        if entry_obj:
+            entry_price = self._safe_float(
+                entry_obj.get("price")
+                or entry_obj.get("level")
+                or entry_obj.get("target")
+                or entry_obj.get("zone")
+            )
+            label_candidate = entry_obj.get("label") or entry_obj.get("note")
+            if isinstance(label_candidate, str) and label_candidate.strip():
+                entry_label = label_candidate.strip()
+        else:
+            entry_price = self._safe_float(
+                raw.get("entry_price")
+                or raw.get("entry")
+                or raw.get("entry_level")
+                or raw.get("entry_target")
+            )
+        if not entry_kind:
+            if entry_price is None:
+                entry_kind = "market"
+            else:
+                entry_kind = "limit"
+        elif entry_kind in {"market", "market_price", "market-order", "market_order"}:
+            entry_kind = "market"
+        elif entry_kind in {"limit", "limit_order", "limit-order"}:
+            entry_kind = "limit"
+        else:
+            entry_kind = "limit" if entry_price is not None else "market"
+
+        stop_loss = self._safe_float(
+            raw.get("stop_loss")
+            or raw.get("stop")
+            or raw.get("stop_price")
+            or raw.get("invalidation")
+            or (entry_obj.get("stop") if entry_obj else None)
+        )
+        if stop_loss is not None and stop_loss <= 0:
+            stop_loss = None
+
+        take_profit = self._safe_float(
+            raw.get("take_profit")
+            or raw.get("tp")
+            or raw.get("target")
+            or raw.get("tp_price")
+            or raw.get("profit_target")
+            or (entry_obj.get("take_profit") if entry_obj else None)
+        )
+        if take_profit is not None and take_profit <= 0:
+            take_profit = None
+
+        notional = self._safe_float(
+            raw.get("notional")
+            or raw.get("notional_usdt")
+            or raw.get("size")
+            or raw.get("position_size")
+            or raw.get("amount")
+        )
+        if notional is not None and notional <= 0:
+            notional = None
+
+        size_multiplier = self._safe_float(
+            raw.get("size_multiplier")
+            or raw.get("size_mult")
+            or raw.get("risk_multiplier")
+        )
+        if size_multiplier is not None and size_multiplier <= 0:
+            size_multiplier = None
+
+        if notional is None and size_multiplier is None:
+            return None
+
+        timeframe = raw.get("timeframe") or raw.get("horizon") or raw.get("window")
+        if isinstance(timeframe, str):
+            timeframe = timeframe.strip()
+        else:
+            timeframe = None
+
+        note = raw.get("note") or raw.get("thesis") or raw.get("rationale")
+        if isinstance(note, str):
+            note = note.strip()
+        else:
+            note = None
+
+        confidence = self._safe_float(raw.get("confidence") or raw.get("conviction") or raw.get("probability"))
+        if confidence is not None:
+            if confidence < 0:
+                confidence = 0.0
+            elif confidence > 1:
+                if confidence <= 100:
+                    confidence = confidence / 100.0
+                else:
+                    confidence = 1.0
+            confidence = max(0.0, min(confidence, 1.0))
+
+        risk_reward = self._safe_float(
+            raw.get("risk_reward") or raw.get("rr") or raw.get("reward_risk") or raw.get("rrr")
+        )
+
+        normalized: Dict[str, Any] = {
+            "symbol": symbol,
+            "direction": direction,
+            "entry_kind": entry_kind,
+            "entry_price": entry_price,
+            "entry_label": entry_label,
+            "stop_loss": stop_loss,
+            "take_profit": take_profit,
+            "notional": notional,
+            "size_multiplier": size_multiplier,
+            "timeframe": timeframe or None,
+            "confidence": confidence,
+            "risk_reward": risk_reward,
+            "note": note,
+        }
+        return normalized
+
+    def _store_trade_proposals(
+        self,
+        proposals: List[Dict[str, Any]],
+        *,
+        source: str,
+    ) -> List[Dict[str, Any]]:
+        normalized: List[Dict[str, Any]] = []
+        for payload in proposals:
+            norm = self._normalize_trade_proposal(payload)
+            if norm:
+                normalized.append(norm)
+        if not normalized:
+            return []
+
+        attempts = 0
+        stored: List[Dict[str, Any]] = []
+        while attempts < 3:
+            attempts += 1
+            state = _read_state()
+            queue = state.get("ai_trade_proposals")
+            if not isinstance(queue, list):
+                queue = []
+            existing_keys = {
+                (
+                    str((item.get("payload") or {}).get("symbol") or "").upper(),
+                    str((item.get("payload") or {}).get("direction") or "").upper(),
+                    str((item.get("payload") or {}).get("entry_kind") or ""),
+                    float((item.get("payload") or {}).get("entry_price") or 0.0),
+                    float((item.get("payload") or {}).get("stop_loss") or 0.0),
+                    float((item.get("payload") or {}).get("take_profit") or 0.0),
+                    float((item.get("payload") or {}).get("notional") or 0.0),
+                    float((item.get("payload") or {}).get("size_multiplier") or 0.0),
+                )
+                for item in queue
+                if isinstance(item, dict)
+            }
+            updated_queue = list(queue)
+            appended: List[Dict[str, Any]] = []
+            for norm in normalized:
+                key = (
+                    norm.get("symbol"),
+                    norm.get("direction"),
+                    norm.get("entry_kind"),
+                    float(norm.get("entry_price") or 0.0),
+                    float(norm.get("stop_loss") or 0.0),
+                    float(norm.get("take_profit") or 0.0),
+                    float(norm.get("notional") or 0.0),
+                    float(norm.get("size_multiplier") or 0.0),
+                )
+                if key in existing_keys:
+                    continue
+                proposal_id = str(uuid.uuid4())
+                ts = time.time()
+                record = {
+                    "id": proposal_id,
+                    "ts": ts,
+                    "status": "pending",
+                    "source": source,
+                    "payload": norm,
+                }
+                updated_queue.append(record)
+                public_entry = {**norm, "id": proposal_id, "status": "pending", "ts": ts}
+                appended.append(public_entry)
+                existing_keys.add(key)
+            if not appended:
+                return []
+            state["ai_trade_proposals"] = updated_queue[-40:]
+            try:
+                STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True))
+                stored = appended
+                break
+            except Exception as exc:
+                logger.debug("Failed to persist trade proposals (attempt %s): %s", attempts, exc)
+                time.sleep(0.05)
+        return stored
+
+    @staticmethod
+    def _format_proposal_note(proposal: Dict[str, Any]) -> str:
+        parts: List[str] = []
+        timeframe = proposal.get("timeframe")
+        if isinstance(timeframe, str) and timeframe:
+            parts.append(timeframe)
+        confidence = proposal.get("confidence")
+        if isinstance(confidence, (int, float)):
+            parts.append(f"Conf {confidence:.2f}")
+
+        def _fmt_price(value: Optional[float]) -> Optional[str]:
+            if value is None:
+                return None
+            try:
+                return format(float(value), ".6g")
+            except (TypeError, ValueError):
+                return None
+
+        price_bits: List[str] = []
+        entry_kind = proposal.get("entry_kind")
+        entry_price = proposal.get("entry_price")
+        if entry_kind == "limit" and entry_price is not None:
+            formatted = _fmt_price(entry_price)
+            if formatted:
+                price_bits.append(f"Entry {formatted}")
+        stop_loss = _fmt_price(proposal.get("stop_loss"))
+        if stop_loss:
+            price_bits.append(f"SL {stop_loss}")
+        take_profit = _fmt_price(proposal.get("take_profit"))
+        if take_profit:
+            price_bits.append(f"TP {take_profit}")
+        if price_bits:
+            parts.append(" · ".join(price_bits))
+        note = proposal.get("note")
+        if isinstance(note, str) and note:
+            parts.append(note)
+        return " | ".join(parts)
 
     def _env(self) -> Dict[str, Any]:
         return self.config.get("env", {})
@@ -1816,6 +2198,96 @@ class AIChatEngine:
             "status": stored["status"],
         }
 
+    def execute_trade_proposal(self, proposal_id: str) -> Dict[str, Any]:
+        proposal_key = str(proposal_id or "").strip()
+        if not proposal_key:
+            raise ValueError("proposal_id required")
+
+        attempts = 0
+        while attempts < 3:
+            attempts += 1
+            state = _read_state()
+            queue = state.get("ai_trade_proposals")
+            if not isinstance(queue, list):
+                queue = []
+            target_index: Optional[int] = None
+            for idx, item in enumerate(queue):
+                if not isinstance(item, dict):
+                    continue
+                if str(item.get("id") or "") == proposal_key:
+                    target_index = idx
+                    break
+            if target_index is None:
+                raise LookupError("proposal not found")
+
+            target = queue[target_index]
+            status = str(target.get("status") or "pending").lower()
+            if status in {"queued", "executed", "completed"}:
+                raise RuntimeError("proposal already processed")
+
+            normalized = self._normalize_trade_proposal(target.get("payload") or {})
+            if not normalized:
+                raise RuntimeError("proposal is missing required trade data")
+
+            symbol = normalized.get("symbol")
+            direction = normalized.get("direction")
+            if not symbol or direction not in {"LONG", "SHORT"}:
+                raise RuntimeError("proposal is invalid")
+
+            if normalized.get("notional") is None and normalized.get("size_multiplier") is None:
+                raise RuntimeError("proposal requires size or notional before execution")
+
+            side = "BUY" if direction == "LONG" else "SELL"
+            payload = {**normalized, "proposal_id": proposal_key, "source": "analysis_proposal"}
+            note = self._format_proposal_note(normalized)
+            action: Dict[str, Any] = {
+                "type": "open_trade",
+                "symbol": symbol,
+                "side": side,
+                "note": note or f"AI proposal {symbol} {direction}",
+                "payload": payload,
+            }
+            if normalized.get("size_multiplier") is not None:
+                action["size_multiplier"] = normalized["size_multiplier"]
+            if normalized.get("notional") is not None:
+                action["notional"] = normalized["notional"]
+
+            message = f"Executing trade proposal {symbol} {direction}"
+            queued = self._queue_trade_action(action, message)
+            if not queued:
+                target["status"] = "failed"
+                state["ai_trade_proposals"] = queue
+                try:
+                    STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True))
+                except Exception:
+                    pass
+                raise RuntimeError("failed to queue trade proposal")
+
+            now_ts = time.time()
+            target["status"] = "queued"
+            target["queued_at"] = now_ts
+            target["queue_ref"] = queued
+            target["payload"] = normalized
+            state["ai_trade_proposals"] = queue
+            try:
+                STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True))
+            except Exception as exc:
+                logger.debug("Failed to persist proposal status for %s: %s", proposal_key, exc)
+
+            public = {**normalized, "id": proposal_key, "status": "queued", "queued_at": now_ts}
+            _append_ai_activity_entry(
+                "analysis",
+                f"Trade proposal queued ({symbol} {direction})",
+                data={
+                    "proposal_id": proposal_key,
+                    "queued_action": queued,
+                    "source": "dashboard_chat",
+                },
+            )
+            return {"proposal": public, "queued_action": queued}
+
+        raise RuntimeError("unable to queue trade proposal")
+
     def respond(self, message: str, history_payload: List[ChatMessagePayload]) -> Dict[str, Any]:
         (
             stats,
@@ -2025,8 +2497,10 @@ class AIChatEngine:
                 "Add ASTER_CHAT_OPENAI_API_KEY or reuse ASTER_OPENAI_API_KEY "
                 "in the AI controls to run Analyze Market."
             )
+            formatted_notice = self._format_local_reply(notice)
+            formatted_notice = self._ensure_analysis_follow_up(formatted_notice)
             return {
-                "analysis": self._format_local_reply(notice),
+                "analysis": formatted_notice,
                 "model": "local",
                 "source": "missing_chat_key",
             }
@@ -2041,12 +2515,31 @@ class AIChatEngine:
             decision_stats,
             recent_plans,
         )
+        universe_symbols = self._market_universe_symbols()
+        if universe_symbols:
+            sample = ", ".join(universe_symbols[:40])
+            if len(universe_symbols) > 40:
+                sample = f"{sample}, …"
+            universe_prompt = (
+                f"The full Aster perpetual universe contains {len(universe_symbols)} symbols: {sample}. "
+                "Scan this entire list when selecting candidates and call out when liquidity or data gaps limit confidence. "
+            )
+        else:
+            universe_prompt = (
+                "Work across the entire set of Aster-listed perpetual pairs, not just the currently traded majors. "
+            )
         prompt = (
             "You are the strategy copilot's market analyst. Using the latest telemetry, "
-            "summarise market tone, volatility and risk in under 180 words. Recommend one potential LONG "
-            "idea and one potential SHORT idea. For each, include the symbol, thesis, indicative entry zone, "
-            "invalidation level, and key catalysts or risks. Flag stale or missing data explicitly. Do not "
-            "queue trades, issue ACTION blocks, or assume execution authority."
+            "summarise market tone, volatility and risk in under 180 words. "
+            f"{universe_prompt}Recommend one potential LONG idea and one potential SHORT idea. For each, include the symbol, "
+            "thesis, indicative entry zone, invalidation level, and key catalysts or risks. Flag stale or missing data "
+            "explicitly. After presenting the ideas, list the exact trade inputs the bot needs (symbol, direction, entry "
+            "plan or price, stop loss, take profit, position size/notional). Then emit one ACTION line per idea using the "
+            "format ACTION: {\"type\":\"propose_trade\",...}. Include in each JSON object the symbol, direction (LONG/SHORT), "
+            "entry_kind (market/limit), entry_price for limit setups, stop_loss, take_profit, notional, timeframe, "
+            "confidence (0-1), and a concise note. These ACTION blocks register proposals for operator approval—do not use "
+            "type \"open_trade\" or assume execution authority. Finish by explicitly asking the operator to confirm "
+            "whether the bot should execute trades once those details are provided."
         )
         messages: List[Dict[str, str]] = [
             {"role": "system", "content": context_text},
@@ -2107,7 +2600,16 @@ class AIChatEngine:
 
             if not reply_text:
                 reply_text = fallback
+            proposals_raw = self._extract_trade_proposals(reply_text)
+            stored_proposals = self._store_trade_proposals(proposals_raw, source="analysis")
+            if proposals_raw:
+                action_line = re.compile(r"^\s*ACTION:\s*\{", re.IGNORECASE)
+                cleaned_lines = [
+                    line for line in reply_text.splitlines() if not action_line.match(line.strip())
+                ]
+                reply_text = "\n".join(cleaned_lines)
             formatted = self._format_local_reply(reply_text)
+            formatted = self._ensure_analysis_follow_up(formatted)
             response: Dict[str, Any] = {
                 "analysis": formatted,
                 "model": model,
@@ -2115,6 +2617,8 @@ class AIChatEngine:
             }
             if usage:
                 response["usage"] = usage
+            if stored_proposals:
+                response["trade_proposals"] = stored_proposals
 
             log_data: Dict[str, Any] = {
                 "source": "dashboard_chat",
@@ -2125,6 +2629,8 @@ class AIChatEngine:
             }
             if usage:
                 log_data["usage"] = usage
+            if stored_proposals:
+                log_data["trade_proposals"] = [item.get("id") for item in stored_proposals]
             _append_ai_activity_entry(
                 "analysis",
                 "Market analysis received",
@@ -2158,6 +2664,7 @@ class AIChatEngine:
             fallback_text = "\n".join([fallback_text, *extra_lines])
 
         formatted = self._format_local_reply(fallback_text)
+        formatted = self._ensure_analysis_follow_up(formatted)
         data: Dict[str, Any] = {
             "source": "dashboard_chat",
             "direction": "inbound",
@@ -2181,6 +2688,18 @@ chat_engine = AIChatEngine(CONFIG)
 @app.post("/api/ai/analyze")
 async def ai_analyze() -> Dict[str, Any]:
     return chat_engine.analyze_market()
+
+
+@app.post("/api/ai/proposals/execute")
+async def ai_execute_proposal(request: ProposalExecutionRequest) -> Dict[str, Any]:
+    try:
+        return chat_engine.execute_trade_proposal(request.proposal_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="Proposal not found") from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/trades")
@@ -2208,6 +2727,22 @@ async def trades() -> Dict[str, Any]:
         ai_activity = list(ai_activity_raw[-120:])
     else:
         ai_activity = []
+    proposals: List[Dict[str, Any]] = []
+    raw_proposals = state.get("ai_trade_proposals")
+    if isinstance(raw_proposals, list):
+        for entry in raw_proposals[-40:]:
+            if not isinstance(entry, dict):
+                continue
+            payload = entry.get("payload")
+            if not isinstance(payload, dict):
+                continue
+            record = dict(payload)
+            record["id"] = entry.get("id")
+            record["status"] = entry.get("status")
+            record["ts"] = entry.get("ts")
+            if entry.get("queued_at") is not None:
+                record["queued_at"] = entry.get("queued_at")
+            proposals.append(record)
     return {
         "open": enriched_open,
         "history": history[::-1],
@@ -2216,6 +2751,7 @@ async def trades() -> Dict[str, Any]:
         "cumulative_stats": _cumulative_summary(state),
         "ai_budget": ai_budget,
         "ai_activity": ai_activity,
+        "ai_trade_proposals": proposals,
     }
 
 

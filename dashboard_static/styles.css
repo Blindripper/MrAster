@@ -2258,6 +2258,130 @@ body.ai-mode .ai-mode-window {
   color: rgba(203, 213, 225, 0.7);
 }
 
+.ai-trade-proposal {
+  position: relative;
+  margin: 0.75rem 0;
+  padding: 0.95rem 1.1rem 1.05rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(245, 196, 107, 0.16);
+  background: rgba(15, 18, 32, 0.78);
+  box-shadow: 0 14px 36px rgba(6, 10, 24, 0.28);
+  backdrop-filter: blur(6px);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.ai-trade-proposal.long {
+  border-color: rgba(74, 222, 128, 0.32);
+}
+
+.ai-trade-proposal.short {
+  border-color: rgba(248, 113, 113, 0.32);
+}
+
+.ai-trade-proposal.queued {
+  border-color: rgba(74, 222, 128, 0.6);
+  box-shadow: 0 16px 40px rgba(16, 42, 24, 0.45);
+}
+
+.ai-trade-proposal__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin-bottom: 0.65rem;
+}
+
+.ai-trade-proposal__title {
+  font-size: 1rem;
+}
+
+.ai-trade-proposal.long .ai-trade-proposal__title {
+  color: var(--success);
+}
+
+.ai-trade-proposal.short .ai-trade-proposal__title {
+  color: var(--danger);
+}
+
+.ai-trade-proposal__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.55rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.ai-trade-proposal__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.ai-trade-proposal__label {
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+
+.ai-trade-proposal__value {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.ai-trade-proposal__note {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--text-subtle);
+  margin-bottom: 0.75rem;
+}
+
+.ai-trade-proposal__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.6rem;
+}
+
+.ai-trade-proposal__action {
+  border-radius: 999px;
+  border: 1px solid rgba(245, 196, 107, 0.4);
+  background: transparent;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 0.45rem 1.1rem;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.ai-trade-proposal__action:hover:not(:disabled),
+.ai-trade-proposal__action:focus-visible:not(:disabled) {
+  background: rgba(245, 196, 107, 0.14);
+  border-color: rgba(245, 196, 107, 0.5);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.ai-trade-proposal__action:disabled {
+  opacity: 0.55;
+  cursor: default;
+  transform: none;
+}
+
+.ai-trade-proposal__status {
+  margin-top: 0.6rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+
+.ai-trade-proposal.queued .ai-trade-proposal__status {
+  color: rgba(74, 222, 128, 0.9);
+}
+
 .ai-chat-form {
   display: flex;
   flex-direction: column;
