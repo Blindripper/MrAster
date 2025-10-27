@@ -2531,6 +2531,10 @@ class Bot:
         if len(feed) > 250:
             del feed[:-250]
         self.state["ai_activity"] = feed
+        try:
+            log.info("AI_FEED %s | %s", entry["kind"], entry["headline"])
+        except Exception:
+            log.debug("AI_FEED %s | %s", entry.get("kind"), entry.get("headline"))
         if not getattr(self, "trade_mgr", None):
             return
         now = time.time()
@@ -2713,12 +2717,16 @@ class Bot:
             self._log_ai_activity(
                 "decision",
                 f"Sentinel vetoed {symbol}",
-                body=f"Risk label {sentinel_info.get('label', 'red')} blocked the {veto_target} setup.",
+                body=(
+                    f"Risk label {sentinel_info.get('label', 'red')} blocked the {veto_target} setup "
+                    "before contacting the strategy AI."
+                ),
                 data={
                     "symbol": symbol,
                     "side": veto_target,
                     "event_risk": float(sentinel_info.get("event_risk", 0.0) or 0.0),
                     "hype_score": float(sentinel_info.get("hype_score", 0.0) or 0.0),
+                    "ai_request": False,
                 },
                 force=True,
             )
