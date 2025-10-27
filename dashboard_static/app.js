@@ -3248,43 +3248,29 @@ function setShareFeedback(message, { tone } = {}) {
   }
 }
 
-function determineMemeTier(snapshot) {
-  if (!snapshot) return 'normal';
-  const totalTrades = Number(snapshot.totalTrades ?? 0) || 0;
-  const totalPnl = Number(snapshot.totalPnl ?? 0) || 0;
-  const winRate = Number(snapshot.winRate ?? 0) || 0;
-
-  if (totalTrades <= 5 || totalPnl <= 0 || winRate < 0.45) {
-    return 'low';
-  }
-  if (totalPnl > 250 || winRate >= 0.65) {
-    return 'high';
-  }
-  return 'normal';
-}
-
 function buildShareText(snapshot) {
   const totalTrades = Number(snapshot?.totalTrades ?? 0) || 0;
   const totalPnlDisplay = snapshot?.totalPnlDisplay || '0 USDT';
   const winRateDisplay = snapshot?.winRateDisplay || '0.0%';
-  const tier = determineMemeTier(snapshot);
+  const totalPnl = Number(snapshot?.totalPnl ?? 0) || 0;
+  const positive = totalPnl >= 0;
 
-  const headline = tier === 'high'
-    ? '🚀 MrAster performance rocket'
-    : tier === 'low'
-      ? '🛠️ MrAster diagnostic recap'
-      : '📊 MrAster trading pulse';
+  const headline = positive
+    ? '🚀 Locked in fresh gains with MrAster'
+    : '🛠️ MrAster is recalibrating after a choppy run';
 
   const statsBlock = [
-    `TOTAL TRADES  ·  ${totalTrades.toLocaleString()}`,
-    `TOTAL PNL     ·  ${totalPnlDisplay}`,
-    `TOTAL WIN RATE ·  ${winRateDisplay}`,
+    `Trades executed: ${totalTrades.toLocaleString()}`,
+    `Total PnL: ${totalPnlDisplay}`,
+    `Win rate: ${winRateDisplay}`,
   ].join('\n');
 
-  const tagline = 'MrAster - Autonomous trading suite';
+  const vibeLine = positive
+    ? 'Momentum mode: riding the green candles with automated precision.'
+    : 'Comeback loading: tightening risk screws and plotting the next breakout.';
   const hashtags = '#MrAster #CryptoTrading #AutomatedTrading';
 
-  return [headline, '', statsBlock, '', tagline, hashtags].join('\n');
+  return [headline, statsBlock, '', vibeLine, hashtags].join('\n');
 }
 
 async function copyShareText(text) {
@@ -3315,245 +3301,6 @@ async function copyShareText(text) {
   }
 }
 
-function drawRoundedRect(ctx, x, y, width, height, radius) {
-  const effectiveRadius = Math.min(radius, width / 2, height / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + effectiveRadius, y);
-  ctx.lineTo(x + width - effectiveRadius, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + effectiveRadius);
-  ctx.lineTo(x + width, y + height - effectiveRadius);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - effectiveRadius, y + height);
-  ctx.lineTo(x + effectiveRadius, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - effectiveRadius);
-  ctx.lineTo(x, y + effectiveRadius);
-  ctx.quadraticCurveTo(x, y, x + effectiveRadius, y);
-  ctx.closePath();
-}
-
-function createMemeTheme(tier) {
-  const themes = {
-    low: {
-      gradient: ['#3d0a1c', '#120819'],
-      overlay: 'rgba(14, 10, 24, 0.75)',
-      accent: '#ff7b7b',
-      accentSoft: 'rgba(255, 123, 123, 0.18)',
-      textSoft: 'rgba(255, 233, 212, 0.8)',
-      textStrong: '#ffe7b0',
-      cardBg: 'rgba(30, 14, 38, 0.78)',
-      emoji: '😬',
-      headline: 'Drawdown Diaries',
-      quip: 'Bot says: “Was that a wick or a prank?”',
-    },
-    normal: {
-      gradient: ['#0e1b2e', '#130c1f'],
-      overlay: 'rgba(12, 16, 28, 0.78)',
-      accent: '#f5c46b',
-      accentSoft: 'rgba(245, 196, 107, 0.18)',
-      textSoft: 'rgba(240, 214, 178, 0.85)',
-      textStrong: '#fff2c9',
-      cardBg: 'rgba(18, 22, 36, 0.82)',
-      emoji: '🧠',
-      headline: 'Dialed-In Drift',
-      quip: 'Steady hands. Laser focus. Coffee optional.',
-    },
-    high: {
-      gradient: ['#051b18', '#1f4032'],
-      overlay: 'rgba(9, 18, 24, 0.7)',
-      accent: '#6bffb4',
-      accentSoft: 'rgba(107, 255, 180, 0.18)',
-      textSoft: 'rgba(227, 255, 244, 0.85)',
-      textStrong: '#e9ffe7',
-      cardBg: 'rgba(9, 28, 24, 0.82)',
-      emoji: '🚀',
-      headline: 'Alpha Unlocked',
-      quip: 'Take profits? Nah, take a victory lap.',
-    },
-  };
-  return themes[tier] || themes.normal;
-}
-
-function formatMemeMetricValue(value) {
-  if (typeof value !== 'string') return value;
-  return value.replace(/\s+/g, ' ').trim();
-}
-
-const MEME_BACKDROP_SOURCES = {
-  low: ['/static/share/low.jpeg', '/static/share/low.jpg'],
-  normal: ['/static/share/normal.png', '/static/share/normal.jpeg'],
-  high: ['/static/share/high.jpeg', '/static/share/high.jpg'],
-};
-
-const MEME_VARIANT_ENCODINGS = {
-  low: 0.72,
-  normal: 0.82,
-  high: 0.94,
-};
-
-const memeBackdropCache = new Map();
-
-function loadMemeBackdrop(tier) {
-  if (memeBackdropCache.has(tier)) {
-    return memeBackdropCache.get(tier);
-  }
-  const sources = MEME_BACKDROP_SOURCES[tier];
-  const candidates = Array.isArray(sources) ? sources.filter(Boolean) : sources ? [sources] : [];
-  if (!candidates.length) {
-    const fallback = Promise.resolve(null);
-    memeBackdropCache.set(tier, fallback);
-    return fallback;
-  }
-
-  const loadPromise = (async () => {
-    let lastError = null;
-    for (const src of candidates) {
-      try {
-        const image = await new Promise((resolve, reject) => {
-          const element = new Image();
-          element.decoding = 'async';
-          element.crossOrigin = 'anonymous';
-          element.onload = () => resolve(element);
-          element.onerror = () => reject(new Error(`Unable to load meme backdrop: ${src}`));
-          element.src = src;
-        });
-        return image;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    if (lastError) {
-      console.warn(lastError.message || lastError);
-    }
-    return null;
-  })();
-
-  memeBackdropCache.set(tier, loadPromise);
-  return loadPromise;
-}
-
-function buildMemeMetrics(snapshot) {
-  return [
-    { label: 'TOTAL TRADES', value: (snapshot?.totalTrades ?? 0).toLocaleString() },
-    { label: 'TOTAL PNL', value: formatMemeMetricValue(snapshot?.totalPnlDisplay || '0 USDT') },
-    { label: 'TOTAL WIN RATE', value: formatMemeMetricValue(snapshot?.winRateDisplay || '0.0%') },
-  ];
-}
-
-function drawMemeContents(ctx, theme, metrics) {
-  const size = 1080;
-
-  ctx.fillStyle = theme.accent;
-  ctx.font = '700 72px "Inter", "Segoe UI", sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(`${theme.emoji} ${theme.headline} ${theme.emoji}`, size / 2, 170);
-
-  ctx.font = '500 34px "Inter", "Segoe UI", sans-serif';
-  ctx.fillStyle = theme.textSoft;
-  ctx.fillText(theme.quip, size / 2, 230);
-
-  const cardWidth = size - 240;
-  const cardX = 120;
-  const cardYStart = 320;
-  const cardHeight = 150;
-  const gap = 36;
-
-  metrics.forEach((metric, index) => {
-    const y = cardYStart + index * (cardHeight + gap);
-    drawRoundedRect(ctx, cardX, y, cardWidth, cardHeight, 36);
-    ctx.fillStyle = theme.cardBg;
-    ctx.fill();
-
-    ctx.strokeStyle = theme.accentSoft;
-    ctx.lineWidth = 2;
-    drawRoundedRect(ctx, cardX, y, cardWidth, cardHeight, 36);
-    ctx.stroke();
-
-    ctx.textAlign = 'left';
-    ctx.fillStyle = theme.textSoft;
-    ctx.font = '600 30px "Inter", "Segoe UI", sans-serif';
-    ctx.fillText(metric.label, cardX + 48, y + 56);
-
-    ctx.fillStyle = theme.textStrong;
-    ctx.font = '700 72px "Inter", "Segoe UI", sans-serif';
-    ctx.fillText(metric.value, cardX + 48, y + 118);
-  });
-
-  ctx.textAlign = 'center';
-  ctx.fillStyle = theme.textSoft;
-  ctx.font = '500 30px "Inter", "Segoe UI", sans-serif';
-  ctx.fillText('Stats auto-generated by MrAster', size / 2, size - 160);
-
-  ctx.fillStyle = theme.accent;
-  ctx.font = '600 38px "Inter", "Segoe UI", sans-serif';
-  ctx.fillText('MrAster - Autonomous trading suite', size / 2, size - 100);
-}
-
-function createMemeCanvas(baseImage, theme, metrics) {
-  const baseSize = 1080;
-  const width = baseImage?.naturalWidth || baseSize;
-  const height = baseImage?.naturalHeight || baseSize;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-
-  if (baseImage) {
-    ctx.drawImage(baseImage, 0, 0, width, height);
-  } else {
-    const gradient = ctx.createLinearGradient(0, 0, width, height);
-    gradient.addColorStop(0, theme.gradient[0]);
-    gradient.addColorStop(1, theme.gradient[1]);
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, width, height);
-  }
-
-  ctx.save();
-  ctx.scale(width / baseSize, height / baseSize);
-
-  drawRoundedRect(ctx, 50, 50, baseSize - 100, baseSize - 100, 52);
-  ctx.fillStyle = baseImage ? 'rgba(7, 12, 22, 0.74)' : theme.overlay;
-  ctx.fill();
-
-  ctx.save();
-  ctx.globalAlpha = baseImage ? 0.2 : 0.22;
-  ctx.fillStyle = theme.accentSoft;
-  ctx.beginPath();
-  ctx.arc(baseSize * 0.75, baseSize * 0.28, 140, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(baseSize * 0.28, baseSize * 0.72, 180, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-
-  drawMemeContents(ctx, theme, metrics);
-  ctx.restore();
-
-  return canvas;
-}
-
-async function generateMemeCard(snapshot) {
-  const tier = determineMemeTier(snapshot);
-  const theme = createMemeTheme(tier);
-  const metrics = buildMemeMetrics(snapshot);
-  const baseImage = await loadMemeBackdrop(tier);
-  const canvas = createMemeCanvas(baseImage, theme, metrics);
-
-  const variants = {};
-  Object.entries(MEME_VARIANT_ENCODINGS).forEach(([quality, encoding]) => {
-    try {
-      variants[quality] = canvas.toDataURL('image/jpeg', encoding);
-    } catch (error) {
-      console.warn('Failed to encode meme variant', quality, error);
-    }
-  });
-
-  return {
-    tier,
-    variants,
-    alt: `MrAster ${tier} meme summarising trading stats`,
-  };
-}
-
 function openTweetComposer(text) {
   if (!text) return false;
   const url = new URL('https://twitter.com/intent/tweet');
@@ -3567,13 +3314,42 @@ function openTweetComposer(text) {
   return false;
 }
 
-function getBestMemeVariantUrl(meme) {
-  if (!meme?.variants) return null;
-  return meme.variants.high || meme.variants.normal || meme.variants.low || null;
+function determineShareVariant(snapshot) {
+  const totalPnl = Number(snapshot?.totalPnl ?? 0);
+  if (Number.isFinite(totalPnl) && totalPnl < 0) {
+    return 'low';
+  }
+  return 'high';
 }
 
-async function shareMemeToX(meme, shareText) {
-  if (!meme) return false;
+function buildShareImageUrl(variant) {
+  const url = new URL(`/share/${variant}`, window.location.origin);
+  return url.toString();
+}
+
+async function fetchShareImage(variant) {
+  const url = buildShareImageUrl(variant);
+  let response;
+  try {
+    response = await fetch(url, { cache: 'no-cache' });
+  } catch (error) {
+    console.warn('Unable to request share image', error);
+    throw error;
+  }
+
+  if (!response?.ok) {
+    throw new Error(`Failed to load share image: ${response?.status}`);
+  }
+
+  const blob = await response.blob();
+  const type = blob.type || 'image/jpeg';
+  const extension = type.includes('png') ? 'png' : 'jpg';
+
+  return { blob, type, extension, variant, url };
+}
+
+async function shareImageToX(image, shareText) {
+  if (!image) return false;
   try {
     if (!navigator.share || typeof File === 'undefined') {
       return false;
@@ -3583,22 +3359,10 @@ async function shareMemeToX(meme, shareText) {
     return false;
   }
 
-  const variantUrl = getBestMemeVariantUrl(meme);
-  if (!variantUrl) return false;
-
-  let blob;
-  try {
-    const response = await fetch(variantUrl);
-    blob = await response.blob();
-  } catch (error) {
-    console.warn('Unable to fetch meme for sharing', error);
-    return false;
-  }
-
   const shareData = {
     title: 'MrAster trading stats',
     text: shareText,
-    files: [new File([blob], `mraster-${meme.tier || 'share'}.jpeg`, { type: blob.type || 'image/jpeg' })],
+    files: [new File([image.blob], `mraster-${image.variant}.${image.extension}`, { type: image.type })],
   };
 
   if (typeof navigator.canShare === 'function') {
@@ -3622,15 +3386,12 @@ async function shareMemeToX(meme, shareText) {
   }
 }
 
-async function copyMemeImageToClipboard(meme) {
-  const url = getBestMemeVariantUrl(meme);
-  if (!url || !navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
+async function copyShareImageToClipboard(image) {
+  if (!image || !navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
     return false;
   }
   try {
-    const response = await fetch(url);
-    const blob = await response.blob();
-    const item = new ClipboardItem({ [blob.type || 'image/jpeg']: blob });
+    const item = new ClipboardItem({ [image.type]: image.blob });
     await navigator.clipboard.write([item]);
     return true;
   } catch (error) {
@@ -3646,32 +3407,33 @@ async function handlePostToX(event) {
   if (!btnPostX) return;
   const snapshot = heroMetricsSnapshot || {};
   const shareText = buildShareText(snapshot);
+  const variant = determineShareVariant(snapshot);
 
   btnPostX.disabled = true;
   setShareFeedback('Preparing your X post…');
 
   try {
-    const meme = await generateMemeCard(snapshot);
-    const sharedViaSystem = await shareMemeToX(meme, shareText);
+    const image = await fetchShareImage(variant);
+    const sharedViaSystem = await shareImageToX(image, shareText);
 
     if (sharedViaSystem) {
-      setShareFeedback('System share sheet opened with the meme attached. Select X to finish your post.');
+      setShareFeedback('System share sheet opened with the performance snapshot attached. Select X to finish your post.');
       return;
     }
 
     const [clipboardSuccess, imageCopied] = await Promise.all([
       copyShareText(shareText),
-      copyMemeImageToClipboard(meme),
+      copyShareImageToClipboard(image),
     ]);
 
     const composerOpened = openTweetComposer(shareText);
 
     if (clipboardSuccess && imageCopied) {
-      setShareFeedback('Post text and meme copied! The composer opened—paste the image to attach it without downloading.');
+      setShareFeedback('Post text and image copied! The composer opened—paste to attach the snapshot instantly.');
     } else if (clipboardSuccess) {
-      setShareFeedback('Post text copied! Use the composer to add the meme manually if it was not copied.');
+      setShareFeedback('Post text copied! Use the composer to add the image manually if it was not copied.');
     } else if (imageCopied) {
-      setShareFeedback('Meme copied to your clipboard! Paste it into the composer and add your text manually.');
+      setShareFeedback('Image copied to your clipboard! Paste it into the composer and add your text manually.');
     } else {
       setShareFeedback('Compose window opened. Copy the stats manually if clipboard access is blocked.');
     }
