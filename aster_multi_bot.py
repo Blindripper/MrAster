@@ -2500,6 +2500,7 @@ class TradeManager:
         self.state.setdefault("fast_tp_cooldown", {})
         self.state.setdefault("fail_skip_until", {})
         self.state.setdefault("trade_history", [])
+        self._ensure_cumulative_metrics()
         try:
             self.history_max = int(os.getenv("ASTER_HISTORY_MAX", "250"))
         except Exception:
@@ -2566,6 +2567,65 @@ class TradeManager:
             return json.loads(json.dumps(meta, default=lambda o: str(o)))
         except Exception:
             return {}
+
+    def _rebuild_cumulative_metrics(self) -> Dict[str, Any]:
+        metrics = {
+            "total_trades": 0,
+            "total_pnl": 0.0,
+            "wins": 0,
+            "losses": 0,
+            "draws": 0,
+        }
+        history = self.state.get("trade_history", []) or []
+        tolerance = 1e-9
+        for trade in history:
+            try:
+                pnl = float(trade.get("pnl", 0.0) or 0.0)
+            except Exception:
+                pnl = 0.0
+            metrics["total_trades"] += 1
+            metrics["total_pnl"] += pnl
+            if pnl > tolerance:
+                metrics["wins"] += 1
+            elif pnl < -tolerance:
+                metrics["losses"] += 1
+            else:
+                metrics["draws"] += 1
+        return metrics
+
+    def _ensure_cumulative_metrics(self) -> Dict[str, Any]:
+        raw_metrics = self.state.get("cumulative_metrics")
+        if isinstance(raw_metrics, dict):
+            metrics = {
+                "total_trades": int(raw_metrics.get("total_trades", 0) or 0),
+                "total_pnl": float(raw_metrics.get("total_pnl", 0.0) or 0.0),
+                "wins": int(raw_metrics.get("wins", 0) or 0),
+                "losses": int(raw_metrics.get("losses", 0) or 0),
+                "draws": int(raw_metrics.get("draws", 0) or 0),
+            }
+            if "updated_at" in raw_metrics:
+                metrics["updated_at"] = raw_metrics.get("updated_at")
+        else:
+            metrics = self._rebuild_cumulative_metrics()
+        self.state["cumulative_metrics"] = metrics
+        return metrics
+
+    def _record_cumulative_metrics(self, trade: Dict[str, Any]) -> None:
+        metrics = self._ensure_cumulative_metrics()
+        try:
+            pnl = float(trade.get("pnl", 0.0) or 0.0)
+        except Exception:
+            pnl = 0.0
+        metrics["total_trades"] += 1
+        metrics["total_pnl"] += pnl
+        tolerance = 1e-9
+        if pnl > tolerance:
+            metrics["wins"] += 1
+        elif pnl < -tolerance:
+            metrics["losses"] += 1
+        else:
+            metrics["draws"] += 1
+        metrics["updated_at"] = time.time()
 
     def save(self) -> None:
         if self.policy and BANDIT_ENABLED:
@@ -2704,6 +2764,7 @@ class TradeManager:
             if postmortem:
                 record["postmortem"] = postmortem
             hist.append(record)
+            self._record_cumulative_metrics(record)
             if len(hist) > max(10, self.history_max):
                 del hist[: len(hist) - self.history_max]
             log.info(

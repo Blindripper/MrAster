@@ -72,6 +72,9 @@ const activePositionsRows = document.getElementById('active-positions-rows');
 const modeButtons = document.querySelectorAll('[data-mode-select]');
 const btnHeroDownload = document.getElementById('btn-hero-download');
 const paperModeToggle = document.getElementById('paper-mode-toggle');
+const heroTotalTrades = document.getElementById('hero-total-trades');
+const heroTotalPnl = document.getElementById('hero-total-pnl');
+const heroTotalWinRate = document.getElementById('hero-total-win-rate');
 
 const DEFAULT_BOT_STATUS = { running: false, pid: null, started_at: null, uptime_s: null };
 
@@ -3180,6 +3183,43 @@ function syncAiChatAvailability() {
   setChatKeyIndicator('ready', 'Dedicated chat key active');
 }
 
+function renderHeroMetrics(cumulativeStats, sessionStats) {
+  if (!heroTotalTrades || !heroTotalPnl || !heroTotalWinRate) return;
+
+  const totals = cumulativeStats && typeof cumulativeStats === 'object' ? cumulativeStats : {};
+  const fallback = sessionStats && typeof sessionStats === 'object' ? sessionStats : {};
+
+  const totalTradesRaw = Number(
+    totals.total_trades ?? totals.count ?? fallback.count ?? 0,
+  );
+  const totalTrades = Number.isFinite(totalTradesRaw) && totalTradesRaw > 0 ? totalTradesRaw : 0;
+  heroTotalTrades.textContent = totalTrades.toLocaleString();
+
+  const totalPnlRaw = Number(totals.total_pnl ?? fallback.total_pnl ?? 0);
+  if (Number.isFinite(totalPnlRaw)) {
+    const formatted = Math.abs(totalPnlRaw).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    const prefix = totalPnlRaw > 0 ? '+' : totalPnlRaw < 0 ? '-' : '';
+    heroTotalPnl.textContent = `${prefix}${formatted} USDT`;
+  } else {
+    heroTotalPnl.textContent = '0 USDT';
+  }
+
+  const winsRaw = Number(totals.wins ?? 0);
+  const lossesRaw = Number(totals.losses ?? 0);
+  const drawsRaw = Number(totals.draws ?? 0);
+  const denominator = totalTrades > 0 ? totalTrades : winsRaw + lossesRaw + drawsRaw;
+  let winRate = 0;
+  if (denominator > 0 && Number.isFinite(winsRaw)) {
+    winRate = winsRaw / denominator;
+  } else if (fallback.win_rate != null) {
+    winRate = Number(fallback.win_rate) || 0;
+  }
+  heroTotalWinRate.textContent = `${(winRate * 100).toFixed(1)}%`;
+}
+
 function renderTradeSummary(stats) {
   tradeSummary.innerHTML = '';
   if (!stats) {
@@ -4382,6 +4422,7 @@ async function downloadTradeHistory() {
       history: Array.isArray(snapshot?.history) ? snapshot.history : [],
       stats: snapshot?.stats ?? {},
       decision_stats: snapshot?.decision_stats ?? {},
+      cumulative_stats: snapshot?.cumulative_stats ?? {},
       ai_budget: snapshot?.ai_budget ?? null,
       open: snapshot?.open ?? {},
     };
@@ -4412,6 +4453,7 @@ async function loadTrades() {
     latestTradesSnapshot = data;
     renderTradeHistory(data.history);
     renderTradeSummary(data.stats);
+    renderHeroMetrics(data.cumulative_stats, data.stats);
     renderDecisionStats(data.decision_stats);
     renderPnlChart(data.history);
     renderAiBudget(data.ai_budget);

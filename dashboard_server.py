@@ -1002,6 +1002,21 @@ def _decision_summary(state: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _cumulative_summary(state: Dict[str, Any]) -> Dict[str, Any]:
+    metrics = state.get("cumulative_metrics") or {}
+    summary = {
+        "total_trades": int(metrics.get("total_trades", 0) or 0),
+        "total_pnl": float(metrics.get("total_pnl", 0.0) or 0.0),
+        "wins": int(metrics.get("wins", 0) or 0),
+        "losses": int(metrics.get("losses", 0) or 0),
+        "draws": int(metrics.get("draws", 0) or 0),
+    }
+    updated_at = metrics.get("updated_at")
+    if updated_at is not None:
+        summary["updated_at"] = updated_at
+    return summary
+
+
 class AIChatEngine:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
@@ -1727,6 +1742,7 @@ async def trades() -> Dict[str, Any]:
         "history": history[::-1],
         "stats": stats.dict(),
         "decision_stats": decision_stats,
+        "cumulative_stats": _cumulative_summary(state),
         "ai_budget": ai_budget,
         "ai_activity": ai_activity,
     }
