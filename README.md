@@ -177,7 +177,7 @@ All relevant parameters can be set via environment variables or edited in the da
 | Variable | Default | Description |
 | --- | --- | --- |
 | `ASTER_API_KEY` / `ASTER_API_SECRET` | empty | API credentials for live trading. |
-| `ASTER_EXCHANGE_BASE` | `https://fapi.asterdex.com` | REST endpoint for market and order data. |
+| `ASTER_EXCHANGE_BASE` | `https://fapi.asterdex.com` | REST endpoint for market and order data (set to e.g. `https://fapi.binance.com` for Binance Futures, or your paper-trading mirror). |
 | `ASTER_PAPER` | `false` | Enables the paper-trading adapter. |
 | `ASTER_RUN_ONCE` | `false` | Executes exactly one scan cycle. |
 | `ASTER_LOGLEVEL` | `INFO` | Logging verbosity (`DEBUG`, `INFO`, ...). |
@@ -194,7 +194,7 @@ All relevant parameters can be set via environment variables or edited in the da
 | Variable | Default | Description |
 | --- | --- | --- |
 | `ASTER_INTERVAL` / `ASTER_HTF_INTERVAL` | `5m` / `30m` | Timeframes for signals and confirmation. |
-| `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `52` / `48` | RSI bounds for long and short entries. |
+| `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `51` / `49`* | RSI bounds for long and short entries. |
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | Enforces trend alignment between timeframes. |
 | `ASTER_TREND_BIAS` | `with` | Trade with or against the trend. |
 | `ASTER_MIN_QUOTE_VOL_USDT` | `150000` | Minimum volume for tradable symbols. |
@@ -202,7 +202,7 @@ All relevant parameters can be set via environment variables or edited in the da
 | `ASTER_WICKINESS_MAX` | `0.97` | Filter against overly volatile candles. |
 | `ASTER_MIN_EDGE_R` | `0.30` | Minimum edge (in R) required to approve a trade. |
 | `ASTER_DEFAULT_NOTIONAL` | `250` | Fallback notional when sizing fails. |
-| `ASTER_RISK_PER_TRADE` | `0.006` | Share of equity per trade. |
+| `ASTER_RISK_PER_TRADE` | `0.007`* | Share of equity per trade. |
 | `ASTER_EQUITY_FRACTION` | `0.33` | Maximum equity utilization across open positions. |
 | `ASTER_LEVERAGE` | `5` | Default leverage for orders. |
 | `ASTER_MAX_OPEN_GLOBAL` | `4` | Global cap on concurrent positions. |
@@ -215,6 +215,8 @@ All relevant parameters can be set via environment variables or edited in the da
 | `FASTTP_COOLDOWN_S` | `15` | Wait time between FastTP checks. |
 | `ASTER_FUNDING_FILTER_ENABLED` | `true` | Enables funding limitations. |
 | `ASTER_FUNDING_MAX_LONG` / `ASTER_FUNDING_MAX_SHORT` | `0.0010` | Funding caps per direction. |
+
+*The dashboard seeds the environment with the values shown here (51/49 RSI bounds, 0.007 risk share). If you launch the CLI without the dashboard, the internal fallbacks default to 52/48 and 0.006 until you override them via environment variables or `dashboard_config.json`.*
 
 ### AI, Automation, and Guardrails
 
@@ -236,6 +238,16 @@ All relevant parameters can be set via environment variables or edited in the da
 | `ASTER_AI_NEWS_ENDPOINT` | empty | External source for breaking news. |
 | `ASTER_AI_NEWS_API_KEY` | empty | API token for the sentinel. |
 | `ASTER_BRACKETS_QUEUE_FILE` | `brackets_queue.json` | Queue file for guard repairs. |
+
+### Persistence Files
+
+The dashboard stack keeps a few JSON files in the repository root so that state survives restarts:
+
+- **`aster_state.json`** – primary store for open positions, AI telemetry, sentinel state, and dashboard UI preferences. Delete it to force a clean slate when the data becomes inconsistent.
+- **`dashboard_config.json`** – mirrors the environment editor. Back it up if you maintain multiple presets, or remove it to revert to the seeded defaults shown above.
+- **`brackets_queue.json`** – maintained by `brackets_guard.py` to reconcile stop/TP orders. If you spot repeated bracket repair attempts, archive the file for analysis and then remove it to reset the queue.
+
+Stop the backend before editing or deleting these files to avoid partial writes. When in doubt, move the files out of the repository to keep a snapshot before starting a fresh session.
 
 Additional variables (such as universe filters, per-bucket position sizing, or dashboard behavior) can be found directly in the source code or in the UI. Every change made in the dashboard is persisted to `dashboard_config.json` once confirmed.
 

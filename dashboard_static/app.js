@@ -969,6 +969,21 @@ const ACTIVE_POSITION_ALIASES = {
   side: ['side', 'positionSide', 'direction'],
 };
 
+const ACTIVE_POSITION_FIELD_LABELS = {
+  symbol: 'Symbol',
+  size: 'Size',
+  entry: 'Entry price',
+  mark: 'Mark price',
+  pnl: 'PNL (ROE%)',
+  brackets: 'TP/SL for position',
+};
+
+function applyActivePositionLabel(cell, key) {
+  if (cell && ACTIVE_POSITION_FIELD_LABELS[key]) {
+    cell.setAttribute('data-label', ACTIVE_POSITION_FIELD_LABELS[key]);
+  }
+}
+
 const ACTIVE_POSITION_TIMESTAMP_NUMERIC_KEYS = [
   'opened_at',
   'openedAt',
@@ -1535,6 +1550,7 @@ function updateActivePositionsView() {
       symbolWrapper.append(sideBadge);
     }
     symbolCell.append(symbolWrapper);
+    applyActivePositionLabel(symbolCell, 'symbol');
     row.append(symbolCell);
 
     const asterUrl = buildAsterPositionUrl(symbolValue);
@@ -1557,6 +1573,7 @@ function updateActivePositionsView() {
     sizeCell.className = 'numeric active-positions-size';
     const sizeNumeric = Number.isFinite(sizeField.numeric) ? Math.abs(sizeField.numeric) : sizeField.numeric;
     sizeCell.textContent = formatPositionSize(sizeNumeric);
+    applyActivePositionLabel(sizeCell, 'size');
     row.append(sizeCell);
 
     const entryCell = document.createElement('td');
@@ -1566,6 +1583,7 @@ function updateActivePositionsView() {
       minimumFractionDigits: 7,
       maximumFractionDigits: 7,
     });
+    applyActivePositionLabel(entryCell, 'entry');
     row.append(entryCell);
 
     const markCell = document.createElement('td');
@@ -1575,6 +1593,7 @@ function updateActivePositionsView() {
       minimumFractionDigits: 7,
       maximumFractionDigits: 7,
     });
+    applyActivePositionLabel(markCell, 'mark');
     row.append(markCell);
 
     const pnlCell = document.createElement('td');
@@ -1601,6 +1620,7 @@ function updateActivePositionsView() {
         pnlCell.classList.add('tone-loss');
       }
     }
+    applyActivePositionLabel(pnlCell, 'pnl');
     row.append(pnlCell);
 
     const tpSlCell = document.createElement('td');
@@ -1628,6 +1648,7 @@ function updateActivePositionsView() {
 
     tpSlCell.append(buildBracketRow('TP', tpDisplay));
     tpSlCell.append(buildBracketRow('SL', slDisplay));
+    applyActivePositionLabel(tpSlCell, 'brackets');
     row.append(tpSlCell);
 
     activePositionsRows.append(row);
