@@ -1541,17 +1541,23 @@ class AIChatEngine:
         fallback = self._fallback_reply(message, stats, history, ai_activity, open_trades, ai_budget)
         env = self._env()
         chat_api_key = (env.get("ASTER_CHAT_OPENAI_API_KEY") or "").strip()
-        if not chat_api_key:
+        primary_api_key = (env.get("ASTER_OPENAI_API_KEY") or "").strip()
+        key_candidates: List[Tuple[str, str]] = []
+        if chat_api_key:
+            key_candidates.append(("dashboard chat key", chat_api_key))
+        if primary_api_key and primary_api_key != chat_api_key:
+            key_candidates.append(("trading AI key", primary_api_key))
+        if not key_candidates:
             notice = (
-                "Dashboard chat requires its dedicated ASTER_CHAT_OPENAI_API_KEY. "
-                "Add the key in the AI controls to start chatting with the strategy copilot."
+                "Dashboard chat requires an OpenAI API key. "
+                "Add ASTER_CHAT_OPENAI_API_KEY or reuse ASTER_OPENAI_API_KEY "
+                "in the AI controls to start chatting with the strategy copilot."
             )
             return {
                 "reply": self._format_local_reply(notice),
                 "model": "local",
                 "source": "missing_chat_key",
             }
-        api_key = chat_api_key
         model = (env.get("ASTER_AI_MODEL") or "gpt-4o").strip() or "gpt-4o"
 
         context_text = self._build_context_text(stats, history, open_trades, ai_activity, ai_budget)
@@ -1563,13 +1569,7 @@ class AIChatEngine:
             messages.append({"role": role, "content": item.content})
         messages.append({"role": "user", "content": message})
 
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
         beta_header = self._beta_header_for_model(model)
-        if beta_header:
-            headers["OpenAI-Beta"] = beta_header
         temperature_override: Optional[float] = None
         if self._temperature_supported:
             dash_temp = os.getenv("ASTER_DASHBOARD_AI_TEMPERATURE")
@@ -1596,13 +1596,29 @@ class AIChatEngine:
             },
         )
 
-        try:
-            reply_text, usage = self._call_openai_chat(
-                headers,
-                model,
-                messages,
-                temperature_override,
-            )
+        attempted_keys: List[str] = []
+        last_exc: Optional[Exception] = None
+
+        for label, api_key in key_candidates:
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
+            if beta_header:
+                headers["OpenAI-Beta"] = beta_header
+            attempted_keys.append(label)
+            try:
+                reply_text, usage = self._call_openai_chat(
+                    headers,
+                    model,
+                    messages,
+                    temperature_override,
+                )
+            except Exception as exc:
+                last_exc = exc
+                log.debug("AI chat request failed using %s: %s", label, exc)
+                continue
+
             if not reply_text:
                 reply_text = self._format_local_reply(fallback)
             action_payload = self._extract_action(reply_text)
@@ -1620,6 +1636,7 @@ class AIChatEngine:
                 "source": "dashboard_chat",
                 "direction": "inbound",
                 "model": model,
+                "key_source": label,
             }
             if usage:
                 log_data["usage"] = usage
@@ -1632,31 +1649,50 @@ class AIChatEngine:
                 data=log_data,
             )
             return response
-        except Exception as exc:
-            awaitable = getattr(loghub, "push", None)
-            if awaitable:
-                try:
-                    asyncio.create_task(loghub.push(f"AI chat fallback: {exc}", level="warning"))
-                except RuntimeError:
-                    pass
-            reply_text = self._format_local_reply(fallback)
-            action_payload = self._extract_action(reply_text)
-            queued_action = self._queue_trade_action(action_payload, message) if action_payload else None
-            response = {"reply": reply_text, "model": model, "source": "fallback"}
-            if queued_action:
-                response["queued_action"] = queued_action
-            _append_ai_activity_entry(
-                "warning",
-                "Chat fallback response used",
-                body=_summarize_text(reply_text, 260),
-                data={
-                    "source": "dashboard_chat",
-                    "direction": "inbound",
-                    "model": model,
-                    "error": str(exc),
-                },
-            )
-            return response
+
+        awaitable = getattr(loghub, "push", None)
+        if last_exc and awaitable:
+            try:
+                asyncio.create_task(
+                    loghub.push(
+                        f"AI chat fallback: {last_exc}",
+                        level="warning",
+                    )
+                )
+            except RuntimeError:
+                pass
+
+        fallback_text = fallback
+        extra_lines: List[str] = []
+        if attempted_keys:
+            attempted = ", ".join(attempted_keys)
+            extra_lines.append(f"AI backend unreachable after trying the {attempted}.")
+        if last_exc:
+            extra_lines.append(f"Last error: {last_exc}")
+        if extra_lines:
+            fallback_text = "\n".join([fallback_text, *extra_lines])
+
+        reply_text = self._format_local_reply(fallback_text)
+        action_payload = self._extract_action(reply_text)
+        queued_action = self._queue_trade_action(action_payload, message) if action_payload else None
+        response = {"reply": reply_text, "model": model, "source": "fallback"}
+        if queued_action:
+            response["queued_action"] = queued_action
+        data: Dict[str, Any] = {
+            "source": "dashboard_chat",
+            "direction": "inbound",
+            "model": model,
+            "attempted_keys": attempted_keys,
+        }
+        if last_exc:
+            data["error"] = str(last_exc)
+        _append_ai_activity_entry(
+            "warning",
+            "Chat fallback response used",
+            body=_summarize_text(reply_text, 260),
+            data=data,
+        )
+        return response
 
 
 chat_engine = AIChatEngine(CONFIG)

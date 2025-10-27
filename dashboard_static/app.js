@@ -111,8 +111,10 @@ const decisionReasonEvents = new Map();
 const DECISION_REASON_EVENT_LIMIT = 40;
 
 function hasDashboardChatKey() {
-  const stored = (currentConfig?.env?.ASTER_CHAT_OPENAI_API_KEY || '').trim();
-  return stored.length > 0;
+  const env = currentConfig?.env || {};
+  const chatKey = (env.ASTER_CHAT_OPENAI_API_KEY || '').trim();
+  const primaryKey = (env.ASTER_OPENAI_API_KEY || '').trim();
+  return chatKey.length > 0 || primaryKey.length > 0;
 }
 
 function setChatKeyIndicator(state, message) {
@@ -3159,9 +3161,9 @@ function syncAiChatAvailability() {
     if (aiChatSubmit) aiChatSubmit.disabled = true;
     aiChatHistory = [];
     aiChatPending = false;
-    resetChatPlaceholder('Add the Dashboard chat API key to start a conversation.');
-    setChatStatus('Chat key required.');
-    setChatKeyIndicator('missing', 'Chat key required');
+    resetChatPlaceholder('Add an OpenAI API key in the AI controls to start a conversation.');
+    setChatStatus('OpenAI key required.');
+    setChatKeyIndicator('missing', 'OpenAI key required');
     return;
   }
 
@@ -4683,8 +4685,8 @@ if (aiChatForm && aiChatInput) {
       return;
     }
     if (!hasDashboardChatKey()) {
-      setChatStatus('Chat key required.');
-      setChatKeyIndicator('missing', 'Chat key required');
+      setChatStatus('OpenAI key required.');
+      setChatKeyIndicator('missing', 'OpenAI key required');
       return;
     }
     const message = (aiChatInput.value || '').trim();
