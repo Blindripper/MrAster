@@ -376,6 +376,11 @@ body.pro-mode [data-normal-only] {
   justify-content: center;
 }
 
+.hero-actions .hero-launch-link {
+  min-width: 150px;
+  justify-content: center;
+}
+
 .hero-secondary {
   border-color: rgba(245, 196, 107, 0.25);
   background: rgba(15, 18, 32, 0.72);
@@ -632,6 +637,10 @@ body.paper-mode .hero-paper-toggle span {
     flex: 1 1 140px;
   }
 
+  .hero-actions .hero-launch-link {
+    flex: 1 1 140px;
+  }
+
   .hero-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -641,6 +650,10 @@ body.paper-mode .hero-paper-toggle span {
   .hero-actions {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .hero-actions .hero-launch-link {
+    width: 100%;
   }
 
   .hero-metrics {
@@ -807,6 +820,74 @@ body.paper-mode .hero-paper-toggle span {
 @media (max-width: 900px) {
   .active-positions-table {
     min-width: 640px;
+  }
+}
+
+@media (max-width: 640px) {
+  .active-positions-table-wrapper {
+    padding: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+  }
+
+  .active-positions-table {
+    min-width: 0;
+    border-collapse: separate;
+  }
+
+  .active-positions-table thead {
+    display: none;
+  }
+
+  .active-positions-table tbody {
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .active-positions-table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem 1.1rem;
+    padding: 1rem 1.15rem;
+    border-radius: 1rem;
+    border: 1px solid rgba(245, 196, 107, 0.16);
+    background: rgba(14, 16, 28, 0.85);
+    box-shadow: inset 0 1px 0 rgba(245, 196, 107, 0.08);
+  }
+
+  .active-positions-table tbody tr.active-positions-row-link:hover,
+  .active-positions-table tbody tr.active-positions-row-link:focus-visible {
+    background: rgba(245, 196, 107, 0.12);
+  }
+
+  .active-positions-table tbody td {
+    padding: 0;
+    border: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .active-positions-table tbody td::before {
+    content: attr(data-label);
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .active-positions-table tbody td.numeric {
+    align-items: flex-start;
+  }
+
+  .active-positions-table tbody td:nth-child(5),
+  .active-positions-table tbody td:nth-child(6) {
+    grid-column: 1 / -1;
+  }
+
+  .active-positions-brackets {
+    align-items: flex-start;
   }
 }
 
