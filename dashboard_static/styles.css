@@ -2455,7 +2455,7 @@ body.pro-mode .log-stream {
 .trade-card {
   position: relative;
   display: grid;
-  gap: 0.8rem;
+  gap: 0.7rem;
   width: 100%;
   padding: 1.1rem 1.3rem;
   border-radius: 1rem;
@@ -2518,29 +2518,31 @@ body.pro-mode .log-stream {
 
 .trade-card-top {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 1.2rem;
+  gap: 0.6rem;
+  flex-wrap: wrap;
 }
 
 .trade-card-main {
   display: flex;
   align-items: baseline;
-  gap: 0.6rem;
+  gap: 0.45rem;
   min-width: 0;
+  flex-wrap: wrap;
 }
 
 .trade-card-symbol {
-  font-size: 1.05rem;
+  font-size: 0.98rem;
   font-weight: 600;
   letter-spacing: 0.04em;
 }
 
 .trade-card-side {
-  padding: 0.25rem 0.55rem;
+  padding: 0.22rem 0.5rem;
   border-radius: 999px;
-  font-size: 0.66rem;
-  letter-spacing: 0.18em;
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   font-weight: 600;
   border: 1px solid rgba(148, 163, 184, 0.35);
@@ -2549,7 +2551,7 @@ body.pro-mode .log-stream {
 }
 
 .trade-card-pnl {
-  font-size: 1.05rem;
+  font-size: 0.96rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text);
@@ -2567,9 +2569,9 @@ body.pro-mode .log-stream {
 
 .trade-card-bottom {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.75rem;
   flex-wrap: wrap;
 }
 
@@ -2577,9 +2579,10 @@ body.pro-mode .log-stream {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.7rem;
-  font-size: 0.82rem;
+  gap: 0.55rem;
+  font-size: 0.78rem;
   color: var(--text-subtle);
+  line-height: 1.35;
 }
 
 .trade-card-info span {
@@ -2601,18 +2604,19 @@ body.pro-mode .log-stream {
 
 .trade-card-window {
   font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   letter-spacing: 0.05em;
 }
 
 .trade-card-actions {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
 }
 
 .trade-card-r {
-  font-size: 0.92rem;
+  font-size: 0.86rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -2621,15 +2625,15 @@ body.pro-mode .log-stream {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.82rem;
-  letter-spacing: 0.08em;
+  font-size: 0.74rem;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--accent);
 }
 
 .trade-card-hint::after {
   content: '↗';
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   line-height: 1;
 }
 
@@ -2920,6 +2924,8 @@ body.pro-mode .log-stream {
 
   .trade-card-actions {
     width: 100%;
+    flex-direction: row;
+    align-items: center;
     justify-content: space-between;
   }
 }
@@ -2934,8 +2940,10 @@ body.pro-mode .log-stream {
   }
 
   .trade-card-actions {
+    flex-direction: column;
+    align-items: flex-start;
     flex-wrap: wrap;
-    gap: 0.6rem;
+    gap: 0.5rem;
   }
 }
 
