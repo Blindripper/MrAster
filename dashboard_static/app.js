@@ -71,10 +71,12 @@ const activePositionsEmpty = document.getElementById('active-positions-empty');
 const activePositionsRows = document.getElementById('active-positions-rows');
 const modeButtons = document.querySelectorAll('[data-mode-select]');
 const btnHeroDownload = document.getElementById('btn-hero-download');
+const btnPostX = document.getElementById('btn-post-x');
 const paperModeToggle = document.getElementById('paper-mode-toggle');
 const heroTotalTrades = document.getElementById('hero-total-trades');
 const heroTotalPnl = document.getElementById('hero-total-pnl');
 const heroTotalWinRate = document.getElementById('hero-total-win-rate');
+const shareFeedback = document.getElementById('share-feedback');
 
 const DEFAULT_BOT_STATUS = { running: false, pid: null, started_at: null, uptime_s: null };
 
@@ -112,6 +114,13 @@ let decisionModalFinalizeHandler = null;
 let decisionModalReturnTarget = null;
 const decisionReasonEvents = new Map();
 const DECISION_REASON_EVENT_LIMIT = 40;
+let heroMetricsSnapshot = {
+  totalTrades: 0,
+  totalPnl: 0,
+  totalPnlDisplay: '0 USDT',
+  winRate: 0,
+  winRateDisplay: '0.0%',
+};
 
 function hasDashboardChatKey() {
   const env = currentConfig?.env || {};
@@ -3218,6 +3227,302 @@ function renderHeroMetrics(cumulativeStats, sessionStats) {
     winRate = Number(fallback.win_rate) || 0;
   }
   heroTotalWinRate.textContent = `${(winRate * 100).toFixed(1)}%`;
+
+  heroMetricsSnapshot = {
+    totalTrades,
+    totalPnl: Number.isFinite(totalPnlRaw) ? totalPnlRaw : 0,
+    totalPnlDisplay: heroTotalPnl.textContent,
+    winRate,
+    winRateDisplay: heroTotalWinRate.textContent,
+  };
+}
+
+function setShareFeedback(message, { tone } = {}) {
+  if (!shareFeedback) return;
+  const text = (message || '').toString();
+  shareFeedback.textContent = text;
+  if (tone) {
+    shareFeedback.dataset.tone = tone;
+  } else {
+    shareFeedback.removeAttribute('data-tone');
+  }
+}
+
+function determineMemeTier(snapshot) {
+  if (!snapshot) return 'normal';
+  const totalTrades = Number(snapshot.totalTrades ?? 0) || 0;
+  const totalPnl = Number(snapshot.totalPnl ?? 0) || 0;
+  const winRate = Number(snapshot.winRate ?? 0) || 0;
+
+  if (totalTrades <= 5 || totalPnl <= 0 || winRate < 0.45) {
+    return 'low';
+  }
+  if (totalPnl > 250 || winRate >= 0.65) {
+    return 'high';
+  }
+  return 'normal';
+}
+
+function buildShareText(snapshot) {
+  const totalTrades = Number(snapshot?.totalTrades ?? 0) || 0;
+  const totalPnlDisplay = snapshot?.totalPnlDisplay || '0 USDT';
+  const winRateDisplay = snapshot?.winRateDisplay || '0.0%';
+  const tier = determineMemeTier(snapshot);
+
+  const headline = tier === 'high'
+    ? '🚀 MrAster performance rocket'
+    : tier === 'low'
+      ? '🛠️ MrAster diagnostic recap'
+      : '📊 MrAster trading pulse';
+
+  const statsBlock = [
+    `TOTAL TRADES  ·  ${totalTrades.toLocaleString()}`,
+    `TOTAL PNL     ·  ${totalPnlDisplay}`,
+    `TOTAL WIN RATE ·  ${winRateDisplay}`,
+  ].join('\n');
+
+  const tagline = 'MrAster - Autonomous trading suite';
+  const hashtags = '#MrAster #CryptoTrading #AutomatedTrading';
+
+  return [headline, '', statsBlock, '', tagline, hashtags].join('\n');
+}
+
+async function copyShareText(text) {
+  if (!text) return false;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (error) {
+    console.warn('Clipboard write failed', error);
+  }
+
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'absolute';
+    textarea.style.left = '-9999px';
+    document.body.append(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    textarea.remove();
+    return true;
+  } catch (error) {
+    console.warn('Fallback clipboard write failed', error);
+    return false;
+  }
+}
+
+function drawRoundedRect(ctx, x, y, width, height, radius) {
+  const effectiveRadius = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + effectiveRadius, y);
+  ctx.lineTo(x + width - effectiveRadius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + effectiveRadius);
+  ctx.lineTo(x + width, y + height - effectiveRadius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - effectiveRadius, y + height);
+  ctx.lineTo(x + effectiveRadius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - effectiveRadius);
+  ctx.lineTo(x, y + effectiveRadius);
+  ctx.quadraticCurveTo(x, y, x + effectiveRadius, y);
+  ctx.closePath();
+}
+
+function createMemeTheme(tier) {
+  const themes = {
+    low: {
+      gradient: ['#3d0a1c', '#120819'],
+      overlay: 'rgba(14, 10, 24, 0.75)',
+      accent: '#ff7b7b',
+      accentSoft: 'rgba(255, 123, 123, 0.18)',
+      textSoft: 'rgba(255, 233, 212, 0.8)',
+      textStrong: '#ffe7b0',
+      cardBg: 'rgba(30, 14, 38, 0.78)',
+      emoji: '😬',
+      headline: 'Drawdown Diaries',
+      quip: 'Bot says: “Was that a wick or a prank?”',
+    },
+    normal: {
+      gradient: ['#0e1b2e', '#130c1f'],
+      overlay: 'rgba(12, 16, 28, 0.78)',
+      accent: '#f5c46b',
+      accentSoft: 'rgba(245, 196, 107, 0.18)',
+      textSoft: 'rgba(240, 214, 178, 0.85)',
+      textStrong: '#fff2c9',
+      cardBg: 'rgba(18, 22, 36, 0.82)',
+      emoji: '🧠',
+      headline: 'Dialed-In Drift',
+      quip: 'Steady hands. Laser focus. Coffee optional.',
+    },
+    high: {
+      gradient: ['#051b18', '#1f4032'],
+      overlay: 'rgba(9, 18, 24, 0.7)',
+      accent: '#6bffb4',
+      accentSoft: 'rgba(107, 255, 180, 0.18)',
+      textSoft: 'rgba(227, 255, 244, 0.85)',
+      textStrong: '#e9ffe7',
+      cardBg: 'rgba(9, 28, 24, 0.82)',
+      emoji: '🚀',
+      headline: 'Alpha Unlocked',
+      quip: 'Take profits? Nah, take a victory lap.',
+    },
+  };
+  return themes[tier] || themes.normal;
+}
+
+function formatMemeMetricValue(value) {
+  if (typeof value !== 'string') return value;
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function generateMemeCard(snapshot) {
+  const tier = determineMemeTier(snapshot);
+  const theme = createMemeTheme(tier);
+  const canvas = document.createElement('canvas');
+  const size = 1080;
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  const gradient = ctx.createLinearGradient(0, 0, size, size);
+  gradient.addColorStop(0, theme.gradient[0]);
+  gradient.addColorStop(1, theme.gradient[1]);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+
+  drawRoundedRect(ctx, 50, 50, size - 100, size - 100, 52);
+  ctx.fillStyle = theme.overlay;
+  ctx.fill();
+
+  ctx.save();
+  ctx.globalAlpha = 0.22;
+  ctx.fillStyle = theme.accentSoft;
+  ctx.beginPath();
+  ctx.arc(size * 0.75, size * 0.28, 140, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(size * 0.28, size * 0.72, 180, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = theme.accent;
+  ctx.font = '700 72px "Inter", "Segoe UI", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(`${theme.emoji} ${theme.headline} ${theme.emoji}`, size / 2, 170);
+
+  ctx.font = '500 34px "Inter", "Segoe UI", sans-serif';
+  ctx.fillStyle = theme.textSoft;
+  ctx.fillText(theme.quip, size / 2, 230);
+
+  const metrics = [
+    { label: 'TOTAL TRADES', value: (snapshot?.totalTrades ?? 0).toLocaleString() },
+    { label: 'TOTAL PNL', value: formatMemeMetricValue(snapshot?.totalPnlDisplay || '0 USDT') },
+    { label: 'TOTAL WIN RATE', value: formatMemeMetricValue(snapshot?.winRateDisplay || '0.0%') },
+  ];
+
+  const cardWidth = size - 240;
+  const cardX = 120;
+  const cardYStart = 320;
+  const cardHeight = 150;
+  const gap = 36;
+
+  metrics.forEach((metric, index) => {
+    const y = cardYStart + index * (cardHeight + gap);
+    drawRoundedRect(ctx, cardX, y, cardWidth, cardHeight, 36);
+    ctx.fillStyle = theme.cardBg;
+    ctx.fill();
+
+    ctx.strokeStyle = theme.accentSoft;
+    ctx.lineWidth = 2;
+    drawRoundedRect(ctx, cardX, y, cardWidth, cardHeight, 36);
+    ctx.stroke();
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = theme.textSoft;
+    ctx.font = '600 30px "Inter", "Segoe UI", sans-serif';
+    ctx.fillText(metric.label, cardX + 48, y + 56);
+
+    ctx.fillStyle = theme.textStrong;
+    ctx.font = '700 72px "Inter", "Segoe UI", sans-serif';
+    ctx.fillText(metric.value, cardX + 48, y + 118);
+  });
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = theme.textSoft;
+  ctx.font = '500 30px "Inter", "Segoe UI", sans-serif';
+  ctx.fillText('Stats auto-generated by MrAster', size / 2, size - 160);
+
+  ctx.fillStyle = theme.accent;
+  ctx.font = '600 38px "Inter", "Segoe UI", sans-serif';
+  ctx.fillText('MrAster - Autonomous trading suite', size / 2, size - 100);
+
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+  return {
+    tier,
+    dataUrl,
+    alt: `MrAster ${tier} meme summarising trading stats`,
+  };
+}
+
+function openMemePreview(meme) {
+  if (!meme?.dataUrl) return false;
+  const preview = window.open('', '_blank', 'noopener,width=960,height=1080');
+  if (!preview) {
+    return false;
+  }
+  preview.document.write(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" /><title>MrAster Meme</title></head><body style="margin:0;background:#0b0f16;color:#f5c46b;font-family: 'Inter', 'Segoe UI', sans-serif;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:24px;padding:40px;">
+    <img src="${meme.dataUrl}" alt="${meme.alt}" style="max-width:min(90vw,900px);height:auto;border-radius:28px;box-shadow:0 24px 62px rgba(0,0,0,0.55);" />
+    <p style="max-width:680px;text-align:center;line-height:1.6;">Right-click or tap-and-hold the image to save it, then attach it to your X post. Meme tier: <strong>${meme.tier.toUpperCase()}</strong>.</p>
+    <a href="${meme.dataUrl}" download="mraster-${meme.tier}-meme.jpg" style="display:inline-flex;align-items:center;gap:10px;padding:12px 22px;border-radius:999px;background:#f5c46b;color:#0b0f16;text-decoration:none;font-weight:600;">Download meme</a>
+  </body></html>`);
+  preview.document.close();
+  return true;
+}
+
+function openTweetComposer(text) {
+  if (!text) return false;
+  const url = new URL('https://twitter.com/intent/tweet');
+  url.searchParams.set('text', text);
+  url.searchParams.set('hashtags', 'MrAster,CryptoTrading,AutomatedTrading');
+  const popup = window.open(url.toString(), '_blank', 'noopener');
+  return Boolean(popup);
+}
+
+async function handlePostToX() {
+  if (!btnPostX) return;
+  const snapshot = heroMetricsSnapshot || {};
+  const shareText = buildShareText(snapshot);
+
+  btnPostX.disabled = true;
+  setShareFeedback('Preparing your X post…');
+
+  try {
+    const meme = generateMemeCard(snapshot);
+    const clipboardSuccess = await copyShareText(shareText);
+    const tweetOpened = openTweetComposer(shareText);
+    const memeOpened = openMemePreview(meme);
+
+    if (clipboardSuccess) {
+      setShareFeedback('Post text copied! A new tab opened with the meme so you can attach it on X.');
+    } else {
+      setShareFeedback('Compose window opened. Copy the stats manually if clipboard access is blocked.');
+    }
+
+    if (!tweetOpened) {
+      setShareFeedback('Please allow pop-ups so we can open the X composer for you.', { tone: 'warn' });
+    }
+
+    if (!memeOpened) {
+      console.warn('Meme preview window blocked');
+    }
+  } catch (error) {
+    console.error('Failed to prepare X post', error);
+    setShareFeedback('We could not prepare the X post. Please try again.');
+  } finally {
+    btnPostX.disabled = false;
+  }
 }
 
 function renderTradeSummary(stats) {
@@ -4539,6 +4844,9 @@ btnApplyPreset?.addEventListener('click', saveQuickSetup);
 btnToggleEnv?.addEventListener('click', toggleEnvPanel);
 btnHeroDownload?.addEventListener('click', () => {
   downloadTradeHistory();
+});
+btnPostX?.addEventListener('click', () => {
+  handlePostToX();
 });
 
 if (pnlChartWrapper) {
