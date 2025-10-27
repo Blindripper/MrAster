@@ -935,7 +935,7 @@ def _format_ts(ts: Optional[float]) -> Optional[str]:
     if not ts:
         return None
     try:
-        return datetime.fromtimestamp(ts).isoformat()
+        return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
     except Exception:
         return None
 
