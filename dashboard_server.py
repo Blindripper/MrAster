@@ -911,6 +911,13 @@ def _append_ai_activity_entry(
         state["ai_activity"] = feed[-250:]
         try:
             STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True))
+            detail = f"{entry['kind']} | {entry['headline']}"
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop and not loop.is_closed():
+                loop.create_task(loghub.push(f"AI_FEED {detail}", level="debug"))
             return
         except Exception as exc:
             logger.debug("Failed to persist AI activity (attempt %s): %s", attempts, exc)

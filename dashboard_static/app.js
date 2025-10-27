@@ -1690,6 +1690,16 @@ function humanizeLogLine(line, fallbackLevel = 'info') {
   let relevant = severity !== 'debug';
   let text = parsed.message || parsed.raw;
 
+  const aiFeedMatch = parsed.message?.match(/^AI_FEED\s+(.*)$/);
+  if (aiFeedMatch) {
+    const detail = aiFeedMatch[1]?.trim();
+    text = detail ? `AI activity updated: ${detail}` : 'AI activity updated.';
+    label = 'AI feed';
+    severity = 'system';
+    relevant = false;
+    return { text, label, severity, relevant, parsed, refreshTrades: true };
+  }
+
   const bucketLabels = { S: 'small', M: 'medium', L: 'large' };
   const entryMatch = parsed.message?.match(
     /^ENTRY (\S+) (BUY|SELL) qty=([\d.]+) px≈([\d.]+) SL=([\d.]+) TP=([\d.]+) bucket=([A-Z])(?:\s+alpha=([\d.]+)\/([\d.]+))?/,
