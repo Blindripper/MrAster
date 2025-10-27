@@ -141,6 +141,10 @@ body::after {
   background-image: url('./flags/es.svg');
 }
 
+.language-flag-tr {
+  background-image: url('./flags/tr.svg');
+}
+
 .market-ticker {
   display: flex;
   gap: 1.8rem;
