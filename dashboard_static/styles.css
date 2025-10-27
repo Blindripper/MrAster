@@ -1162,6 +1162,66 @@ button:focus-visible {
   gap: 0.8rem;
 }
 
+.quick-setup-baseline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.quick-setup-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+}
+
+.quick-setup-label {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  font-size: 0.95rem;
+  color: var(--text);
+  text-transform: none;
+}
+
+.quick-setup-input {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.quick-setup-input input {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(245, 196, 107, 0.2);
+  background: rgba(26, 27, 40, 0.65);
+  color: var(--text);
+  font: inherit;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.quick-setup-input input:focus {
+  border-color: rgba(245, 196, 107, 0.45);
+  box-shadow: 0 0 0 1px rgba(245, 196, 107, 0.28);
+  outline: none;
+}
+
+.quick-setup-unit {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-subtle);
+  letter-spacing: 0.05em;
+}
+
+.quick-setup-field-hint {
+  margin: 0;
+  color: var(--text-subtle);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
 .risk-control-header {
   display: flex;
   justify-content: space-between;
