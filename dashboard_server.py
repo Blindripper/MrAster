@@ -422,7 +422,7 @@ def _fetch_price_change(symbol: str) -> Tuple[Optional[float], Optional[float]]:
         return None, None
 
 
-def _fetch_most_traded_from_binance(limit: int = 8) -> List[Dict[str, Any]]:
+def _fetch_most_traded_from_binance(limit: int = 20) -> List[Dict[str, Any]]:
     resp = requests.get(BINANCE_24H_URL, timeout=8)
     resp.raise_for_status()
     payload = resp.json()

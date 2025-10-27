@@ -864,13 +864,12 @@ function computeTickerMetrics(assets) {
   if (!tickerTrack || !Array.isArray(assets) || assets.length === 0) return;
   window.requestAnimationFrame(() => {
     window.requestAnimationFrame(() => {
-      const baseCount = assets.length;
-      const children = Array.from(tickerTrack.children).slice(0, baseCount);
-      if (children.length === 0) return;
+      const originals = Array.from(tickerTrack.querySelectorAll('.ticker-item:not(.ticker-item-duplicate)'));
+      if (originals.length === 0) return;
       const styles = window.getComputedStyle(tickerTrack);
       const gap = parseFloat(styles.columnGap || styles.gap || '0');
-      const totalWidth = children.reduce((sum, child) => sum + child.getBoundingClientRect().width, 0);
-      const translate = Math.ceil(totalWidth + gap * Math.max(0, children.length - 1));
+      const totalWidth = originals.reduce((sum, child) => sum + child.getBoundingClientRect().width, 0);
+      const translate = Math.ceil(totalWidth + gap * Math.max(0, originals.length - 1));
       tickerTrack.style.setProperty('--ticker-translate', `${translate}px`);
       const duration = Math.max(20, translate / 35);
       tickerTrack.style.setProperty('--ticker-duration', `${duration}s`);
@@ -904,29 +903,37 @@ function renderMostTradedTicker(assets, { error } = {}) {
   });
   tickerTrack.appendChild(fragment);
 
-  const baseCount = assets.length;
-  if (baseCount === 0) return;
-
   const ensureTickerFill = () => {
-    const baseNodes = Array.from(tickerTrack.children).slice(0, baseCount);
-    if (baseNodes.length === 0) return;
+    const originals = Array.from(tickerTrack.querySelectorAll('.ticker-item:not(.ticker-item-duplicate)'));
+    if (originals.length === 0) return;
     const styles = window.getComputedStyle(tickerTrack);
     const gap = parseFloat(styles.columnGap || styles.gap || '0');
-    const baseWidth = baseNodes.reduce((sum, node) => sum + node.getBoundingClientRect().width, 0);
-    const totalBaseWidth = baseWidth + gap * Math.max(0, baseNodes.length - 1);
+    const baseWidth = originals.reduce((sum, node) => sum + node.getBoundingClientRect().width, 0);
+    const totalBaseWidth = baseWidth + gap * Math.max(0, originals.length - 1);
     const viewportWidth = tickerTrack.parentElement
       ? tickerTrack.parentElement.getBoundingClientRect().width
       : 0;
-    const minTrackWidth = Math.max(totalBaseWidth * 2, viewportWidth + totalBaseWidth);
+    const minTrackWidth = Math.max(totalBaseWidth * 3, viewportWidth + totalBaseWidth * 2);
+
+    const createDuplicate = (node) => {
+      const clone = node.cloneNode(true);
+      clone.classList.add('ticker-item-duplicate');
+      clone.setAttribute('aria-hidden', 'true');
+      clone.tabIndex = -1;
+      clone.setAttribute('tabindex', '-1');
+      return clone;
+    };
+
+    originals
+      .slice()
+      .reverse()
+      .forEach((node) => {
+        tickerTrack.insertBefore(createDuplicate(node), tickerTrack.firstChild);
+      });
 
     while (tickerTrack.scrollWidth < minTrackWidth) {
-      baseNodes.forEach((node) => {
-        const clone = node.cloneNode(true);
-        clone.classList.add('ticker-item-duplicate');
-        clone.setAttribute('aria-hidden', 'true');
-        clone.tabIndex = -1;
-        clone.setAttribute('tabindex', '-1');
-        tickerTrack.appendChild(clone);
+      originals.forEach((node) => {
+        tickerTrack.appendChild(createDuplicate(node));
       });
     }
 
