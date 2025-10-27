@@ -1952,7 +1952,195 @@ class AIChatEngine:
         return response
 
 
+    def analyze_market(self) -> Dict[str, Any]:
+        (
+            stats,
+            history,
+            open_trades,
+            ai_activity,
+            ai_budget,
+            decision_stats,
+            recent_plans,
+        ) = self._current_state()
+        fallback = self._fallback_reply(
+            "Provide a neutral market status update with potential long and short angles.",
+            stats,
+            history,
+            ai_activity,
+            open_trades,
+            ai_budget,
+        )
+        env = self._env()
+        chat_api_key = (env.get("ASTER_CHAT_OPENAI_API_KEY") or "").strip()
+        primary_api_key = (env.get("ASTER_OPENAI_API_KEY") or "").strip()
+        key_candidates: List[Tuple[str, str]] = []
+        if chat_api_key:
+            key_candidates.append(("dashboard chat key", chat_api_key))
+        if primary_api_key and primary_api_key != chat_api_key:
+            key_candidates.append(("trading AI key", primary_api_key))
+        if not key_candidates:
+            notice = (
+                "Dashboard market analysis requires an OpenAI API key. "
+                "Add ASTER_CHAT_OPENAI_API_KEY or reuse ASTER_OPENAI_API_KEY "
+                "in the AI controls to run Analyze Market."
+            )
+            return {
+                "analysis": self._format_local_reply(notice),
+                "model": "local",
+                "source": "missing_chat_key",
+            }
+
+        model = (env.get("ASTER_AI_MODEL") or "gpt-4o").strip() or "gpt-4o"
+        context_text = self._build_context_text(
+            stats,
+            history,
+            open_trades,
+            ai_activity,
+            ai_budget,
+            decision_stats,
+            recent_plans,
+        )
+        prompt = (
+            "You are the strategy copilot's market analyst. Using the latest telemetry, "
+            "summarise market tone, volatility and risk in under 180 words. Recommend one potential LONG "
+            "idea and one potential SHORT idea. For each, include the symbol, thesis, indicative entry zone, "
+            "invalidation level, and key catalysts or risks. Flag stale or missing data explicitly. Do not "
+            "queue trades, issue ACTION blocks, or assume execution authority."
+        )
+        messages: List[Dict[str, str]] = [
+            {"role": "system", "content": context_text},
+            {"role": "user", "content": prompt},
+        ]
+
+        beta_header = self._beta_header_for_model(model)
+        temperature_override: Optional[float] = None
+        if self._temperature_supported:
+            dash_temp = os.getenv("ASTER_DASHBOARD_AI_TEMPERATURE")
+            if dash_temp:
+                try:
+                    parsed_temp = float(dash_temp)
+                except ValueError:
+                    parsed_temp = None
+                    log.debug(
+                        "Invalid ASTER_DASHBOARD_AI_TEMPERATURE=%s — ignoring", dash_temp
+                    )
+                else:
+                    if abs(parsed_temp - 1.0) > 1e-6:
+                        temperature_override = parsed_temp
+            else:
+                temperature_override = 0.3
+
+        _append_ai_activity_entry(
+            "analysis",
+            "Manual market analysis requested",
+            body="Operator requested long/short ideas via Analyze Market.",
+            data={
+                "source": "dashboard_chat",
+                "direction": "outbound",
+                "mode": "analysis",
+            },
+        )
+
+        attempted_keys: List[str] = []
+        last_exc: Optional[Exception] = None
+
+        for label, api_key in key_candidates:
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
+            if beta_header:
+                headers["OpenAI-Beta"] = beta_header
+            attempted_keys.append(label)
+            try:
+                reply_text, usage = self._call_openai_chat(
+                    headers,
+                    model,
+                    messages,
+                    temperature_override,
+                )
+            except Exception as exc:
+                last_exc = exc
+                log.debug("Market analysis request failed using %s: %s", label, exc)
+                continue
+
+            if not reply_text:
+                reply_text = fallback
+            formatted = self._format_local_reply(reply_text)
+            response: Dict[str, Any] = {
+                "analysis": formatted,
+                "model": model,
+                "source": "openai",
+            }
+            if usage:
+                response["usage"] = usage
+
+            log_data: Dict[str, Any] = {
+                "source": "dashboard_chat",
+                "direction": "inbound",
+                "model": model,
+                "key_source": label,
+                "mode": "analysis",
+            }
+            if usage:
+                log_data["usage"] = usage
+            _append_ai_activity_entry(
+                "analysis",
+                "Market analysis received",
+                body=_summarize_text(formatted, 260),
+                data=log_data,
+            )
+            return response
+
+        awaitable = getattr(loghub, "push", None)
+        if last_exc and awaitable:
+            try:
+                asyncio.create_task(
+                    loghub.push(
+                        f"AI market analysis fallback: {last_exc}",
+                        level="warning",
+                    )
+                )
+            except RuntimeError:
+                pass
+
+        fallback_text = fallback
+        extra_lines: List[str] = []
+        if attempted_keys:
+            attempted = ", ".join(attempted_keys)
+            extra_lines.append(
+                f"AI backend unreachable after trying the {attempted}."
+            )
+        if last_exc:
+            extra_lines.append(f"Last error: {last_exc}")
+        if extra_lines:
+            fallback_text = "\n".join([fallback_text, *extra_lines])
+
+        formatted = self._format_local_reply(fallback_text)
+        data: Dict[str, Any] = {
+            "source": "dashboard_chat",
+            "direction": "inbound",
+            "mode": "analysis",
+            "attempted_keys": attempted_keys,
+        }
+        if last_exc:
+            data["error"] = str(last_exc)
+        _append_ai_activity_entry(
+            "warning",
+            "Market analysis fallback used",
+            body=_summarize_text(formatted, 260),
+            data=data,
+        )
+        return {"analysis": formatted, "model": model, "source": "fallback"}
+
+
 chat_engine = AIChatEngine(CONFIG)
+
+
+@app.post("/api/ai/analyze")
+async def ai_analyze() -> Dict[str, Any]:
+    return chat_engine.analyze_market()
+
 
 @app.get("/api/trades")
 async def trades() -> Dict[str, Any]:

@@ -64,6 +64,7 @@ const aiChatForm = document.getElementById('ai-chat-form');
 const aiChatInput = document.getElementById('ai-chat-input');
 const aiChatStatus = document.getElementById('ai-chat-status');
 const chatKeyIndicator = document.getElementById('chat-key-indicator');
+const btnAnalyzeMarket = document.getElementById('btn-analyze-market');
 const activePositionsCard = document.getElementById('active-positions-card');
 const activePositionsModeLabel = document.getElementById('active-positions-mode');
 const activePositionsWrapper = document.getElementById('active-positions-wrapper');
@@ -99,10 +100,12 @@ let latestTradesSnapshot = null;
 let lastBotStatus = { ...DEFAULT_BOT_STATUS };
 let aiChatHistory = [];
 let aiChatPending = false;
+let aiAnalyzePending = false;
 let activePositions = [];
 let tradesRefreshTimer = null;
 let tradeViewportSyncHandle = null;
 const aiChatSubmit = aiChatForm ? aiChatForm.querySelector('button[type="submit"]') : null;
+const analyzeButtonDefaultLabel = btnAnalyzeMarket ? btnAnalyzeMarket.textContent : 'Analyze Market';
 let lastPnlChartPayload = null;
 let pnlModalHideTimer = null;
 let pnlModalFinalizeHandler = null;
@@ -3113,7 +3116,8 @@ function appendChatMessage(role, message, meta = {}) {
   msg.className = `ai-chat-message ${role === 'user' ? 'user' : 'assistant'}`;
   const roleLabel = document.createElement('div');
   roleLabel.className = 'ai-chat-role';
-  roleLabel.textContent = role === 'user' ? 'You' : 'Strategy Copilot';
+  const displayLabel = meta.roleLabel || (role === 'user' ? 'You' : 'Strategy Copilot');
+  roleLabel.textContent = displayLabel;
   const text = document.createElement('p');
   text.className = 'ai-chat-text';
   text.textContent = message;
@@ -3144,6 +3148,20 @@ function setChatStatus(message) {
   }
 }
 
+function updateAnalyzeButtonAvailability() {
+  if (!btnAnalyzeMarket) return;
+  const hasKey = hasDashboardChatKey();
+  const shouldDisable = !hasKey || aiAnalyzePending;
+  btnAnalyzeMarket.disabled = shouldDisable;
+  if (!hasKey) {
+    btnAnalyzeMarket.title = 'Add an OpenAI API key in the AI controls to analyze the market.';
+  } else if (aiAnalyzePending) {
+    btnAnalyzeMarket.title = 'Market analysis in progress…';
+  } else {
+    btnAnalyzeMarket.title = '';
+  }
+}
+
 function resetChatPlaceholder(text) {
   if (!aiChatMessages) return;
   aiChatMessages.innerHTML = '';
@@ -3154,8 +3172,12 @@ function resetChatPlaceholder(text) {
 }
 
 function syncAiChatAvailability() {
-  if (!aiChatInput) return;
+  if (!aiChatInput) {
+    updateAnalyzeButtonAvailability();
+    return;
+  }
   const hasKey = hasDashboardChatKey();
+  updateAnalyzeButtonAvailability();
   if (!aiMode) {
     aiChatInput.value = '';
     aiChatInput.disabled = true;
@@ -4964,6 +4986,57 @@ if (autoScrollToggles.length > 0) {
   });
 } else {
   autoScrollEnabled = true;
+}
+
+if (btnAnalyzeMarket) {
+  btnAnalyzeMarket.addEventListener('click', async () => {
+    if (aiAnalyzePending) {
+      return;
+    }
+    if (!hasDashboardChatKey()) {
+      setChatStatus('OpenAI key required.');
+      setChatKeyIndicator('missing', 'OpenAI key required');
+      return;
+    }
+    aiAnalyzePending = true;
+    btnAnalyzeMarket.textContent = 'Analyzing…';
+    updateAnalyzeButtonAvailability();
+    setChatStatus('Analyzing market…');
+    try {
+      const res = await fetch('/api/ai/analyze', { method: 'POST' });
+      const text = await res.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch (parseErr) {
+        data = {};
+      }
+      if (!res.ok) {
+        const detail = data && typeof data === 'object' ? data.detail || data.message : null;
+        throw new Error(detail || 'Market analysis failed');
+      }
+      const analysis = (data.analysis || '').toString().trim() || 'No analysis returned.';
+      appendChatMessage('assistant', analysis, {
+        model: data.model,
+        source: data.source || 'analysis',
+        roleLabel: 'Market Analysis',
+      });
+      if (data.source === 'fallback') {
+        setChatStatus('Market analysis (fallback).');
+      } else {
+        setChatStatus('Market analysis ready.');
+      }
+      setChatKeyIndicator('ready', 'Dedicated chat key active');
+    } catch (err) {
+      const errorMessage = err?.message || 'Market analysis failed.';
+      appendChatMessage('assistant', errorMessage, { source: 'error', roleLabel: 'Market Analysis' });
+      setChatStatus('Market analysis failed.');
+    } finally {
+      aiAnalyzePending = false;
+      btnAnalyzeMarket.textContent = analyzeButtonDefaultLabel;
+      updateAnalyzeButtonAvailability();
+    }
+  });
 }
 
 if (aiChatForm && aiChatInput) {
