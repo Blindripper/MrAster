@@ -41,6 +41,8 @@ const inputOpenAiKey = document.getElementById('input-openai-key');
 const inputChatOpenAiKey = document.getElementById('input-chat-openai-key');
 const inputAiBudget = document.getElementById('input-ai-budget');
 const inputAiModel = document.getElementById('input-ai-model');
+const inputDefaultNotional = document.getElementById('input-default-notional');
+const inputAiDefaultNotional = document.getElementById('input-ai-default-notional');
 const decisionSummary = document.getElementById('decision-summary');
 const decisionReasons = document.getElementById('decision-reasons');
 const btnApplyPreset = document.getElementById('btn-apply-preset');
@@ -446,6 +448,16 @@ function renderConfig(env) {
   }
 }
 
+function updateDefaultNotionalInputs(value) {
+  const textValue = value === undefined || value === null ? '' : value.toString();
+  if (inputDefaultNotional) {
+    inputDefaultNotional.value = textValue;
+  }
+  if (inputAiDefaultNotional) {
+    inputAiDefaultNotional.value = textValue;
+  }
+}
+
 function renderCredentials(env) {
   if (inputApiKey) {
     inputApiKey.value = env?.ASTER_API_KEY ?? '';
@@ -472,6 +484,7 @@ function renderCredentials(env) {
       inputAiModel.add(fallbackOption);
     }
   }
+  updateDefaultNotionalInputs(env?.ASTER_DEFAULT_NOTIONAL);
 }
 
 async function loadConfig() {
@@ -518,6 +531,15 @@ function gatherAiPayload() {
   }
   if (inputAiModel) {
     payload.ASTER_AI_MODEL = inputAiModel.value.trim();
+  }
+  if (inputAiDefaultNotional) {
+    const value = inputAiDefaultNotional.value.trim();
+    if (value !== '') {
+      const numeric = Number(value);
+      if (Number.isFinite(numeric) && numeric >= 0) {
+        payload.ASTER_DEFAULT_NOTIONAL = numeric.toString();
+      }
+    }
   }
   return payload;
 }
@@ -3587,6 +3609,18 @@ function buildQuickSetupPayload() {
     ASTER_ALPHA_WARMUP: toFixedString(preset?.alphaWarmup ?? 40, 0),
   };
 
+  if (inputDefaultNotional) {
+    const value = inputDefaultNotional.value.trim();
+    if (value !== '') {
+      const numeric = Number(value);
+      if (Number.isFinite(numeric) && numeric >= 0) {
+        payload.ASTER_DEFAULT_NOTIONAL = numeric.toString();
+      }
+    } else if (currentConfig?.env?.ASTER_DEFAULT_NOTIONAL !== undefined) {
+      payload.ASTER_DEFAULT_NOTIONAL = currentConfig.env.ASTER_DEFAULT_NOTIONAL;
+    }
+  }
+
   return payload;
 }
 
@@ -3604,6 +3638,7 @@ function syncQuickSetupFromEnv(env) {
     const lev = clampValue(Number(env.ASTER_LEVERAGE), Number(leverageSlider.min), Number(leverageSlider.max));
     leverageSlider.value = lev.toString();
   }
+  updateDefaultNotionalInputs(env?.ASTER_DEFAULT_NOTIONAL);
   updateRiskValue();
   updateLeverageValue();
   refreshPresetMeta();
@@ -4040,6 +4075,30 @@ leverageSlider?.addEventListener('change', () => {
   updateLeverageValue();
   markQuickConfigDirty();
   refreshPresetMeta();
+});
+
+inputDefaultNotional?.addEventListener('input', () => {
+  if (inputAiDefaultNotional) {
+    inputAiDefaultNotional.value = inputDefaultNotional.value;
+  }
+  markQuickConfigDirty();
+});
+inputDefaultNotional?.addEventListener('change', () => {
+  if (inputAiDefaultNotional) {
+    inputAiDefaultNotional.value = inputDefaultNotional.value;
+  }
+  markQuickConfigDirty();
+});
+
+inputAiDefaultNotional?.addEventListener('input', () => {
+  if (inputDefaultNotional) {
+    inputDefaultNotional.value = inputAiDefaultNotional.value;
+  }
+});
+inputAiDefaultNotional?.addEventListener('change', () => {
+  if (inputDefaultNotional) {
+    inputDefaultNotional.value = inputAiDefaultNotional.value;
+  }
 });
 
 if (autoScrollToggles.length > 0) {

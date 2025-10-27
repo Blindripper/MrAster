@@ -305,6 +305,16 @@
             </label>
             <p class="ai-config-panel-hint">Choose the OpenAI foundation model that powers live analysis.</p>
           </div>
+          <div class="ai-config-panel">
+            <h3>Baseline stake</h3>
+            <label>
+              <span>Baseline notional per trade (USDT)</span>
+              <input id="input-ai-default-notional" type="number" min="0" step="0.01" placeholder="250" />
+            </label>
+            <p class="ai-config-panel-hint">
+              Defines <code>ASTER_DEFAULT_NOTIONAL</code>: the minimum USDT the AI targets per trade before applying its own multipliers or encountering risk-based limits.
+            </p>
+          </div>
         </div>
         <p class="ai-config-hint">When AI-Mode is active, the strategy engine continuously calibrates position sizing, leverage, protective stops, and FastTP with your chosen model while honoring the daily spend limit.</p>
       </section>
@@ -359,6 +369,18 @@
               <span>5× max</span>
             </div>
           </div>
+        </div>
+        <div class="quick-setup-baseline">
+          <label class="quick-setup-field" for="input-default-notional">
+            <span class="quick-setup-label">Baseline stake per trade (USDT)</span>
+            <div class="quick-setup-input">
+              <input id="input-default-notional" type="number" min="0" step="0.01" placeholder="250" />
+              <span class="quick-setup-unit">USDT</span>
+            </div>
+          </label>
+          <p class="quick-setup-field-hint">
+            Sets <code>ASTER_DEFAULT_NOTIONAL</code> — the baseline amount the bot aims to allocate to every trade before risk caps or multipliers adjust the final size.
+          </p>
         </div>
         <div class="preset-meta" id="preset-meta">
           <div class="preset-meta-block">
