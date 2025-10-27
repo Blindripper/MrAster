@@ -3554,35 +3554,6 @@ async function generateMemeCard(snapshot) {
   };
 }
 
-function openMemePreview(meme) {
-  const variants = meme?.variants || {};
-  const displayUrl = variants.high || variants.normal || meme?.dataUrl;
-  if (!displayUrl) return false;
-  const preview = window.open('', '_blank', 'width=960,height=1080');
-  if (!preview) {
-    return false;
-  }
-  preview.opener = null;
-
-  const downloadLinks = Object.entries(variants)
-    .filter(([, url]) => Boolean(url))
-    .map(
-      ([quality, url]) =>
-        `<a href="${url}" download="mraster-${meme.tier}-meme-${quality}.jpg" style="display:inline-flex;align-items:center;gap:10px;padding:12px 22px;border-radius:999px;background:#f5c46b;color:#0b0f16;text-decoration:none;font-weight:600;min-width:220px;justify-content:center;">Download ${quality}</a>`
-    )
-    .join('<div style="height:8px"></div>');
-
-  preview.document.write(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" /><title>MrAster Meme</title></head><body style="margin:0;background:#0b0f16;color:#f5c46b;font-family: 'Inter', 'Segoe UI', sans-serif;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:24px;padding:40px;">
-    <img src="${displayUrl}" alt="${meme.alt}" style="max-width:min(90vw,900px);height:auto;border-radius:28px;box-shadow:0 24px 62px rgba(0,0,0,0.55);" />
-    <p style="max-width:680px;text-align:center;line-height:1.6;">If the X composer did not attach the meme automatically, save it from here and upload it manually. Meme tier: <strong>${meme.tier.toUpperCase()}</strong>.</p>
-    <div style="display:flex;flex-direction:column;align-items:center;width:100%;max-width:340px;gap:8px;">
-      ${downloadLinks}
-    </div>
-  </body></html>`);
-  preview.document.close();
-  return true;
-}
-
 function openTweetComposer(text) {
   if (!text) return false;
   const url = new URL('https://twitter.com/intent/tweet');
@@ -3630,8 +3601,14 @@ async function shareMemeToX(meme, shareText) {
     files: [new File([blob], `mraster-${meme.tier || 'share'}.jpeg`, { type: blob.type || 'image/jpeg' })],
   };
 
-  if (navigator.canShare && !navigator.canShare(shareData)) {
-    return false;
+  if (typeof navigator.canShare === 'function') {
+    try {
+      if (!navigator.canShare(shareData)) {
+        console.warn('navigator.canShare reported files unsupported. Attempting share anyway.');
+      }
+    } catch (error) {
+      console.warn('navigator.canShare threw unexpectedly', error);
+    }
   }
 
   try {
@@ -3688,21 +3665,19 @@ async function handlePostToX(event) {
     ]);
 
     const composerOpened = openTweetComposer(shareText);
-    const memeOpened = openMemePreview(meme);
 
     if (clipboardSuccess && imageCopied) {
-      setShareFeedback('Post text and meme copied! The composer opened—paste the image if it does not appear automatically.');
+      setShareFeedback('Post text and meme copied! The composer opened—paste the image to attach it without downloading.');
     } else if (clipboardSuccess) {
-      setShareFeedback('Post text copied! A meme preview opened so you can attach it if needed.');
+      setShareFeedback('Post text copied! Use the composer to add the meme manually if it was not copied.');
+    } else if (imageCopied) {
+      setShareFeedback('Meme copied to your clipboard! Paste it into the composer and add your text manually.');
     } else {
       setShareFeedback('Compose window opened. Copy the stats manually if clipboard access is blocked.');
     }
 
     if (!composerOpened) {
       console.warn('Tweet composer window blocked');
-    }
-    if (!memeOpened) {
-      console.warn('Meme preview window blocked');
     }
   } catch (error) {
     console.error('Failed to prepare X post', error);
