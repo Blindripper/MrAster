@@ -65,6 +65,7 @@ const aiChatInput = document.getElementById('ai-chat-input');
 const aiChatStatus = document.getElementById('ai-chat-status');
 const chatKeyIndicator = document.getElementById('chat-key-indicator');
 const btnAnalyzeMarket = document.getElementById('btn-analyze-market');
+const btnTakeTradeProposals = document.getElementById('btn-take-proposals');
 const activePositionsCard = document.getElementById('active-positions-card');
 const activePositionsModeLabel = document.getElementById('active-positions-mode');
 const activePositionsWrapper = document.getElementById('active-positions-wrapper');
@@ -87,6 +88,7 @@ if (btnSaveConfig) btnSaveConfig.dataset.state = 'idle';
 if (btnSaveCredentials) btnSaveCredentials.dataset.state = 'idle';
 if (btnSaveAi) btnSaveAi.dataset.state = 'idle';
 if (btnApplyPreset) btnApplyPreset.dataset.state = 'idle';
+if (btnTakeTradeProposals) btnTakeTradeProposals.dataset.state = 'idle';
 
 const DEFAULT_BOT_STATUS = { running: false, pid: null, started_at: null, uptime_s: null };
 
@@ -1696,6 +1698,7 @@ let tradeViewportSyncHandle = null;
 let lastDecisionStats = null;
 const aiChatSubmit = aiChatForm ? aiChatForm.querySelector('button[type="submit"]') : null;
 let analyzeButtonDefaultLabel = btnAnalyzeMarket ? btnAnalyzeMarket.textContent : 'Analyze Market';
+let takeProposalsButtonDefaultLabel = getDefaultTakeProposalsLabel();
 let lastPnlChartPayload = null;
 let pnlModalHideTimer = null;
 let pnlModalFinalizeHandler = null;
@@ -1708,6 +1711,7 @@ let decisionModalFinalizeHandler = null;
 let decisionModalReturnTarget = null;
 const decisionReasonEvents = new Map();
 const DECISION_REASON_EVENT_LIMIT = 40;
+const tradeProposalRegistry = new Map();
 let heroMetricsSnapshot = {
   totalTrades: 0,
   totalPnl: 0,
@@ -1768,6 +1772,13 @@ function applyTranslations(lang) {
       ? translate('chat.analyzing', 'Analyzing…')
       : analyzeButtonDefaultLabel;
   }
+  takeProposalsButtonDefaultLabel = translate(
+    'chat.proposal.takeAll',
+    getDefaultTakeProposalsLabel(),
+    {},
+    targetLang
+  );
+  updateTakeProposalsButtonState();
   updateModeButtons();
   updateAiBudgetModeLabel();
   updateActivePositionsView();
@@ -1843,6 +1854,103 @@ function getDefaultAnalyzeLabel() {
   if (!btnAnalyzeMarket) return 'Analyze Market';
   const fallback = btnAnalyzeMarket.dataset.i18nDefault || btnAnalyzeMarket.textContent || 'Analyze Market';
   return fallback.trim() ? fallback : 'Analyze Market';
+}
+
+function getDefaultTakeProposalsLabel() {
+  if (!btnTakeTradeProposals) return 'Take trade proposals';
+  const fallback =
+    btnTakeTradeProposals.dataset.i18nDefault ||
+    btnTakeTradeProposals.textContent ||
+    'Take trade proposals';
+  const trimmed = fallback.trim();
+  return trimmed ? trimmed : 'Take trade proposals';
+}
+
+function getTakeProposalsWorkingLabel() {
+  return translate('chat.proposal.takeAll.pending', 'Queuing trade proposals…');
+}
+
+function getTakeProposalsHintLabel() {
+  return translate(
+    'chat.proposal.takeAll.hint',
+    'Ask the strategy AI to analyze the market to receive proposals.'
+  );
+}
+
+function getTakeProposalsSuccessLabel() {
+  return translate(
+    'chat.proposal.takeAll.success',
+    'All available trade proposals have been queued for execution.'
+  );
+}
+
+function getTakeProposalsEmptyLabel() {
+  return translate(
+    'chat.proposal.takeAll.empty',
+    'No trade proposals are waiting for execution.'
+  );
+}
+
+function registerTradeProposal(data) {
+  if (!data || !data.id) return;
+  const key = data.id;
+  const existing = tradeProposalRegistry.get(key) || {};
+  const merged = { ...existing, ...data };
+  tradeProposalRegistry.set(key, merged);
+  updateTakeProposalsButtonState();
+}
+
+function pruneTradeProposalRegistry(validList) {
+  if (!Array.isArray(validList)) {
+    return;
+  }
+  const validIds = new Set();
+  validList.forEach((item) => {
+    if (item && item.id) {
+      validIds.add(item.id);
+    }
+  });
+  Array.from(tradeProposalRegistry.keys()).forEach((key) => {
+    if (!validIds.has(key)) {
+      tradeProposalRegistry.delete(key);
+    }
+  });
+  updateTakeProposalsButtonState();
+}
+
+function getPendingTradeProposals() {
+  return Array.from(tradeProposalRegistry.values())
+    .filter((proposal) => {
+      const status = (proposal.status || '').toString().toLowerCase();
+      return !['queued', 'executed', 'completed'].includes(status);
+    })
+    .sort((a, b) => {
+      const aTs = Number(a.ts || a.queued_at || 0);
+      const bTs = Number(b.ts || b.queued_at || 0);
+      return aTs - bTs;
+    });
+}
+
+function updateTakeProposalsButtonState() {
+  if (!btnTakeTradeProposals) return;
+  const state = btnTakeTradeProposals.dataset.state || 'idle';
+  const hasPending = getPendingTradeProposals().length > 0;
+  if (state === 'working') {
+    btnTakeTradeProposals.disabled = true;
+    btnTakeTradeProposals.textContent = getTakeProposalsWorkingLabel();
+    btnTakeTradeProposals.removeAttribute('title');
+    return;
+  }
+  btnTakeTradeProposals.textContent = translate(
+    'chat.proposal.takeAll',
+    takeProposalsButtonDefaultLabel || getDefaultTakeProposalsLabel()
+  );
+  btnTakeTradeProposals.disabled = !hasPending;
+  if (hasPending) {
+    btnTakeTradeProposals.removeAttribute('title');
+  } else {
+    btnTakeTradeProposals.title = getTakeProposalsHintLabel();
+  }
 }
 
 function updateLanguageButtonsState() {
@@ -4964,6 +5072,7 @@ function appendChatMessage(role, message, meta = {}) {
 
 function appendTradeProposalCard(proposal) {
   if (!aiChatMessages || !proposal || !proposal.id) return;
+  registerTradeProposal(proposal);
   const updateCardState = (cardEl, data) => {
     if (!cardEl || !data) return;
     const statusText = (data.status || '').toString().toLowerCase();
@@ -4979,6 +5088,7 @@ function appendTradeProposalCard(proposal) {
         actionBtn.textContent = translate('chat.proposal.queued', 'Manual trade queued');
       }
     }
+    registerTradeProposal(data);
   };
   const existing = aiChatMessages.querySelector(
     `.ai-trade-proposal[data-proposal-id="${proposal.id}"]`
@@ -5148,23 +5258,7 @@ function appendTradeProposalCard(proposal) {
     statusEl.textContent = translate('chat.proposal.statusExecuting', 'Sending proposal to the bot…');
     setChatStatus(translate('chat.proposal.statusExecuting', 'Sending proposal to the bot…'));
     try {
-      const res = await fetch('/api/ai/proposals/execute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ proposalId: proposal.id }),
-      });
-      const text = await res.text();
-      let data = {};
-      try {
-        data = text ? JSON.parse(text) : {};
-      } catch (parseErr) {
-        data = {};
-      }
-      if (!res.ok) {
-        const detail = data && typeof data === 'object' ? data.detail : null;
-        throw new Error(detail || 'Failed to queue trade proposal');
-      }
-      const payload = data && typeof data === 'object' ? data.proposal || {} : {};
+      const payload = await executeTradeProposal(proposal.id);
       updateCardState(card, payload);
       if (!card.classList.contains('queued')) {
         card.classList.add('queued');
@@ -6763,6 +6857,28 @@ async function persistPaperMode(enabled) {
   syncPaperModeFromEnv(currentConfig.env);
 }
 
+async function executeTradeProposal(proposalId) {
+  const res = await fetch('/api/ai/proposals/execute', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ proposalId }),
+  });
+  const text = await res.text();
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch (parseErr) {
+    data = {};
+  }
+  if (!res.ok) {
+    const detail = data && typeof data === 'object' ? data.detail : null;
+    throw new Error(detail || translate('chat.proposal.statusFailed', 'Failed to queue trade proposal.'));
+  }
+  const payload = data && typeof data === 'object' ? data.proposal || {} : {};
+  registerTradeProposal(payload);
+  return payload;
+}
+
 async function downloadTradeHistory() {
   try {
     let snapshot = latestTradesSnapshot;
@@ -6816,12 +6932,44 @@ async function loadTrades() {
     renderAiBudget(data.ai_budget);
     renderAiActivity(data.ai_activity);
     renderActivePositions(data.open);
-    if (Array.isArray(data.ai_trade_proposals)) {
-      data.ai_trade_proposals.forEach((proposal) => appendTradeProposalCard(proposal));
-    }
+    const proposals = Array.isArray(data.ai_trade_proposals) ? data.ai_trade_proposals : [];
+    proposals.forEach((proposal) => appendTradeProposalCard(proposal));
+    pruneTradeProposalRegistry(proposals);
   } catch (err) {
     console.warn(err);
   }
+}
+
+async function handleTakeTradeProposals() {
+  if (!btnTakeTradeProposals) return;
+  const pending = getPendingTradeProposals();
+  if (pending.length === 0) {
+    setChatStatus(getTakeProposalsEmptyLabel());
+    updateTakeProposalsButtonState();
+    return;
+  }
+  btnTakeTradeProposals.dataset.state = 'working';
+  updateTakeProposalsButtonState();
+  setChatStatus(getTakeProposalsWorkingLabel());
+  const errors = [];
+  for (const proposal of pending) {
+    try {
+      const payload = await executeTradeProposal(proposal.id);
+      appendTradeProposalCard(payload);
+    } catch (err) {
+      errors.push(err);
+      break;
+    }
+  }
+  btnTakeTradeProposals.dataset.state = 'idle';
+  updateTakeProposalsButtonState();
+  if (errors.length > 0) {
+    const firstError = errors[0];
+    const message = (firstError?.message || '').trim() || getTakeProposalsHintLabel();
+    setChatStatus(message);
+    return;
+  }
+  setChatStatus(getTakeProposalsSuccessLabel());
 }
 
 async function waitForBotState(targetRunning, options = {}) {
@@ -7140,6 +7288,10 @@ if (btnAnalyzeMarket) {
     }
   });
 }
+
+btnTakeTradeProposals?.addEventListener('click', handleTakeTradeProposals);
+
+updateTakeProposalsButtonState();
 
 if (aiChatForm && aiChatInput) {
   aiChatForm.addEventListener('submit', async (event) => {

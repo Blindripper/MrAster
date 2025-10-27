@@ -1127,12 +1127,12 @@ class AIChatEngine:
     @staticmethod
     def _ensure_analysis_follow_up(text: str) -> str:
         follow_up = (
-            "Um einen Trade für dich zu platzieren, klicke auf \"Take Trade proposals\" oder gib mir Symbol, Richtung "
-            "(LONG/SHORT), Einstieg (Markt oder Limitpreis), Stop-Loss, Take-Profit sowie die gewünschte Positionsgröße bzw. "
-            "das Notional. Soll der Bot auf Basis dieser Analyse Trades ausführen, sobald du mir diese Details gegeben hast?"
+            "To place a trade for you, click \"Take trade proposals\" or provide the symbol, direction (LONG/SHORT), "
+            "entry plan (market or limit with price), stop-loss, take-profit, and desired position size or notional. "
+            "Should the bot execute trades based on this analysis once you share those details?"
         )
         normalized = text.lower()
-        if "soll der bot" in normalized and "take trade proposals" in normalized:
+        if "should the bot" in normalized and "take trade proposals" in normalized:
             return text
         if not text.strip():
             return follow_up
