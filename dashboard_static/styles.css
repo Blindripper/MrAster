@@ -83,35 +83,50 @@ body::after {
 .language-button {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0;
   border: none;
-  border-radius: 999px;
-  padding: 0.35rem 0.7rem;
+  border-radius: 50%;
   background: transparent;
   color: inherit;
-  font-size: 0.85rem;
-  font-weight: 500;
   cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease;
-}
-
-.language-button .language-label {
-  white-space: nowrap;
-}
-
-.language-button.active {
-  background: rgba(245, 196, 107, 0.16);
-  color: var(--accent);
+  transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .language-button:hover,
 .language-button:focus-visible {
   background: rgba(245, 196, 107, 0.1);
   outline: none;
+  transform: translateY(-1px);
 }
 
 .language-button:focus-visible {
   box-shadow: 0 0 0 2px rgba(245, 196, 107, 0.35);
+}
+
+.language-button.active {
+  background: rgba(245, 196, 107, 0.16);
+  box-shadow: 0 0 0 1px rgba(245, 196, 107, 0.35);
+}
+
+.language-flag {
+  width: 1.9rem;
+  height: 1.3rem;
+  border-radius: 0.35rem;
+  box-shadow: 0 2px 8px rgba(5, 6, 15, 0.35);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.language-flag-en {
+  background-image: url('./flags/en.svg');
+}
+
+.language-flag-ru {
+  background-image: url('./flags/ru.svg');
 }
 
 .market-ticker {
