@@ -1020,15 +1020,45 @@ class AITradeAdvisor:
                 count += 1
         return count
 
-    def _pending_stub(self, fallback: Dict[str, Any], reason: str, note: str) -> Dict[str, Any]:
+    def _pending_stub(
+        self,
+        fallback: Dict[str, Any],
+        reason: str,
+        note: str,
+        *,
+        throttle_key: Optional[str] = None,
+        pending: bool = True,
+    ) -> Dict[str, Any]:
         plan = {**fallback}
         plan["take"] = False
         plan["decision"] = "skip"
         plan["decision_reason"] = reason
         plan["decision_note"] = note
         plan.setdefault("explanation", "")
-        plan["_pending"] = True
+        if pending:
+            plan["_pending"] = True
+        else:
+            plan.pop("_pending", None)
+        if throttle_key:
+            plan["_pending_key"] = throttle_key
         return plan
+
+    def _mark_pending_notified(self, throttle_key: str) -> bool:
+        info = self._pending_requests.get(throttle_key)
+        if not info:
+            return False
+        if info.get("notified"):
+            return False
+        info["notified"] = True
+        return True
+
+    def should_log_pending(self, plan: Optional[Dict[str, Any]]) -> bool:
+        if not isinstance(plan, dict):
+            return True
+        throttle_key = plan.get("_pending_key")
+        if not isinstance(throttle_key, str) or not throttle_key:
+            return True
+        return self._mark_pending_notified(throttle_key)
 
     def _estimate_tokens(self, text: str) -> float:
         if not text:
@@ -1103,7 +1133,12 @@ class AITradeAdvisor:
                         return "fallback", fallback
                 else:
                     info["ready_after"] = now + max(0.5, AI_GLOBAL_COOLDOWN or 0.5)
-            return "pending", self._pending_stub(fallback, f"{kind}_pending", note)
+            return "pending", self._pending_stub(
+                fallback,
+                f"{kind}_pending",
+                note,
+                throttle_key=throttle_key,
+            )
         if isinstance(future, Future) and future.done():
             self._remove_pending_entry(throttle_key)
             try:
@@ -1123,10 +1158,17 @@ class AITradeAdvisor:
                 fallback,
                 f"{kind}_timeout",
                 "AI request timed out; using fallback heuristics.",
+                throttle_key=throttle_key,
+                pending=False,
             )
             self._recent_plan_store(throttle_key, fallback, now)
             return "timeout", timeout_plan
-        return "pending", self._pending_stub(fallback, f"{kind}_pending", note)
+        return "pending", self._pending_stub(
+            fallback,
+            f"{kind}_pending",
+            note,
+            throttle_key=throttle_key,
+        )
 
     def _coerce_float(self, value: Any) -> Optional[float]:
         if isinstance(value, bool):
@@ -1791,6 +1833,7 @@ class AITradeAdvisor:
                 "queued_at": now,
                 "ready_after": now + max(0.5, AI_GLOBAL_COOLDOWN or 0.5),
                 "note": "Queued for AI planning",
+                "notified": False,
             }
             self._pending_requests[throttle_key] = pending_info
             self._register_pending_key(throttle_key)
@@ -1798,6 +1841,7 @@ class AITradeAdvisor:
                 fallback,
                 "plan_pending",
                 "Queued for AI planning",
+                throttle_key=throttle_key,
             )
 
         future = self._dispatch_request(
@@ -1819,6 +1863,7 @@ class AITradeAdvisor:
             "estimate": estimate,
             "queued_at": now,
             "dispatched_at": now,
+            "notified": False,
         }
         self._register_pending_key(throttle_key)
         self._last_global_request = now
@@ -1826,6 +1871,7 @@ class AITradeAdvisor:
             fallback,
             "plan_pending",
             "Waiting for AI plan response",
+            throttle_key=throttle_key,
         )
 
     def plan_trend_trade(
@@ -2003,6 +2049,7 @@ class AITradeAdvisor:
                 "queued_at": now,
                 "ready_after": now + max(0.5, AI_GLOBAL_COOLDOWN or 0.5),
                 "note": "Queued for AI planning",
+                "notified": False,
             }
             self._pending_requests[throttle_key] = pending_info
             self._register_pending_key(throttle_key)
@@ -2010,6 +2057,7 @@ class AITradeAdvisor:
                 fallback,
                 "trend_pending",
                 "Queued for AI planning",
+                throttle_key=throttle_key,
             )
 
         future = self._dispatch_request(
@@ -2031,6 +2079,7 @@ class AITradeAdvisor:
             "estimate": estimate,
             "queued_at": now,
             "dispatched_at": now,
+            "notified": False,
         }
         self._register_pending_key(throttle_key)
         self._last_global_request = now
@@ -2038,6 +2087,7 @@ class AITradeAdvisor:
             fallback,
             "trend_pending",
             "Waiting for AI plan response",
+            throttle_key=throttle_key,
         )
 
     def generate_postmortem(self, trade: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -3722,19 +3772,20 @@ class Bot:
                 if isinstance(trend_side, str) and trend_side.strip():
                     decision_summary["side"] = trend_side.strip().upper()
                 if plan.get("_pending"):
-                    self._log_ai_activity(
-                        "query",
-                        f"AI trend scan requested for {symbol}",
-                        body="Consulting the strategy AI for an autonomous opportunity.",
-                        data={
-                            "symbol": symbol,
-                            "origin": "trend",
-                            "sentinel_label": sentinel_info.get("label"),
-                            "event_risk": float(sentinel_info.get("event_risk", 0.0) or 0.0),
-                            "hype_score": float(sentinel_info.get("hype_score", 0.0) or 0.0),
-                        },
-                        force=True,
-                    )
+                    if self.ai_advisor.should_log_pending(plan):
+                        self._log_ai_activity(
+                            "query",
+                            f"AI trend scan requested for {symbol}",
+                            body="Consulting the strategy AI for an autonomous opportunity.",
+                            data={
+                                "symbol": symbol,
+                                "origin": "trend",
+                                "sentinel_label": sentinel_info.get("label"),
+                                "event_risk": float(sentinel_info.get("event_risk", 0.0) or 0.0),
+                                "hype_score": float(sentinel_info.get("hype_score", 0.0) or 0.0),
+                            },
+                            force=True,
+                        )
                     return
                 if not bool(plan.get("take", False)):
                     ctx["ai_plan_origin"] = plan_origin
@@ -3805,20 +3856,21 @@ class Bot:
                 }
                 explanation = plan.get("explanation")
                 if plan.get("_pending"):
-                    self._log_ai_activity(
-                        "query",
-                        f"AI review requested for {symbol}",
-                        body=f"Consulting the strategy AI for the {sig} signal.",
-                        data={
-                            "symbol": symbol,
-                            "side": sig,
-                            "origin": "signal",
-                            "sentinel_label": sentinel_info.get("label"),
-                            "event_risk": float(sentinel_info.get("event_risk", 0.0) or 0.0),
-                            "hype_score": float(sentinel_info.get("hype_score", 0.0) or 0.0),
-                        },
-                        force=True,
-                    )
+                    if self.ai_advisor.should_log_pending(plan):
+                        self._log_ai_activity(
+                            "query",
+                            f"AI review requested for {symbol}",
+                            body=f"Consulting the strategy AI for the {sig} signal.",
+                            data={
+                                "symbol": symbol,
+                                "side": sig,
+                                "origin": "signal",
+                                "sentinel_label": sentinel_info.get("label"),
+                                "event_risk": float(sentinel_info.get("event_risk", 0.0) or 0.0),
+                                "hype_score": float(sentinel_info.get("hype_score", 0.0) or 0.0),
+                            },
+                            force=True,
+                        )
                     return
                 ctx["ai_plan_origin"] = plan_origin
                 decision_summary["side"] = sig
