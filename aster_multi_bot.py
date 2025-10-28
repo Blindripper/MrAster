@@ -937,13 +937,14 @@ class AITradeAdvisor:
         self._temperature_supported = True
         self._temperature_override = self._resolve_temperature()
         self._cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
-        self._recent_plans: "OrderedDict[str, Tuple[float, Dict[str, Any]]]" = OrderedDict()
+        self._recent_plans: "OrderedDict[str, Tuple[float, Dict[str, Any], bool]]" = OrderedDict()
         self._pending_requests: Dict[str, Dict[str, Any]] = {}
         self._pending_order: deque[str] = deque()
         self._min_interval = max(0.0, AI_MIN_INTERVAL_SECONDS)
         self._last_global_request = 0.0
         self._plan_timeout = AI_PLAN_TIMEOUT
         self._pending_limit = AI_PENDING_LIMIT
+        self._plan_delivery_ttl = max(self._min_interval * 3.0, 90.0)
         self._executor: Optional[ThreadPoolExecutor] = None
         if self.enabled and AI_CONCURRENCY > 0:
             self._executor = ThreadPoolExecutor(max_workers=AI_CONCURRENCY)
@@ -978,7 +979,8 @@ class AITradeAdvisor:
                     ts_val = float(ts)
                 except Exception:
                     ts_val = time.time()
-                self._recent_plans[key] = (ts_val, copy.deepcopy(plan))
+                delivered = bool(entry.get("delivered", False))
+                self._recent_plans[key] = (ts_val, copy.deepcopy(plan), delivered)
         while len(self._recent_plans) > self.RECENT_PLAN_LIMIT:
             self._recent_plans.popitem(last=False)
 
@@ -989,8 +991,15 @@ class AITradeAdvisor:
         for key, value in list(self._cache.items())[-self.CACHE_LIMIT:]:
             cache_dump.append({"key": key, "plan": copy.deepcopy(value)})
         recent_dump: List[Dict[str, Any]] = []
-        for key, (ts, plan) in list(self._recent_plans.items())[-self.RECENT_PLAN_LIMIT:]:
-            recent_dump.append({"key": key, "ts": float(ts), "plan": copy.deepcopy(plan)})
+        for key, (ts, plan, delivered) in list(self._recent_plans.items())[-self.RECENT_PLAN_LIMIT:]:
+            recent_dump.append(
+                {
+                    "key": key,
+                    "ts": float(ts),
+                    "plan": copy.deepcopy(plan),
+                    "delivered": bool(delivered),
+                }
+            )
         self.state["ai_plan_cache"] = cache_dump
         self.state["ai_recent_plans"] = recent_dump
 
@@ -1254,7 +1263,7 @@ class AITradeAdvisor:
             plan_ready = self._apply_plan_overrides(fallback, parsed)
         if cache_key_ready:
             self._cache_store(str(cache_key_ready), plan_ready)
-        self._recent_plan_store(throttle_key, plan_ready, now)
+        self._recent_plan_store(throttle_key, plan_ready, now, delivered=False)
         return plan_ready
 
     def flush_pending(self) -> None:
@@ -1388,18 +1397,30 @@ class AITradeAdvisor:
             return None
         if now is None:
             now = time.time()
-        ts, plan = self._recent_plans[key]
-        if now - ts > self._min_interval:
+        ts, plan, delivered = self._recent_plans[key]
+        age = now - ts
+        if age > self._plan_delivery_ttl:
+            self._recent_plans.pop(key, None)
+            return None
+        if delivered and age > self._min_interval:
             return None
         self._recent_plans.move_to_end(key)
+        if not delivered:
+            self._recent_plans[key] = (ts, plan, True)
+            try:
+                self._persist_state()
+            except Exception:
+                pass
         return copy.deepcopy(plan)
 
-    def _recent_plan_store(self, key: str, plan: Dict[str, Any], now: Optional[float] = None) -> None:
+    def _recent_plan_store(
+        self, key: str, plan: Dict[str, Any], now: Optional[float] = None, *, delivered: bool = True
+    ) -> None:
         if self._min_interval <= 0:
             return
         if now is None:
             now = time.time()
-        self._recent_plans[key] = (now, copy.deepcopy(plan))
+        self._recent_plans[key] = (now, copy.deepcopy(plan), bool(delivered))
         self._recent_plans.move_to_end(key)
         while len(self._recent_plans) > self.RECENT_PLAN_LIMIT:
             self._recent_plans.popitem(last=False)
@@ -1416,7 +1437,7 @@ class AITradeAdvisor:
         except Exception:
             # Persistence issues should not block delivering the plan.
             pass
-        _, plan = bundle
+        _, plan, _ = bundle
         return copy.deepcopy(plan)
 
     def consume_signal_plan(self, symbol: str) -> Optional[Tuple[str, Dict[str, Any]]]:
@@ -1429,11 +1450,14 @@ class AITradeAdvisor:
         selected_key: Optional[str] = None
         selected_side: Optional[str] = None
         selected_plan: Optional[Dict[str, Any]] = None
-        for key, (ts, plan) in list(self._recent_plans.items()):
+        for key, (ts, plan, delivered) in list(self._recent_plans.items()):
             if not key.startswith(prefix):
                 continue
-            if now - ts > self._min_interval:
+            age = now - ts
+            if age > self._plan_delivery_ttl:
                 self._recent_plans.pop(key, None)
+                continue
+            if delivered and age > self._min_interval:
                 continue
             if not isinstance(plan, dict):
                 continue
