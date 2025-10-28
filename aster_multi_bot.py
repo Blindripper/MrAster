@@ -3419,19 +3419,6 @@ class Bot:
                 return
             price_for_plan = mid_px if mid_px > 0 else price
             if sig == "NONE":
-                self._log_ai_activity(
-                    "query",
-                    f"AI trend scan requested for {symbol}",
-                    body="Consulting the strategy AI for an autonomous opportunity.",
-                    data={
-                        "symbol": symbol,
-                        "origin": "trend",
-                        "sentinel_label": sentinel_info.get("label"),
-                        "event_risk": float(sentinel_info.get("event_risk", 0.0) or 0.0),
-                        "hype_score": float(sentinel_info.get("hype_score", 0.0) or 0.0),
-                    },
-                    force=True,
-                )
                 plan = self.ai_advisor.plan_trend_trade(
                     symbol,
                     price_for_plan,
@@ -3458,11 +3445,47 @@ class Bot:
                     "sentinel_label": sentinel_info.get("label"),
                 }
                 explanation = plan.get("explanation")
+                trend_side = plan.get("side")
+                if isinstance(trend_side, str) and trend_side.strip():
+                    decision_summary["side"] = trend_side.strip().upper()
                 if plan.get("_pending"):
+                    self._log_ai_activity(
+                        "query",
+                        f"AI trend scan requested for {symbol}",
+                        body="Consulting the strategy AI for an autonomous opportunity.",
+                        data={
+                            "symbol": symbol,
+                            "origin": "trend",
+                            "sentinel_label": sentinel_info.get("label"),
+                            "event_risk": float(sentinel_info.get("event_risk", 0.0) or 0.0),
+                            "hype_score": float(sentinel_info.get("hype_score", 0.0) or 0.0),
+                        },
+                        force=True,
+                    )
                     return
                 if not bool(plan.get("take", False)):
+                    ctx["ai_plan_origin"] = plan_origin
                     if self.decision_tracker:
                         self.decision_tracker.record_rejection("ai_trend_skip", force=True)
+                    if isinstance(explanation, str) and explanation.strip():
+                        self._log_ai_activity(
+                            "analysis",
+                            f"{symbol} trend scan analysed",
+                            body=explanation,
+                            data={"symbol": symbol, **decision_summary},
+                        )
+                    note_body = (
+                        plan.get("decision_note")
+                        or plan.get("decision_reason")
+                        or (explanation if isinstance(explanation, str) else None)
+                    )
+                    self._log_ai_activity(
+                        "decision",
+                        f"AI declined {symbol}",
+                        body=note_body,
+                        data={"symbol": symbol, **decision_summary},
+                        force=True,
+                    )
                     return
                 side = str(plan.get("side") or "").upper()
                 if side not in {"BUY", "SELL"}:
@@ -3481,20 +3504,6 @@ class Bot:
                         data={"symbol": symbol, "side": sig, **decision_summary},
                     )
             else:
-                self._log_ai_activity(
-                    "query",
-                    f"AI review requested for {symbol}",
-                    body=f"Consulting the strategy AI for the {sig} signal.",
-                    data={
-                        "symbol": symbol,
-                        "side": sig,
-                        "origin": "signal",
-                        "sentinel_label": sentinel_info.get("label"),
-                        "event_risk": float(sentinel_info.get("event_risk", 0.0) or 0.0),
-                        "hype_score": float(sentinel_info.get("hype_score", 0.0) or 0.0),
-                    },
-                    force=True,
-                )
                 plan = self.ai_advisor.plan_trade(
                     symbol,
                     sig,
@@ -3523,13 +3532,46 @@ class Bot:
                 }
                 explanation = plan.get("explanation")
                 if plan.get("_pending"):
-                    return
-                if not bool(plan.get("take", True)):
-                    if self.decision_tracker:
-                        self.decision_tracker.record_rejection("ai_decision", force=True)
+                    self._log_ai_activity(
+                        "query",
+                        f"AI review requested for {symbol}",
+                        body=f"Consulting the strategy AI for the {sig} signal.",
+                        data={
+                            "symbol": symbol,
+                            "side": sig,
+                            "origin": "signal",
+                            "sentinel_label": sentinel_info.get("label"),
+                            "event_risk": float(sentinel_info.get("event_risk", 0.0) or 0.0),
+                            "hype_score": float(sentinel_info.get("hype_score", 0.0) or 0.0),
+                        },
+                        force=True,
+                    )
                     return
                 ctx["ai_plan_origin"] = plan_origin
                 decision_summary["side"] = sig
+                if not bool(plan.get("take", True)):
+                    if self.decision_tracker:
+                        self.decision_tracker.record_rejection("ai_decision", force=True)
+                    if isinstance(explanation, str) and explanation.strip():
+                        self._log_ai_activity(
+                            "analysis",
+                            f"{symbol} {sig} signal analysed",
+                            body=explanation,
+                            data={"symbol": symbol, "side": sig, **decision_summary},
+                        )
+                    note_body = (
+                        plan.get("decision_note")
+                        or plan.get("decision_reason")
+                        or (explanation if isinstance(explanation, str) else None)
+                    )
+                    self._log_ai_activity(
+                        "decision",
+                        f"AI rejected {symbol}",
+                        body=note_body,
+                        data={"symbol": symbol, "side": sig, **decision_summary},
+                        force=True,
+                    )
+                    return
                 if isinstance(explanation, str) and explanation.strip():
                     self._log_ai_activity(
                         "analysis",
