@@ -998,6 +998,8 @@ class AITradeAdvisor:
         if not self._pending_order:
             return
         stale: List[str] = []
+        completed: List[str] = []
+        now = time.time()
         for key in list(self._pending_order):
             info = self._pending_requests.get(key)
             if not info:
@@ -1005,12 +1007,31 @@ class AITradeAdvisor:
                 continue
             future = info.get("future")
             if isinstance(future, Future) and future.done():
-                stale.append(key)
+                completed.append(key)
                 continue
             if info.get("cancelled"):
                 stale.append(key)
+        for key in completed:
+            info = self._pending_requests.get(key)
+            if not info:
+                continue
+            fallback = info.get("fallback")
+            if not isinstance(fallback, dict):
+                stale.append(key)
+                continue
+            status, payload = self._process_pending_request(key, fallback, now)
+            if status != "response":
+                stale.append(key)
+                continue
+            bundle = payload or {}
+            response_text = bundle.get("response") if isinstance(bundle, dict) else None
+            meta = bundle.get("info") if isinstance(bundle, dict) else info
+            self._finalize_response(key, fallback, meta, response_text, now)
         for key in stale:
-            self._pending_requests.pop(key, None)
+            entry = self._pending_requests.pop(key, None)
+            future = entry.get("future") if isinstance(entry, dict) else None
+            if isinstance(future, Future) and not future.done():
+                future.cancel()
             try:
                 self._pending_order.remove(key)
             except ValueError:
