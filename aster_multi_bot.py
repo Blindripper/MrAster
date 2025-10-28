@@ -2700,6 +2700,8 @@ class Strategy:
             )
         ctx_base.update({"slope_htf": float(slope_htf), "expected_r": float(expected_R)})
 
+        filtered_signal = sig
+
         if sig == "BUY":
             if supertrend_gate_enabled and supertrend_dir_last < 0.0:
                 ctx_base["supertrend_conflict"] = float(supertrend_dir_last)
@@ -2758,7 +2760,42 @@ class Strategy:
                 pass
 
         if sig == "NONE":
-            return self._skip("filtered", symbol, ctx=ctx_base, price=mid, atr=atr)
+            filter_meta: Dict[str, str] = {}
+
+            st_conflict = ctx_base.get("supertrend_conflict")
+            if isinstance(st_conflict, (int, float)):
+                direction = "bearish" if st_conflict < 0 else "bullish"
+                filter_meta["supertrend_gate"] = f"{direction} ({st_conflict:+.2f})"
+
+            stoch_over = ctx_base.get("stoch_rsi_overbought")
+            if isinstance(stoch_over, (int, float)):
+                filter_meta["stoch_rsi"] = f"{float(stoch_over):.1f} (too high)"
+
+            stoch_under = ctx_base.get("stoch_rsi_oversold")
+            if isinstance(stoch_under, (int, float)):
+                filter_meta["stoch_rsi"] = f"{float(stoch_under):.1f} (too low)"
+
+            bb_ext = ctx_base.get("bb_overextended")
+            if isinstance(bb_ext, (int, float)):
+                position = float(bb_ext)
+                side = "top" if position >= 0.5 else "bottom"
+                filter_meta["bollinger_pos"] = f"{position:.2f} (near {side})"
+
+            extra_detail: Optional[Dict[str, str]] = None
+            if filter_meta:
+                extra_detail = {f"filtered_{k}": v for k, v in filter_meta.items()}
+            if filtered_signal in ("BUY", "SELL"):
+                extra_detail = extra_detail or {}
+                extra_detail["filtered_signal"] = filtered_signal
+
+            return self._skip(
+                "filtered",
+                symbol,
+                extra_detail,
+                ctx=ctx_base,
+                price=mid,
+                atr=atr,
+            )
 
         qv_score, t24, quote_volume = self._get_qv_score(symbol)
         funding = 0.0
