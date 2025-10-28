@@ -2591,6 +2591,7 @@ const DECISION_REASON_LABELS = {
   funding_long: 'Funding too expensive for longs',
   funding_short: 'Funding too expensive for shorts',
   policy_filter: 'AI filter rejected the setup',
+  filtered: 'Signal blocked by safety filters',
   position_size: 'Position size below minimum',
   order_failed: 'Order could not be placed',
   sentinel_veto: 'Sentinel vetoed trade',
