@@ -4106,11 +4106,29 @@ function humanizeLogLine(line, fallbackLevel = 'info') {
   const aiFeedMatch = parsed.message?.match(/^AI_FEED\s+(.*)$/);
   if (aiFeedMatch) {
     const detail = aiFeedMatch[1]?.trim();
-    text = detail ? `AI activity updated: ${detail}` : 'AI activity updated.';
-    label = 'AI feed';
-    severity = 'system';
-    relevant = false;
-    return { text, label, severity, relevant, parsed, refreshTrades: true };
+    let feedKind = '';
+    let headline = detail || '';
+    if (detail) {
+      const parts = detail.split('|').map((part) => part.trim()).filter(Boolean);
+      if (parts.length >= 2) {
+        [feedKind] = parts;
+        headline = parts.slice(1).join(' | ');
+      }
+    }
+    const normalizedKind = feedKind.toLowerCase();
+    const symbolMatch = headline.match(/\b([A-Z]{3,}(?:USDT|USDC|USD|BTC|ETH))\b/);
+    const symbol = symbolMatch ? symbolMatch[1] : undefined;
+    if (normalizedKind === 'query') {
+      text = headline ? `Sent to AI: ${headline}` : 'Sent to the strategy AI for review.';
+      label = 'AI request';
+      severity = 'info';
+    } else {
+      text = headline ? `AI activity: ${headline}` : 'AI activity updated.';
+      label = 'AI feed';
+      severity = 'system';
+    }
+    relevant = true;
+    return { text, label, severity, relevant, parsed, symbol, refreshTrades: true };
   }
 
   const bucketLabels = { S: 'small', M: 'medium', L: 'large' };
