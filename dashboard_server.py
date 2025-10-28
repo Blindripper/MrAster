@@ -1248,6 +1248,13 @@ class AIChatEngine:
                 continue
 
             symbol: Optional[str] = None
+            symbol_line_match = re.search(r"\*\*Symbol\*\*:\s*([A-Z0-9:_\-/]+)", block, re.IGNORECASE)
+            if symbol_line_match:
+                raw_symbol = symbol_line_match.group(1).strip()
+                if raw_symbol:
+                    sanitized = re.sub(r"[^A-Z0-9:_-]", "", raw_symbol.upper())
+                    if sanitized:
+                        symbol = sanitized.replace("/", "")
             try:
                 symbol_candidates = re.findall(r"\b([A-Z]{2,}[A-Z0-9]{0,})\b", thesis_line)
             except re.error:
