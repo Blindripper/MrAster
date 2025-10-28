@@ -1330,6 +1330,23 @@ class AIChatEngine:
             if note and len(note) > 320:
                 note = note[:317] + "…"
 
+            timeframe: Optional[str] = None
+            timeframe_match = re.search(r"Time\s*-?\s*frame\*\*:\s*([^\n]+)", block, re.IGNORECASE)
+            if timeframe_match:
+                raw_timeframe = timeframe_match.group(1)
+                if isinstance(raw_timeframe, str):
+                    cleaned = raw_timeframe.strip()
+                    if cleaned:
+                        timeframe = cleaned
+            else:
+                horizon_match = re.search(r"(Time|Holding)\s*Horizon\*\*:\s*([^\n]+)", block, re.IGNORECASE)
+                if horizon_match:
+                    raw_timeframe = horizon_match.group(2)
+                    if isinstance(raw_timeframe, str):
+                        cleaned = raw_timeframe.strip()
+                        if cleaned:
+                            timeframe = cleaned
+
             proposal: Dict[str, Any] = {
                 "type": "propose_trade",
                 "symbol": symbol,
@@ -1340,7 +1357,7 @@ class AIChatEngine:
                 "stop_loss": stop_loss,
                 "take_profit": take_profit,
                 "notional": default_notional,
-                "timeframe": None,
+                "timeframe": timeframe,
                 "confidence": None,
                 "note": note,
             }
@@ -1445,11 +1462,26 @@ class AIChatEngine:
         if notional is None and size_multiplier is None:
             return None
 
-        timeframe = raw.get("timeframe") or raw.get("horizon") or raw.get("window")
-        if isinstance(timeframe, str):
-            timeframe = timeframe.strip()
-        else:
-            timeframe = None
+        timeframe = None
+        timeframe_candidates = (
+            raw.get("timeframe"),
+            raw.get("time_frame"),
+            raw.get("timeFrame"),
+            raw.get("time_horizon"),
+            raw.get("time horizon"),
+            raw.get("horizon"),
+            raw.get("window"),
+            raw.get("holding_period"),
+            raw.get("holding_horizon"),
+            raw.get("duration"),
+        )
+        for candidate in timeframe_candidates:
+            if candidate is None:
+                continue
+            text = str(candidate).strip()
+            if text:
+                timeframe = text
+                break
 
         note = raw.get("note") or raw.get("thesis") or raw.get("rationale")
         if isinstance(note, str):
