@@ -199,6 +199,13 @@ const TRANSLATIONS = {
       'Здесь отображается телеметрия стратегии и автономные действия ИИ. Разговоры перенесены в отдельный чат дашборда.',
     'ai.feed.disabled': 'Включите AI-режим, чтобы увидеть ленту активности.',
     'ai.feed.empty': 'Автономные решения появятся здесь в реальном времени по мере событий.',
+    'ai.feed.reasonLabel': 'Причина',
+    'ai.feed.responseLabel': 'Последний ответ',
+    'ai.feed.awaitingResponse': 'Ожидаем ответ ИИ…',
+    'ai.feed.reason.plan_pending': 'Запрошен план ИИ',
+    'ai.feed.reason.plan_timeout': 'План ИИ не ответил вовремя',
+    'ai.feed.reason.trend_pending': 'Запрошен тренд-скан ИИ',
+    'ai.feed.reason.trend_timeout': 'Тренд-скан не ответил вовремя',
     'common.autoScroll': 'Автопрокрутка',
     'common.close': 'Закрыть',
     'common.save': 'Сохранить',
@@ -428,6 +435,13 @@ const TRANSLATIONS = {
       'Hier erscheinen Strategie-Telemetrie und autonome KI-Aktionen. Unterhaltungen findest du im separaten Dashboard-Chat.',
     'ai.feed.disabled': 'Aktiviere den KI-Modus, um den Aktivitätsfeed zu sehen.',
     'ai.feed.empty': 'Autonome Entscheidungen werden hier in Echtzeit angezeigt, sobald Ereignisse eintreten.',
+    'ai.feed.reasonLabel': 'Grund',
+    'ai.feed.responseLabel': 'Letzte Antwort',
+    'ai.feed.awaitingResponse': 'KI-Antwort steht noch aus…',
+    'ai.feed.reason.plan_pending': 'KI-Plan angefragt',
+    'ai.feed.reason.plan_timeout': 'KI-Plan hat nicht rechtzeitig geantwortet',
+    'ai.feed.reason.trend_pending': 'Trend-Scan angefragt',
+    'ai.feed.reason.trend_timeout': 'Trend-Scan hat nicht rechtzeitig geantwortet',
     'common.autoScroll': 'Auto-Scroll',
     'common.close': 'Schließen',
     'common.save': 'Speichern',
@@ -660,6 +674,13 @@ const TRANSLATIONS = {
       '전략 텔레메트리와 AI 자율 작업이 여기에 표시됩니다. 대화는 대시보드 채팅 섹션에서 분리되어 제공됩니다.',
     'ai.feed.disabled': 'AI 모드를 활성화하면 활동 피드를 볼 수 있습니다.',
     'ai.feed.empty': '자율 의사결정이 발생하면 실시간으로 여기에 나타납니다.',
+    'ai.feed.reasonLabel': '사유',
+    'ai.feed.responseLabel': '최근 응답',
+    'ai.feed.awaitingResponse': 'AI 응답 대기 중…',
+    'ai.feed.reason.plan_pending': 'AI 계획 요청됨',
+    'ai.feed.reason.plan_timeout': 'AI 계획 응답 시간 초과',
+    'ai.feed.reason.trend_pending': '추세 스캔 요청됨',
+    'ai.feed.reason.trend_timeout': '추세 스캔 응답 시간 초과',
     'common.autoScroll': '자동 스크롤',
     'common.close': '닫기',
     'common.save': '저장',
@@ -892,6 +913,13 @@ const TRANSLATIONS = {
       'La télémétrie de stratégie et les actions autonomes de l’IA apparaissent ici. Les conversations se déroulent dans le chat du tableau de bord.',
     'ai.feed.disabled': 'Activez le mode IA pour voir le flux d’activité.',
     'ai.feed.empty': 'Les décisions autonomes apparaîtront ici en temps réel dès qu’elles surviennent.',
+    'ai.feed.reasonLabel': 'Raison',
+    'ai.feed.responseLabel': 'Dernière réponse',
+    'ai.feed.awaitingResponse': 'En attente de la réponse de l’IA…',
+    'ai.feed.reason.plan_pending': 'Plan IA en cours',
+    'ai.feed.reason.plan_timeout': 'Plan IA expiré',
+    'ai.feed.reason.trend_pending': 'Analyse de tendance en cours',
+    'ai.feed.reason.trend_timeout': 'Analyse de tendance expirée',
     'common.autoScroll': 'Défilement auto',
     'common.close': 'Fermer',
     'common.save': 'Enregistrer',
@@ -1124,6 +1152,13 @@ const TRANSLATIONS = {
       'Aquí aparecen la telemetría de la estrategia y las acciones autónomas de la IA. Las conversaciones viven en el chat del dashboard.',
     'ai.feed.disabled': 'Activa el modo IA para ver el feed de actividad.',
     'ai.feed.empty': 'Las decisiones autónomas aparecerán aquí en tiempo real conforme sucedan.',
+    'ai.feed.reasonLabel': 'Motivo',
+    'ai.feed.responseLabel': 'Última respuesta',
+    'ai.feed.awaitingResponse': 'Esperando la respuesta de la IA…',
+    'ai.feed.reason.plan_pending': 'Plan de IA solicitado',
+    'ai.feed.reason.plan_timeout': 'El plan de IA no respondió a tiempo',
+    'ai.feed.reason.trend_pending': 'Exploración de tendencia solicitada',
+    'ai.feed.reason.trend_timeout': 'La exploración de tendencia no respondió a tiempo',
     'common.autoScroll': 'Autodesplazamiento',
     'common.close': 'Cerrar',
     'common.save': 'Guardar',
@@ -1354,6 +1389,13 @@ const TRANSLATIONS = {
     'ai.feed.subtitle': 'Burada strateji telemetrisi ve yapay zekânın otonom aksiyonları görünür. Sohbetler gösterge panosundaki ayrı bir sohbette yer alır.',
     'ai.feed.disabled': 'Aktivite akışını görmek için AI modunu açın.',
     'ai.feed.empty': 'Otonom kararlar gerçekleşir gerçekleşmez burada belirecek.',
+    'ai.feed.reasonLabel': 'Gerekçe',
+    'ai.feed.responseLabel': 'Son yanıt',
+    'ai.feed.awaitingResponse': 'Yapay zekâ yanıtı bekleniyor…',
+    'ai.feed.reason.plan_pending': 'Yapay zekâ planı talep edildi',
+    'ai.feed.reason.plan_timeout': 'Yapay zekâ planı zamanında yanıt vermedi',
+    'ai.feed.reason.trend_pending': 'Trend taraması talep edildi',
+    'ai.feed.reason.trend_timeout': 'Trend taraması zamanında yanıt vermedi',
     'common.autoScroll': 'Otomatik kaydırma',
     'common.close': 'Kapat',
     'common.save': 'Kaydet',
@@ -1579,6 +1621,13 @@ const TRANSLATIONS = {
     'ai.feed.subtitle': '此处显示策略遥测与 AI 自主操作。聊天内容被放在仪表盘单独的聊天区。',
     'ai.feed.disabled': '开启 AI 模式后即可查看活动信息流。',
     'ai.feed.empty': '自主决策会在事件发生时实时显示在此处。',
+    'ai.feed.reasonLabel': '原因',
+    'ai.feed.responseLabel': '最新回复',
+    'ai.feed.awaitingResponse': '等待 AI 回复…',
+    'ai.feed.reason.plan_pending': '已请求 AI 计划',
+    'ai.feed.reason.plan_timeout': 'AI 计划响应超时',
+    'ai.feed.reason.trend_pending': '已请求趋势扫描',
+    'ai.feed.reason.trend_timeout': '趋势扫描响应超时',
     'common.autoScroll': '自动滚动',
     'common.close': '关闭',
     'common.save': '保存',
@@ -5256,7 +5305,18 @@ function renderAiActivity(feed) {
     aiActivityFeed.append(empty);
     return;
   }
-  items.forEach((raw) => {
+  const responseLookup = new Map();
+  items.forEach((entry, index) => {
+    if (!entry || typeof entry !== 'object') return;
+    const data = entry.data && typeof entry.data === 'object' ? entry.data : null;
+    if (!data) return;
+    const requestId = data.request_id;
+    if (!requestId || entry.kind === 'query') return;
+    const list = responseLookup.get(requestId) || [];
+    list.push({ index, item: entry });
+    responseLookup.set(requestId, list);
+  });
+  items.forEach((raw, index) => {
     const item = raw || {};
     const wrapper = document.createElement('div');
     wrapper.className = 'ai-activity-item';
@@ -5279,6 +5339,82 @@ function renderAiActivity(feed) {
       body.append(bodyText);
     }
 
+    const itemData = item.data && typeof item.data === 'object' ? item.data : null;
+    if (item.kind === 'query') {
+      const reasonCode = itemData && itemData.decision_reason ? String(itemData.decision_reason) : '';
+      const noteText = itemData && itemData.decision_note ? String(itemData.decision_note) : '';
+      let reasonLabel = '';
+      if (reasonCode) {
+        const fallbackReasons = {
+          plan_pending: 'AI plan requested',
+          plan_timeout: 'AI plan timed out',
+          trend_pending: 'Trend scan requested',
+          trend_timeout: 'Trend scan timed out',
+        };
+        const fallback = fallbackReasons[reasonCode] || reasonCode.replace(/_/g, ' ');
+        reasonLabel = translate(`ai.feed.reason.${reasonCode}`, fallback);
+      }
+      if (reasonLabel || noteText) {
+        const detail = document.createElement('p');
+        detail.className = 'ai-activity-body secondary';
+        const parts = [];
+        if (reasonLabel) {
+          parts.push(`${translate('ai.feed.reasonLabel', 'Reason')}: ${reasonLabel}`);
+        }
+        if (noteText) {
+          parts.push(noteText);
+        }
+        detail.textContent = parts.join(' · ');
+        body.append(detail);
+      }
+      const requestId = itemData && itemData.request_id ? String(itemData.request_id) : '';
+      if (requestId) {
+        const candidates = (responseLookup.get(requestId) || []).filter((entry) => entry.index > index);
+        if (candidates.length > 0) {
+          const latest = candidates[candidates.length - 1].item || {};
+          const responseBlock = document.createElement('div');
+          responseBlock.className = 'ai-activity-response';
+
+          const responseTitle = document.createElement('div');
+          responseTitle.className = 'ai-activity-response-title';
+          responseTitle.textContent = translate('ai.feed.responseLabel', 'Latest response');
+          responseBlock.append(responseTitle);
+
+          const responseHeadline = document.createElement('div');
+          responseHeadline.className = 'ai-activity-response-headline';
+          const responseHeadlineText =
+            latest.headline || (latest.kind ? String(latest.kind).toUpperCase() : '');
+          if (responseHeadlineText) {
+            responseHeadline.textContent = responseHeadlineText;
+            responseBlock.append(responseHeadline);
+          }
+
+          if (latest.body) {
+            const responseBody = document.createElement('div');
+            responseBody.className = 'ai-activity-response-body';
+            responseBody.textContent = latest.body;
+            responseBlock.append(responseBody);
+          }
+
+          const latestData = latest.data && typeof latest.data === 'object' ? latest.data : null;
+          const latestSummary = summariseDataRecord(latestData);
+          if (latestSummary) {
+            const responseMeta = document.createElement('div');
+            responseMeta.className = 'ai-activity-response-meta';
+            responseMeta.textContent = latestSummary;
+            responseBlock.append(responseMeta);
+          }
+
+          body.append(responseBlock);
+        } else {
+          const awaiting = document.createElement('div');
+          awaiting.className = 'ai-activity-response awaiting';
+          awaiting.textContent = translate('ai.feed.awaitingResponse', 'Awaiting AI response…');
+          body.append(awaiting);
+        }
+      }
+    }
+
     const meta = document.createElement('div');
     meta.className = 'ai-activity-meta';
     const timeText = formatRelativeTime(item.ts);
@@ -5287,7 +5423,7 @@ function renderAiActivity(feed) {
       timeEl.textContent = timeText;
       meta.append(timeEl);
     }
-    const summary = summariseDataRecord(item.data);
+    const summary = summariseDataRecord(itemData);
     if (summary) {
       const dataEl = document.createElement('span');
       dataEl.textContent = summary;

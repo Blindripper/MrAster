@@ -20,6 +20,7 @@ import os
 import time
 import math
 import json
+import uuid
 import hmac
 import hashlib
 import logging
@@ -1028,6 +1029,7 @@ class AITradeAdvisor:
         *,
         throttle_key: Optional[str] = None,
         pending: bool = True,
+        request_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         plan = {**fallback}
         plan["take"] = False
@@ -1041,6 +1043,14 @@ class AITradeAdvisor:
             plan.pop("_pending", None)
         if throttle_key:
             plan["_pending_key"] = throttle_key
+        if not request_id:
+            request_id = plan.get("request_id") or fallback.get("request_id")
+        if not request_id:
+            token = uuid.uuid4().hex[:12]
+            prefix = str(throttle_key or "pending")
+            request_id = f"{prefix}:{token}"
+        plan["request_id"] = request_id
+        fallback["request_id"] = request_id
         return plan
 
     def _mark_pending_notified(self, throttle_key: str) -> bool:
@@ -1133,12 +1143,16 @@ class AITradeAdvisor:
                         return "fallback", fallback
                 else:
                     info["ready_after"] = now + max(0.5, AI_GLOBAL_COOLDOWN or 0.5)
-            return "pending", self._pending_stub(
+            stub = self._pending_stub(
                 fallback,
                 f"{kind}_pending",
                 note,
                 throttle_key=throttle_key,
+                request_id=info.get("request_id"),
             )
+            if stub.get("request_id") and not info.get("request_id"):
+                info["request_id"] = stub["request_id"]
+            return "pending", stub
         if isinstance(future, Future) and future.done():
             self._remove_pending_entry(throttle_key)
             try:
@@ -1160,15 +1174,20 @@ class AITradeAdvisor:
                 "AI request timed out; using fallback heuristics.",
                 throttle_key=throttle_key,
                 pending=False,
+                request_id=info.get("request_id"),
             )
             self._recent_plan_store(throttle_key, fallback, now)
             return "timeout", timeout_plan
-        return "pending", self._pending_stub(
+        stub = self._pending_stub(
             fallback,
             f"{kind}_pending",
             note,
             throttle_key=throttle_key,
+            request_id=info.get("request_id"),
         )
+        if stub.get("request_id") and not info.get("request_id"):
+            info["request_id"] = stub["request_id"]
+        return "pending", stub
 
     def _coerce_float(self, value: Any) -> Optional[float]:
         if isinstance(value, bool):
@@ -1835,14 +1854,16 @@ class AITradeAdvisor:
                 "note": "Queued for AI planning",
                 "notified": False,
             }
-            self._pending_requests[throttle_key] = pending_info
-            self._register_pending_key(throttle_key)
-            return self._pending_stub(
+            stub = self._pending_stub(
                 fallback,
                 "plan_pending",
                 "Queued for AI planning",
                 throttle_key=throttle_key,
             )
+            pending_info["request_id"] = stub.get("request_id")
+            self._pending_requests[throttle_key] = pending_info
+            self._register_pending_key(throttle_key)
+            return stub
 
         future = self._dispatch_request(
             system_prompt,
@@ -1867,12 +1888,14 @@ class AITradeAdvisor:
         }
         self._register_pending_key(throttle_key)
         self._last_global_request = now
-        return self._pending_stub(
+        stub = self._pending_stub(
             fallback,
             "plan_pending",
             "Waiting for AI plan response",
             throttle_key=throttle_key,
         )
+        self._pending_requests[throttle_key]["request_id"] = stub.get("request_id")
+        return stub
 
     def plan_trend_trade(
         self,
@@ -2051,14 +2074,16 @@ class AITradeAdvisor:
                 "note": "Queued for AI planning",
                 "notified": False,
             }
-            self._pending_requests[throttle_key] = pending_info
-            self._register_pending_key(throttle_key)
-            return self._pending_stub(
+            stub = self._pending_stub(
                 fallback,
                 "trend_pending",
                 "Queued for AI planning",
                 throttle_key=throttle_key,
             )
+            pending_info["request_id"] = stub.get("request_id")
+            self._pending_requests[throttle_key] = pending_info
+            self._register_pending_key(throttle_key)
+            return stub
 
         future = self._dispatch_request(
             system_prompt,
@@ -2083,12 +2108,14 @@ class AITradeAdvisor:
         }
         self._register_pending_key(throttle_key)
         self._last_global_request = now
-        return self._pending_stub(
+        stub = self._pending_stub(
             fallback,
             "trend_pending",
             "Waiting for AI plan response",
             throttle_key=throttle_key,
         )
+        self._pending_requests[throttle_key]["request_id"] = stub.get("request_id")
+        return stub
 
     def generate_postmortem(self, trade: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         opened = float(trade.get("opened_at", time.time()) or time.time())
@@ -3803,6 +3830,7 @@ class Bot:
                     "event_risk": plan.get("event_risk"),
                     "hype_score": plan.get("hype_score"),
                     "sentinel_label": sentinel_info.get("label"),
+                    "request_id": plan.get("request_id"),
                 }
                 explanation = plan.get("explanation")
                 trend_side = plan.get("side")
@@ -3810,16 +3838,21 @@ class Bot:
                     decision_summary["side"] = trend_side.strip().upper()
                 if plan.get("_pending"):
                     if self.ai_advisor.should_log_pending(plan):
+                        request_id = plan.get("request_id")
                         self._log_ai_activity(
                             "query",
                             f"AI trend scan requested for {symbol}",
                             body="Consulting the strategy AI for an autonomous opportunity.",
                             data={
                                 "symbol": symbol,
+                                "side": decision_summary.get("side"),
                                 "origin": "trend",
                                 "sentinel_label": sentinel_info.get("label"),
                                 "event_risk": float(sentinel_info.get("event_risk", 0.0) or 0.0),
                                 "hype_score": float(sentinel_info.get("hype_score", 0.0) or 0.0),
+                                "decision_reason": plan.get("decision_reason"),
+                                "decision_note": plan.get("decision_note"),
+                                "request_id": request_id,
                             },
                             force=True,
                         )
@@ -3890,10 +3923,12 @@ class Bot:
                     "event_risk": plan.get("event_risk"),
                     "hype_score": plan.get("hype_score"),
                     "sentinel_label": sentinel_info.get("label"),
+                    "request_id": plan.get("request_id"),
                 }
                 explanation = plan.get("explanation")
                 if plan.get("_pending"):
                     if self.ai_advisor.should_log_pending(plan):
+                        request_id = plan.get("request_id")
                         self._log_ai_activity(
                             "query",
                             f"AI review requested for {symbol}",
@@ -3905,6 +3940,9 @@ class Bot:
                                 "sentinel_label": sentinel_info.get("label"),
                                 "event_risk": float(sentinel_info.get("event_risk", 0.0) or 0.0),
                                 "hype_score": float(sentinel_info.get("hype_score", 0.0) or 0.0),
+                                "decision_reason": plan.get("decision_reason"),
+                                "decision_note": plan.get("decision_note"),
+                                "request_id": request_id,
                             },
                             force=True,
                         )
