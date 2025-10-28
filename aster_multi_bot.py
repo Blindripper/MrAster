@@ -1005,12 +1005,13 @@ class AITradeAdvisor:
             if not info:
                 stale.append(key)
                 continue
+            if info.get("cancelled"):
+                stale.append(key)
+                continue
             future = info.get("future")
             if isinstance(future, Future) and future.done():
                 completed.append(key)
                 continue
-            if info.get("cancelled"):
-                stale.append(key)
         for key in completed:
             info = self._pending_requests.get(key)
             if not info:
