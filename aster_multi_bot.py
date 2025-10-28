@@ -937,7 +937,7 @@ class AITradeAdvisor:
         self._temperature_supported = True
         self._temperature_override = self._resolve_temperature()
         self._cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
-        self._recent_plans: "OrderedDict[str, Tuple[float, Dict[str, Any]]]" = OrderedDict()
+        self._recent_plans: "OrderedDict[str, Tuple[Optional[float], Dict[str, Any]]]" = OrderedDict()
         self._pending_requests: Dict[str, Dict[str, Any]] = {}
         self._pending_order: deque[str] = deque()
         self._min_interval = max(0.0, AI_MIN_INTERVAL_SECONDS)
@@ -974,10 +974,14 @@ class AITradeAdvisor:
                 ts = entry.get("ts")
                 if not key or not isinstance(plan, dict):
                     continue
-                try:
-                    ts_val = float(ts)
-                except Exception:
-                    ts_val = time.time()
+                ts_val: Optional[float]
+                if ts is None:
+                    ts_val = None
+                else:
+                    try:
+                        ts_val = float(ts)
+                    except Exception:
+                        ts_val = time.time()
                 self._recent_plans[key] = (ts_val, copy.deepcopy(plan))
         while len(self._recent_plans) > self.RECENT_PLAN_LIMIT:
             self._recent_plans.popitem(last=False)
@@ -990,7 +994,12 @@ class AITradeAdvisor:
             cache_dump.append({"key": key, "plan": copy.deepcopy(value)})
         recent_dump: List[Dict[str, Any]] = []
         for key, (ts, plan) in list(self._recent_plans.items())[-self.RECENT_PLAN_LIMIT:]:
-            recent_dump.append({"key": key, "ts": float(ts), "plan": copy.deepcopy(plan)})
+            payload: Dict[str, Any] = {"key": key, "plan": copy.deepcopy(plan)}
+            if ts is None:
+                payload["ts"] = None
+            else:
+                payload["ts"] = float(ts)
+            recent_dump.append(payload)
         self.state["ai_plan_cache"] = cache_dump
         self.state["ai_recent_plans"] = recent_dump
 
@@ -1199,16 +1208,28 @@ class AITradeAdvisor:
         info: Optional[Dict[str, Any]],
         response_text: Optional[str],
         now: Optional[float] = None,
+        *,
+        mark_unconsumed: bool = False,
     ) -> Dict[str, Any]:
         now = now if now is not None else time.time()
         meta = info or {}
         cache_key_ready = meta.get("cache_key") if isinstance(meta, dict) else None
         if not response_text:
-            self._recent_plan_store(throttle_key, fallback, now)
+            self._recent_plan_store(
+                throttle_key,
+                fallback,
+                now,
+                consumed=not mark_unconsumed,
+            )
             return fallback
         parsed = self._parse_structured(response_text)
         if not isinstance(parsed, dict):
-            self._recent_plan_store(throttle_key, fallback, now)
+            self._recent_plan_store(
+                throttle_key,
+                fallback,
+                now,
+                consumed=not mark_unconsumed,
+            )
             return fallback
         kind = str(meta.get("kind", "plan")) if isinstance(meta, dict) else "plan"
         if kind == "trend":
@@ -1217,7 +1238,12 @@ class AITradeAdvisor:
             plan_ready = self._apply_plan_overrides(fallback, parsed)
         if cache_key_ready:
             self._cache_store(str(cache_key_ready), plan_ready)
-        self._recent_plan_store(throttle_key, plan_ready, now)
+        self._recent_plan_store(
+            throttle_key,
+            plan_ready,
+            now,
+            consumed=not mark_unconsumed,
+        )
         return plan_ready
 
     def flush_pending(self) -> None:
@@ -1238,7 +1264,14 @@ class AITradeAdvisor:
             bundle = payload or {}
             response_text = bundle.get("response") if isinstance(bundle, dict) else None
             meta = bundle.get("info") if isinstance(bundle, dict) else info
-            self._finalize_response(throttle_key, fallback, meta, response_text, now)
+            self._finalize_response(
+                throttle_key,
+                fallback,
+                meta,
+                response_text,
+                now,
+                mark_unconsumed=True,
+            )
 
     def _coerce_float(self, value: Any) -> Optional[float]:
         if isinstance(value, bool):
@@ -1352,17 +1385,32 @@ class AITradeAdvisor:
         if now is None:
             now = time.time()
         ts, plan = self._recent_plans[key]
+        if ts is None:
+            self._recent_plans[key] = (now, plan)
+            self._recent_plans.move_to_end(key)
+            self._persist_state()
+            return copy.deepcopy(plan)
         if now - ts > self._min_interval:
             return None
         self._recent_plans.move_to_end(key)
         return copy.deepcopy(plan)
 
-    def _recent_plan_store(self, key: str, plan: Dict[str, Any], now: Optional[float] = None) -> None:
+    def _recent_plan_store(
+        self,
+        key: str,
+        plan: Dict[str, Any],
+        now: Optional[float] = None,
+        *,
+        consumed: bool = True,
+    ) -> None:
         if self._min_interval <= 0:
             return
-        if now is None:
-            now = time.time()
-        self._recent_plans[key] = (now, copy.deepcopy(plan))
+        timestamp: Optional[float]
+        if not consumed:
+            timestamp = None
+        else:
+            timestamp = now if now is not None else time.time()
+        self._recent_plans[key] = (timestamp, copy.deepcopy(plan))
         self._recent_plans.move_to_end(key)
         while len(self._recent_plans) > self.RECENT_PLAN_LIMIT:
             self._recent_plans.popitem(last=False)
