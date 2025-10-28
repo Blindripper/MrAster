@@ -2660,7 +2660,7 @@ class AIChatEngine:
         return response
 
 
-    def analyze_market(self) -> Dict[str, Any]:
+    async def analyze_market(self) -> Dict[str, Any]:
         (
             stats,
             history,
@@ -2675,16 +2675,9 @@ class AIChatEngine:
         cached_ts = MOST_TRADED_CACHE.get("timestamp", 0.0)
         if not cached_payload or now - float(cached_ts or 0.0) > 60:
             try:
-                assets = _fetch_most_traded_from_binance()
+                cached_payload = await get_most_traded_assets(force=True)
             except Exception as exc:
                 log.debug("Failed to refresh most-traded cache: %s", exc)
-            else:
-                payload = {
-                    "updated": datetime.utcnow().isoformat() + "Z",
-                    "assets": assets,
-                }
-                MOST_TRADED_CACHE["payload"] = payload
-                MOST_TRADED_CACHE["timestamp"] = now
         fallback = self._fallback_reply(
             "Provide a neutral market status update with potential long and short angles.",
             stats,
@@ -2903,7 +2896,7 @@ chat_engine = AIChatEngine(CONFIG)
 
 @app.post("/api/ai/analyze")
 async def ai_analyze() -> Dict[str, Any]:
-    return chat_engine.analyze_market()
+    return await chat_engine.analyze_market()
 
 
 @app.post("/api/ai/proposals/execute")
