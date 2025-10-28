@@ -1192,6 +1192,54 @@ class AITradeAdvisor:
             info["request_id"] = stub["request_id"]
         return "pending", stub
 
+    def _finalize_response(
+        self,
+        throttle_key: str,
+        fallback: Dict[str, Any],
+        info: Optional[Dict[str, Any]],
+        response_text: Optional[str],
+        now: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        now = now if now is not None else time.time()
+        meta = info or {}
+        cache_key_ready = meta.get("cache_key") if isinstance(meta, dict) else None
+        if not response_text:
+            self._recent_plan_store(throttle_key, fallback, now)
+            return fallback
+        parsed = self._parse_structured(response_text)
+        if not isinstance(parsed, dict):
+            self._recent_plan_store(throttle_key, fallback, now)
+            return fallback
+        kind = str(meta.get("kind", "plan")) if isinstance(meta, dict) else "plan"
+        if kind == "trend":
+            plan_ready = self._apply_trend_plan_overrides(fallback, parsed)
+        else:
+            plan_ready = self._apply_plan_overrides(fallback, parsed)
+        if cache_key_ready:
+            self._cache_store(str(cache_key_ready), plan_ready)
+        self._recent_plan_store(throttle_key, plan_ready, now)
+        return plan_ready
+
+    def flush_pending(self) -> None:
+        if not self._pending_requests:
+            return
+        now = time.time()
+        keys = list(self._pending_order) if self._pending_order else list(self._pending_requests.keys())
+        for throttle_key in keys:
+            info = self._pending_requests.get(throttle_key)
+            if not info:
+                continue
+            fallback = info.get("fallback")
+            if not isinstance(fallback, dict):
+                continue
+            status, payload = self._process_pending_request(throttle_key, fallback, now)
+            if status != "response":
+                continue
+            bundle = payload or {}
+            response_text = bundle.get("response") if isinstance(bundle, dict) else None
+            meta = bundle.get("info") if isinstance(bundle, dict) else info
+            self._finalize_response(throttle_key, fallback, meta, response_text, now)
+
     def _coerce_float(self, value: Any) -> Optional[float]:
         if isinstance(value, bool):
             return 1.0 if value else 0.0
@@ -1744,19 +1792,7 @@ class AITradeAdvisor:
             bundle = payload or {}
             response_text = bundle.get("response") if isinstance(bundle, dict) else None
             meta = bundle.get("info") if isinstance(bundle, dict) else {}
-            cache_key_ready = meta.get("cache_key") if isinstance(meta, dict) else None
-            if not response_text:
-                self._recent_plan_store(throttle_key, fallback, now)
-                return fallback
-            parsed_pending = self._parse_structured(response_text)
-            if not isinstance(parsed_pending, dict):
-                self._recent_plan_store(throttle_key, fallback, now)
-                return fallback
-            plan_ready = self._apply_plan_overrides(fallback, parsed_pending)
-            if cache_key_ready:
-                self._cache_store(str(cache_key_ready), plan_ready)
-            self._recent_plan_store(throttle_key, plan_ready, now)
-            return plan_ready
+            return self._finalize_response(throttle_key, fallback, meta, response_text, now)
 
         recent_plan = self._recent_plan_lookup(throttle_key, now)
         if recent_plan is not None:
@@ -1966,19 +2002,7 @@ class AITradeAdvisor:
             bundle = payload or {}
             response_text = bundle.get("response") if isinstance(bundle, dict) else None
             meta = bundle.get("info") if isinstance(bundle, dict) else {}
-            cache_key_ready = meta.get("cache_key") if isinstance(meta, dict) else None
-            if not response_text:
-                self._recent_plan_store(throttle_key, fallback, now)
-                return fallback
-            parsed_pending = self._parse_structured(response_text)
-            if not isinstance(parsed_pending, dict):
-                self._recent_plan_store(throttle_key, fallback, now)
-                return fallback
-            plan_ready = self._apply_trend_plan_overrides(fallback, parsed_pending)
-            if cache_key_ready:
-                self._cache_store(str(cache_key_ready), plan_ready)
-            self._recent_plan_store(throttle_key, plan_ready, now)
-            return plan_ready
+            return self._finalize_response(throttle_key, fallback, meta, response_text, now)
 
         recent_plan = self._recent_plan_lookup(throttle_key, now)
         if recent_plan is not None:
@@ -4358,6 +4382,11 @@ class Bot:
     def run_once(self):
         self._manual_state_dirty = False
         self._refresh_manual_requests()
+        if self.ai_advisor:
+            try:
+                self.ai_advisor.flush_pending()
+            except Exception as exc:
+                log.debug(f"pending flush failed: {exc}")
         syms = self.universe.refresh()
 
         pending_manual: Set[str] = set()
