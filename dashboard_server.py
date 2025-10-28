@@ -1896,6 +1896,7 @@ class AIChatEngine:
         Dict[str, Any],
         Dict[str, Any],
         List[Dict[str, Any]],
+        Dict[str, Any],
     ]:
         state = _read_state()
         history = state.get("trade_history", [])
@@ -1905,6 +1906,9 @@ class AIChatEngine:
         ai_budget = state.get("ai_budget", {})
         decision_stats = _decision_summary(state)
         recent_plans = self._recent_plan_summaries(state.get("ai_recent_plans"))
+        technical_snapshot = state.get("technical_snapshot", {})
+        if not isinstance(technical_snapshot, dict):
+            technical_snapshot = {}
         return (
             stats,
             history,
@@ -1913,6 +1917,7 @@ class AIChatEngine:
             ai_budget,
             decision_stats,
             recent_plans,
+            technical_snapshot,
         )
 
     def _build_context_text(
@@ -1924,6 +1929,7 @@ class AIChatEngine:
         ai_budget: Dict[str, Any],
         decision_stats: Dict[str, Any],
         recent_plans: List[Dict[str, Any]],
+        technical_snapshot: Dict[str, Any],
     ) -> str:
         lines = [
             "You are the AI co-pilot for the MrAster autonomous strategy cockpit.",
@@ -2085,6 +2091,52 @@ class AIChatEngine:
                 else:
                     plan_lines.append(f"{symbol} {side} → {take}{detail_txt}")
             lines.append("Recent AI plans: " + " | ".join(plan_lines))
+        if technical_snapshot:
+            snapshot_items: List[Tuple[str, Dict[str, Any]]] = []
+            for sym, rec in technical_snapshot.items():
+                if not isinstance(rec, dict):
+                    continue
+                snapshot_items.append((sym, rec))
+            if snapshot_items:
+                snapshot_items.sort(
+                    key=lambda item: float(item[1].get("ts", 0.0) or 0.0),
+                    reverse=True,
+                )
+                tech_bits: List[str] = []
+                for sym, rec in snapshot_items[:5]:
+                    parts: List[str] = [sym]
+                    direction = rec.get("supertrend_dir")
+                    if isinstance(direction, (int, float)):
+                        if direction > 0:
+                            parts.append("↑")
+                        elif direction < 0:
+                            parts.append("↓")
+                        else:
+                            parts.append("→")
+                    price = rec.get("price")
+                    if isinstance(price, (int, float)) and price > 0:
+                        parts.append(f"px {price:.4f}")
+                    rsi_val = rec.get("rsi")
+                    if isinstance(rsi_val, (int, float)):
+                        parts.append(f"RSI {rsi_val:.1f}")
+                    stoch_d = rec.get("stoch_rsi_d")
+                    if isinstance(stoch_d, (int, float)):
+                        parts.append(f"StochD {stoch_d:.1f}")
+                    bb_pos = rec.get("bb_pos")
+                    if isinstance(bb_pos, (int, float)):
+                        parts.append(f"BB% {bb_pos * 100.0:.0f}")
+                    atr_pct = rec.get("atr_pct")
+                    if isinstance(atr_pct, (int, float)):
+                        parts.append(f"ATR% {atr_pct * 100.0:.2f}")
+                    adx_val = rec.get("adx")
+                    if isinstance(adx_val, (int, float)):
+                        parts.append(f"ADX {adx_val:.1f}")
+                    supertrend_val = rec.get("supertrend")
+                    if isinstance(supertrend_val, (int, float)) and supertrend_val > 0:
+                        parts.append(f"ST {supertrend_val:.4f}")
+                    tech_bits.append(" ".join(parts))
+                if tech_bits:
+                    lines.append("Technical snapshot: " + " | ".join(tech_bits))
         most_traded_payload = MOST_TRADED_CACHE.get("payload") if MOST_TRADED_CACHE else None
         assets = []
         if isinstance(most_traded_payload, dict):
@@ -2524,6 +2576,7 @@ class AIChatEngine:
             ai_budget,
             decision_stats,
             recent_plans,
+            technical_snapshot,
         ) = self._current_state()
         fallback = self._fallback_reply(
             message, stats, history, ai_activity, open_trades, ai_budget
@@ -2557,6 +2610,7 @@ class AIChatEngine:
             ai_budget,
             decision_stats,
             recent_plans,
+            technical_snapshot,
         )
         messages: List[Dict[str, str]] = [{"role": "system", "content": context_text}]
         for item in history_payload[-6:]:
@@ -2701,6 +2755,7 @@ class AIChatEngine:
             ai_budget,
             decision_stats,
             recent_plans,
+            technical_snapshot,
         ) = self._current_state()
         now = time.time()
         cached_payload = MOST_TRADED_CACHE.get("payload")
@@ -2756,6 +2811,7 @@ class AIChatEngine:
             ai_budget,
             decision_stats,
             recent_plans,
+            technical_snapshot,
         )
         universe_symbols = self._market_universe_symbols()
         if universe_symbols:
