@@ -1256,9 +1256,31 @@ class AITradeAdvisor:
         if not isinstance(parsed, dict):
             self._recent_plan_store(throttle_key, fallback, now)
             return fallback
+        request_payload: Optional[Dict[str, Any]] = None
+        if isinstance(meta, dict):
+            payload_raw = meta.get("user_payload")
+            if isinstance(payload_raw, dict):
+                request_payload = payload_raw
+            elif isinstance(payload_raw, str):
+                try:
+                    request_payload = json.loads(payload_raw)
+                except Exception:
+                    request_payload = None
+            if request_payload is None:
+                prompt_raw = meta.get("user_prompt")
+                if isinstance(prompt_raw, str):
+                    try:
+                        request_payload = json.loads(prompt_raw)
+                    except Exception:
+                        request_payload = None
+
         kind = str(meta.get("kind", "plan")) if isinstance(meta, dict) else "plan"
         if kind == "trend":
-            plan_ready = self._apply_trend_plan_overrides(fallback, parsed)
+            plan_ready = self._apply_trend_plan_overrides(
+                fallback,
+                parsed,
+                request_payload=request_payload,
+            )
         else:
             plan_ready = self._apply_plan_overrides(fallback, parsed)
         if cache_key_ready:
@@ -1784,7 +1806,10 @@ class AITradeAdvisor:
         return plan
 
     def _apply_trend_plan_overrides(
-        self, fallback: Dict[str, Any], parsed: Dict[str, Any]
+        self,
+        fallback: Dict[str, Any],
+        parsed: Dict[str, Any],
+        request_payload: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         plan = {**fallback}
         decision_reason = parsed.get("decision_reason") or parsed.get("reason")
@@ -1809,10 +1834,33 @@ class AITradeAdvisor:
         plan["decision"] = "take" if take else "skip"
 
         side_raw = parsed.get("side") or parsed.get("direction")
+        side_norm: Optional[str] = None
         if isinstance(side_raw, str):
             side_norm = side_raw.strip().upper()
-            if side_norm in {"BUY", "SELL"}:
-                plan["side"] = side_norm
+        if side_norm not in {"BUY", "SELL"}:
+            fallback_side = fallback.get("side")
+            if isinstance(fallback_side, str):
+                token = fallback_side.strip().upper()
+                if token in {"BUY", "SELL"}:
+                    side_norm = token
+        if side_norm not in {"BUY", "SELL"} and isinstance(request_payload, dict):
+            req_side = request_payload.get("side")
+            if not isinstance(req_side, str):
+                context = request_payload.get("context") if isinstance(request_payload, dict) else None
+                if isinstance(context, dict):
+                    req_side = context.get("side")
+            if isinstance(req_side, str):
+                token = req_side.strip().upper()
+                if token in {"BUY", "SELL"}:
+                    side_norm = token
+        if not side_norm and isinstance(decision_raw, str):
+            token = decision_raw.strip().lower()
+            if token in {"buy", "long"}:
+                side_norm = "BUY"
+            elif token in {"sell", "short"}:
+                side_norm = "SELL"
+        if side_norm in {"BUY", "SELL"}:
+            plan["side"] = side_norm
 
         size_multiplier = parsed.get("size_multiplier")
         sl_multiplier = parsed.get("sl_multiplier")
@@ -2037,6 +2085,7 @@ class AITradeAdvisor:
                 "fallback": fallback,
                 "system_prompt": system_prompt,
                 "user_prompt": user_prompt,
+                "user_payload": user_payload,
                 "cache_key": cache_key,
                 "kind": "plan",
                 "estimate": estimate,
@@ -2080,6 +2129,7 @@ class AITradeAdvisor:
             "fallback": fallback,
             "system_prompt": system_prompt,
             "user_prompt": user_prompt,
+            "user_payload": user_payload,
             "cache_key": cache_key,
             "kind": "plan",
             "estimate": estimate,
@@ -2249,7 +2299,11 @@ class AITradeAdvisor:
             if not isinstance(parsed, dict):
                 self._recent_plan_store(throttle_key, fallback, now)
                 return fallback
-            plan = self._apply_trend_plan_overrides(fallback, parsed)
+            plan = self._apply_trend_plan_overrides(
+                fallback,
+                parsed,
+                request_payload=user_payload,
+            )
             self._cache_store(cache_key, plan)
             self._recent_plan_store(throttle_key, plan, now)
             return plan
@@ -2274,6 +2328,7 @@ class AITradeAdvisor:
                 "fallback": fallback,
                 "system_prompt": system_prompt,
                 "user_prompt": user_prompt,
+                "user_payload": user_payload,
                 "cache_key": cache_key,
                 "kind": "trend",
                 "estimate": estimate,
@@ -2317,6 +2372,7 @@ class AITradeAdvisor:
             "fallback": fallback,
             "system_prompt": system_prompt,
             "user_prompt": user_prompt,
+            "user_payload": user_payload,
             "cache_key": cache_key,
             "kind": "trend",
             "estimate": estimate,
