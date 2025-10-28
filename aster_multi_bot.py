@@ -43,7 +43,7 @@ try:
 except Exception:
     raise RuntimeError("Dieses Modul benötigt numpy. Bitte: pip install numpy")
 
-from ml_policy import BanditPolicy
+from ml_policy import BanditPolicy, FEATURES as POLICY_FEATURES
 from brackets_guard import BracketGuard, replace_tp_for_open_position as _bg_replace_tp
 
 # ========= Logging =========
@@ -4153,6 +4153,50 @@ class Bot:
                 "tp": float(tp),
                 "bucket": bucket,
             }
+            if alpha_prob is not None:
+                try:
+                    activity_data["alpha_prob"] = float(alpha_prob)
+                except Exception:
+                    pass
+            if alpha_conf is not None:
+                try:
+                    activity_data["alpha_conf"] = float(alpha_conf)
+                except Exception:
+                    pass
+            if ctx.get("expected_r") is not None:
+                try:
+                    activity_data["expected_r"] = float(ctx.get("expected_r"))
+                except Exception:
+                    pass
+            indicator_keys = (
+                "rsi",
+                "bb_position",
+                "bb_width",
+                "supertrend",
+                "supertrend_dir",
+                "stoch_rsi_d",
+                "stoch_rsi_k",
+            )
+            indicator_snapshot: Dict[str, float] = {}
+            for key in indicator_keys:
+                if key not in ctx:
+                    continue
+                try:
+                    indicator_snapshot[key] = float(ctx[key])
+                except Exception:
+                    continue
+            if indicator_snapshot:
+                activity_data["indicators"] = indicator_snapshot
+            feature_snapshot: Dict[str, float] = {}
+            for key in POLICY_FEATURES:
+                if key not in ctx:
+                    continue
+                try:
+                    feature_snapshot[key] = float(ctx[key])
+                except Exception:
+                    continue
+            if feature_snapshot:
+                activity_data["bandit_features"] = feature_snapshot
             if manual_override:
                 activity_kind = "manual"
                 activity_headline = f"Manual {sig.lower()} executed for {symbol}"

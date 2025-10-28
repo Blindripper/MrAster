@@ -9,7 +9,23 @@ except Exception:
     raise RuntimeError("ml_policy.py benötigt numpy. Bitte im venv: pip install numpy")
 
 # Feature-Vektor (muss zum Bot passen)
-FEATURES = ("adx","atr_pct","slope_htf","rsi","funding","qv_score","trend","regime_adx","regime_slope","spread_bps")
+FEATURES = (
+    "adx",
+    "atr_pct",
+    "slope_htf",
+    "rsi",
+    "funding",
+    "qv_score",
+    "trend",
+    "regime_adx",
+    "regime_slope",
+    "spread_bps",
+    "supertrend_dir",
+    "supertrend",
+    "bb_position",
+    "bb_width",
+    "stoch_rsi_d",
+)
 
 def _vec_from_ctx(ctx: Dict[str, float]) -> "np.ndarray":
     return np.array([float(ctx.get(k, 0.0) or 0.0) for k in FEATURES], dtype=float).reshape(-1, 1)  # d×1
@@ -21,7 +37,7 @@ class LinUCB:
         self.l2 = float(l2)
         self.d = int(d or len(FEATURES))
         self.A = np.eye(self.d) * self.l2  # d×d
-        self.b = np.zeros((self.d, 1))     # d×1
+        self.b = np.zeros((self.d, 1))  # d×1
 
     def predict_ucb(self, x: "np.ndarray") -> float:
         # x: d×1
@@ -39,10 +55,30 @@ class LinUCB:
         return {"alpha": self.alpha, "l2": self.l2, "d": self.d, "A": self.A.tolist(), "b": self.b.tolist()}
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "LinUCB":
-        obj = cls(alpha=float(d.get("alpha", 1.0)), l2=float(d.get("l2", 1e-3)), d=int(d.get("d", len(FEATURES))))
-        obj.A = np.array(d.get("A", np.eye(obj.d).tolist()), dtype=float)
-        obj.b = np.array(d.get("b", np.zeros((obj.d, 1)).tolist()), dtype=float)
+    def from_dict(cls, d: Dict[str, Any], *, target_dim: Optional[int] = None) -> "LinUCB":
+        target_dim = int(target_dim or len(FEATURES))
+        obj = cls(alpha=float(d.get("alpha", 1.0)), l2=float(d.get("l2", 1e-3)), d=target_dim)
+        stored_A = np.array(d.get("A", []), dtype=float)
+        stored_b = np.array(d.get("b", []), dtype=float)
+
+        if stored_A.size and stored_A.shape == (target_dim, target_dim):
+            obj.A = stored_A
+        elif stored_A.size:
+            obj.A = np.eye(target_dim) * obj.l2
+            min_dim = min(stored_A.shape[0], stored_A.shape[1], target_dim)
+            obj.A[:min_dim, :min_dim] = stored_A[:min_dim, :min_dim]
+        else:
+            obj.A = np.eye(target_dim) * obj.l2
+
+        stored_b = stored_b.reshape(-1, 1) if stored_b.ndim <= 2 else stored_b[:, :1]
+        if stored_b.size and stored_b.shape == (target_dim, 1):
+            obj.b = stored_b
+        elif stored_b.size:
+            obj.b = np.zeros((target_dim, 1))
+            min_dim = min(stored_b.shape[0], target_dim)
+            obj.b[:min_dim, 0] = stored_b[:min_dim, 0]
+        else:
+            obj.b = np.zeros((target_dim, 1))
         return obj
 
 # ---------------------------- Alpha Model ------------------------------------
@@ -68,9 +104,22 @@ class AlphaModel:
         self.last_prob: float = 0.5
 
     def _ensure_stats(self) -> None:
-        if self.mean is None:
-            self.mean = np.zeros(len(FEATURES), dtype=float)
-            self.m2 = np.zeros(len(FEATURES), dtype=float)
+        target = len(FEATURES)
+        if self.mean is None or len(self.mean) != target:
+            if self.mean is None:
+                self.mean = np.zeros(target, dtype=float)
+                self.m2 = np.zeros(target, dtype=float)
+            else:
+                new_mean = np.zeros(target, dtype=float)
+                new_m2 = np.zeros(target, dtype=float)
+                upto = min(len(self.mean), target)
+                if upto:
+                    new_mean[:upto] = self.mean[:upto]
+                    new_m2[:upto] = self.m2[:upto]
+                self.mean = new_mean
+                self.m2 = new_m2
+                if self.norm_count < 0:
+                    self.norm_count = 0.0
 
     def _norm(self, x_raw: np.ndarray, update: bool) -> np.ndarray:
         self._ensure_stats()
@@ -89,10 +138,21 @@ class AlphaModel:
     def _vec(self, ctx: Dict[str, float]) -> np.ndarray:
         return np.array([float(ctx.get(k, 0.0) or 0.0) for k in FEATURES], dtype=float)
 
+    def _ensure_weight_shape(self, size: int) -> None:
+        if self.weights is None:
+            return
+        if self.weights.shape[0] != size:
+            new_weights = np.zeros(size, dtype=float)
+            upto = min(self.weights.shape[0], size)
+            if upto:
+                new_weights[:upto] = self.weights[:upto]
+            self.weights = new_weights
+
     def predict(self, ctx: Dict[str, float]) -> Tuple[float, float]:
         x_raw = self._vec(ctx)
         x_norm = self._norm(x_raw, update=False)
         x = np.append(x_norm, 1.0)
+        self._ensure_weight_shape(len(x))
         if self.weights is None:
             prob = 0.5
         else:
@@ -118,6 +178,8 @@ class AlphaModel:
         x = np.append(x_norm, 1.0)
         if self.weights is None:
             self.weights = np.zeros_like(x)
+        else:
+            self._ensure_weight_shape(len(x))
         z = float(np.dot(self.weights, x))
         prob = 1.0 / (1.0 + math.exp(-z))
         error = (prob - target) * weight
@@ -149,12 +211,36 @@ class AlphaModel:
             reward_margin=float(data.get("reward_margin", 0.05)),
             conf_scale=float(data.get("conf_scale", 40.0)),
         )
+        target = len(FEATURES)
+        bias_size = target + 1
         if data.get("weights") is not None:
-            obj.weights = np.array(data.get("weights"), dtype=float)
+            weights = np.array(data.get("weights"), dtype=float)
+            weights = weights.flatten()
+            if weights.shape[0] != bias_size:
+                new_weights = np.zeros(bias_size, dtype=float)
+                upto = min(weights.shape[0], bias_size)
+                if upto:
+                    new_weights[:upto] = weights[:upto]
+                weights = new_weights
+            obj.weights = weights
         if data.get("mean") is not None:
-            obj.mean = np.array(data.get("mean"), dtype=float)
+            mean = np.array(data.get("mean"), dtype=float).flatten()
+            if mean.shape[0] != target:
+                new_mean = np.zeros(target, dtype=float)
+                upto = min(mean.shape[0], target)
+                if upto:
+                    new_mean[:upto] = mean[:upto]
+                mean = new_mean
+            obj.mean = mean
         if data.get("m2") is not None:
-            obj.m2 = np.array(data.get("m2"), dtype=float)
+            m2 = np.array(data.get("m2"), dtype=float).flatten()
+            if m2.shape[0] != target:
+                new_m2 = np.zeros(target, dtype=float)
+                upto = min(m2.shape[0], target)
+                if upto:
+                    new_m2[:upto] = m2[:upto]
+                m2 = new_m2
+            obj.m2 = m2
         obj.norm_count = float(data.get("norm_count", 0.0))
         obj.train_count = float(data.get("train_count", 0.0))
         return obj
@@ -196,6 +282,8 @@ class BanditPolicy:
         self.enable_size = bool(enable_size)
         self.size_multipliers = dict(size_multipliers or {"S":1.0,"M":1.4,"L":1.9})
         self.warmup_trades = int(warmup_trades)
+
+        self.feature_names = tuple(FEATURES)
 
         self.alpha_threshold = float(alpha_threshold)
         self.alpha_warmup = int(alpha_warmup)
@@ -346,6 +434,7 @@ class BanditPolicy:
         data = {
             "gate": self.gate.to_dict(),
             "size": self.size.to_dict(),
+            "features": list(self.feature_names),
             "gate_alpha": self.gate.alpha,
             "size_alpha": self.size.alpha,
             "l2": self.gate.l2,
@@ -406,10 +495,16 @@ class BanditPolicy:
             alpha_promote_delta=alpha_promote_delta,
             alpha_reward_margin=alpha_reward_margin,
         )
-        try: obj.gate = LinUCB.from_dict(d["gate"])
+        try:
+            obj.gate = LinUCB.from_dict(d["gate"], target_dim=len(FEATURES))
+        except Exception:
+            pass
+        try:
+            obj.size = LinUCB.from_dict(d["size"], target_dim=len(FEATURES))
         except Exception: pass
-        try: obj.size = LinUCB.from_dict(d["size"])
-        except Exception: pass
+
+        if isinstance(d.get("features"), (list, tuple)):
+            obj.feature_names = tuple(d.get("features"))
 
         # Tunables / Stats
         obj.n_trades = int(d.get("n_trades", 0))
