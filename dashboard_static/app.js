@@ -71,6 +71,11 @@ const activePositionsModeLabel = document.getElementById('active-positions-mode'
 const activePositionsWrapper = document.getElementById('active-positions-wrapper');
 const activePositionsEmpty = document.getElementById('active-positions-empty');
 const activePositionsRows = document.getElementById('active-positions-rows');
+const automationToggle = document.getElementById('automation-toggle');
+const automationIntervalInput = document.getElementById('automation-interval');
+const automationCountdown = document.getElementById('automation-countdown');
+const automationCountdownLabel = document.getElementById('automation-countdown-label');
+const automationCountdownValue = document.getElementById('automation-countdown-value');
 const modeButtons = document.querySelectorAll('[data-mode-select]');
 const btnHeroDownload = document.getElementById('btn-hero-download');
 const btnPostX = document.getElementById('btn-post-x');
@@ -214,6 +219,13 @@ const TRANSLATIONS = {
     'chat.analyzing': 'Анализ…',
     'chat.analyze.hint': 'Добавьте ключ OpenAI в настройках AI, чтобы анализировать рынок.',
     'chat.analyze.pending': 'Анализ рынка выполняется…',
+    'chat.automation.toggle': 'Автоматизировать',
+    'chat.automation.interval': 'Интервал (минуты)',
+    'chat.automation.nextRunLabel': 'Следующий запуск через',
+    'chat.automation.running': 'Автоматизация выполняется…',
+    'chat.automation.scheduled': 'Автоматический цикл запланирован через {{minutes}} мин.',
+    'chat.automation.stopped': 'Автоматизация отключена.',
+    'chat.automation.rescheduled': 'Интервал автоматизации обновлён: {{minutes}} мин.',
     'chat.send': 'Отправить',
     'chat.sending': 'Отправка…',
     'chat.status.analyzing': 'Анализ рынка…',
@@ -436,6 +448,13 @@ const TRANSLATIONS = {
     'chat.analyzing': 'Analysiere…',
     'chat.analyze.hint': 'Füge in den KI-Einstellungen einen OpenAI-Schlüssel hinzu, um die Marktanalyse zu aktivieren.',
     'chat.analyze.pending': 'Marktanalyse läuft…',
+    'chat.automation.toggle': 'Automatisieren',
+    'chat.automation.interval': 'Intervall (Minuten)',
+    'chat.automation.nextRunLabel': 'Nächster Start in',
+    'chat.automation.running': 'Automatisierung läuft…',
+    'chat.automation.scheduled': 'Automatischer Durchlauf in {{minutes}} Minute(n) geplant.',
+    'chat.automation.stopped': 'Automatisierung deaktiviert.',
+    'chat.automation.rescheduled': 'Automatisierungsintervall auf {{minutes}} Minute(n) aktualisiert.',
     'chat.send': 'Senden',
     'chat.sending': 'Sende…',
     'chat.status.analyzing': 'Marktanalyse läuft…',
@@ -661,6 +680,13 @@ const TRANSLATIONS = {
     'chat.analyzing': '분석 중…',
     'chat.analyze.hint': 'AI 설정에서 OpenAI 키를 추가하면 시장 분석을 사용할 수 있습니다.',
     'chat.analyze.pending': '시장 분석을 실행하는 중…',
+    'chat.automation.toggle': '자동화',
+    'chat.automation.interval': '간격(분)',
+    'chat.automation.nextRunLabel': '다음 실행까지',
+    'chat.automation.running': '자동화 실행 중…',
+    'chat.automation.scheduled': '자동 실행이 {{minutes}}분 후로 예약되었습니다.',
+    'chat.automation.stopped': '자동화가 비활성화되었습니다.',
+    'chat.automation.rescheduled': '자동화 간격이 {{minutes}}분으로 업데이트되었습니다.',
     'chat.send': '보내기',
     'chat.sending': '전송 중…',
     'chat.status.analyzing': '시장 분석 중…',
@@ -886,6 +912,13 @@ const TRANSLATIONS = {
     'chat.analyzing': 'Analyse en cours…',
     'chat.analyze.hint': 'Ajoutez une clé OpenAI dans les paramètres IA pour activer l’analyse de marché.',
     'chat.analyze.pending': 'Analyse de marché en cours…',
+    'chat.automation.toggle': 'Automatiser',
+    'chat.automation.interval': 'Intervalle (minutes)',
+    'chat.automation.nextRunLabel': 'Prochaine exécution dans',
+    'chat.automation.running': 'Automatisation en cours…',
+    'chat.automation.scheduled': 'Cycle automatisé planifié dans {{minutes}} minute(s).',
+    'chat.automation.stopped': 'Automatisation désactivée.',
+    'chat.automation.rescheduled': 'Intervalle d’automatisation mis à jour à {{minutes}} minute(s).',
     'chat.send': 'Envoyer',
     'chat.sending': 'Envoi…',
     'chat.status.analyzing': 'Analyse de marché en cours…',
@@ -1111,6 +1144,13 @@ const TRANSLATIONS = {
     'chat.analyzing': 'Analizando…',
     'chat.analyze.hint': 'Agrega una clave de OpenAI en los ajustes de IA para activar el análisis de mercado.',
     'chat.analyze.pending': 'Análisis de mercado en curso…',
+    'chat.automation.toggle': 'Automatizar',
+    'chat.automation.interval': 'Intervalo (minutos)',
+    'chat.automation.nextRunLabel': 'Próxima ejecución en',
+    'chat.automation.running': 'Automatización en curso…',
+    'chat.automation.scheduled': 'Ciclo automatizado programado en {{minutes}} minuto(s).',
+    'chat.automation.stopped': 'Automatización desactivada.',
+    'chat.automation.rescheduled': 'Intervalo de automatización actualizado a {{minutes}} minuto(s).',
     'chat.send': 'Enviar',
     'chat.sending': 'Enviando…',
     'chat.status.analyzing': 'Análisis de mercado en curso…',
@@ -1333,6 +1373,13 @@ const TRANSLATIONS = {
     'chat.analyzing': 'Analiz ediliyor…',
     'chat.analyze.hint': 'Piyasa analizini açmak için AI ayarlarına bir OpenAI anahtarı ekleyin.',
     'chat.analyze.pending': 'Piyasa analizi yürütülüyor…',
+    'chat.automation.toggle': 'Otomatikleştir',
+    'chat.automation.interval': 'Aralık (dakika)',
+    'chat.automation.nextRunLabel': 'Sonraki çalıştırma',
+    'chat.automation.running': 'Otomasyon çalışıyor…',
+    'chat.automation.scheduled': 'Otomatik döngü {{minutes}} dakika içinde planlandı.',
+    'chat.automation.stopped': 'Otomasyon devre dışı bırakıldı.',
+    'chat.automation.rescheduled': 'Otomasyon aralığı {{minutes}} dakikaya güncellendi.',
     'chat.send': 'Gönder',
     'chat.sending': 'Gönderiliyor…',
     'chat.status.analyzing': 'Piyasa analizi yapılıyor…',
@@ -1551,6 +1598,13 @@ const TRANSLATIONS = {
     'chat.analyzing': '正在分析…',
     'chat.analyze.hint': '在 AI 设置中添加 OpenAI 密钥即可启用市场分析。',
     'chat.analyze.pending': '市场分析执行中…',
+    'chat.automation.toggle': '自动执行',
+    'chat.automation.interval': '间隔（分钟）',
+    'chat.automation.nextRunLabel': '下次运行还剩',
+    'chat.automation.running': '正在自动执行…',
+    'chat.automation.scheduled': '自动循环将在 {{minutes}} 分钟后运行。',
+    'chat.automation.stopped': '自动执行已关闭。',
+    'chat.automation.rescheduled': '自动执行间隔更新为 {{minutes}} 分钟。',
     'chat.send': '发送',
     'chat.sending': '正在发送…',
     'chat.status.analyzing': '市场分析中…',
@@ -1709,6 +1763,10 @@ let tradeModalReturnTarget = null;
 let decisionModalHideTimer = null;
 let decisionModalFinalizeHandler = null;
 let decisionModalReturnTarget = null;
+let automationActive = false;
+let automationTimeoutId = null;
+let automationCountdownIntervalId = null;
+let automationTargetTimestamp = null;
 const decisionReasonEvents = new Map();
 const DECISION_REASON_EVENT_LIMIT = 40;
 const tradeProposalRegistry = new Map();
@@ -1779,6 +1837,7 @@ function applyTranslations(lang) {
     targetLang
   );
   updateTakeProposalsButtonState();
+  updateAutomationCountdownDisplay();
   updateModeButtons();
   updateAiBudgetModeLabel();
   updateActivePositionsView();
@@ -1951,6 +2010,230 @@ function updateTakeProposalsButtonState() {
   } else {
     btnTakeTradeProposals.title = getTakeProposalsHintLabel();
   }
+}
+
+function sanitizeAutomationInterval() {
+  if (!automationIntervalInput) {
+    return 5;
+  }
+  const raw = Number.parseInt(automationIntervalInput.value, 10);
+  const minutes = Number.isFinite(raw) && raw >= 1 ? Math.min(raw, 1440) : 5;
+  automationIntervalInput.value = minutes.toString();
+  return minutes;
+}
+
+function getAutomationIntervalMinutes() {
+  if (!automationIntervalInput) {
+    return 5;
+  }
+  const raw = Number.parseInt(automationIntervalInput.value, 10);
+  if (!Number.isFinite(raw) || raw < 1) {
+    return sanitizeAutomationInterval();
+  }
+  return Math.min(raw, 1440);
+}
+
+function clearAutomationTimers() {
+  if (automationTimeoutId) {
+    clearTimeout(automationTimeoutId);
+    automationTimeoutId = null;
+  }
+  if (automationCountdownIntervalId) {
+    clearInterval(automationCountdownIntervalId);
+    automationCountdownIntervalId = null;
+  }
+}
+
+function updateAutomationCountdownDisplay() {
+  if (!automationCountdown) {
+    return;
+  }
+  if (!automationActive) {
+    automationCountdown.hidden = true;
+    automationCountdown.classList.remove('is-running');
+    if (automationCountdownLabel) {
+      automationCountdownLabel.textContent = translate('chat.automation.nextRunLabel', 'Next run in');
+    }
+    if (automationCountdownValue) {
+      automationCountdownValue.textContent = '';
+    }
+    return;
+  }
+
+  if (!automationTargetTimestamp) {
+    automationCountdown.hidden = false;
+    automationCountdown.classList.add('is-running');
+    if (automationCountdownLabel) {
+      automationCountdownLabel.textContent = translate('chat.automation.running', 'Running now…');
+    }
+    if (automationCountdownValue) {
+      automationCountdownValue.textContent = '';
+    }
+    return;
+  }
+
+  const now = Date.now();
+  const remaining = Math.max(automationTargetTimestamp - now, 0);
+  const totalSeconds = Math.ceil(remaining / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const formatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+  automationCountdown.hidden = false;
+  automationCountdown.classList.remove('is-running');
+  if (automationCountdownLabel) {
+    automationCountdownLabel.textContent = translate('chat.automation.nextRunLabel', 'Next run in');
+  }
+  if (automationCountdownValue) {
+    automationCountdownValue.textContent = formatted;
+  }
+}
+
+function stopAutomation(options = {}) {
+  const { message } = options;
+  automationActive = false;
+  clearAutomationTimers();
+  automationTargetTimestamp = null;
+  if (automationToggle) {
+    automationToggle.checked = false;
+  }
+  updateAutomationCountdownDisplay();
+  if (message) {
+    setChatStatus(message);
+  }
+}
+
+function scheduleAutomationCycle() {
+  if (!automationActive) {
+    return;
+  }
+  const minutes = getAutomationIntervalMinutes();
+  const delayMs = Math.min(minutes * 60_000, 2_147_483_647);
+  automationTargetTimestamp = Date.now() + delayMs;
+  clearAutomationTimers();
+  updateAutomationCountdownDisplay();
+  automationCountdownIntervalId = setInterval(updateAutomationCountdownDisplay, 1000);
+  automationTimeoutId = setTimeout(() => {
+    automationTargetTimestamp = null;
+    updateAutomationCountdownDisplay();
+    runAutomationCycle().catch((err) => {
+      console.warn('Automation cycle failed', err);
+    });
+  }, delayMs);
+}
+
+async function runAutomationCycle() {
+  if (!automationActive) {
+    return;
+  }
+  updateAutomationCountdownDisplay();
+  const analysisSuccessful = await runMarketAnalysis({ automated: true });
+  if (!automationActive) {
+    return;
+  }
+  if (analysisSuccessful) {
+    try {
+      await handleTakeTradeProposals();
+    } catch (err) {
+      console.warn('Automated trade proposal execution failed', err);
+    }
+  }
+  if (automationActive) {
+    scheduleAutomationCycle();
+  }
+}
+
+function startAutomation() {
+  if (automationActive) {
+    return;
+  }
+  const minutes = sanitizeAutomationInterval();
+  if (!hasDashboardChatKey()) {
+    stopAutomation();
+    setChatStatus(translate('chat.status.keyRequired', 'OpenAI key required.'));
+    setChatKeyIndicator('missing', translate('chat.status.keyRequired', 'OpenAI key required.'));
+    return;
+  }
+  automationActive = true;
+  scheduleAutomationCycle();
+  const summary = translate('chat.automation.scheduled', 'Automated cycle scheduled for {{minutes}} minute(s).', {
+    minutes,
+  });
+  setChatStatus(summary);
+}
+
+async function runMarketAnalysis(options = {}) {
+  const { automated = false } = options;
+  if (!btnAnalyzeMarket) {
+    return false;
+  }
+  if (aiAnalyzePending) {
+    return false;
+  }
+  if (!hasDashboardChatKey()) {
+    setChatStatus(translate('chat.status.keyRequired', 'OpenAI key required.'));
+    setChatKeyIndicator('missing', translate('chat.status.keyRequired', 'OpenAI key required.'));
+    if (automated) {
+      stopAutomation();
+    }
+    return false;
+  }
+  aiAnalyzePending = true;
+  btnAnalyzeMarket.textContent = translate('chat.analyzing', 'Analyzing…');
+  updateAnalyzeButtonAvailability();
+  setChatStatus(translate('chat.status.analyzing', 'Analyzing market…'));
+  let success = false;
+  try {
+    const res = await fetch('/api/ai/analyze', { method: 'POST' });
+    const text = await res.text();
+    let data = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch (parseErr) {
+      data = {};
+    }
+    if (!res.ok) {
+      const detail = data && typeof data === 'object' ? data.detail || data.message : null;
+      throw new Error(detail || 'Market analysis failed');
+    }
+    const analysis =
+      (data.analysis || '').toString().trim() || translate('chat.analysis.none', 'No analysis returned.');
+    appendChatMessage('assistant', analysis, {
+      model: data.model,
+      source: data.source || 'analysis',
+      roleLabel: translate('chat.role.analysis', 'Market Analysis'),
+    });
+    if (data.source === 'fallback') {
+      setChatStatus(translate('chat.status.fallback', 'Market analysis (fallback).'));
+    } else {
+      setChatStatus(translate('chat.status.ready', 'Market analysis ready.'));
+    }
+    setChatKeyIndicator('ready', translate('chat.key.ready', 'Dedicated chat key active'));
+    if (Array.isArray(data.trade_proposals) && data.trade_proposals.length > 0) {
+      data.trade_proposals.forEach((proposal) => appendTradeProposalCard(proposal));
+    }
+    success = true;
+  } catch (err) {
+    const defaultError = translate('chat.status.failed', 'Market analysis failed.');
+    const rawMessage = (err?.message || '').trim();
+    const errorMessage =
+      rawMessage && rawMessage !== 'Market analysis failed' && rawMessage !== 'Market analysis failed.'
+        ? rawMessage
+        : defaultError;
+    appendChatMessage('assistant', errorMessage, {
+      source: 'error',
+      roleLabel: translate('chat.role.analysis', 'Market Analysis'),
+    });
+    setChatStatus(translate('chat.status.failed', 'Market analysis failed.'));
+    if (automated && rawMessage && rawMessage.toLowerCase().includes('key')) {
+      stopAutomation();
+    }
+  } finally {
+    aiAnalyzePending = false;
+    btnAnalyzeMarket.textContent = analyzeButtonDefaultLabel;
+    updateAnalyzeButtonAvailability();
+  }
+  return success;
 }
 
 function updateLanguageButtonsState() {
@@ -5324,6 +5607,7 @@ function syncAiChatAvailability() {
   const hasKey = hasDashboardChatKey();
   updateAnalyzeButtonAvailability();
   if (!aiMode) {
+    stopAutomation();
     aiChatInput.value = '';
     aiChatInput.disabled = true;
     if (aiChatSubmit) aiChatSubmit.disabled = true;
@@ -5336,6 +5620,7 @@ function syncAiChatAvailability() {
   }
 
   if (!hasKey) {
+    stopAutomation();
     aiChatInput.value = '';
     aiChatInput.disabled = true;
     if (aiChatSubmit) aiChatSubmit.disabled = true;
@@ -6873,6 +7158,9 @@ function applyPreset(key, options = {}) {
 
 function setAiMode(state) {
   aiMode = Boolean(state);
+  if (!aiMode) {
+    stopAutomation();
+  }
   document.body.classList.toggle('ai-mode', aiMode);
   renderAiBudget(lastAiBudget);
   renderAiActivity(latestTradesSnapshot?.ai_activity);
@@ -7359,68 +7647,42 @@ if (autoScrollToggles.length > 0) {
   autoScrollEnabled = true;
 }
 
-if (btnAnalyzeMarket) {
-  btnAnalyzeMarket.addEventListener('click', async () => {
-    if (aiAnalyzePending) {
-      return;
-    }
-    if (!hasDashboardChatKey()) {
-      setChatStatus(translate('chat.status.keyRequired', 'OpenAI key required.'));
-      setChatKeyIndicator('missing', translate('chat.status.keyRequired', 'OpenAI key required.'));
-      return;
-    }
-    aiAnalyzePending = true;
-    btnAnalyzeMarket.textContent = translate('chat.analyzing', 'Analyzing…');
-    updateAnalyzeButtonAvailability();
-      setChatStatus(translate('chat.status.analyzing', 'Analyzing market…'));
-    try {
-      const res = await fetch('/api/ai/analyze', { method: 'POST' });
-      const text = await res.text();
-      let data = {};
-      try {
-        data = text ? JSON.parse(text) : {};
-      } catch (parseErr) {
-        data = {};
-      }
-      if (!res.ok) {
-        const detail = data && typeof data === 'object' ? data.detail || data.message : null;
-        throw new Error(detail || 'Market analysis failed');
-      }
-      const analysis =
-        (data.analysis || '').toString().trim() || translate('chat.analysis.none', 'No analysis returned.');
-      appendChatMessage('assistant', analysis, {
-        model: data.model,
-        source: data.source || 'analysis',
-        roleLabel: translate('chat.role.analysis', 'Market Analysis'),
-      });
-      if (data.source === 'fallback') {
-        setChatStatus(translate('chat.status.fallback', 'Market analysis (fallback).'));
-      } else {
-        setChatStatus(translate('chat.status.ready', 'Market analysis ready.'));
-      }
-      setChatKeyIndicator('ready', translate('chat.key.ready', 'Dedicated chat key active'));
-      if (Array.isArray(data.trade_proposals) && data.trade_proposals.length > 0) {
-        data.trade_proposals.forEach((proposal) => appendTradeProposalCard(proposal));
-      }
-    } catch (err) {
-      const defaultError = translate('chat.status.failed', 'Market analysis failed.');
-      const rawMessage = (err?.message || '').trim();
-      const errorMessage =
-        rawMessage && rawMessage !== 'Market analysis failed' && rawMessage !== 'Market analysis failed.'
-          ? rawMessage
-          : defaultError;
-      appendChatMessage('assistant', errorMessage, {
-        source: 'error',
-        roleLabel: translate('chat.role.analysis', 'Market Analysis'),
-      });
-      setChatStatus(translate('chat.status.failed', 'Market analysis failed.'));
-    } finally {
-      aiAnalyzePending = false;
-      btnAnalyzeMarket.textContent = analyzeButtonDefaultLabel;
-      updateAnalyzeButtonAvailability();
+if (automationToggle) {
+  automationToggle.addEventListener('change', () => {
+    if (automationToggle.checked) {
+      startAutomation();
+    } else {
+      stopAutomation({ message: translate('chat.automation.stopped', 'Automation disabled.') });
     }
   });
 }
+
+if (automationIntervalInput) {
+  automationIntervalInput.addEventListener('change', () => {
+    const minutes = sanitizeAutomationInterval();
+    if (automationActive) {
+      scheduleAutomationCycle();
+      const message = translate(
+        'chat.automation.rescheduled',
+        'Automation interval updated to {{minutes}} minute(s).',
+        { minutes }
+      );
+      setChatStatus(message);
+    }
+  });
+  automationIntervalInput.addEventListener('blur', () => {
+    sanitizeAutomationInterval();
+  });
+}
+
+if (btnAnalyzeMarket) {
+  btnAnalyzeMarket.addEventListener('click', () => {
+    runMarketAnalysis();
+  });
+}
+
+sanitizeAutomationInterval();
+updateAutomationCountdownDisplay();
 
 btnTakeTradeProposals?.addEventListener('click', handleTakeTradeProposals);
 
