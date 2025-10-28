@@ -102,9 +102,11 @@ class AlphaModel:
         self.norm_count: float = 0.0
         self.train_count: float = 0.0
         self.last_prob: float = 0.5
+        self._norm_dim: int = 0
 
     def _ensure_stats(self) -> None:
         target = len(FEATURES)
+        prev_dim = self._norm_dim or (len(self.mean) if self.mean is not None else 0)
         if self.mean is None or len(self.mean) != target:
             if self.mean is None:
                 self.mean = np.zeros(target, dtype=float)
@@ -120,6 +122,10 @@ class AlphaModel:
                 self.m2 = new_m2
                 if self.norm_count < 0:
                     self.norm_count = 0.0
+        if target != prev_dim:
+            if prev_dim and target > prev_dim:
+                self.norm_count = 0.0
+            self._norm_dim = target
 
     def _norm(self, x_raw: np.ndarray, update: bool) -> np.ndarray:
         self._ensure_stats()
