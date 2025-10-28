@@ -1255,17 +1255,18 @@ class AIChatEngine:
                     sanitized = re.sub(r"[^A-Z0-9:_-]", "", raw_symbol.upper())
                     if sanitized:
                         symbol = sanitized.replace("/", "")
-            try:
-                symbol_candidates = re.findall(r"\b([A-Z]{2,}[A-Z0-9]{0,})\b", thesis_line)
-            except re.error:
-                symbol_candidates = []
-            for candidate in symbol_candidates:
-                normalized_candidate = candidate.upper().replace("/", "")
-                if normalized_candidate in {"LONG", "SHORT"}:
-                    continue
-                if normalized_candidate.endswith(("USDT", "USDC", "USD", "PERP")) or len(normalized_candidate) >= 6:
-                    symbol = normalized_candidate
-                    break
+            if not symbol:
+                try:
+                    symbol_candidates = re.findall(r"\b([A-Z]{2,}[A-Z0-9]{0,})\b", thesis_line)
+                except re.error:
+                    symbol_candidates = []
+                for candidate in symbol_candidates:
+                    normalized_candidate = candidate.upper().replace("/", "")
+                    if normalized_candidate in {"LONG", "SHORT"}:
+                        continue
+                    if normalized_candidate.endswith(("USDT", "USDC", "USD", "PERP")) or len(normalized_candidate) >= 6:
+                        symbol = normalized_candidate
+                        break
             if not symbol:
                 continue
 
