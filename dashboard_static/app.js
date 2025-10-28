@@ -6286,11 +6286,144 @@ function formatRelativeTime(input) {
 
 function summariseDataRecord(record) {
   if (!record || typeof record !== 'object') return '';
-  const entries = Object.entries(record)
-    .filter(([key, value]) => value !== null && value !== undefined && typeof value !== 'object')
-    .slice(0, 4)
-    .map(([key, value]) => `${key}: ${value}`);
-  return entries.join(' · ');
+
+  const MAX_SEGMENTS = 10;
+  const bannedTopKeys = new Set(['manual_request', 'request_id']);
+  const scalarEntries = [];
+  Object.entries(record).forEach(([key, value]) => {
+    if (bannedTopKeys.has(key)) return;
+    if (value === null || value === undefined) return;
+    if (typeof value === 'object') return;
+    scalarEntries.push([key, value]);
+  });
+  const scalarMap = new Map(scalarEntries);
+
+  const indicatorSource =
+    record && typeof record.indicators === 'object' && record.indicators !== null
+      ? record.indicators
+      : null;
+  const indicatorMap = new Map(
+    indicatorSource ? Object.entries(indicatorSource).filter(([, value]) => value !== null && value !== undefined) : []
+  );
+
+  const featureSourceRaw =
+    record && typeof record.bandit_features === 'object' && record.bandit_features !== null
+      ? record.bandit_features
+      : record && typeof record.features === 'object' && record.features !== null
+        ? record.features
+        : null;
+  const featureMap = new Map(
+    featureSourceRaw ? Object.entries(featureSourceRaw).filter(([, value]) => value !== null && value !== undefined) : []
+  );
+
+  const indicatorFormatting = {
+    rsi: { label: 'RSI', digits: 1 },
+    bb_position: { label: 'BB%', digits: 1, scale: 100 },
+    bb_width: { label: 'BBw', digits: 4 },
+    supertrend_dir: { label: 'STdir', digits: 1, signed: true },
+    supertrend: { label: 'ST', digits: 2 },
+    stoch_rsi_d: { label: 'StochD', digits: 1 },
+    stoch_rsi_k: { label: 'StochK', digits: 1 },
+  };
+
+  const featureFormatting = {
+    atr_pct: { label: 'ATR%', digits: 2, scale: 100 },
+    adx: { label: 'ADX', digits: 1 },
+    slope_htf: { label: 'Slope', digits: 3, signed: true },
+    spread_bps: { label: 'Spreadbps', digits: 1, scale: 10000 },
+    funding: { label: 'Funding%', digits: 4, scale: 100, signed: true },
+    qv_score: { label: 'QVol', digits: 2 },
+    trend: { label: 'Trend', digits: 0, signed: true },
+    regime_adx: { label: 'RegADX', digits: 1 },
+    regime_slope: { label: 'RegSlope', digits: 3, signed: true },
+  };
+
+  const priorityScalars = [
+    { key: 'symbol', label: 'Symbol', raw: true },
+    { key: 'side', label: 'Side', raw: true },
+    { key: 'bucket', label: 'Bucket', raw: true },
+    { key: 'qty', label: 'Qty', raw: true },
+    { key: 'entry', label: 'Entry', digits: 4 },
+    { key: 'sl', label: 'SL', digits: 4 },
+    { key: 'tp', label: 'TP', digits: 4 },
+    { key: 'alpha_prob', label: 'α', digits: 3 },
+    { key: 'alpha_conf', label: 'αc', digits: 2 },
+    { key: 'expected_r', label: 'ExpR', digits: 2, signed: true },
+  ];
+
+  const indicatorPriority = ['rsi', 'bb_position', 'bb_width', 'supertrend_dir', 'supertrend', 'stoch_rsi_d'];
+  const featurePriority = ['atr_pct', 'adx', 'slope_htf', 'spread_bps', 'funding', 'qv_score', 'trend', 'regime_adx', 'regime_slope'];
+
+  const segments = [];
+
+  function formatValue(value, options = {}) {
+    const { digits = 2, signed = false, scale = 1, suffix = '', raw = false } = options;
+    if (value === null || value === undefined) return '';
+    if (raw) return String(value);
+    if (typeof value === 'boolean') return value ? 'yes' : 'no';
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      return String(value);
+    }
+    const scaled = numeric * scale;
+    let text = scaled.toFixed(digits);
+    if (signed && scaled > 0) {
+      text = `+${text}`;
+    }
+    return suffix ? `${text}${suffix}` : text;
+  }
+
+  function appendFromMap(map, key, label, options = {}) {
+    if (segments.length >= MAX_SEGMENTS) return;
+    if (!map.has(key)) return;
+    const value = map.get(key);
+    const rendered = formatValue(value, options);
+    if (!rendered) {
+      map.delete(key);
+      return;
+    }
+    segments.push(`${label ?? key}: ${rendered}`);
+    map.delete(key);
+  }
+
+  priorityScalars.forEach((item) => {
+    appendFromMap(scalarMap, item.key, item.label, item);
+  });
+
+  indicatorPriority.forEach((key) => {
+    const fmt = indicatorFormatting[key] || { label: key };
+    appendFromMap(indicatorMap, key, fmt.label || key, fmt);
+  });
+
+  featurePriority.forEach((key) => {
+    const fmt = featureFormatting[key] || { label: key };
+    appendFromMap(featureMap, key, fmt.label || key, fmt);
+  });
+
+  if (segments.length < MAX_SEGMENTS) {
+    for (const key of Array.from(scalarMap.keys())) {
+      appendFromMap(scalarMap, key, key);
+      if (segments.length >= MAX_SEGMENTS) break;
+    }
+  }
+
+  if (segments.length < MAX_SEGMENTS) {
+    for (const key of Array.from(indicatorMap.keys())) {
+      const fmt = indicatorFormatting[key] || { label: key };
+      appendFromMap(indicatorMap, key, fmt.label || key, fmt);
+      if (segments.length >= MAX_SEGMENTS) break;
+    }
+  }
+
+  if (segments.length < MAX_SEGMENTS) {
+    for (const key of Array.from(featureMap.keys())) {
+      const fmt = featureFormatting[key] || { label: key };
+      appendFromMap(featureMap, key, fmt.label || key, fmt);
+      if (segments.length >= MAX_SEGMENTS) break;
+    }
+  }
+
+  return segments.join(' · ');
 }
 
 function sleep(ms) {
