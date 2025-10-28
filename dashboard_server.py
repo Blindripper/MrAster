@@ -1140,8 +1140,7 @@ class AIChatEngine:
         joiner = "\n\n" if trimmed else ""
         return f"{trimmed}{joiner}{follow_up}"
 
-    @staticmethod
-    def _extract_trade_proposals(text: str) -> List[Dict[str, Any]]:
+    def _extract_trade_proposals(self, text: str) -> List[Dict[str, Any]]:
         if not text:
             return []
         proposals: List[Dict[str, Any]] = []
@@ -1162,6 +1161,191 @@ class AIChatEngine:
             if action_type not in {"propose_trade", "trade_proposal", "trade_plan"}:
                 continue
             proposals.append(payload)
+
+        if proposals:
+            return proposals
+
+        structured = self._extract_structured_trade_proposals(text)
+        if structured:
+            proposals.extend(structured)
+        return proposals
+
+    def _default_proposal_notional(self) -> Optional[float]:
+        env = self._env()
+        candidates = (
+            env.get("ASTER_AI_DEFAULT_NOTIONAL"),
+            env.get("ASTER_DEFAULT_NOTIONAL"),
+            ENV_DEFAULTS.get("ASTER_AI_DEFAULT_NOTIONAL"),
+            ENV_DEFAULTS.get("ASTER_DEFAULT_NOTIONAL"),
+        )
+        for raw in candidates:
+            value = self._safe_float(raw)
+            if value and value > 0:
+                return value
+        return None
+
+    @staticmethod
+    def _extract_numbers(text: str) -> List[float]:
+        if not text:
+            return []
+        try:
+            matches = re.findall(r"-?\d+(?:[.,]\d+)?", text)
+        except re.error:
+            return []
+        numbers: List[float] = []
+        for raw in matches:
+            normalized = raw.replace(",", "")
+            try:
+                numbers.append(float(normalized))
+            except ValueError:
+                continue
+        return numbers
+
+    def _extract_structured_trade_proposals(self, text: str) -> List[Dict[str, Any]]:
+        try:
+            thesis_matches = list(re.finditer(r"\*\*Thesis\*\*:\s*", text, flags=re.IGNORECASE))
+        except re.error:
+            return []
+        if not thesis_matches:
+            return []
+
+        default_notional = self._default_proposal_notional()
+        if default_notional is None:
+            return []
+
+        trade_input_hints: Dict[str, str] = {}
+        try:
+            for sym, side in re.findall(r"\*\*([A-Z0-9]{3,})\s+(Long|Short)\*\*", text, flags=re.IGNORECASE):
+                trade_input_hints[sym.upper()] = side.upper()
+        except re.error:
+            trade_input_hints = {}
+
+        try:
+            idea_headers = list(re.finditer(r"\*\*(Long|Short)\s+Idea\*\*", text, flags=re.IGNORECASE))
+        except re.error:
+            idea_headers = []
+
+        proposals: List[Dict[str, Any]] = []
+
+        def header_direction(position: int) -> Optional[str]:
+            direction: Optional[str] = None
+            for header in idea_headers:
+                if header.start() < position:
+                    direction = header.group(1).upper()
+                else:
+                    break
+            return direction
+
+        for idx, match in enumerate(thesis_matches):
+            start = match.start()
+            end = thesis_matches[idx + 1].start() if idx + 1 < len(thesis_matches) else len(text)
+            block = text[start:end]
+            thesis_line_match = re.search(r"\*\*Thesis\*\*:\s*(.+)", block, re.IGNORECASE)
+            if not thesis_line_match:
+                continue
+            thesis_line = thesis_line_match.group(1).strip()
+            if not thesis_line:
+                continue
+
+            symbol: Optional[str] = None
+            try:
+                symbol_candidates = re.findall(r"\b([A-Z]{2,}[A-Z0-9]{0,})\b", thesis_line)
+            except re.error:
+                symbol_candidates = []
+            for candidate in symbol_candidates:
+                normalized_candidate = candidate.upper().replace("/", "")
+                if normalized_candidate in {"LONG", "SHORT"}:
+                    continue
+                if normalized_candidate.endswith(("USDT", "USDC", "USD", "PERP")) or len(normalized_candidate) >= 6:
+                    symbol = normalized_candidate
+                    break
+            if not symbol:
+                continue
+
+            entry_line_match = re.search(r"Entry[^\n]*", block, re.IGNORECASE)
+            entry_numbers = self._extract_numbers(entry_line_match.group(0)) if entry_line_match else []
+            entry_price: Optional[float] = None
+            entry_label: Optional[str] = None
+            if entry_numbers:
+                if len(entry_numbers) >= 2:
+                    low, high = sorted(entry_numbers[:2])
+                    entry_price = (low + high) / 2.0
+                    entry_label = f"Zone {low:.2f}-{high:.2f}"
+                else:
+                    entry_price = entry_numbers[0]
+            entry_kind = "limit" if entry_price is not None else "market"
+
+            invalidation_match = re.search(r"Invalidation\*\*:\s*([^\n]+)", block, re.IGNORECASE)
+            invalidation_numbers = (
+                self._extract_numbers(invalidation_match.group(1)) if invalidation_match else []
+            )
+            stop_loss = invalidation_numbers[0] if invalidation_numbers else None
+
+            target_match = re.search(r"Target\*\*:\s*([^\n]+)", block, re.IGNORECASE)
+            target_numbers = self._extract_numbers(target_match.group(1)) if target_match else []
+            take_profit = target_numbers[0] if target_numbers else None
+
+            if stop_loss is None or take_profit is None:
+                continue
+
+            direction: Optional[str] = trade_input_hints.get(symbol)
+            if not direction:
+                header_hint = header_direction(start)
+                if header_hint:
+                    direction = header_hint
+            if not direction:
+                if re.search(r"\bshort\b", thesis_line, re.IGNORECASE) or re.search(
+                    r"\bbearish\b", block, re.IGNORECASE
+                ):
+                    direction = "SHORT"
+                elif re.search(r"\blong\b", thesis_line, re.IGNORECASE) or re.search(
+                    r"\bbullish\b", block, re.IGNORECASE
+                ):
+                    direction = "LONG"
+
+            if not direction and entry_price is not None:
+                if take_profit > entry_price and (stop_loss < entry_price if stop_loss is not None else False):
+                    direction = "LONG"
+                elif take_profit < entry_price and (stop_loss > entry_price if stop_loss is not None else False):
+                    direction = "SHORT"
+
+            if not direction and entry_price is not None:
+                direction = "LONG" if take_profit >= entry_price else "SHORT"
+
+            if not direction:
+                continue
+
+            note_parts = [thesis_line]
+            catalysts_match = re.search(r"Catalysts\*\*:\s*([^\n]+)", block, re.IGNORECASE)
+            if catalysts_match:
+                catalysts = catalysts_match.group(1).strip()
+                if catalysts:
+                    note_parts.append(f"Catalysts: {catalysts}")
+            caveats_match = re.search(r"Data Caveats\*\*:\s*([^\n]+)", block, re.IGNORECASE)
+            if caveats_match:
+                caveats = caveats_match.group(1).strip()
+                if caveats:
+                    note_parts.append(f"Data Caveats: {caveats}")
+            note = " | ".join(note_parts)
+            if note and len(note) > 320:
+                note = note[:317] + "…"
+
+            proposal: Dict[str, Any] = {
+                "type": "propose_trade",
+                "symbol": symbol,
+                "direction": direction,
+                "entry_kind": entry_kind,
+                "entry_price": entry_price,
+                "entry_label": entry_label,
+                "stop_loss": stop_loss,
+                "take_profit": take_profit,
+                "notional": default_notional,
+                "timeframe": None,
+                "confidence": None,
+                "note": note,
+            }
+            proposals.append(proposal)
+
         return proposals
 
     def _normalize_trade_proposal(self, raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
