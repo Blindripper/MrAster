@@ -1176,6 +1176,9 @@ class AITradeAdvisor:
                 pending=False,
                 request_id=info.get("request_id"),
             )
+            timeout_plan["take"] = bool(fallback.get("take", True))
+            timeout_plan["decision"] = "take" if timeout_plan["take"] else "skip"
+            timeout_plan["ai_fallback"] = True
             self._recent_plan_store(throttle_key, fallback, now)
             return "timeout", timeout_plan
         stub = self._pending_stub(
@@ -3997,6 +4000,8 @@ class Bot:
                 "budget": self.ai_advisor.budget_snapshot(),
                 "generated_at": datetime.now(timezone.utc).isoformat(),
             }
+            if plan.get("ai_fallback"):
+                ai_meta["fallback"] = True
             if isinstance(explanation, str) and explanation.strip():
                 ai_meta["explanation"] = explanation.strip()
             if plan.get("decision_reason"):
@@ -4065,9 +4070,12 @@ class Bot:
                     note_parts.append(f"Sentinel {sentinel_label}")
                 if note_parts:
                     note_body = " · ".join(note_parts)
+            decision_headline = f"AI approved {symbol}"
+            if plan.get("ai_fallback"):
+                decision_headline = f"Fallback engaged for {symbol}"
             self._log_ai_activity(
                 "decision",
-                f"AI approved {symbol}",
+                decision_headline,
                 body=note_body,
                 data={"symbol": symbol, "side": sig, **decision_summary},
                 force=True,
