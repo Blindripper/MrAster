@@ -1419,6 +1419,37 @@ class AITradeAdvisor:
         _, plan = bundle
         return copy.deepcopy(plan)
 
+    def consume_signal_plan(self, symbol: str) -> Optional[Tuple[str, Dict[str, Any]]]:
+        if self._min_interval <= 0:
+            return None
+        if not symbol:
+            return None
+        prefix = f"plan::{symbol.upper()}::"
+        now = time.time()
+        selected_key: Optional[str] = None
+        selected_side: Optional[str] = None
+        selected_plan: Optional[Dict[str, Any]] = None
+        for key, (ts, plan) in list(self._recent_plans.items()):
+            if not key.startswith(prefix):
+                continue
+            if now - ts > self._min_interval:
+                self._recent_plans.pop(key, None)
+                continue
+            if not isinstance(plan, dict):
+                continue
+            selected_key = key
+            selected_side = key.rsplit("::", 1)[-1]
+            selected_plan = copy.deepcopy(plan)
+            break
+        if not selected_key or not selected_plan:
+            return None
+        self._recent_plans.pop(selected_key, None)
+        try:
+            self._persist_state()
+        except Exception:
+            pass
+        return str(selected_side or "").upper(), selected_plan
+
     def _ensure_bounds(self, text: str, fallback: str) -> str:
         base_words = [w for w in re.split(r"\s+", (text or "").strip()) if w]
         if len(base_words) < 12:
@@ -3825,7 +3856,21 @@ class Bot:
                 except (TypeError, ValueError):
                     manual_notional = None
 
-        if not manual_override and base_signal == "NONE":
+        recovered_plan: Optional[Dict[str, Any]] = None
+        if self.ai_advisor and not manual_override and base_signal == "NONE":
+            resumed = self.ai_advisor.consume_signal_plan(symbol)
+            if resumed:
+                resumed_side, resumed_plan = resumed
+                resumed_side = str(resumed_side or "").upper()
+                if resumed_side in {"BUY", "SELL"}:
+                    sig = resumed_side
+                    recovered_plan = resumed_plan
+                    ctx["ai_generated_signal"] = True
+                    ctx["ai_recovered_signal_plan"] = True
+                else:
+                    recovered_plan = None
+
+        if not manual_override and sig == "NONE" and not self.ai_advisor:
             return
 
         min_qvol = float(ctx.get("min_quote_volume", self.strategy.min_quote_vol))
@@ -4089,9 +4134,9 @@ class Bot:
                         data={"symbol": symbol, "side": sig, **decision_summary},
                     )
             else:
-                plan_origin = "signal"
+                plan_origin = str((recovered_plan or {}).get("origin") or "signal")
                 plan: Dict[str, Any]
-                ready_plan: Optional[Dict[str, Any]] = None
+                ready_plan: Optional[Dict[str, Any]] = recovered_plan
                 if manual_override and manual_req:
                     ready_plan = manual_req.pop("ai_ready_plan", None)
                     if ready_plan:
