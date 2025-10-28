@@ -1121,6 +1121,19 @@ class AITradeAdvisor:
         note = info.get("note") or "Waiting for AI plan response"
         future = info.get("future")
         if future is None:
+            if not self.enabled or not self._executor:
+                self._remove_pending_entry(throttle_key)
+                disabled_plan = self._pending_stub(
+                    fallback,
+                    f"{kind}_disabled",
+                    "AI planning disabled; using fallback heuristics.",
+                    throttle_key=throttle_key,
+                    pending=False,
+                    request_id=info.get("request_id"),
+                )
+                disabled_plan["take"] = bool(fallback.get("take", True))
+                disabled_plan["decision"] = "take" if disabled_plan["take"] else "skip"
+                return "fallback", disabled_plan
             ready_after = float(info.get("ready_after", now) or now)
             if ready_after <= now and self._executor:
                 cooldown_ok = AI_GLOBAL_COOLDOWN <= 0 or (now - self._last_global_request) >= AI_GLOBAL_COOLDOWN
@@ -1367,6 +1380,20 @@ class AITradeAdvisor:
         while len(self._recent_plans) > self.RECENT_PLAN_LIMIT:
             self._recent_plans.popitem(last=False)
         self._persist_state()
+
+    def consume_recent_plan(self, key: str) -> Optional[Dict[str, Any]]:
+        if self._min_interval <= 0 or not key:
+            return None
+        bundle = self._recent_plans.pop(key, None)
+        if not bundle:
+            return None
+        try:
+            self._persist_state()
+        except Exception:
+            # Persistence issues should not block delivering the plan.
+            pass
+        _, plan = bundle
+        return copy.deepcopy(plan)
 
     def _ensure_bounds(self, text: str, fallback: str) -> str:
         base_words = [w for w in re.split(r"\s+", (text or "").strip()) if w]
@@ -3495,6 +3522,34 @@ class Bot:
         if updated:
             self.state["manual_trade_requests"] = queue_mem
 
+    def _resume_ai_pending_manual_requests(self) -> None:
+        if not self.ai_advisor:
+            return
+        queue = self.state.get("manual_trade_requests")
+        if not isinstance(queue, list):
+            return
+        dirty = False
+        for item in queue:
+            if not isinstance(item, dict):
+                continue
+            status = str(item.get("status") or "").lower()
+            if status != "ai_pending":
+                continue
+            key = item.get("ai_pending_key")
+            if not isinstance(key, str) or not key:
+                continue
+            plan = self.ai_advisor.consume_recent_plan(key)
+            if not plan:
+                continue
+            item["status"] = "pending"
+            item.pop("ai_pending_key", None)
+            item.pop("ai_request_id", None)
+            item["ai_ready_plan"] = plan
+            item["ai_ready_at"] = time.time()
+            dirty = True
+        if dirty:
+            self._manual_state_dirty = True
+
     def _pop_manual_request(self, symbol: str) -> Optional[Dict[str, Any]]:
         queue = self.state.get("manual_trade_requests")
         if not isinstance(queue, list):
@@ -3925,18 +3980,31 @@ class Bot:
                         data={"symbol": symbol, "side": sig, **decision_summary},
                     )
             else:
-                plan = self.ai_advisor.plan_trade(
-                    symbol,
-                    sig,
-                    price_for_plan,
-                    sl_dist,
-                    tp_dist,
-                    ctx,
-                    sentinel_info,
-                    atr_abs,
-                    async_mode=True,
-                )
                 plan_origin = "signal"
+                plan: Dict[str, Any]
+                ready_plan: Optional[Dict[str, Any]] = None
+                if manual_override and manual_req:
+                    ready_plan = manual_req.pop("ai_ready_plan", None)
+                    if ready_plan:
+                        manual_req.pop("ai_ready_at", None)
+                        manual_req.pop("ai_pending_key", None)
+                        manual_req.pop("ai_request_id", None)
+                        manual_req.pop("decision_note", None)
+                        self._manual_state_dirty = True
+                if ready_plan:
+                    plan = ready_plan
+                else:
+                    plan = self.ai_advisor.plan_trade(
+                        symbol,
+                        sig,
+                        price_for_plan,
+                        sl_dist,
+                        tp_dist,
+                        ctx,
+                        sentinel_info,
+                        atr_abs,
+                        async_mode=True,
+                    )
                 decision_summary = {
                     "decision": plan.get("decision"),
                     "take": bool(plan.get("take", True)),
@@ -3954,6 +4022,13 @@ class Bot:
                 }
                 explanation = plan.get("explanation")
                 if plan.get("_pending"):
+                    if manual_override and manual_req:
+                        manual_req["status"] = "ai_pending"
+                        manual_req["ai_pending_key"] = plan.get("_pending_key")
+                        manual_req["ai_request_id"] = plan.get("request_id")
+                        manual_req["decision_note"] = plan.get("decision_note")
+                        manual_req["updated_at"] = time.time()
+                        self._manual_state_dirty = True
                     if self.ai_advisor.should_log_pending(plan):
                         request_id = plan.get("request_id")
                         self._log_ai_activity(
@@ -4387,6 +4462,10 @@ class Bot:
                 self.ai_advisor.flush_pending()
             except Exception as exc:
                 log.debug(f"pending flush failed: {exc}")
+            try:
+                self._resume_ai_pending_manual_requests()
+            except Exception as exc:
+                log.debug(f"manual resume failed: {exc}")
         syms = self.universe.refresh()
 
         pending_manual: Set[str] = set()
