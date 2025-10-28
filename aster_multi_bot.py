@@ -1495,15 +1495,42 @@ class AITradeAdvisor:
     def _parse_structured(self, content: str) -> Optional[Dict[str, Any]]:
         if not content:
             return None
+
+        text = content.strip()
         try:
-            return json.loads(content)
+            return json.loads(text)
         except json.JSONDecodeError:
-            match = re.search(r"\{[\s\S]*\}", content)
-            if match:
-                try:
-                    return json.loads(match.group(0))
-                except json.JSONDecodeError:
-                    return None
+            pass
+
+        # Prefer JSON fenced blocks (```json ... ```)
+        fence_pattern = re.compile(r"```(?:json)?\s*([\s\S]+?)```", re.IGNORECASE)
+        for match in fence_pattern.finditer(text):
+            block = match.group(1).strip()
+            if not block:
+                continue
+            try:
+                return json.loads(block)
+            except json.JSONDecodeError:
+                continue
+
+        # Fallback: scan for the first decodable object within the string.
+        decoder = json.JSONDecoder()
+        idx = 0
+        length = len(text)
+        while idx < length:
+            brace_idx = text.find("{", idx)
+            if brace_idx == -1:
+                break
+            try:
+                obj, end = decoder.raw_decode(text, brace_idx)
+            except json.JSONDecodeError:
+                idx = brace_idx + 1
+                continue
+            if isinstance(obj, dict):
+                return obj
+            idx = max(end, brace_idx + 1)
+            continue
+
         return None
 
     def _fallback_plan(
