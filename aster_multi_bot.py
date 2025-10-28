@@ -29,7 +29,7 @@ import re
 import copy
 from datetime import datetime, timezone
 from urllib.parse import urlencode
-from typing import Dict, List, Tuple, Optional, Any, Callable, Sequence
+from typing import Dict, List, Tuple, Optional, Any, Callable, Sequence, Set
 
 from collections import OrderedDict, deque
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -3888,6 +3888,23 @@ class Bot:
         self._manual_state_dirty = False
         self._refresh_manual_requests()
         syms = self.universe.refresh()
+
+        pending_manual: Set[str] = set()
+        queue = self.state.get("manual_trade_requests")
+        if isinstance(queue, list):
+            pending_manual = {
+                str(item.get("symbol") or "").upper().strip()
+                for item in queue
+                if isinstance(item, dict)
+                and str(item.get("status") or "pending").lower() == "pending"
+                and str(item.get("symbol") or "").strip()
+            }
+        if pending_manual:
+            existing = set(syms)
+            extra = [sym for sym in pending_manual if sym and sym not in existing]
+            if extra:
+                syms = syms + extra
+
         log.info(
             "Scanning %d symbols%s",
             len(syms),
