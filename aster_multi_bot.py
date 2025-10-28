@@ -1429,7 +1429,11 @@ class AITradeAdvisor:
         selected_key: Optional[str] = None
         selected_side: Optional[str] = None
         selected_plan: Optional[Dict[str, Any]] = None
-        for key, (ts, plan) in list(self._recent_plans.items()):
+        for key in reversed(list(self._recent_plans.keys())):
+            bundle = self._recent_plans.get(key)
+            if not bundle:
+                continue
+            ts, plan = bundle
             if not key.startswith(prefix):
                 continue
             if now - ts > self._min_interval:
