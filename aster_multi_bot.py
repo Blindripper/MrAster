@@ -226,6 +226,176 @@ def ema(data: List[float], period: int) -> List[float]:
         out.append(out[-1] + k * (x - out[-1]))
     return out
 
+
+def _sma_series(values: List[float], period: int) -> List[float]:
+    if not values:
+        return []
+    window: deque = deque()
+    running = 0.0
+    out: List[float] = []
+    for val in values:
+        window.append(val)
+        running += val
+        if len(window) > period and period > 0:
+            running -= window.popleft()
+        count = len(window)
+        avg = running / count if count else 0.0
+        out.append(avg)
+    return out
+
+
+def _rolling_std(values: List[float], period: int) -> List[float]:
+    if not values:
+        return []
+    window: deque = deque()
+    sum_x = 0.0
+    sum_x2 = 0.0
+    out: List[float] = []
+    for val in values:
+        window.append(val)
+        sum_x += val
+        sum_x2 += val * val
+        if len(window) > period and period > 0:
+            removed = window.popleft()
+            sum_x -= removed
+            sum_x2 -= removed * removed
+        count = len(window)
+        if count <= 0:
+            out.append(0.0)
+            continue
+        mean = sum_x / count
+        variance = max(0.0, (sum_x2 / count) - (mean * mean))
+        out.append(math.sqrt(variance))
+    return out
+
+
+def bollinger_bands(
+    closes: List[float], period: int = 20, std_mult: float = 2.0
+) -> Tuple[List[float], List[float], List[float], List[float]]:
+    if not closes:
+        return [], [], [], []
+    middle = _sma_series(closes, period)
+    stds = _rolling_std(closes, period)
+    upper: List[float] = []
+    lower: List[float] = []
+    width: List[float] = []
+    for mid, std in zip(middle, stds):
+        band_shift = std_mult * std
+        upper_val = mid + band_shift
+        lower_val = mid - band_shift
+        upper.append(upper_val)
+        lower.append(lower_val)
+        width.append(max(upper_val - lower_val, 0.0))
+    return upper, middle, lower, width
+
+
+def stoch_rsi(
+    closes: List[float], period: int = 14, smooth_k: int = 3, smooth_d: int = 3
+) -> Tuple[List[float], List[float]]:
+    if not closes:
+        return [], []
+    rsi_vals = rsi(closes, period)
+    if not rsi_vals:
+        return [], []
+    stoch: List[float] = []
+    window: deque = deque()
+    for val in rsi_vals:
+        window.append(val)
+        if len(window) > period and period > 0:
+            window.popleft()
+        if len(window) < period or period <= 0:
+            stoch.append(50.0)
+            continue
+        low = min(window)
+        high = max(window)
+        rng = max(high - low, 1e-9)
+        stoch.append(((val - low) / rng) * 100.0)
+    k_line = _sma_series(stoch, max(smooth_k, 1))
+    d_line = _sma_series(k_line, max(smooth_d, 1))
+    return k_line, d_line
+
+
+def supertrend_indicator(
+    kl: Sequence[Sequence[float]], period: int = 10, multiplier: float = 3.0
+) -> Tuple[List[float], List[float]]:
+    n = len(kl)
+    if n < period + 2:
+        return [0.0] * n, [0.0] * n
+    highs = [float(row[2]) for row in kl]
+    lows = [float(row[3]) for row in kl]
+    closes = [float(row[4]) for row in kl]
+
+    tr: List[float] = [0.0] * n
+    for i in range(1, n):
+        tr[i] = max(
+            highs[i] - lows[i],
+            abs(highs[i] - closes[i - 1]),
+            abs(lows[i] - closes[i - 1]),
+        )
+
+    atr: List[float] = [0.0] * n
+    if period <= 0:
+        period = 1
+    initial_slice = tr[1 : period + 1]
+    if not initial_slice:
+        return [0.0] * n, [0.0] * n
+    atr_val = sum(initial_slice) / float(len(initial_slice))
+    for i in range(period, n):
+        if i == period:
+            atr[i] = atr_val
+        else:
+            atr_val = ((atr[i - 1] * (period - 1)) + tr[i]) / float(period)
+            atr[i] = atr_val
+    for i in range(period):
+        atr[i] = atr_val
+
+    basic_upper = [0.0] * n
+    basic_lower = [0.0] * n
+    for i in range(n):
+        hl2 = (highs[i] + lows[i]) / 2.0
+        shift = multiplier * atr[i]
+        basic_upper[i] = hl2 + shift
+        basic_lower[i] = hl2 - shift
+
+    final_upper = list(basic_upper)
+    final_lower = list(basic_lower)
+    supertrend_line = [0.0] * n
+    direction = [0.0] * n
+
+    for i in range(period, n):
+        if i > period:
+            if (basic_upper[i] < final_upper[i - 1]) or (closes[i - 1] > final_upper[i - 1]):
+                final_upper[i] = basic_upper[i]
+            else:
+                final_upper[i] = final_upper[i - 1]
+
+            if (basic_lower[i] > final_lower[i - 1]) or (closes[i - 1] < final_lower[i - 1]):
+                final_lower[i] = basic_lower[i]
+            else:
+                final_lower[i] = final_lower[i - 1]
+
+            prev_dir = direction[i - 1]
+            if prev_dir >= 0 and final_lower[i] < final_lower[i - 1]:
+                final_lower[i] = final_lower[i - 1]
+            if prev_dir <= 0 and final_upper[i] > final_upper[i - 1]:
+                final_upper[i] = final_upper[i - 1]
+
+        if closes[i] > final_upper[i]:
+            direction[i] = 1.0
+        elif closes[i] < final_lower[i]:
+            direction[i] = -1.0
+        else:
+            direction[i] = direction[i - 1] if i > 0 else 0.0
+
+        supertrend_line[i] = final_lower[i] if direction[i] >= 0 else final_upper[i]
+
+    for i in range(period):
+        direction[i] = direction[period]
+        supertrend_line[i] = supertrend_line[period]
+
+    return supertrend_line, direction
+
+
 def rsi(closes: List[float], period: int = 14) -> List[float]:
     if len(closes) < period + 1:
         return [50.0] * len(closes)
@@ -2158,12 +2328,19 @@ class RiskManager:
 
 # ========= Strategy =========
 class Strategy:
-    def __init__(self, exchange: Exchange, decision_tracker: Optional["DecisionTracker"] = None):
+    def __init__(
+        self,
+        exchange: Exchange,
+        decision_tracker: Optional["DecisionTracker"] = None,
+        state: Optional[Dict[str, Any]] = None,
+    ):
         self.exchange = exchange
         self.decision_tracker = decision_tracker
         self.min_quote_vol = MIN_QUOTE_VOL
         self.spread_bps_max = SPREAD_BPS_MAX
         self.wickiness_max = WICKINESS_MAX
+        self.state = state if isinstance(state, dict) else None
+        self._tech_snapshot_dirty = False
         # 24h Ticker Cache
         self._t24_cache: Dict[str, dict] = {}
         self._t24_ts = 0.0
@@ -2172,6 +2349,13 @@ class Strategy:
         self._kl_cache_ttl = KLINE_CACHE_SEC
         self._kl_cache_hits = 0
         self._kl_cache_miss = 0
+
+    @property
+    def tech_snapshot_dirty(self) -> bool:
+        return bool(self._tech_snapshot_dirty)
+
+    def clear_tech_snapshot_dirty(self) -> None:
+        self._tech_snapshot_dirty = False
 
     def _klines_cached(self, symbol: str, interval: str, limit: int) -> Sequence[Sequence[float]]:
         key = (symbol, interval, int(limit))
@@ -2368,11 +2552,25 @@ class Strategy:
             pass
 
         htf_close = [x[4] for x in htf]
-        ema_fast = ema(closes, 21); ema_slow = ema(closes, 55)
+        ema_fast = ema(closes, 21)
+        ema_slow = ema(closes, 55)
         ema_htf = ema(htf_close, 55)
         cross_up = ema_fast[-2] < ema_slow[-2] and ema_fast[-1] > ema_slow[-1]
         cross_dn = ema_fast[-2] > ema_slow[-2] and ema_fast[-1] < ema_slow[-1]
         rsi14 = rsi(closes, 14)
+        bb_upper, bb_middle, bb_lower, bb_width = bollinger_bands(closes, 20, 2.0)
+        stoch_k, stoch_d = stoch_rsi(closes, 14, 3, 3)
+        stoch_k_last = float(stoch_k[-1]) if stoch_k else 50.0
+        stoch_d_last = float(stoch_d[-1]) if stoch_d else 50.0
+        supertrend_line, supertrend_dir = supertrend_indicator(kl, 10, 3.0)
+        supertrend_last = float(supertrend_line[-1]) if supertrend_line else float(last)
+        supertrend_dir_last = float(supertrend_dir[-1]) if supertrend_dir else 0.0
+        bb_upper_last = float(bb_upper[-1]) if bb_upper else float(last)
+        bb_lower_last = float(bb_lower[-1]) if bb_lower else float(last)
+        bb_middle_last = float(bb_middle[-1]) if bb_middle else float(last)
+        bb_width_last = float(bb_width[-1]) if bb_width else max(bb_upper_last - bb_lower_last, 0.0)
+        bb_denom = max(bb_upper_last - bb_lower_last, 1e-9)
+        bb_position = float(max(0.0, min(1.0, (last - bb_lower_last) / bb_denom)))
         ctx_base.update(
             {
                 "ema_fast": float(ema_fast[-1]),
@@ -2382,6 +2580,15 @@ class Strategy:
                 "cross_up": float(1.0 if cross_up else 0.0),
                 "cross_down": float(1.0 if cross_dn else 0.0),
                 "rsi": float(rsi14[-1]),
+                "bb_upper": float(bb_upper_last),
+                "bb_lower": float(bb_lower_last),
+                "bb_middle": float(bb_middle_last),
+                "bb_width": float(bb_width_last),
+                "bb_position": float(bb_position),
+                "stoch_rsi_k": float(stoch_k_last),
+                "stoch_rsi_d": float(stoch_d_last),
+                "supertrend": float(supertrend_last),
+                "supertrend_dir": float(supertrend_dir_last),
             }
         )
 
@@ -2420,11 +2627,13 @@ class Strategy:
         else:
             return self._skip("no_cross", symbol, ctx=ctx_base, price=mid, atr=atr)
 
+        supertrend_gate_enabled = True
         if CONTRARIAN:
             if sig == "BUY":
                 sig = "SELL"
             elif sig == "SELL":
                 sig = "BUY"
+            supertrend_gate_enabled = False
 
         slope_htf = (ema_htf[-1] - ema_htf[-5]) / max(1e-9, ema_htf[-5])
         trend_strength = 0.5 + max(adx_val - 20.0, 0.0) / 50.0
@@ -2440,6 +2649,66 @@ class Strategy:
                 atr=atr,
             )
         ctx_base.update({"slope_htf": float(slope_htf), "expected_r": float(expected_R)})
+
+        if sig == "BUY":
+            if supertrend_gate_enabled and supertrend_dir_last < 0.0:
+                ctx_base["supertrend_conflict"] = float(supertrend_dir_last)
+                sig = "NONE"
+            elif stoch_d_last >= 85.0:
+                ctx_base["stoch_rsi_overbought"] = float(stoch_d_last)
+                sig = "NONE"
+            elif bb_position >= 0.98:
+                ctx_base["bb_overextended"] = float(bb_position)
+                sig = "NONE"
+        elif sig == "SELL":
+            if supertrend_gate_enabled and supertrend_dir_last > 0.0:
+                ctx_base["supertrend_conflict"] = float(supertrend_dir_last)
+                sig = "NONE"
+            elif stoch_d_last <= 15.0:
+                ctx_base["stoch_rsi_oversold"] = float(stoch_d_last)
+                sig = "NONE"
+            elif bb_position <= 0.02:
+                ctx_base["bb_overextended"] = float(bb_position)
+                sig = "NONE"
+
+        if isinstance(self.state, dict):
+            try:
+                tech_state = self.state.setdefault("technical_snapshot", {})
+                if isinstance(tech_state, dict):
+                    snapshot = {
+                        "ts": time.time(),
+                        "price": float(last),
+                        "ema_fast": float(ema_fast[-1]),
+                        "ema_slow": float(ema_slow[-1]),
+                        "ema_htf": float(ema_htf[-1]),
+                        "rsi": float(rsi14[-1]),
+                        "stoch_rsi_k": float(stoch_k_last),
+                        "stoch_rsi_d": float(stoch_d_last),
+                        "bb_upper": float(bb_upper_last),
+                        "bb_lower": float(bb_lower_last),
+                        "bb_width": float(bb_width_last),
+                        "bb_pos": float(bb_position),
+                        "supertrend": float(supertrend_last),
+                        "supertrend_dir": float(supertrend_dir_last),
+                        "atr_pct": float(atrp),
+                        "adx": float(adx_val),
+                        "htf_trend": 1.0 if htf_trend_up else (-1.0 if htf_trend_down else 0.0),
+                    }
+                    tech_state[symbol] = snapshot
+                    if len(tech_state) > 200:
+                        stale = sorted(
+                            tech_state.items(),
+                            key=lambda item: float(item[1].get("ts", 0.0) if isinstance(item[1], dict) else 0.0),
+                        )
+                        for old_sym, _ in stale[:-200]:
+                            tech_state.pop(old_sym, None)
+                    self.state["technical_snapshot"] = tech_state
+                    self._tech_snapshot_dirty = True
+            except Exception:
+                pass
+
+        if sig == "NONE":
+            return self._skip("filtered", symbol, ctx=ctx_base, price=mid, atr=atr)
 
         qv_score, t24, quote_volume = self._get_qv_score(symbol)
         funding = 0.0
@@ -2990,7 +3259,11 @@ class Bot:
         self._reset_decision_stats()
         self.fasttp = FastTP(self.exchange, self.guard, self.state)
         self.decision_tracker = DecisionTracker(self.state, self.trade_mgr.save)
-        self._strategy = Strategy(self.exchange, decision_tracker=self.decision_tracker)
+        self._strategy = Strategy(
+            self.exchange,
+            decision_tracker=self.decision_tracker,
+            state=self.state,
+        )
         self.state.setdefault("symbol_leverage", {})
         self.budget_tracker = DailyBudgetTracker(self.state, AI_DAILY_BUDGET, AI_STRICT_BUDGET)
         sentinel_active = SENTINEL_ENABLED or AI_MODE_ENABLED
@@ -3641,6 +3914,25 @@ class Bot:
                 rsi_val = ctx.get("rsi")
                 if isinstance(rsi_val, (int, float)):
                     note_parts.append(f"RSI {rsi_val:.1f}")
+                stoch_d_val = ctx.get("stoch_rsi_d")
+                if isinstance(stoch_d_val, (int, float)):
+                    note_parts.append(f"StochRSI%D {stoch_d_val:.1f}")
+                bb_pos_val = ctx.get("bb_position")
+                if isinstance(bb_pos_val, (int, float)):
+                    note_parts.append(f"BB% {bb_pos_val * 100.0:.0f}")
+                super_dir_val = ctx.get("supertrend_dir")
+                super_val = ctx.get("supertrend")
+                if isinstance(super_dir_val, (int, float)):
+                    if super_dir_val > 0:
+                        dir_txt = "bullish"
+                    elif super_dir_val < 0:
+                        dir_txt = "bearish"
+                    else:
+                        dir_txt = "neutral"
+                    if isinstance(super_val, (int, float)) and super_val > 0:
+                        note_parts.append(f"SuperTrend {dir_txt} @{super_val:.4f}")
+                    else:
+                        note_parts.append(f"SuperTrend {dir_txt}")
                 sentinel_label = (sentinel_info or {}).get("label") if sentinel_info else None
                 if isinstance(sentinel_label, str) and sentinel_label:
                     note_parts.append(f"Sentinel {sentinel_label}")
@@ -4005,6 +4297,16 @@ class Bot:
             # dynamisches Throttling: nur bremsen, falls keine Bulk-Daten vorhanden waren
             if not bulk_book_available:
                 time.sleep(0.02)
+
+        if getattr(self.strategy, "tech_snapshot_dirty", False):
+            try:
+                self.trade_mgr.save()
+            except Exception as exc:
+                log.debug(f"technical snapshot persist failed: {exc}")
+            try:
+                self.strategy.clear_tech_snapshot_dirty()
+            except Exception:
+                self.strategy._tech_snapshot_dirty = False  # type: ignore[attr-defined]
 
         if self._manual_state_dirty:
             self.trade_mgr.save()
