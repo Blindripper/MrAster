@@ -1413,8 +1413,6 @@ class AITradeAdvisor:
         self._persist_state()
 
     def _recent_plan_lookup(self, key: str, now: Optional[float] = None) -> Optional[Dict[str, Any]]:
-        if self._min_interval <= 0:
-            return None
         if key not in self._recent_plans:
             return None
         if now is None:
@@ -1438,8 +1436,6 @@ class AITradeAdvisor:
     def _recent_plan_store(
         self, key: str, plan: Dict[str, Any], now: Optional[float] = None, *, delivered: bool = True
     ) -> None:
-        if self._min_interval <= 0:
-            return
         if now is None:
             now = time.time()
         self._recent_plans[key] = (now, copy.deepcopy(plan), bool(delivered))
@@ -1449,7 +1445,7 @@ class AITradeAdvisor:
         self._persist_state()
 
     def consume_recent_plan(self, key: str) -> Optional[Dict[str, Any]]:
-        if self._min_interval <= 0 or not key:
+        if not key:
             return None
         bundle = self._recent_plans.pop(key, None)
         if not bundle:
@@ -1463,8 +1459,6 @@ class AITradeAdvisor:
         return copy.deepcopy(plan)
 
     def consume_signal_plan(self, symbol: str) -> Optional[Tuple[str, Dict[str, Any]]]:
-        if self._min_interval <= 0:
-            return None
         if not symbol:
             return None
         prefix = f"plan::{symbol.upper()}::"
