@@ -2111,6 +2111,12 @@ body.ai-mode .ai-mode-window {
   line-height: 1.5;
 }
 
+.ai-activity-item .ai-activity-body.secondary {
+  margin-top: 0.45rem;
+  color: var(--text-muted);
+  font-size: 0.84rem;
+}
+
 .ai-activity-item .ai-activity-meta {
   margin-top: 0.4rem;
   font-size: 0.78rem;
@@ -2118,6 +2124,50 @@ body.ai-mode .ai-mode-window {
   display: flex;
   gap: 0.8rem;
   flex-wrap: wrap;
+}
+
+.ai-activity-response {
+  margin-top: 0.65rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.75rem;
+  background: rgba(245, 196, 107, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(245, 196, 107, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.ai-activity-response.awaiting {
+  background: transparent;
+  box-shadow: none;
+  padding: 0.3rem 0;
+  color: var(--text-muted);
+  font-style: italic;
+  gap: 0;
+}
+
+.ai-activity-response-title {
+  font-size: 0.74rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(245, 196, 107, 0.85);
+}
+
+.ai-activity-response-headline {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.ai-activity-response-body {
+  font-size: 0.86rem;
+  color: var(--text-subtle);
+  line-height: 1.4;
+}
+
+.ai-activity-response-meta {
+  font-size: 0.78rem;
+  color: rgba(203, 213, 225, 0.75);
 }
 
 .chat-window {
