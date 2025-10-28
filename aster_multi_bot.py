@@ -4038,8 +4038,10 @@ class Bot:
             ctx.pop("active_positions", None)
 
         if self.ai_advisor and not manual_override:
-            skip_reason = str(ctx.get("skip_reason") or "").strip().lower()
-            if skip_reason in {"no_cross"}:
+            skip_reason_raw = ctx.get("skip_reason")
+            skip_reason = str(skip_reason_raw or "").strip()
+            normalized_skip = skip_reason.lower()
+            if normalized_skip in {"no_cross"} or (normalized_skip and normalized_skip not in {"none"}):
                 log.debug(
                     "Skip %s — base strategy reported %s; avoiding AI trend scan.",
                     symbol,
