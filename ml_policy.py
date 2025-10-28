@@ -125,6 +125,10 @@ class AlphaModel:
         if target != prev_dim:
             if prev_dim and target > prev_dim:
                 self.norm_count = 0.0
+                if self.mean is not None:
+                    self.mean[:] = 0.0
+                if self.m2 is not None:
+                    self.m2[:] = 0.0
             self._norm_dim = target
 
     def _norm(self, x_raw: np.ndarray, update: bool) -> np.ndarray:
