@@ -994,17 +994,41 @@ class AITradeAdvisor:
         self.state["ai_plan_cache"] = cache_dump
         self.state["ai_recent_plans"] = recent_dump
 
+    def _prune_pending_queue(self) -> None:
+        if not self._pending_order:
+            return
+        stale: List[str] = []
+        for key in list(self._pending_order):
+            info = self._pending_requests.get(key)
+            if not info:
+                stale.append(key)
+                continue
+            future = info.get("future")
+            if isinstance(future, Future) and future.done():
+                stale.append(key)
+                continue
+            if info.get("cancelled"):
+                stale.append(key)
+        for key in stale:
+            self._pending_requests.pop(key, None)
+            try:
+                self._pending_order.remove(key)
+            except ValueError:
+                pass
+
+    def _has_pending_capacity(self, key: str) -> bool:
+        if key in self._pending_requests:
+            return True
+        if self._pending_limit <= 0:
+            return True
+        self._prune_pending_queue()
+        return len(self._pending_requests) < self._pending_limit
+
     def _register_pending_key(self, key: str) -> None:
         if key in self._pending_order:
             return
+        self._prune_pending_queue()
         self._pending_order.append(key)
-        while len(self._pending_order) > self._pending_limit:
-            stale_key = self._pending_order.popleft()
-            info = self._pending_requests.pop(stale_key, None)
-            if info:
-                fut = info.get("future")
-                if isinstance(fut, Future) and not fut.done():
-                    fut.cancel()
 
     def _remove_pending_entry(self, key: str) -> None:
         self._pending_requests.pop(key, None)
@@ -1852,6 +1876,16 @@ class AITradeAdvisor:
         if recent_plan is not None:
             return recent_plan
 
+        if not self._has_pending_capacity(throttle_key):
+            self._recent_plan_store(throttle_key, fallback, now)
+            return self._pending_stub(
+                fallback,
+                "plan_queue_full",
+                "AI queue saturated; using fallback heuristics.",
+                throttle_key=throttle_key,
+                pending=False,
+            )
+
         system_prompt = (
             "You advise a futures bot. Use the indicator stats and sentinel hints to decide if the trade should run. "
             "Return compact JSON with: take (bool), decision, decision_reason, decision_note, size_multiplier, sl_multiplier, "
@@ -1934,6 +1968,15 @@ class AITradeAdvisor:
 
         cooldown_blocked = AI_GLOBAL_COOLDOWN > 0 and (now - self._last_global_request) < AI_GLOBAL_COOLDOWN
         if cooldown_blocked or self._active_pending() >= AI_CONCURRENCY:
+            if not self._has_pending_capacity(throttle_key):
+                self._recent_plan_store(throttle_key, fallback, now)
+                return self._pending_stub(
+                    fallback,
+                    "plan_queue_full",
+                    "AI queue saturated; using fallback heuristics.",
+                    throttle_key=throttle_key,
+                    pending=False,
+                )
             pending_info = {
                 "future": None,
                 "fallback": fallback,
@@ -1957,6 +2000,16 @@ class AITradeAdvisor:
             self._pending_requests[throttle_key] = pending_info
             self._register_pending_key(throttle_key)
             return stub
+
+        if not self._has_pending_capacity(throttle_key):
+            self._recent_plan_store(throttle_key, fallback, now)
+            return self._pending_stub(
+                fallback,
+                "plan_queue_full",
+                "AI queue saturated; using fallback heuristics.",
+                throttle_key=throttle_key,
+                pending=False,
+            )
 
         future = self._dispatch_request(
             system_prompt,
@@ -2062,6 +2115,16 @@ class AITradeAdvisor:
         if recent_plan is not None:
             return recent_plan
 
+        if not self._has_pending_capacity(throttle_key):
+            self._recent_plan_store(throttle_key, fallback, now)
+            return self._pending_stub(
+                fallback,
+                "plan_queue_full",
+                "AI queue saturated; falling back to autonomous scan heuristics.",
+                throttle_key=throttle_key,
+                pending=False,
+            )
+
         system_prompt = (
             "You scout autonomous trends for a futures bot. Weigh indicator stats and sentinel risk to decide on a trade. "
             "Return JSON with take (bool), decision, decision_reason, decision_note, side (BUY/SELL), size_multiplier, "
@@ -2142,6 +2205,15 @@ class AITradeAdvisor:
 
         cooldown_blocked = AI_GLOBAL_COOLDOWN > 0 and (now - self._last_global_request) < AI_GLOBAL_COOLDOWN
         if cooldown_blocked or self._active_pending() >= AI_CONCURRENCY:
+            if not self._has_pending_capacity(throttle_key):
+                self._recent_plan_store(throttle_key, fallback, now)
+                return self._pending_stub(
+                    fallback,
+                    "plan_queue_full",
+                    "AI queue saturated; falling back to autonomous scan heuristics.",
+                    throttle_key=throttle_key,
+                    pending=False,
+                )
             pending_info = {
                 "future": None,
                 "fallback": fallback,
@@ -2165,6 +2237,16 @@ class AITradeAdvisor:
             self._pending_requests[throttle_key] = pending_info
             self._register_pending_key(throttle_key)
             return stub
+
+        if not self._has_pending_capacity(throttle_key):
+            self._recent_plan_store(throttle_key, fallback, now)
+            return self._pending_stub(
+                fallback,
+                "plan_queue_full",
+                "AI queue saturated; falling back to autonomous scan heuristics.",
+                throttle_key=throttle_key,
+                pending=False,
+            )
 
         future = self._dispatch_request(
             system_prompt,
