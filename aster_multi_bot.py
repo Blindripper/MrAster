@@ -1402,7 +1402,7 @@ class AITradeAdvisor:
         if age > self._plan_delivery_ttl:
             self._recent_plans.pop(key, None)
             return None
-        if delivered and age > self._min_interval:
+        if delivered and age > self._plan_delivery_ttl:
             return None
         self._recent_plans.move_to_end(key)
         if not delivered:
@@ -1457,7 +1457,7 @@ class AITradeAdvisor:
             if age > self._plan_delivery_ttl:
                 self._recent_plans.pop(key, None)
                 continue
-            if delivered and age > self._min_interval:
+            if delivered and age > self._plan_delivery_ttl:
                 continue
             if not isinstance(plan, dict):
                 continue
