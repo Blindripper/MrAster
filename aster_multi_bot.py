@@ -4039,7 +4039,7 @@ class Bot:
 
         if self.ai_advisor and not manual_override:
             skip_reason = str(ctx.get("skip_reason") or "").strip().lower()
-            if skip_reason in {"no_cross"}:
+            if skip_reason in {"no_cross"} and sig == "NONE" and not recovered_plan:
                 log.debug(
                     "Skip %s — base strategy reported %s; avoiding AI trend scan.",
                     symbol,
