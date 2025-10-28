@@ -2064,6 +2064,10 @@ class AIChatEngine:
             for asset in assets:
                 symbol = asset.get("symbol") or asset.get("base")
                 try:
+                    price = float(asset.get("price", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    price = 0.0
+                try:
                     change = float(asset.get("change_15m", 0.0) or 0.0)
                 except (TypeError, ValueError):
                     change = 0.0
@@ -2077,8 +2081,15 @@ class AIChatEngine:
                     volume_txt = f"{volume / 1_000_000:.1f}M"
                 else:
                     volume_txt = f"{volume:.0f}"
-                market_bits.append(f"{symbol} {change:+.2f}% · vol≈{volume_txt}")
-            lines.append("Most-traded majors: " + "; ".join(market_bits))
+                price_txt = f"{price:.4f}" if price > 0 else "n/a"
+                market_bits.append(
+                    f"{symbol} price≈{price_txt} · {change:+.2f}% · vol≈{volume_txt}"
+                )
+            updated = most_traded_payload.get("updated")
+            header = "Most-traded majors"
+            if isinstance(updated, str) and updated:
+                header += f" (updated {updated})"
+            lines.append(f"{header}: " + "; ".join(market_bits))
         lines.append("Be transparent about assumptions and call out if data looks stale.")
         return "\n".join(lines)
 
@@ -2659,6 +2670,21 @@ class AIChatEngine:
             decision_stats,
             recent_plans,
         ) = self._current_state()
+        now = time.time()
+        cached_payload = MOST_TRADED_CACHE.get("payload")
+        cached_ts = MOST_TRADED_CACHE.get("timestamp", 0.0)
+        if not cached_payload or now - float(cached_ts or 0.0) > 60:
+            try:
+                assets = _fetch_most_traded_from_binance()
+            except Exception as exc:
+                log.debug("Failed to refresh most-traded cache: %s", exc)
+            else:
+                payload = {
+                    "updated": datetime.utcnow().isoformat() + "Z",
+                    "assets": assets,
+                }
+                MOST_TRADED_CACHE["payload"] = payload
+                MOST_TRADED_CACHE["timestamp"] = now
         fallback = self._fallback_reply(
             "Provide a neutral market status update with potential long and short angles.",
             stats,
