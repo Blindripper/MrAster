@@ -151,7 +151,8 @@ def _resolve_include_symbols(default_quote: str) -> List[str]:
 
 INCLUDE = _resolve_include_symbols(QUOTE)
 EXCLUDE = set(_split_env_symbols(os.getenv("ASTER_EXCLUDE_SYMBOLS", "")))
-UNIVERSE_MAX = int(os.getenv("ASTER_UNIVERSE_MAX", "120"))
+# Standardmäßig alle Symbole scannen; via ENV begrenzen
+UNIVERSE_MAX = int(os.getenv("ASTER_UNIVERSE_MAX", "0"))
 UNIVERSE_ROTATE = os.getenv("ASTER_UNIVERSE_ROTATE", "true").lower() in ("1", "true", "yes", "on")
 
 MIN_QUOTE_VOL = float(os.getenv("ASTER_MIN_QUOTE_VOL_USDT", "150000"))
