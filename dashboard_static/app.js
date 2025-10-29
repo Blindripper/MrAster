@@ -2645,6 +2645,14 @@ const DECISION_REASON_LABELS = {
   order_failed: 'Order could not be placed',
   sentinel_veto: 'Sentinel vetoed trade',
   ai_risk_zero: 'AI sized trade to zero',
+  sentinel_block: 'Sentinel block',
+  fallback_rules: 'Fallback rules triggered',
+  plan_pending: 'AI plan pending',
+  plan_timeout: 'AI plan timeout',
+  trend_pending: 'Trend scan pending',
+  trend_timeout: 'Trend scan timeout',
+  ai_trend_skip: 'AI declined trend setup',
+  ai_trend_invalid: 'AI returned invalid trend setup',
 };
 
 const FRIENDLY_LEVEL_LABELS = {
@@ -4043,11 +4051,46 @@ function friendlyReason(reason) {
     || 'Other';
 }
 
+function extractDecisionNotes(record) {
+  if (!record || typeof record !== 'object') {
+    return { reasonCode: '', reasonLabel: '', notes: [] };
+  }
+  const reasonCode = record.decision_reason ? String(record.decision_reason).trim() : '';
+  const reasonLabel = reasonCode ? friendlyReason(reasonCode) : '';
+  const noteCandidates = [];
+  ['decision_note', 'risk_note', 'explanation'].forEach((key) => {
+    const raw = record[key];
+    if (typeof raw === 'string') {
+      const cleaned = raw.trim();
+      if (cleaned) {
+        noteCandidates.push(cleaned);
+      }
+    }
+  });
+  if (Array.isArray(record.notes)) {
+    record.notes.forEach((entry) => {
+      if (typeof entry === 'string') {
+        const cleaned = entry.trim();
+        if (cleaned) {
+          noteCandidates.push(cleaned);
+        }
+      }
+    });
+  }
+  const uniqueNotes = [];
+  noteCandidates.forEach((note) => {
+    if (!uniqueNotes.includes(note)) {
+      uniqueNotes.push(note);
+    }
+  });
+  return { reasonCode, reasonLabel, notes: uniqueNotes };
+}
+
 function parseStructuredLog(line, fallbackLevel = 'info') {
   const raw = (line ?? '').toString();
   const trimmed = raw.trim();
   const match = trimmed.match(
-    /^(\d{4}-\d{2}-\d{2}[^│]*?)\s*│\s*([A-Z]+)\s*│\s*([^│]+)\s*│\s*(.*)$/,
+    /^(\d{4}-\d{2}-\d{2}[^│]*?)\s*│\s*([A-Z]+)\s*│\s*([^│]+)\s*│\s*(.*)$/, 
   );
   if (match) {
     return {
@@ -5361,32 +5404,58 @@ function renderAiActivity(feed) {
     }
 
     const itemData = item.data && typeof item.data === 'object' ? item.data : null;
-    if (item.kind === 'query') {
-      const reasonCode = itemData && itemData.decision_reason ? String(itemData.decision_reason) : '';
-      const noteText = itemData && itemData.decision_note ? String(itemData.decision_note) : '';
-      let reasonLabel = '';
-      if (reasonCode) {
-        const fallbackReasons = {
-          plan_pending: 'AI plan requested',
-          plan_timeout: 'AI plan timed out',
-          trend_pending: 'Trend scan requested',
-          trend_timeout: 'Trend scan timed out',
-        };
-        const fallback = fallbackReasons[reasonCode] || reasonCode.replace(/_/g, ' ');
-        reasonLabel = translate(`ai.feed.reason.${reasonCode}`, fallback);
+    const noteInfo = extractDecisionNotes(itemData);
+    let consumedNotes = 0;
+    let reasonDetailRendered = false;
+
+    if (itemData) {
+      const decisionDetails = [];
+      const decisionLabel = itemData.decision ? String(itemData.decision).trim().toUpperCase() : '';
+      const takeValue = Object.prototype.hasOwnProperty.call(itemData, 'take') ? itemData.take : undefined;
+      if (decisionLabel) {
+        const actionText =
+          typeof takeValue === 'boolean' ? (takeValue ? 'enter trade' : 'skip trade') : '';
+        const decisionText = actionText ? `${decisionLabel} (${actionText})` : decisionLabel;
+        decisionDetails.push(`Decision: ${decisionText}`);
+      } else if (typeof takeValue === 'boolean') {
+        decisionDetails.push(`Decision: ${takeValue ? 'enter trade' : 'skip trade'}`);
       }
-      if (reasonLabel || noteText) {
+      if (typeof itemData.confidence === 'number' && Number.isFinite(itemData.confidence)) {
+        decisionDetails.push(`Confidence: ${itemData.confidence.toFixed(2)}`);
+      }
+      const multiplierParts = [];
+      const sizeMult = Number(itemData.size_multiplier);
+      const slMult = Number(itemData.sl_multiplier);
+      const tpMult = Number(itemData.tp_multiplier);
+      if (Number.isFinite(sizeMult)) multiplierParts.push(`Size ×${sizeMult.toFixed(2)}`);
+      if (Number.isFinite(slMult)) multiplierParts.push(`SL ×${slMult.toFixed(2)}`);
+      if (Number.isFinite(tpMult)) multiplierParts.push(`TP ×${tpMult.toFixed(2)}`);
+      if (multiplierParts.length > 0) {
+        decisionDetails.push(`Multipliers: ${multiplierParts.join(' · ')}`);
+      }
+      if (decisionDetails.length > 0) {
         const detail = document.createElement('p');
         detail.className = 'ai-activity-body secondary';
-        const parts = [];
-        if (reasonLabel) {
-          parts.push(`${translate('ai.feed.reasonLabel', 'Reason')}: ${reasonLabel}`);
-        }
-        if (noteText) {
-          parts.push(noteText);
-        }
-        detail.textContent = parts.join(' · ');
+        detail.textContent = decisionDetails.join(' · ');
         body.append(detail);
+      }
+    }
+
+    if (item.kind === 'query') {
+      const queryParts = [];
+      if (noteInfo.reasonLabel) {
+        queryParts.push(`${translate('ai.feed.reasonLabel', 'Reason')}: ${noteInfo.reasonLabel}`);
+      }
+      if (noteInfo.notes.length > 0) {
+        queryParts.push(noteInfo.notes[0]);
+        consumedNotes = 1;
+      }
+      if (queryParts.length > 0) {
+        const detail = document.createElement('p');
+        detail.className = 'ai-activity-body secondary';
+        detail.textContent = queryParts.join(' · ');
+        body.append(detail);
+        reasonDetailRendered = true;
       }
       const requestId =
         itemData && Object.prototype.hasOwnProperty.call(itemData, 'request_id')
@@ -5437,6 +5506,31 @@ function renderAiActivity(feed) {
           body.append(awaiting);
         }
       }
+    }
+
+    if (!reasonDetailRendered) {
+      const generalParts = [];
+      if (noteInfo.reasonLabel) {
+        generalParts.push(`${translate('ai.feed.reasonLabel', 'Reason')}: ${noteInfo.reasonLabel}`);
+      }
+      if (noteInfo.notes.length > consumedNotes) {
+        generalParts.push(noteInfo.notes[consumedNotes]);
+        consumedNotes += 1;
+      }
+      if (generalParts.length > 0) {
+        const detail = document.createElement('p');
+        detail.className = 'ai-activity-body secondary';
+        detail.textContent = generalParts.join(' · ');
+        body.append(detail);
+        reasonDetailRendered = true;
+      }
+    }
+
+    if (noteInfo.notes.length > consumedNotes) {
+      const extraDetail = document.createElement('p');
+      extraDetail.className = 'ai-activity-body secondary';
+      extraDetail.textContent = noteInfo.notes.slice(consumedNotes).join(' · ');
+      body.append(extraDetail);
     }
 
     const meta = document.createElement('div');
@@ -6787,7 +6881,14 @@ function summariseDataRecord(record) {
   const priorityScalars = [
     { key: 'symbol', label: 'Symbol', raw: true },
     { key: 'side', label: 'Side', raw: true },
+    { key: 'decision', label: 'Decision', raw: true },
+    { key: 'take', label: 'Action', boolLabels: { true: 'enter', false: 'skip' } },
     { key: 'bucket', label: 'Bucket', raw: true },
+    { key: 'confidence', label: 'Confidence', digits: 2 },
+    { key: 'size_multiplier', label: 'Size×', digits: 2 },
+    { key: 'sl_multiplier', label: 'SL×', digits: 2 },
+    { key: 'tp_multiplier', label: 'TP×', digits: 2 },
+    { key: 'decision_reason', label: 'Reason', formatter: friendlyReason },
     { key: 'qty', label: 'Qty', raw: true },
     { key: 'entry', label: 'Entry', digits: 4 },
     { key: 'sl', label: 'SL', digits: 4 },
@@ -6803,10 +6904,33 @@ function summariseDataRecord(record) {
   const segments = [];
 
   function formatValue(value, options = {}) {
-    const { digits = 2, signed = false, scale = 1, suffix = '', raw = false } = options;
+    const {
+      digits = 2,
+      signed = false,
+      scale = 1,
+      suffix = '',
+      raw = false,
+      boolLabels,
+      formatter,
+    } = options;
     if (value === null || value === undefined) return '';
     if (raw) return String(value);
-    if (typeof value === 'boolean') return value ? 'yes' : 'no';
+    if (typeof formatter === 'function') {
+      try {
+        const formatted = formatter(value);
+        if (formatted !== undefined && formatted !== null) {
+          return String(formatted);
+        }
+      } catch (error) {
+        // ignore formatter errors and fall back to default formatting
+      }
+    }
+    if (typeof value === 'boolean') {
+      if (boolLabels && boolLabels[value] !== undefined) {
+        return String(boolLabels[value]);
+      }
+      return value ? 'yes' : 'no';
+    }
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) {
       return String(value);

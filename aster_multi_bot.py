@@ -4110,15 +4110,14 @@ class Bot:
         tp_mult_val = _safe_float(plan.get("tp_multiplier"))
 
         body_parts: List[str] = []
-        if take_flag:
-            body_parts.append(f"Entscheidung: {decision_label} (Trade eingehen)")
-        else:
-            body_parts.append(f"Entscheidung: {decision_label} (Trade auslassen)")
+        decision_action = "enter trade" if take_flag else "skip trade"
+        if decision_label:
+            body_parts.append(f"Decision: {decision_label} ({decision_action})")
         if confidence_val is not None:
-            body_parts.append(f"Konfidenz {confidence_val:.2f}")
+            body_parts.append(f"Confidence {confidence_val:.2f}")
         mult_parts: List[str] = []
         if size_mult_val is not None:
-            mult_parts.append(f"Größe ×{size_mult_val:.2f}")
+            mult_parts.append(f"Size ×{size_mult_val:.2f}")
         if sl_mult_val is not None:
             mult_parts.append(f"SL ×{sl_mult_val:.2f}")
         if tp_mult_val is not None:
@@ -4127,8 +4126,14 @@ class Bot:
             body_parts.append(", ".join(mult_parts))
 
         note_sources: List[str] = []
-        for key in ("decision_note", "decision_reason", "risk_note"):
-            raw_note = plan.get(key)
+        decision_reason_val = plan.get("decision_reason")
+        decision_note_val = plan.get("decision_note")
+        risk_note_val = plan.get("risk_note")
+        for raw_note in (
+            decision_note_val,
+            decision_reason_val,
+            risk_note_val,
+        ):
             if isinstance(raw_note, str):
                 cleaned = " ".join(raw_note.split())
                 if cleaned:
@@ -4164,6 +4169,22 @@ class Bot:
             activity_data["tp_multiplier"] = tp_mult_val
         if note_sources:
             activity_data["notes"] = note_sources
+        if isinstance(decision_reason_val, str):
+            cleaned_reason = " ".join(decision_reason_val.split())
+            if cleaned_reason:
+                activity_data["decision_reason"] = cleaned_reason
+        if isinstance(decision_note_val, str):
+            cleaned_note = " ".join(decision_note_val.split())
+            if cleaned_note:
+                activity_data["decision_note"] = cleaned_note
+        if isinstance(risk_note_val, str):
+            cleaned_risk = " ".join(risk_note_val.split())
+            if cleaned_risk:
+                activity_data["risk_note"] = cleaned_risk
+        if isinstance(explanation, str):
+            cleaned_explanation = " ".join(explanation.split())
+            if cleaned_explanation:
+                activity_data["explanation"] = cleaned_explanation
 
         log.info(
             "AI response for %s%s: %s",

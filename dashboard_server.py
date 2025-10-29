@@ -1024,6 +1024,31 @@ def _decision_summary(state: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _friendly_decision_reason(reason: Optional[str]) -> Optional[str]:
+    if reason is None:
+        return None
+    token = str(reason).strip()
+    if not token:
+        return None
+    lookup = {
+        "sentinel_block": "Sentinel block",
+        "sentinel_veto": "Sentinel veto",
+        "policy_filter": "Policy filter",
+        "fallback_rules": "Fallback rules",
+        "no_signal": "No valid signal",
+        "plan_timeout": "AI plan timeout",
+        "plan_pending": "AI plan pending",
+        "trend_timeout": "Trend scan timeout",
+        "trend_pending": "Trend scan pending",
+        "ai_trend_skip": "AI declined trend setup",
+        "ai_trend_invalid": "AI returned invalid trend setup",
+    }
+    normalized = token.lower()
+    if normalized in lookup:
+        return lookup[normalized]
+    return token.replace("_", " ").strip().capitalize()
+
+
 def _cumulative_summary(state: Dict[str, Any]) -> Dict[str, Any]:
     metrics = state.get("cumulative_metrics") or {}
     summary = {
@@ -2054,16 +2079,67 @@ class AIChatEngine:
                     if side:
                         detail_parts.append(str(side))
                     decision = data.get("decision")
+                    take_flag = data.get("take")
                     if decision:
-                        detail_parts.append(f"decision={decision}")
+                        if isinstance(take_flag, bool):
+                            action = "enter trade" if take_flag else "skip trade"
+                            detail_parts.append(f"decision {decision} ({action})")
+                        else:
+                            detail_parts.append(f"decision {decision}")
+                    elif isinstance(take_flag, bool):
+                        detail_parts.append("action enter trade" if take_flag else "action skip trade")
                     size_mult = data.get("size_multiplier")
+                    sl_mult = data.get("sl_multiplier")
+                    tp_mult = data.get("tp_multiplier")
+                    confidence = data.get("confidence")
                     try:
-                        if size_mult is not None:
-                            detail_parts.append(f"size×{float(size_mult):.2f}")
+                        if confidence is not None:
+                            detail_parts.append(f"confidence {float(confidence):.2f}")
                     except (TypeError, ValueError):
                         pass
+                    for label, value in (
+                        ("size×", size_mult),
+                        ("SL×", sl_mult),
+                        ("TP×", tp_mult),
+                    ):
+                        try:
+                            if value is not None:
+                                detail_parts.append(f"{label}{float(value):.2f}")
+                        except (TypeError, ValueError):
+                            continue
+                    reason_label = _friendly_decision_reason(data.get("decision_reason"))
+                    if reason_label:
+                        detail_parts.append(f"reason {reason_label}")
+                note_candidates: List[str] = []
+                if isinstance(data, dict):
+                    for key in ("decision_note", "risk_note", "explanation"):
+                        raw = data.get(key)
+                        if isinstance(raw, str):
+                            cleaned = " ".join(raw.split())
+                            if cleaned:
+                                note_candidates.append(cleaned)
+                    notes_list = data.get("notes")
+                    if isinstance(notes_list, (list, tuple)):
+                        for raw in notes_list:
+                            if isinstance(raw, str):
+                                cleaned = " ".join(raw.split())
+                                if cleaned:
+                                    note_candidates.append(cleaned)
+                note_text = ""
+                if note_candidates:
+                    note_text = textwrap.shorten(
+                        " · ".join(dict.fromkeys(note_candidates)),
+                        width=160,
+                        placeholder="…",
+                    )
+                message = str(body).strip()
+                if note_text:
+                    message = f"{message} — {note_text}" if message else note_text
                 detail = f" [{'; '.join(detail_parts)}]" if detail_parts else ""
-                activity_lines.append(f"{headline}: {body}{detail}")
+                if message:
+                    activity_lines.append(f"{headline}: {message}{detail}")
+                else:
+                    activity_lines.append(f"{headline}{detail}")
             lines.append("Latest AI activity: " + " | ".join(activity_lines))
         if recent_plans:
             plan_lines = []
