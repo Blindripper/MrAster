@@ -46,6 +46,12 @@ except Exception:
     raise RuntimeError("Dieses Modul benötigt numpy. Bitte: pip install numpy")
 
 from ml_policy import BanditPolicy, FEATURES as POLICY_FEATURES
+from ai_extensions import (
+    BudgetLearner,
+    ParameterTuner,
+    PlaybookManager,
+    PostmortemLearning,
+)
 from brackets_guard import BracketGuard, replace_tp_for_open_position as _bg_replace_tp
 
 # ========= Logging =========
@@ -966,6 +972,14 @@ class AITradeAdvisor:
         if self.enabled and AI_CONCURRENCY > 0:
             self._executor = ThreadPoolExecutor(max_workers=AI_CONCURRENCY)
         self._load_persistent_state()
+        self.postmortem_learning = PostmortemLearning(self.state or {})
+        self.parameter_tuner = ParameterTuner(
+            self.state or {}, request_fn=self._structured_request
+        )
+        self.playbook_manager = PlaybookManager(
+            self.state or {}, request_fn=self._structured_request
+        )
+        self.budget_learner = BudgetLearner(self.state or {})
 
     def _load_persistent_state(self) -> None:
         if not self.state:
@@ -1019,6 +1033,88 @@ class AITradeAdvisor:
             )
         self.state["ai_plan_cache"] = cache_dump
         self.state["ai_recent_plans"] = recent_dump
+
+    def _structured_request(
+        self, kind: str, payload: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        if not self.enabled:
+            return None
+        kind = str(kind or "").lower()
+        if kind not in {"tuning", "playbook"}:
+            return None
+        if kind == "tuning":
+            system_prompt = (
+                "You tune risk parameters for an automated trading bot. Given the recent trade summaries, "
+                "respond with JSON containing sl_atr_mult, tp_atr_mult, size_bias (object mapping bucket to multiplier), "
+                "confidence (0-1) and optional note. Keep multipliers between 0.5 and 2.5."
+            )
+            estimate = 0.0012
+        else:
+            system_prompt = (
+                "You generate background playbooks for a trading bot. Analyse the snapshot and respond with JSON including "
+                "mode, bias, size_bias (BUY/SELL multipliers), sl_bias, tp_bias, features (object of numeric feature weights) "
+                "and optional notes."
+            )
+            estimate = 0.0018
+        try:
+            user_payload = payload or {}
+            user_prompt = json.dumps(user_payload, sort_keys=True, separators=(",", ":"))
+        except Exception:
+            return None
+        meta: Dict[str, Any] = {}
+        symbol_hint = user_payload.get("symbol") if isinstance(user_payload, dict) else None
+        if symbol_hint:
+            meta["symbol"] = symbol_hint
+        response = self._chat(
+            system_prompt,
+            user_prompt,
+            kind=kind,
+            budget_estimate=estimate,
+            request_meta=meta or None,
+        )
+        if not response:
+            return None
+        parsed = self._parse_structured(response)
+        return parsed if isinstance(parsed, dict) else None
+
+    def inject_context_features(self, symbol: str, ctx: Dict[str, Any]) -> None:
+        if not isinstance(ctx, dict):
+            return
+        try:
+            if self.postmortem_learning:
+                pm_features = self.postmortem_learning.context_features(symbol or "*")
+                for key, value in pm_features.items():
+                    ctx[key] = float(value)
+        except Exception:
+            pass
+        try:
+            if self.parameter_tuner:
+                self.parameter_tuner.inject_context(ctx)
+        except Exception:
+            pass
+        try:
+            if self.playbook_manager:
+                active = self.playbook_manager.active()
+                features = active.get("features", {}) if isinstance(active, dict) else {}
+                ctx["playbook_mode"] = active.get("mode", "baseline") if isinstance(active, dict) else "baseline"
+                ctx["playbook_bias"] = active.get("bias", "neutral") if isinstance(active, dict) else "neutral"
+                ctx["playbook_breakout_bias"] = float((features or {}).get("playbook_breakout_bias", 0.0))
+                ctx["playbook_range_bias"] = float((features or {}).get("playbook_range_bias", 0.0))
+                ctx["playbook_trend_bias"] = float((features or {}).get("playbook_trend_bias", 0.0))
+        except Exception:
+            pass
+        try:
+            if self.budget_learner:
+                ctx["budget_bias"] = float(self.budget_learner.context_bias(symbol or "*"))
+        except Exception:
+            pass
+
+    def maybe_refresh_playbook(self, snapshot: Dict[str, Any]) -> None:
+        try:
+            if self.playbook_manager:
+                self.playbook_manager.maybe_refresh(snapshot)
+        except Exception:
+            pass
 
     def _prune_pending_queue(self) -> None:
         if not self._pending_order:
@@ -1571,6 +1667,7 @@ class AITradeAdvisor:
         *,
         kind: str,
         budget_estimate: float = 0.0,
+        request_meta: Optional[Dict[str, Any]] = None,
     ) -> Optional[str]:
         if not self.enabled:
             return None
@@ -1635,7 +1732,13 @@ class AITradeAdvisor:
         cost = self._estimate_cost(usage)
         if cost is None:
             cost = 0.0025
-        self.budget.record(cost, {"kind": kind, "model": self.model, "usage": usage})
+        meta_payload = {"kind": kind, "model": self.model, "usage": usage}
+        self.budget.record(cost, meta_payload)
+        try:
+            if hasattr(self, "budget_learner") and self.budget_learner:
+                self.budget_learner.record_cost(kind, cost, request_meta)
+        except Exception:
+            pass
 
         try:
             choices = data.get("choices") or []
@@ -2065,6 +2168,19 @@ class AITradeAdvisor:
             self._recent_plan_store(plan_key, fallback)
             return fallback
 
+        if self.budget_learner and not self.budget_learner.should_allocate(symbol, "plan"):
+            fallback.update(
+                {
+                    "take": False,
+                    "decision": "skip",
+                    "decision_reason": "budget_bias",
+                    "decision_note": "Budget learner deprioritized this symbol after weak ROI.",
+                    "explanation": "",
+                }
+            )
+            self._recent_plan_store(plan_key, fallback)
+            return fallback
+
         throttle_key = plan_key
         now = time.time()
         status, payload = self._process_pending_request(throttle_key, fallback, now)
@@ -2158,7 +2274,13 @@ class AITradeAdvisor:
             return cached_plan
         estimate = self._estimate_prospective_cost(system_prompt, user_prompt)
         if not async_mode or not self._executor:
-            response = self._chat(system_prompt, user_prompt, kind="plan", budget_estimate=estimate)
+            response = self._chat(
+                system_prompt,
+                user_prompt,
+                kind="plan",
+                budget_estimate=estimate,
+                request_meta={"symbol": symbol, "context": "plan"},
+            )
             if not response:
                 self._recent_plan_store(throttle_key, fallback, now)
                 return fallback
@@ -2312,6 +2434,18 @@ class AITradeAdvisor:
             self._recent_plan_store(trend_key, fallback)
             return fallback
 
+        if self.budget_learner and not self.budget_learner.should_allocate(symbol, "trend"):
+            fallback.update(
+                {
+                    "take": False,
+                    "decision": "skip",
+                    "decision_reason": "budget_bias",
+                    "decision_note": "Budget learner suppressed the autonomous scan for this symbol.",
+                }
+            )
+            self._recent_plan_store(trend_key, fallback)
+            return fallback
+
         throttle_key = trend_key
         now = time.time()
         status, payload = self._process_pending_request(throttle_key, fallback, now)
@@ -2400,7 +2534,13 @@ class AITradeAdvisor:
             return cached_plan
         estimate = self._estimate_prospective_cost(system_prompt, user_prompt)
         if not async_mode or not self._executor:
-            response = self._chat(system_prompt, user_prompt, kind="trend", budget_estimate=estimate)
+            response = self._chat(
+                system_prompt,
+                user_prompt,
+                kind="trend",
+                budget_estimate=estimate,
+                request_meta={"symbol": symbol, "context": "trend"},
+            )
             if not response:
                 self._recent_plan_store(throttle_key, fallback, now)
                 return fallback
@@ -2529,11 +2669,56 @@ class AITradeAdvisor:
             "what could improve, and one actionable tweak."
         )
         user_prompt = json.dumps(trade, sort_keys=True, separators=(",", ":"))
-        response = self._chat(system_prompt, user_prompt, kind="postmortem")
-        if not response:
-            return fallback
-        summary = self._ensure_bounds(response, fallback_text)
-        fallback["analysis"] = summary
+        response = self._chat(
+            system_prompt,
+            user_prompt,
+            kind="postmortem",
+            request_meta={"symbol": symbol, "context": "postmortem"},
+        )
+        labels: List[str] = []
+        feature_scores: Dict[str, float] = {}
+        if response:
+            structured = self._parse_structured(response)
+            if isinstance(structured, dict):
+                analysis = structured.get("analysis") or structured.get("summary")
+                if isinstance(analysis, str) and analysis.strip():
+                    fallback["analysis"] = self._ensure_bounds(analysis, fallback_text)
+                feats = structured.get("feature_scores") or structured.get("features")
+                if isinstance(feats, dict):
+                    feature_scores = {
+                        str(k): float(v)
+                        for k, v in feats.items()
+                        if isinstance(v, (int, float))
+                    }
+                labels_raw = structured.get("labels") or structured.get("tags")
+                if isinstance(labels_raw, list):
+                    labels = [str(item) for item in labels_raw if isinstance(item, (str, int, float))]
+                note = structured.get("note") or structured.get("insight")
+                if isinstance(note, str) and note.strip():
+                    fallback["note"] = self._ensure_bounds(note, note)
+            else:
+                fallback["analysis"] = self._ensure_bounds(response, fallback_text)
+        if not feature_scores:
+            feature_scores = {}
+        try:
+            if self.postmortem_learning:
+                self.postmortem_learning.register(symbol or "*", feature_scores, pnl_r=pnl_r)
+        except Exception:
+            pass
+        try:
+            if self.parameter_tuner:
+                self.parameter_tuner.observe(trade, feature_scores)
+        except Exception:
+            pass
+        try:
+            if self.budget_learner:
+                self.budget_learner.record_trade(trade)
+        except Exception:
+            pass
+        if feature_scores:
+            fallback["feature_scores"] = feature_scores
+        if labels:
+            fallback["labels"] = labels
         return fallback
 
     def budget_snapshot(self) -> Dict[str, Any]:
@@ -4688,6 +4873,13 @@ class Bot:
                 log.debug(f"sentinel evaluate fail {symbol}: {exc}")
         actions = sentinel_info.get("actions", {}) or {}
 
+        if self.ai_advisor:
+            try:
+                ctx.setdefault("side", sig)
+                self.ai_advisor.inject_context_features(symbol, ctx)
+            except Exception as exc:
+                log.debug(f"context feature inject failed {symbol}: {exc}")
+
         # Policy: Gate + Size
         size_mult = SIZE_MULT_S
         bucket = "S"
@@ -4725,7 +4917,67 @@ class Bot:
         ctx["policy_bucket"] = bucket
         ctx["policy_size_multiplier"] = policy_size_mult
         sentinel_factor = float(actions.get("size_factor", 1.0) or 1.0)
+        tuning_bucket_factor = 1.0
+        overrides_sl_mult: Optional[float] = None
+        overrides_tp_mult: Optional[float] = None
+        playbook_size_factor = 1.0
+        playbook_sl_factor = 1.0
+        playbook_tp_factor = 1.0
+        if not manual_override:
+            tuning_overrides = self.state.get("tuning_overrides")
+            if isinstance(tuning_overrides, dict):
+                raw_size_bias = tuning_overrides.get("size_bias")
+                if isinstance(raw_size_bias, dict):
+                    bias_value = raw_size_bias.get(bucket)
+                    if bias_value is None and sig in {"BUY", "SELL"}:
+                        bias_value = raw_size_bias.get(sig.upper())
+                    try:
+                        if bias_value is not None:
+                            tuning_bucket_factor = max(0.4, min(2.5, float(bias_value)))
+                    except (TypeError, ValueError):
+                        tuning_bucket_factor = 1.0
+                try:
+                    overrides_sl_mult = float(tuning_overrides.get("sl_atr_mult"))
+                except (TypeError, ValueError):
+                    overrides_sl_mult = None
+                try:
+                    overrides_tp_mult = float(tuning_overrides.get("tp_atr_mult"))
+                except (TypeError, ValueError):
+                    overrides_tp_mult = None
+            playbook_state = self.state.get("ai_playbook")
+            active_playbook = (
+                playbook_state.get("active") if isinstance(playbook_state, dict) else {}
+            )
+            if isinstance(active_playbook, dict):
+                size_bias_map = active_playbook.get("size_bias")
+                if isinstance(size_bias_map, dict) and sig in {"BUY", "SELL"}:
+                    try:
+                        playbook_size_factor = max(
+                            0.4,
+                            min(2.5, float(size_bias_map.get(sig.upper(), 1.0))),
+                        )
+                    except (TypeError, ValueError):
+                        playbook_size_factor = 1.0
+                try:
+                    playbook_sl_factor = float(active_playbook.get("sl_bias", 1.0))
+                except (TypeError, ValueError):
+                    playbook_sl_factor = 1.0
+                try:
+                    playbook_tp_factor = float(active_playbook.get("tp_bias", 1.0))
+                except (TypeError, ValueError):
+                    playbook_tp_factor = 1.0
         size_mult = policy_size_mult * sentinel_factor
+        if not manual_override:
+            size_mult *= tuning_bucket_factor
+            size_mult *= playbook_size_factor
+            budget_factor = ctx.get("budget_bias")
+            try:
+                if budget_factor is not None:
+                    size_mult *= max(0.4, min(1.6, float(budget_factor)))
+            except (TypeError, ValueError):
+                pass
+        ctx["tuning_size_bucket_multiplier"] = float(tuning_bucket_factor)
+        ctx["playbook_size_multiplier"] = float(playbook_size_factor)
         ctx["sentinel_factor"] = sentinel_factor
         ctx["sentinel_event_risk"] = float(sentinel_info.get("event_risk", 0.0) or 0.0)
         ctx["sentinel_hype"] = float(sentinel_info.get("hype_score", 0.0) or 0.0)
@@ -4791,8 +5043,19 @@ class Bot:
                 self._complete_manual_request(manual_req, "failed", error="ATR unavailable")
             return
 
-        sl_dist = max(1e-9, SL_ATR_MULT * atr_abs)
-        tp_dist = max(1e-9, TP_ATR_MULT * atr_abs)
+        dynamic_sl_mult = SL_ATR_MULT
+        dynamic_tp_mult = TP_ATR_MULT
+        if overrides_sl_mult is not None:
+            dynamic_sl_mult *= max(0.4, min(2.5, float(overrides_sl_mult)))
+        if overrides_tp_mult is not None:
+            dynamic_tp_mult *= max(0.6, min(3.0, float(overrides_tp_mult)))
+        if not manual_override:
+            dynamic_sl_mult *= max(0.4, min(2.5, playbook_sl_factor))
+            dynamic_tp_mult *= max(0.6, min(3.0, playbook_tp_factor))
+        sl_dist = max(1e-9, dynamic_sl_mult * atr_abs)
+        tp_dist = max(1e-9, dynamic_tp_mult * atr_abs)
+        ctx["sl_atr_multiplier_dynamic"] = float(dynamic_sl_mult)
+        ctx["tp_atr_multiplier_dynamic"] = float(dynamic_tp_mult)
 
         ai_meta: Optional[Dict[str, Any]] = None
         plan: Optional[Dict[str, Any]] = None
@@ -5484,6 +5747,30 @@ class Bot:
                 self.sentinel.refresh(syms, prefetched=ticker_map if ticker_map else None)
             except Exception as exc:
                 log.debug(f"sentinel refresh failed: {exc}")
+
+        if self.ai_advisor:
+            try:
+                tech_state = self.state.get("technical_snapshot")
+                if isinstance(tech_state, dict):
+                    sample = {
+                        k: v
+                        for k, v in list(sorted(
+                            tech_state.items(),
+                            key=lambda item: float(item[1].get("ts", 0.0)) if isinstance(item[1], dict) else 0.0,
+                        ))[-6:]
+                    }
+                else:
+                    sample = {}
+                snapshot = {
+                    "timestamp": time.time(),
+                    "technical": sample,
+                    "sentinel": self.state.get("sentinel", {}),
+                    "budget": self.budget_tracker.snapshot(),
+                    "recent_trades": self.state.get("trade_history", [])[-6:],
+                }
+                self.ai_advisor.maybe_refresh_playbook(snapshot)
+            except Exception as exc:
+                log.debug(f"playbook refresh failed: {exc}")
 
         # geschlossene Trades aus State räumen + Policy belohnen
         postmortem_cb = None

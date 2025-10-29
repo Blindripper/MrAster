@@ -29,6 +29,19 @@ FEATURES = (
     "bb_width",
     "stoch_rsi_d",
     "non_arb_region",
+    "pm_trend_break",
+    "pm_news_driver",
+    "pm_liquidity_gap",
+    "pm_execution_delay",
+    "pm_sentiment_conflict",
+    "pm_macro_event",
+    "tuning_risk_bias",
+    "tuning_size_bias",
+    "tuning_confidence",
+    "playbook_breakout_bias",
+    "playbook_range_bias",
+    "playbook_trend_bias",
+    "budget_bias",
 )
 
 def _vec_from_ctx(ctx: Dict[str, float]) -> "np.ndarray":
