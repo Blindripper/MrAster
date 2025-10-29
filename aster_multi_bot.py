@@ -3573,6 +3573,34 @@ class TradeManager:
         except Exception as e:
             log.warning(f"state save failed: {e}")
 
+    def _merge_ai_trade_proposals(self, disk_state: Dict[str, Any]) -> None:
+        queue_disk = disk_state.get("ai_trade_proposals")
+        if not isinstance(queue_disk, list):
+            return
+        mem_queue = self.state.get("ai_trade_proposals")
+        if not isinstance(mem_queue, list):
+            mem_queue = []
+        merged: List[Any] = []
+        seen_ids: Set[str] = set()
+        for item in queue_disk:
+            if isinstance(item, dict):
+                item_id = item.get("id")
+                if isinstance(item_id, str) and item_id:
+                    seen_ids.add(item_id)
+                merged.append(item)
+            else:
+                merged.append(item)
+        if mem_queue:
+            for item in mem_queue:
+                if isinstance(item, dict):
+                    item_id = item.get("id")
+                    if isinstance(item_id, str) and item_id in seen_ids:
+                        continue
+                    merged.append(item)
+                else:
+                    merged.append(item)
+        self.state["ai_trade_proposals"] = merged
+
     def note_entry(
         self,
         symbol: str,
