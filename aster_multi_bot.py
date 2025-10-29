@@ -234,6 +234,9 @@ PAPER = os.getenv("ASTER_PAPER", "false").lower() in ("1", "true", "yes", "on")
 
 LOOP_SLEEP = int(os.getenv("ASTER_LOOP_SLEEP", "30"))  # Sekunden
 WORKING_TYPE = os.getenv("ASTER_WORKING_TYPE", "MARK_PRICE")  # an Guard weitergeben
+QUOTE_VOLUME_COOLDOWN_CYCLES = max(
+    0, int(os.getenv("ASTER_QUOTE_VOLUME_COOLDOWN_CYCLES", "500"))
+)
 
 # Signalkontrolle (neu, per ENV einstellbar)
 RSI_BUY_MIN = float(os.getenv("ASTER_RSI_BUY_MIN", "52"))
@@ -4146,8 +4149,18 @@ class Bot:
         self.state.setdefault("manual_trade_requests", [])
         self.state.setdefault("manual_trade_history", [])
         self._ensure_banned_state()
+        cooldown_map = self.state.get("quote_volume_cooldown")
+        if not isinstance(cooldown_map, dict):
+            cooldown_map = {}
+        self.state["quote_volume_cooldown"] = cooldown_map
+        try:
+            self.state["cycle_index"] = int(self.state.get("cycle_index", 0) or 0)
+        except Exception:
+            self.state["cycle_index"] = 0
+        self._current_cycle = int(self.state.get("cycle_index", 0) or 0)
         self._last_ai_activity_persist = 0.0
         self._manual_state_dirty = False
+        self._quote_volume_cooldown_dirty = False
         self._ai_wakeup_event = threading.Event()
         self._ai_priority_lock = threading.Lock()
         self._ai_priority_queue: deque[Tuple[str, Optional[str]]] = deque()
@@ -4734,6 +4747,38 @@ class Bot:
                 self.state["fail_skip_until"].pop(symbol, None)
             except Exception:
                 pass
+        resume_cycle = 0
+        cooldown_map = self.state.get("quote_volume_cooldown")
+        if isinstance(cooldown_map, dict):
+            raw_resume = cooldown_map.get(symbol)
+            try:
+                resume_cycle = int(raw_resume)
+            except (TypeError, ValueError):
+                resume_cycle = 0
+        if resume_cycle and resume_cycle > getattr(self, "_current_cycle", 0):
+            pending_queue = self.state.get("manual_trade_requests")
+            if isinstance(pending_queue, list):
+                for item in pending_queue:
+                    if not isinstance(item, dict):
+                        continue
+                    if str(item.get("symbol") or "").upper() != symbol.upper():
+                        continue
+                    if str(item.get("status") or "pending").lower() != "pending":
+                        continue
+                    self._complete_manual_request(
+                        item,
+                        "failed",
+                        error="Quote volume cooldown active",
+                    )
+            if self.decision_tracker:
+                self.decision_tracker.record_rejection("quote_volume_cooldown")
+            remaining = resume_cycle - getattr(self, "_current_cycle", 0)
+            log.info(
+                "Skip %s — quote volume cooldown active for %d more cycles.",
+                symbol,
+                max(remaining, 0),
+            )
+            return
 
         priority_side_hint: Optional[str] = None
         with self._ai_priority_lock:
@@ -4856,6 +4901,14 @@ class Bot:
                     quote_volume,
                     min_qvol,
                 )
+                cooldown_map = self.state.get("quote_volume_cooldown")
+                if not isinstance(cooldown_map, dict):
+                    cooldown_map = {}
+                    self.state["quote_volume_cooldown"] = cooldown_map
+                resume_after = getattr(self, "_current_cycle", 0) + QUOTE_VOLUME_COOLDOWN_CYCLES + 1
+                if cooldown_map.get(symbol) != resume_after:
+                    cooldown_map[symbol] = resume_after
+                    self._quote_volume_cooldown_dirty = True
                 if manual_override:
                     self._complete_manual_request(
                         manual_req,
@@ -5671,6 +5724,30 @@ class Bot:
 
     def run_once(self):
         self._manual_state_dirty = False
+        try:
+            cycle_index = int(self.state.get("cycle_index", 0) or 0)
+        except Exception:
+            cycle_index = 0
+        cycle_index += 1
+        self.state["cycle_index"] = cycle_index
+        self._current_cycle = cycle_index
+        cooldown_map = self.state.get("quote_volume_cooldown")
+        if not isinstance(cooldown_map, dict):
+            cooldown_map = {}
+            self.state["quote_volume_cooldown"] = cooldown_map
+            self._quote_volume_cooldown_dirty = True
+        expired_symbols: List[str] = []
+        for sym, resume in list(cooldown_map.items()):
+            try:
+                resume_cycle = int(resume)
+            except (TypeError, ValueError):
+                resume_cycle = 0
+            if resume_cycle <= cycle_index:
+                expired_symbols.append(sym)
+        if expired_symbols:
+            for sym in expired_symbols:
+                if cooldown_map.pop(sym, None) is not None:
+                    self._quote_volume_cooldown_dirty = True
         self._ai_wakeup_event.clear()
         self._refresh_manual_requests()
         ready_plans: List[Tuple[str, Dict[str, Any]]] = []
@@ -5855,9 +5932,10 @@ class Bot:
             except Exception:
                 self.strategy._tech_snapshot_dirty = False  # type: ignore[attr-defined]
 
-        if self._manual_state_dirty:
+        if self._manual_state_dirty or self._quote_volume_cooldown_dirty:
             self.trade_mgr.save()
             self._manual_state_dirty = False
+            self._quote_volume_cooldown_dirty = False
 
     def run(self, loop: bool = True):
         log.info("Starting bot (mode=%s, loop=%s)", "PAPER" if PAPER else "LIVE", loop)
