@@ -5312,7 +5312,7 @@ function renderAiActivity(feed) {
     aiActivityFeed.append(disabled);
     return;
   }
-  const items = Array.isArray(feed) ? feed.slice(0, 80) : [];
+  const items = Array.isArray(feed) ? feed.slice(-80) : [];
   if (!items.length) {
     const empty = document.createElement('p');
     empty.className = 'ai-feed-empty';
