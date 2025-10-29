@@ -2019,10 +2019,13 @@ class AITradeAdvisor:
             )
 
         system_prompt = (
-            "You advise a futures bot. Use the indicator stats and sentinel hints to decide if the trade should run. "
-            "Return compact JSON with: take (bool), decision, decision_reason, decision_note, size_multiplier, sl_multiplier, "
-            "tp_multiplier, leverage, risk_note, explanation, fasttp_overrides (enabled,min_r,ret1,ret3,snap_atr) and optional "
-            "levels entry_price, stop_loss, take_profit. If you reject set take=false and leave explanation empty."
+            "You are an automated crypto futures planning assistant for a trading bot. "
+            "Analyze the provided indicator stats and sentinel hints to decide if the bot should execute the trade. "
+            "Respond ONLY with a single minified JSON object (no prose or markdown). The object must include the keys: "
+            "take (bool), decision, decision_reason, decision_note, size_multiplier, sl_multiplier, tp_multiplier, leverage, "
+            "risk_note, explanation, fasttp_overrides (object with enabled,min_r,ret1,ret3,snap_atr). "
+            "If take is true, also include numeric levels entry_price, stop_loss, take_profit. When declining, set take=false, "
+            "decision=\"skip\", leave explanation as an empty string, and still populate the remaining required fields."
         )
         stats_block = self._extract_stat_block(ctx)
         sentinel_payload = self._summarize_sentinel(sentinel)
