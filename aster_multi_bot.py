@@ -3863,6 +3863,100 @@ class Bot:
             return
         if not symbol:
             return
+        plan_side = str(plan.get("side") or "").strip().upper()
+        display_side = plan_side or side_hint or ""
+
+        def _safe_float(value: Any) -> Optional[float]:
+            if value is None:
+                return None
+            try:
+                num = float(value)
+            except (TypeError, ValueError):
+                return None
+            if not math.isfinite(num):
+                return None
+            return num
+
+        decision_raw = plan.get("decision")
+        decision_label = str(decision_raw or "").strip().upper()
+        take_flag = bool(plan.get("take", False))
+        if not decision_label:
+            decision_label = "TAKE" if take_flag else "SKIP"
+
+        confidence_val = _safe_float(plan.get("confidence"))
+        size_mult_val = _safe_float(plan.get("size_multiplier"))
+        sl_mult_val = _safe_float(plan.get("sl_multiplier"))
+        tp_mult_val = _safe_float(plan.get("tp_multiplier"))
+
+        body_parts: List[str] = []
+        if take_flag:
+            body_parts.append(f"Entscheidung: {decision_label} (Trade eingehen)")
+        else:
+            body_parts.append(f"Entscheidung: {decision_label} (Trade auslassen)")
+        if confidence_val is not None:
+            body_parts.append(f"Konfidenz {confidence_val:.2f}")
+        mult_parts: List[str] = []
+        if size_mult_val is not None:
+            mult_parts.append(f"Größe ×{size_mult_val:.2f}")
+        if sl_mult_val is not None:
+            mult_parts.append(f"SL ×{sl_mult_val:.2f}")
+        if tp_mult_val is not None:
+            mult_parts.append(f"TP ×{tp_mult_val:.2f}")
+        if mult_parts:
+            body_parts.append(", ".join(mult_parts))
+
+        note_sources: List[str] = []
+        for key in ("decision_note", "decision_reason", "risk_note"):
+            raw_note = plan.get(key)
+            if isinstance(raw_note, str):
+                cleaned = " ".join(raw_note.split())
+                if cleaned:
+                    note_sources.append(cleaned)
+        explanation = plan.get("explanation")
+        if isinstance(explanation, str):
+            cleaned_expl = " ".join(explanation.split())
+            if cleaned_expl:
+                note_sources.append(cleaned_expl)
+        if note_sources:
+            note_preview = textwrap.shorten(" | ".join(note_sources), width=240, placeholder="…")
+            body_parts.append(note_preview)
+
+        body_text = " | ".join(body_parts) if body_parts else "AI response received."
+        side_suffix = f" {display_side}" if display_side else ""
+        headline = f"AI response for {symbol}{side_suffix}".strip()
+
+        activity_data: Dict[str, Any] = {
+            "symbol": symbol,
+            "side": display_side or None,
+            "decision": decision_label,
+            "take": take_flag,
+            "request_id": plan.get("request_id"),
+            "throttle_key": throttle_key,
+        }
+        if confidence_val is not None:
+            activity_data["confidence"] = confidence_val
+        if size_mult_val is not None:
+            activity_data["size_multiplier"] = size_mult_val
+        if sl_mult_val is not None:
+            activity_data["sl_multiplier"] = sl_mult_val
+        if tp_mult_val is not None:
+            activity_data["tp_multiplier"] = tp_mult_val
+        if note_sources:
+            activity_data["notes"] = note_sources
+
+        log.info(
+            "AI response for %s%s: %s",
+            symbol,
+            f" {display_side}" if display_side else "",
+            body_text,
+        )
+        self._log_ai_activity(
+            "response",
+            headline,
+            body=body_text,
+            data=activity_data,
+            force=True,
+        )
         self._enqueue_ai_priority(symbol, side_hint)
 
     def _pop_manual_request(self, symbol: str) -> Optional[Dict[str, Any]]:
