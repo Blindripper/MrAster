@@ -2333,6 +2333,11 @@ body.ai-mode .ai-mode-window {
   box-shadow: 0 16px 40px rgba(16, 42, 24, 0.45);
 }
 
+.ai-trade-proposal.failed {
+  border-color: rgba(248, 113, 113, 0.6);
+  box-shadow: 0 16px 40px rgba(82, 14, 20, 0.45);
+}
+
 .ai-trade-proposal__header {
   display: flex;
   align-items: baseline;
@@ -2430,6 +2435,10 @@ body.ai-mode .ai-mode-window {
 
 .ai-trade-proposal.queued .ai-trade-proposal__status {
   color: rgba(74, 222, 128, 0.9);
+}
+
+.ai-trade-proposal.failed .ai-trade-proposal__status {
+  color: rgba(248, 113, 113, 0.9);
 }
 
 .ai-chat-form {

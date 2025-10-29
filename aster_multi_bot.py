@@ -4246,8 +4246,73 @@ class Bot:
             item["status"] = "processing"
             item["started_at"] = time.time()
             self._manual_state_dirty = True
+            proposal_id = self._proposal_id_from_request(item)
+            if proposal_id:
+                self._update_trade_proposal_status(proposal_id, "processing")
             return item
         return None
+
+    def _proposal_id_from_request(self, request: Optional[Dict[str, Any]]) -> Optional[str]:
+        if not request or not isinstance(request, dict):
+            return None
+        raw_id = request.get("proposal_id")
+        if isinstance(raw_id, str):
+            proposal_id = raw_id.strip()
+            if proposal_id:
+                return proposal_id
+        payload = request.get("payload")
+        if isinstance(payload, dict):
+            inner_id = payload.get("proposal_id")
+            if isinstance(inner_id, str):
+                proposal_id = inner_id.strip()
+                if proposal_id:
+                    return proposal_id
+            nested = payload.get("payload")
+            if isinstance(nested, dict):
+                nested_id = nested.get("proposal_id")
+                if isinstance(nested_id, str):
+                    proposal_id = nested_id.strip()
+                    if proposal_id:
+                        return proposal_id
+        return None
+
+    def _update_trade_proposal_status(
+        self,
+        proposal_id: Optional[str],
+        status: str,
+        *,
+        result: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None,
+    ) -> None:
+        if not proposal_id:
+            return
+        queue = self.state.get("ai_trade_proposals")
+        if not isinstance(queue, list):
+            return
+        updated = False
+        for entry in queue:
+            if not isinstance(entry, dict):
+                continue
+            if str(entry.get("id") or "") != proposal_id:
+                continue
+            entry["status"] = status
+            entry["updated_at"] = time.time()
+            if result is not None:
+                try:
+                    entry["result"] = json.loads(json.dumps(result, default=lambda o: float(o)))
+                except Exception:
+                    entry["result"] = result
+            elif "result" in entry:
+                entry.pop("result", None)
+            if error:
+                entry["error"] = str(error)
+            else:
+                entry.pop("error", None)
+            updated = True
+            break
+        if updated:
+            self.state["ai_trade_proposals"] = queue
+            self._manual_state_dirty = True
 
     def _complete_manual_request(
         self,
@@ -4267,6 +4332,19 @@ class Bot:
             request["error"] = error
         elif "error" in request:
             request.pop("error", None)
+        proposal_id = self._proposal_id_from_request(request)
+        if proposal_id:
+            mapped_status = status.lower()
+            if mapped_status == "filled":
+                mapped_status = "executed"
+            elif mapped_status == "failed":
+                mapped_status = "failed"
+            self._update_trade_proposal_status(
+                proposal_id,
+                mapped_status,
+                result=result,
+                error=error,
+            )
         history = self.state.setdefault("manual_trade_history", [])
         history.append(dict(request))
         if len(history) > 100:
