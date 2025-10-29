@@ -2595,7 +2595,7 @@ class AIChatEngine:
 
             target = queue[target_index]
             status = str(target.get("status") or "pending").lower()
-            if status in {"queued", "executed", "completed"}:
+            if status in {"queued", "processing", "executed", "completed"}:
                 raise RuntimeError("proposal already processed")
 
             normalized = self._normalize_trade_proposal(target.get("payload") or {})
