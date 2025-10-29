@@ -173,10 +173,15 @@ def _normalize_position_side(raw_side: Any) -> str:
 
 def _build_position_maps(
     positions: Optional[Sequence[Dict[str, Any]]]
-) -> Tuple[Dict[str, float], Dict[str, Set[str]], Dict[str, str]]:
+) -> Tuple[
+    Dict[str, float],
+    Dict[str, Set[str]],
+    Dict[str, str],
+    Dict[str, Dict[str, float]],
+]:
     """Return aggregated position information keyed by symbol.
 
-    The helper derives three structures from ``/positionRisk`` snapshots:
+    The helper derives four structures from ``/positionRisk`` snapshots:
 
     * ``net_map`` keeps the signed net quantity per symbol so existing call
       sites that expect a float continue to work.
@@ -185,13 +190,17 @@ def _build_position_maps(
     * ``mode_map`` records the detected account mode per symbol (``hedge``
       versus ``oneway``) to ensure new fills update the tracking consistently
       within the same run cycle.
+    * ``gross_map`` stores the absolute exposure per directional slot so the
+      caller can keep long/short quantities in sync after fills without
+      refetching ``/positionRisk`` immediately.
     """
 
     net_map: Dict[str, float] = {}
     open_sides: Dict[str, Set[str]] = {}
     mode_map: Dict[str, str] = {}
+    gross_map: Dict[str, Dict[str, float]] = {}
     if not positions:
-        return net_map, open_sides, mode_map
+        return net_map, open_sides, mode_map, gross_map
 
     for entry in positions:
         if not isinstance(entry, dict):
@@ -211,12 +220,16 @@ def _build_position_maps(
                 # 0-Positionen im Hedge-Mode helfen nur beim Mode-Detection
                 # und müssen keinen Slot markieren.
                 net_map.setdefault(symbol, 0.0)
+                gross_map.setdefault(symbol, {"LONG": 0.0, "SHORT": 0.0})
                 continue
+            slot = gross_map.setdefault(symbol, {"LONG": 0.0, "SHORT": 0.0})
             if side == "LONG":
                 net_map[symbol] = net_map.get(symbol, 0.0) + qty
+                slot["LONG"] = slot.get("LONG", 0.0) + qty
                 open_sides.setdefault(symbol, set()).add("LONG")
             else:
                 net_map[symbol] = net_map.get(symbol, 0.0) - qty
+                slot["SHORT"] = slot.get("SHORT", 0.0) + qty
                 open_sides.setdefault(symbol, set()).add("SHORT")
         else:
             if symbol not in mode_map:
@@ -224,8 +237,9 @@ def _build_position_maps(
             net_map[symbol] = amt
             if abs(amt) > 1e-12:
                 open_sides.setdefault(symbol, set()).add("BOTH")
+            gross_map[symbol] = {"BOTH": abs(amt)}
 
-    return net_map, open_sides, mode_map
+    return net_map, open_sides, mode_map, gross_map
 
 MIN_QUOTE_VOL = float(os.getenv("ASTER_MIN_QUOTE_VOL_USDT", "150000"))
 SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.0030"))  # 0.30 %
@@ -3777,7 +3791,7 @@ class TradeManager:
             return
         try:
             pos = self.exchange.get_position_risk()
-            pos_map, pos_sides, _ = _build_position_maps(pos)
+            pos_map, pos_sides, _, _ = _build_position_maps(pos)
         except Exception as e:
             log.debug(f"positionRisk fail: {e}")
             pos_map = {}
@@ -4598,6 +4612,7 @@ class Bot:
         pos_map: Dict[str, float],
         pos_sides: Dict[str, Set[str]],
         pos_mode_map: Dict[str, str],
+        pos_gross_map: Dict[str, Dict[str, float]],
         default_pos_mode: str,
         book_ticker: Optional[Dict[str, Any]] = None,
     ):
@@ -4624,10 +4639,15 @@ class Bot:
         if priority_side_hint and isinstance(ctx, dict):
             ctx.setdefault("ai_priority_side_hint", priority_side_hint)
         base_signal = sig
+        position_side: Optional[str] = None
+        symbol_mode = pos_mode_map.get(symbol) or default_pos_mode or "oneway"
+        if symbol_mode not in {"hedge", "oneway"}:
+            symbol_mode = "oneway"
 
         manual_req = self._pop_manual_request(symbol)
         manual_override = manual_req is not None
         manual_notional = None
+        manual_position_side: Optional[str] = None
         if manual_override:
             requested_side = str(manual_req.get("side") or "").upper()
             if requested_side not in {"BUY", "SELL"}:
@@ -4646,6 +4666,16 @@ class Bot:
                     manual_notional = float(raw_notional)
                 except (TypeError, ValueError):
                     manual_notional = None
+            raw_position_side = manual_req.get("position_side") or manual_req.get("positionSide")
+            if not raw_position_side:
+                payload = manual_req.get("payload")
+                if isinstance(payload, dict):
+                    raw_position_side = payload.get("position_side") or payload.get("positionSide")
+            if raw_position_side:
+                side_norm = _normalize_position_side(raw_position_side)
+                if side_norm in {"LONG", "SHORT"}:
+                    manual_position_side = side_norm
+                    ctx["manual_position_side"] = manual_position_side
 
         recovered_plan: Optional[Dict[str, Any]] = None
         if self.ai_advisor and not manual_override and base_signal == "NONE":
@@ -4666,26 +4696,50 @@ class Bot:
 
         if sig in {"BUY", "SELL"}:
             existing_sides = pos_sides.get(symbol, set())
-            symbol_mode = pos_mode_map.get(symbol) or default_pos_mode or "oneway"
-            if symbol_mode not in {"hedge", "oneway"}:
-                symbol_mode = "oneway"
-            slot_key = "LONG" if symbol_mode == "hedge" and sig == "BUY" else (
-                "SHORT" if symbol_mode == "hedge" else "BOTH"
-            )
-            new_slot = slot_key not in existing_sides
-            symbol_slots = len(existing_sides)
-            active_positions_total = sum(len(sides) for sides in pos_sides.values())
+            side_sizes = pos_gross_map.get(symbol, {}) or {}
+            long_qty = float(side_sizes.get("LONG", 0.0) or 0.0)
+            short_qty = float(side_sizes.get("SHORT", 0.0) or 0.0)
             current_amt = float(pos_map.get(symbol, 0.0) or 0.0)
             is_closing = False
             if symbol_mode == "hedge":
-                if sig == "BUY" and "SHORT" in existing_sides and "LONG" not in existing_sides:
-                    is_closing = True
-                elif sig == "SELL" and "LONG" in existing_sides and "SHORT" not in existing_sides:
-                    is_closing = True
+                if manual_position_side in {"LONG", "SHORT"}:
+                    position_side = manual_position_side
+                    if position_side == "LONG" and sig == "SELL" and long_qty > 1e-12:
+                        is_closing = True
+                    elif position_side == "SHORT" and sig == "BUY" and short_qty > 1e-12:
+                        is_closing = True
+                else:
+                    if sig == "BUY":
+                        if short_qty > 1e-12 and long_qty <= 1e-12:
+                            is_closing = True
+                            position_side = "SHORT"
+                        elif short_qty > 1e-12 and current_amt <= 1e-12:
+                            is_closing = True
+                            position_side = "SHORT"
+                        else:
+                            position_side = "LONG"
+                    else:  # SELL
+                        if long_qty > 1e-12 and short_qty <= 1e-12:
+                            is_closing = True
+                            position_side = "LONG"
+                        elif long_qty > 1e-12 and current_amt >= -1e-12:
+                            is_closing = True
+                            position_side = "LONG"
+                        else:
+                            position_side = "SHORT"
+                if not position_side:
+                    position_side = "LONG" if sig == "BUY" else "SHORT"
+                slot_key = position_side
             else:
                 if (current_amt > 1e-12 and sig == "SELL") or (current_amt < -1e-12 and sig == "BUY"):
                     is_closing = True
+                slot_key = "BOTH"
+                position_side = None
 
+            existing_sides = set(existing_sides)
+            symbol_slots = len(existing_sides)
+            new_slot = slot_key not in existing_sides
+            active_positions_total = sum(len(sides) for sides in pos_sides.values())
             projected_symbol_slots = symbol_slots + (1 if new_slot else 0)
 
             if MAX_OPEN_PER_SYMBOL > 0 and not is_closing:
@@ -4910,9 +4964,26 @@ class Bot:
         if open_positions_ctx:
             ctx["open_positions"] = open_positions_ctx
             ctx["active_positions"] = sum(len(slots) for slots in pos_sides.values() if slots)
+            detail_snapshot: Dict[str, Dict[str, float]] = {}
+            for k, slots in pos_sides.items():
+                if not slots:
+                    continue
+                gross_entry = pos_gross_map.get(k, {}) or {}
+                detail = {
+                    side_key: float(amount)
+                    for side_key, amount in gross_entry.items()
+                    if abs(float(amount)) > 1e-12
+                }
+                if detail:
+                    detail_snapshot[k] = detail
+            if detail_snapshot:
+                ctx["open_positions_detail"] = detail_snapshot
+            else:
+                ctx.pop("open_positions_detail", None)
         else:
             ctx.pop("open_positions", None)
             ctx.pop("active_positions", None)
+            ctx.pop("open_positions_detail", None)
 
         if self.ai_advisor and not manual_override:
             skip_reason_raw = ctx.get("skip_reason")
@@ -5363,8 +5434,20 @@ class Bot:
         # Entry
         try:
             order_params = {"symbol": symbol, "side": sig, "type": "MARKET", "quantity": q_str}
-            order_params["stopLoss"] = build_bracket_payload("SL", sig, sl)
-            order_params["takeProfit"] = build_bracket_payload("TP", sig, tp)
+            if symbol_mode == "hedge" and position_side:
+                order_params["positionSide"] = position_side
+            order_params["stopLoss"] = build_bracket_payload(
+                "SL",
+                sig,
+                sl,
+                position_side if symbol_mode == "hedge" else None,
+            )
+            order_params["takeProfit"] = build_bracket_payload(
+                "TP",
+                sig,
+                tp,
+                position_side if symbol_mode == "hedge" else None,
+            )
             try:
                 self.exchange.post_order(order_params)
             except requests.HTTPError as exc:
@@ -5404,22 +5487,50 @@ class Bot:
                 filled_qty = float(q_str)
             except (TypeError, ValueError):
                 filled_qty = float(qty)
+            filled_qty = abs(filled_qty)
             current_amt = float(pos_map.get(symbol, 0.0) or 0.0)
-            delta = filled_qty if sig == "BUY" else -filled_qty
-            new_amt = current_amt + delta
-            pos_map[symbol] = new_amt
-            symbol_mode = pos_mode_map.get(symbol) or default_pos_mode or "oneway"
             if symbol_mode not in {"hedge", "oneway"}:
                 symbol_mode = "oneway"
             pos_mode_map[symbol] = symbol_mode
             if symbol_mode == "hedge":
-                if abs(new_amt) <= 1e-12:
-                    pos_sides.pop(symbol, None)
-                elif new_amt > 0:
-                    pos_sides[symbol] = {"LONG"}
+                slot_sizes = pos_gross_map.setdefault(symbol, {"LONG": 0.0, "SHORT": 0.0})
+                long_qty = float(slot_sizes.get("LONG", 0.0) or 0.0)
+                short_qty = float(slot_sizes.get("SHORT", 0.0) or 0.0)
+                target_side = position_side or ("LONG" if sig == "BUY" else "SHORT")
+                if target_side == "LONG":
+                    if sig == "BUY":
+                        long_qty += filled_qty
+                    else:
+                        long_qty = max(0.0, long_qty - filled_qty)
                 else:
-                    pos_sides[symbol] = {"SHORT"}
+                    if sig == "SELL":
+                        short_qty += filled_qty
+                    else:
+                        short_qty = max(0.0, short_qty - filled_qty)
+                slot_sizes["LONG"] = long_qty
+                slot_sizes["SHORT"] = short_qty
+                pos_gross_map[symbol] = slot_sizes
+                net_amt = long_qty - short_qty
+                if abs(net_amt) <= 1e-12:
+                    pos_map[symbol] = 0.0
+                else:
+                    pos_map[symbol] = net_amt
+                new_sides: Set[str] = set()
+                if long_qty > 1e-12:
+                    new_sides.add("LONG")
+                if short_qty > 1e-12:
+                    new_sides.add("SHORT")
+                if new_sides:
+                    pos_sides[symbol] = new_sides
+                else:
+                    pos_sides.pop(symbol, None)
             else:
+                delta = filled_qty if sig == "BUY" else -filled_qty
+                new_amt = current_amt + delta
+                pos_map[symbol] = new_amt
+                gross_entry = pos_gross_map.setdefault(symbol, {"BOTH": 0.0})
+                gross_entry["BOTH"] = abs(new_amt)
+                pos_gross_map[symbol] = gross_entry
                 if abs(new_amt) <= 1e-12:
                     pos_sides.pop(symbol, None)
                 else:
@@ -5612,11 +5723,12 @@ class Bot:
         # einmalig Positionen holen (pos_map), für FastTP & Skip bei offenen Positionen
         try:
             pos = self.exchange.get_position_risk()
-            pos_map, pos_sides, pos_mode_map = _build_position_maps(pos)
+            pos_map, pos_sides, pos_mode_map, pos_gross_map = _build_position_maps(pos)
         except Exception:
             pos_map = {}
             pos_sides = {}
             pos_mode_map = {}
+            pos_gross_map = {}
         default_pos_mode = "hedge" if any(mode == "hedge" for mode in pos_mode_map.values()) else "oneway"
 
         book_ticker_map: Dict[str, Dict[str, Any]] = {}
@@ -5672,6 +5784,7 @@ class Bot:
                     pos_map,
                     pos_sides,
                     pos_mode_map,
+                    pos_gross_map,
                     default_pos_mode,
                     book_ticker=book_ticker_map.get(sym),
                 )
