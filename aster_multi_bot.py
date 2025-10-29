@@ -3566,6 +3566,7 @@ class TradeManager:
                         item_id = item.get("id")
                         if item_id and item_id not in existing_ids:
                             mem_queue.append(item)
+                self._merge_ai_trade_proposals(disk_state)
         try:
             with open(STATE_FILE, "w") as f:
                 json.dump(self.state, f, indent=2)
@@ -3858,6 +3859,7 @@ class Bot:
         if not isinstance(self.state, dict):
             self.state = {}
         self.state.setdefault("ai_activity", [])
+        self.state.setdefault("ai_trade_proposals", [])
         self.state.setdefault("manual_trade_requests", [])
         self.state.setdefault("manual_trade_history", [])
         self._ensure_banned_state()
@@ -3989,6 +3991,7 @@ class Bot:
             return
         if not isinstance(disk_state, dict):
             return
+        self._merge_ai_trade_proposals(disk_state)
         queue_disk = disk_state.get("manual_trade_requests")
         if not isinstance(queue_disk, list):
             return
@@ -4005,6 +4008,34 @@ class Bot:
             updated = True
         if updated:
             self.state["manual_trade_requests"] = queue_mem
+
+    def _merge_ai_trade_proposals(self, disk_state: Dict[str, Any]) -> None:
+        queue_disk = disk_state.get("ai_trade_proposals")
+        if not isinstance(queue_disk, list):
+            return
+        mem_queue = self.state.get("ai_trade_proposals")
+        if not isinstance(mem_queue, list):
+            mem_queue = []
+        merged: List[Any] = []
+        seen_ids: Set[str] = set()
+        for item in queue_disk:
+            if isinstance(item, dict):
+                item_id = item.get("id")
+                if isinstance(item_id, str) and item_id:
+                    seen_ids.add(item_id)
+                merged.append(item)
+            else:
+                merged.append(item)
+        if mem_queue:
+            for item in mem_queue:
+                if isinstance(item, dict):
+                    item_id = item.get("id")
+                    if isinstance(item_id, str) and item_id in seen_ids:
+                        continue
+                    merged.append(item)
+                else:
+                    merged.append(item)
+        self.state["ai_trade_proposals"] = merged
 
     def _resume_ai_pending_manual_requests(self) -> None:
         if not self.ai_advisor:
