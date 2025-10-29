@@ -155,6 +155,78 @@ EXCLUDE = set(_split_env_symbols(os.getenv("ASTER_EXCLUDE_SYMBOLS", "")))
 UNIVERSE_MAX = int(os.getenv("ASTER_UNIVERSE_MAX", "0"))
 UNIVERSE_ROTATE = os.getenv("ASTER_UNIVERSE_ROTATE", "true").lower() in ("1", "true", "yes", "on")
 
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except Exception:
+        return max(0, int(default))
+    return max(0, value)
+
+
+def _normalize_position_side(raw_side: Any) -> str:
+    side = str(raw_side or "").upper()
+    if side in {"LONG", "SHORT", "BOTH"}:
+        return side
+    return "BOTH"
+
+
+def _build_position_maps(
+    positions: Optional[Sequence[Dict[str, Any]]]
+) -> Tuple[Dict[str, float], Dict[str, Set[str]], Dict[str, str]]:
+    """Return aggregated position information keyed by symbol.
+
+    The helper derives three structures from ``/positionRisk`` snapshots:
+
+    * ``net_map`` keeps the signed net quantity per symbol so existing call
+      sites that expect a float continue to work.
+    * ``open_sides`` tracks which directional slots (LONG/SHORT/BOTH) are
+      currently active so risk guards can reason about hedge-mode accounts.
+    * ``mode_map`` records the detected account mode per symbol (``hedge``
+      versus ``oneway``) to ensure new fills update the tracking consistently
+      within the same run cycle.
+    """
+
+    net_map: Dict[str, float] = {}
+    open_sides: Dict[str, Set[str]] = {}
+    mode_map: Dict[str, str] = {}
+    if not positions:
+        return net_map, open_sides, mode_map
+
+    for entry in positions:
+        if not isinstance(entry, dict):
+            continue
+        symbol = str(entry.get("symbol") or "").upper()
+        if not symbol:
+            continue
+        try:
+            amt = float(entry.get("positionAmt", "0") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        side = _normalize_position_side(entry.get("positionSide"))
+        if side in {"LONG", "SHORT"}:
+            mode_map[symbol] = "hedge"
+            qty = abs(amt)
+            if qty <= 1e-12:
+                # 0-Positionen im Hedge-Mode helfen nur beim Mode-Detection
+                # und müssen keinen Slot markieren.
+                net_map.setdefault(symbol, 0.0)
+                continue
+            if side == "LONG":
+                net_map[symbol] = net_map.get(symbol, 0.0) + qty
+                open_sides.setdefault(symbol, set()).add("LONG")
+            else:
+                net_map[symbol] = net_map.get(symbol, 0.0) - qty
+                open_sides.setdefault(symbol, set()).add("SHORT")
+        else:
+            if symbol not in mode_map:
+                mode_map[symbol] = "oneway"
+            net_map[symbol] = amt
+            if abs(amt) > 1e-12:
+                open_sides.setdefault(symbol, set()).add("BOTH")
+
+    return net_map, open_sides, mode_map
+
 MIN_QUOTE_VOL = float(os.getenv("ASTER_MIN_QUOTE_VOL_USDT", "150000"))
 SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.0030"))  # 0.30 %
 WICKINESS_MAX = float(os.getenv("ASTER_WICKINESS_MAX", "0.97"))
@@ -207,8 +279,8 @@ HTTP_BACKOFF = max(0.0, float(os.getenv("ASTER_HTTP_BACKOFF", "0.6")))
 HTTP_TIMEOUT = max(5.0, float(os.getenv("ASTER_HTTP_TIMEOUT", "20")))
 KLINE_CACHE_SEC = max(5.0, float(os.getenv("ASTER_KLINE_CACHE_SEC", "45")))
 
-MAX_OPEN_GLOBAL = int(os.getenv("ASTER_MAX_OPEN_GLOBAL", "4"))
-MAX_OPEN_PER_SYMBOL = int(os.getenv("ASTER_MAX_OPEN_PER_SYMBOL", "1"))
+MAX_OPEN_GLOBAL = _int_env("ASTER_MAX_OPEN_GLOBAL", 0)
+MAX_OPEN_PER_SYMBOL = _int_env("ASTER_MAX_OPEN_PER_SYMBOL", 0)
 
 STATE_FILE = os.getenv("ASTER_STATE_FILE", "aster_state.json")
 PAPER = os.getenv("ASTER_PAPER", "false").lower() in ("1", "true", "yes", "on")
@@ -3705,16 +3777,16 @@ class TradeManager:
             return
         try:
             pos = self.exchange.get_position_risk()
-            pos_map = {p.get("symbol"): float(p.get("positionAmt", "0") or 0.0) for p in pos}
+            pos_map, pos_sides, _ = _build_position_maps(pos)
         except Exception as e:
             log.debug(f"positionRisk fail: {e}")
             pos_map = {}
+            pos_sides = {}
 
         to_del: List[str] = []
         history_added = False
         for sym, rec in live.items():
-            amt = pos_map.get(sym, 0.0)
-            if abs(amt) > 1e-12:
+            if pos_sides.get(sym):
                 continue  # noch offen
 
             self._cancel_stale_exit_orders(sym)
@@ -4521,7 +4593,13 @@ class Bot:
         return {"S": SIZE_MULT_S, "M": SIZE_MULT_M, "L": SIZE_MULT_L}.get(bucket, SIZE_MULT_S)
 
     def handle_symbol(
-        self, symbol: str, pos_map: Dict[str, float], book_ticker: Optional[Dict[str, Any]] = None
+        self,
+        symbol: str,
+        pos_map: Dict[str, float],
+        pos_sides: Dict[str, Set[str]],
+        pos_mode_map: Dict[str, str],
+        default_pos_mode: str,
+        book_ticker: Optional[Dict[str, Any]] = None,
     ):
         banned_map = self._banned_map()
         if symbol in banned_map:
@@ -4541,21 +4619,6 @@ class Bot:
         with self._ai_priority_lock:
             if symbol in self._ai_priority_hint:
                 priority_side_hint = self._ai_priority_hint.pop(symbol, None)
-
-        # bereits offene Position?
-        amt = float(pos_map.get(symbol, 0.0) or 0.0)
-        if abs(amt) > 1e-12:
-            pending_queue = self.state.get("manual_trade_requests")
-            if isinstance(pending_queue, list):
-                for item in pending_queue:
-                    if not isinstance(item, dict):
-                        continue
-                    if str(item.get("symbol") or "").upper() != symbol.upper():
-                        continue
-                    if str(item.get("status") or "pending").lower() != "pending":
-                        continue
-                    self._complete_manual_request(item, "failed", error="Position already open")
-            return
 
         sig, atr_abs, ctx, price = self.strategy.compute_signal(symbol, book_ticker=book_ticker)
         if priority_side_hint and isinstance(ctx, dict):
@@ -4600,6 +4663,88 @@ class Bot:
 
         if not manual_override and sig == "NONE" and not self.ai_advisor:
             return
+
+        if sig in {"BUY", "SELL"}:
+            existing_sides = pos_sides.get(symbol, set())
+            symbol_mode = pos_mode_map.get(symbol) or default_pos_mode or "oneway"
+            if symbol_mode not in {"hedge", "oneway"}:
+                symbol_mode = "oneway"
+            slot_key = "LONG" if symbol_mode == "hedge" and sig == "BUY" else (
+                "SHORT" if symbol_mode == "hedge" else "BOTH"
+            )
+            new_slot = slot_key not in existing_sides
+            symbol_slots = len(existing_sides)
+            active_positions_total = sum(len(sides) for sides in pos_sides.values())
+            current_amt = float(pos_map.get(symbol, 0.0) or 0.0)
+            is_closing = False
+            if symbol_mode == "hedge":
+                if sig == "BUY" and "SHORT" in existing_sides and "LONG" not in existing_sides:
+                    is_closing = True
+                elif sig == "SELL" and "LONG" in existing_sides and "SHORT" not in existing_sides:
+                    is_closing = True
+            else:
+                if (current_amt > 1e-12 and sig == "SELL") or (current_amt < -1e-12 and sig == "BUY"):
+                    is_closing = True
+
+            projected_symbol_slots = symbol_slots + (1 if new_slot else 0)
+
+            if MAX_OPEN_PER_SYMBOL > 0 and not is_closing:
+                exceeds_symbol_cap = False
+                if MAX_OPEN_PER_SYMBOL == 1 and symbol_slots >= 1:
+                    exceeds_symbol_cap = True
+                elif projected_symbol_slots > MAX_OPEN_PER_SYMBOL:
+                    exceeds_symbol_cap = True
+                if exceeds_symbol_cap:
+                    pending_queue = self.state.get("manual_trade_requests")
+                    if isinstance(pending_queue, list):
+                        for item in pending_queue:
+                            if not isinstance(item, dict):
+                                continue
+                            if str(item.get("symbol") or "").upper() != symbol.upper():
+                                continue
+                            if str(item.get("status") or "pending").lower() != "pending":
+                                continue
+                            self._complete_manual_request(
+                                item,
+                                "failed",
+                                error="Per-symbol cap reached",
+                            )
+                    if self.decision_tracker:
+                        self.decision_tracker.record_rejection("max_open_symbol")
+                    log.info(
+                        "Skip %s — per-symbol position cap reached (%d/%d).",
+                        symbol,
+                        projected_symbol_slots,
+                        MAX_OPEN_PER_SYMBOL,
+                    )
+                    return
+
+            if MAX_OPEN_GLOBAL > 0 and not is_closing:
+                projected_total = active_positions_total + (1 if new_slot else 0)
+                if projected_total > MAX_OPEN_GLOBAL:
+                    pending_queue = self.state.get("manual_trade_requests")
+                    if isinstance(pending_queue, list):
+                        for item in pending_queue:
+                            if not isinstance(item, dict):
+                                continue
+                            if str(item.get("symbol") or "").upper() != symbol.upper():
+                                continue
+                            if str(item.get("status") or "pending").lower() != "pending":
+                                continue
+                            self._complete_manual_request(
+                                item,
+                                "failed",
+                                error="Global position cap reached",
+                            )
+                    if self.decision_tracker:
+                        self.decision_tracker.record_rejection("max_open_global")
+                    log.info(
+                        "Skip %s — global position cap reached (%d/%d).",
+                        symbol,
+                        projected_total,
+                        MAX_OPEN_GLOBAL,
+                    )
+                    return
 
         min_qvol = float(ctx.get("min_quote_volume", self.strategy.min_quote_vol))
         quote_volume = float(ctx.get("quote_volume", 0.0) or 0.0)
@@ -4757,10 +4902,14 @@ class Bot:
         if remaining_budget is not None:
             ctx["budget_remaining"] = float(remaining_budget)
         ctx["budget_spent"] = float(self.budget_tracker.spent())
-        open_positions_ctx = {k: float(v) for k, v in pos_map.items() if abs(float(v or 0.0)) > 1e-12}
+        open_positions_ctx = {
+            k: float(pos_map.get(k, 0.0) or 0.0)
+            for k, slots in pos_sides.items()
+            if slots
+        }
         if open_positions_ctx:
             ctx["open_positions"] = open_positions_ctx
-            ctx["active_positions"] = len(open_positions_ctx)
+            ctx["active_positions"] = sum(len(slots) for slots in pos_sides.values() if slots)
         else:
             ctx.pop("open_positions", None)
             ctx.pop("active_positions", None)
@@ -5251,6 +5400,30 @@ class Bot:
                         "target": float(tp),
                     },
                 )
+            try:
+                filled_qty = float(q_str)
+            except (TypeError, ValueError):
+                filled_qty = float(qty)
+            current_amt = float(pos_map.get(symbol, 0.0) or 0.0)
+            delta = filled_qty if sig == "BUY" else -filled_qty
+            new_amt = current_amt + delta
+            pos_map[symbol] = new_amt
+            symbol_mode = pos_mode_map.get(symbol) or default_pos_mode or "oneway"
+            if symbol_mode not in {"hedge", "oneway"}:
+                symbol_mode = "oneway"
+            pos_mode_map[symbol] = symbol_mode
+            if symbol_mode == "hedge":
+                if abs(new_amt) <= 1e-12:
+                    pos_sides.pop(symbol, None)
+                elif new_amt > 0:
+                    pos_sides[symbol] = {"LONG"}
+                else:
+                    pos_sides[symbol] = {"SHORT"}
+            else:
+                if abs(new_amt) <= 1e-12:
+                    pos_sides.pop(symbol, None)
+                else:
+                    pos_sides[symbol] = {"BOTH"}
             alpha_msg = ""
             if alpha_prob is not None:
                 alpha_msg = f" alpha={alpha_prob:.3f}/{(alpha_conf or 0.0):.2f}"
@@ -5439,9 +5612,12 @@ class Bot:
         # einmalig Positionen holen (pos_map), für FastTP & Skip bei offenen Positionen
         try:
             pos = self.exchange.get_position_risk()
-            pos_map = {p.get("symbol"): float(p.get("positionAmt", "0") or 0.0) for p in pos}
+            pos_map, pos_sides, pos_mode_map = _build_position_maps(pos)
         except Exception:
             pos_map = {}
+            pos_sides = {}
+            pos_mode_map = {}
+        default_pos_mode = "hedge" if any(mode == "hedge" for mode in pos_mode_map.values()) else "oneway"
 
         book_ticker_map: Dict[str, Dict[str, Any]] = {}
         try:
@@ -5482,7 +5658,7 @@ class Bot:
                     mid = 0.0
 
             amt = pos_map.get(sym, 0.0)
-            if abs(amt) > 1e-12:
+            if pos_sides.get(sym):
                 rec = self.state.get("live_trades", {}).get(sym)
                 if rec and mid > 0:
                     atr_abs = float(rec.get("atr_abs", 0.0))
@@ -5491,7 +5667,14 @@ class Bot:
                 continue
 
             try:
-                self.handle_symbol(sym, pos_map, book_ticker=book_ticker_map.get(sym))
+                self.handle_symbol(
+                    sym,
+                    pos_map,
+                    pos_sides,
+                    pos_mode_map,
+                    default_pos_mode,
+                    book_ticker=book_ticker_map.get(sym),
+                )
             except Exception as e:
                 log.debug(f"signal handling fail {sym}: {e}")
             # dynamisches Throttling: nur bremsen, falls keine Bulk-Daten vorhanden waren
