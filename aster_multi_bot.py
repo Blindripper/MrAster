@@ -1332,6 +1332,13 @@ class AITradeAdvisor:
                 ready.append((throttle_key, plan_ready))
         return ready
 
+    def _normalize_symbol(self, symbol: Any) -> str:
+        return str(symbol or "").strip().upper()
+
+    def _normalize_side(self, side: Any) -> str:
+        token = str(side or "").strip().upper()
+        return token or "UNKNOWN"
+
     def _coerce_float(self, value: Any) -> Optional[float]:
         if isinstance(value, bool):
             return 1.0 if value else 0.0
@@ -1485,7 +1492,8 @@ class AITradeAdvisor:
     def consume_signal_plan(self, symbol: str) -> Optional[Tuple[str, Dict[str, Any]]]:
         if not symbol:
             return None
-        prefix = f"plan::{symbol.upper()}::"
+        symbol_key = self._normalize_symbol(symbol)
+        prefix = f"plan::{symbol_key}::"
         now = time.time()
         selected_key: Optional[str] = None
         selected_side: Optional[str] = None
@@ -1952,8 +1960,11 @@ class AITradeAdvisor:
         async_mode: bool = True,
     ) -> Dict[str, Any]:
         fallback = self._fallback_plan(symbol, side, price, base_sl, base_tp, ctx, sentinel, atr_abs)
+        symbol_key = self._normalize_symbol(symbol)
+        side_key = self._normalize_side(side)
+        plan_key = f"plan::{symbol_key}::{side_key}"
         if not self.enabled:
-            self._recent_plan_store(f"plan::{symbol.upper()}::{side.upper()}", fallback)
+            self._recent_plan_store(plan_key, fallback)
             return fallback
 
         sentinel_label = str((sentinel or {}).get("label", "")).lower()
@@ -1977,10 +1988,10 @@ class AITradeAdvisor:
                     ),
                 }
             )
-            self._recent_plan_store(f"plan::{symbol.upper()}::{side.upper()}", fallback)
+            self._recent_plan_store(plan_key, fallback)
             return fallback
 
-        throttle_key = f"plan::{symbol.upper()}::{side.upper()}"
+        throttle_key = plan_key
         now = time.time()
         status, payload = self._process_pending_request(throttle_key, fallback, now)
         if status in {"pending", "timeout"}:
@@ -2179,6 +2190,8 @@ class AITradeAdvisor:
         *,
         async_mode: bool = True,
     ) -> Dict[str, Any]:
+        symbol_key = self._normalize_symbol(symbol)
+        trend_key = f"trend::{symbol_key}"
         fallback = {
             "take": False,
             "decision": "skip",
@@ -2198,7 +2211,7 @@ class AITradeAdvisor:
             "entry_price": float(price),
         }
         if not self.enabled:
-            self._recent_plan_store(f"trend::{symbol.upper()}", fallback)
+            self._recent_plan_store(trend_key, fallback)
             return fallback
 
         sentinel_label = str((sentinel or {}).get("label", "")).lower()
@@ -2219,10 +2232,10 @@ class AITradeAdvisor:
                     "explanation": "",
                 }
             )
-            self._recent_plan_store(f"trend::{symbol.upper()}", fallback)
+            self._recent_plan_store(trend_key, fallback)
             return fallback
 
-        throttle_key = f"trend::{symbol.upper()}"
+        throttle_key = trend_key
         now = time.time()
         status, payload = self._process_pending_request(throttle_key, fallback, now)
         if status in {"pending", "timeout"}:
