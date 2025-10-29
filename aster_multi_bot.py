@@ -28,6 +28,7 @@ import signal
 import textwrap
 import re
 import copy
+import threading
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 from typing import Dict, List, Tuple, Optional, Any, Callable, Sequence, Set
@@ -928,6 +929,7 @@ class AITradeAdvisor:
         state: Optional[Dict[str, Any]] = None,
         *,
         enabled: bool = True,
+        wakeup_cb: Optional[Callable[[str], None]] = None,
     ) -> None:
         self.api_key = (api_key or "").strip()
         self.model = (model or "gpt-4o").strip()
@@ -946,6 +948,7 @@ class AITradeAdvisor:
         self._pending_limit = AI_PENDING_LIMIT
         self._plan_delivery_ttl = max(self._min_interval * 3.0, 90.0)
         self._executor: Optional[ThreadPoolExecutor] = None
+        self._ready_callback = wakeup_cb
         if self.enabled and AI_CONCURRENCY > 0:
             self._executor = ThreadPoolExecutor(max_workers=AI_CONCURRENCY)
         self._load_persistent_state()
@@ -1141,6 +1144,22 @@ class AITradeAdvisor:
             budget_estimate=budget_estimate,
         )
 
+    def _notify_ready(self, throttle_key: str) -> None:
+        if not self._ready_callback:
+            return
+        try:
+            self._ready_callback(throttle_key)
+        except Exception as exc:
+            log.debug(f"ready callback failed for {throttle_key}: {exc}")
+
+    def _attach_future_callback(self, throttle_key: str, future: Optional[Future]) -> None:
+        if not isinstance(future, Future):
+            return
+        try:
+            future.add_done_callback(lambda _fut, key=throttle_key: self._notify_ready(key))
+        except Exception as exc:
+            log.debug(f"future callback attach failed for {throttle_key}: {exc}")
+
     def _process_pending_request(
         self,
         throttle_key: str,
@@ -1183,6 +1202,7 @@ class AITradeAdvisor:
                         info["dispatched_at"] = now
                         self._last_global_request = now
                         note = "Waiting for AI plan response"
+                        self._attach_future_callback(throttle_key, future)
                     else:
                         self._remove_pending_entry(throttle_key)
                         self._recent_plan_store(throttle_key, fallback, now)
@@ -1288,9 +1308,10 @@ class AITradeAdvisor:
         self._recent_plan_store(throttle_key, plan_ready, now, delivered=False)
         return plan_ready
 
-    def flush_pending(self) -> None:
+    def flush_pending(self) -> List[Tuple[str, Dict[str, Any]]]:
+        ready: List[Tuple[str, Dict[str, Any]]] = []
         if not self._pending_requests:
-            return
+            return ready
         now = time.time()
         keys = list(self._pending_order) if self._pending_order else list(self._pending_requests.keys())
         for throttle_key in keys:
@@ -1306,7 +1327,10 @@ class AITradeAdvisor:
             bundle = payload or {}
             response_text = bundle.get("response") if isinstance(bundle, dict) else None
             meta = bundle.get("info") if isinstance(bundle, dict) else info
-            self._finalize_response(throttle_key, fallback, meta, response_text, now)
+            plan_ready = self._finalize_response(throttle_key, fallback, meta, response_text, now)
+            if isinstance(plan_ready, dict):
+                ready.append((throttle_key, plan_ready))
+        return ready
 
     def _coerce_float(self, value: Any) -> Optional[float]:
         if isinstance(value, bool):
@@ -2133,6 +2157,7 @@ class AITradeAdvisor:
         }
         self._register_pending_key(throttle_key)
         self._last_global_request = now
+        self._attach_future_callback(throttle_key, future)
         stub = self._pending_stub(
             fallback,
             "plan_pending",
@@ -2376,6 +2401,7 @@ class AITradeAdvisor:
         }
         self._register_pending_key(throttle_key)
         self._last_global_request = now
+        self._attach_future_callback(throttle_key, future)
         stub = self._pending_stub(
             fallback,
             "trend_pending",
@@ -3600,6 +3626,11 @@ class Bot:
         self._ensure_banned_state()
         self._last_ai_activity_persist = 0.0
         self._manual_state_dirty = False
+        self._ai_wakeup_event = threading.Event()
+        self._ai_priority_lock = threading.Lock()
+        self._ai_priority_queue: deque[Tuple[str, Optional[str]]] = deque()
+        self._ai_priority_keys: Set[Tuple[str, Optional[str]]] = set()
+        self._ai_priority_hint: Dict[str, Optional[str]] = {}
         self.policy: Optional[BanditPolicy] = None
         if BANDIT_ENABLED:
             pol_state = self.state.get("policy") if isinstance(self.state, dict) else None
@@ -3658,6 +3689,7 @@ class Bot:
                 self.budget_tracker,
                 self.state,
                 enabled=AI_MODE_ENABLED,
+                wakeup_cb=self._on_ai_future_ready,
             )
 
     @property
@@ -3763,6 +3795,58 @@ class Bot:
             dirty = True
         if dirty:
             self._manual_state_dirty = True
+
+    def _on_ai_future_ready(self, _throttle_key: str) -> None:
+        self._ai_wakeup_event.set()
+
+    def _enqueue_ai_priority(self, symbol: str, side: Optional[str]) -> None:
+        sym = str(symbol or "").upper()
+        if not sym:
+            return
+        side_token = side.upper() if isinstance(side, str) and side else None
+        key = (sym, side_token)
+        with self._ai_priority_lock:
+            if key in self._ai_priority_keys:
+                return
+            self._ai_priority_queue.append((sym, side_token))
+            self._ai_priority_keys.add(key)
+            if side_token is not None:
+                self._ai_priority_hint[sym] = side_token
+            elif sym not in self._ai_priority_hint:
+                self._ai_priority_hint[sym] = None
+        self._ai_wakeup_event.set()
+
+    def _consume_ai_priority_symbols(self) -> List[Tuple[str, Optional[str]]]:
+        with self._ai_priority_lock:
+            items = list(self._ai_priority_queue)
+            self._ai_priority_queue.clear()
+            self._ai_priority_keys.clear()
+        return items
+
+    def _handle_ai_ready_plan(self, throttle_key: str, plan: Dict[str, Any]) -> None:
+        if not isinstance(throttle_key, str) or not throttle_key:
+            return
+        if not isinstance(plan, dict):
+            return
+        parts = throttle_key.split("::")
+        if not parts:
+            return
+        category = parts[0]
+        symbol: Optional[str] = None
+        side_hint: Optional[str] = None
+        if category == "plan" and len(parts) >= 3:
+            symbol = parts[1].upper()
+            side_hint = parts[2].upper()
+        elif category == "trend" and len(parts) >= 2:
+            symbol = parts[1].upper()
+            side_val = plan.get("side")
+            if isinstance(side_val, str) and side_val.strip():
+                side_hint = side_val.strip().upper()
+        else:
+            return
+        if not symbol:
+            return
+        self._enqueue_ai_priority(symbol, side_hint)
 
     def _pop_manual_request(self, symbol: str) -> Optional[Dict[str, Any]]:
         queue = self.state.get("manual_trade_requests")
@@ -3890,6 +3974,11 @@ class Bot:
             except Exception:
                 pass
 
+        priority_side_hint: Optional[str] = None
+        with self._ai_priority_lock:
+            if symbol in self._ai_priority_hint:
+                priority_side_hint = self._ai_priority_hint.pop(symbol, None)
+
         # bereits offene Position?
         amt = float(pos_map.get(symbol, 0.0) or 0.0)
         if abs(amt) > 1e-12:
@@ -3906,6 +3995,8 @@ class Bot:
             return
 
         sig, atr_abs, ctx, price = self.strategy.compute_signal(symbol, book_ticker=book_ticker)
+        if priority_side_hint and isinstance(ctx, dict):
+            ctx.setdefault("ai_priority_side_hint", priority_side_hint)
         base_signal = sig
 
         manual_req = self._pop_manual_request(symbol)
@@ -4694,17 +4785,38 @@ class Bot:
 
     def run_once(self):
         self._manual_state_dirty = False
+        self._ai_wakeup_event.clear()
         self._refresh_manual_requests()
+        ready_plans: List[Tuple[str, Dict[str, Any]]] = []
         if self.ai_advisor:
             try:
-                self.ai_advisor.flush_pending()
+                ready_plans = self.ai_advisor.flush_pending()
             except Exception as exc:
                 log.debug(f"pending flush failed: {exc}")
+                ready_plans = []
             try:
                 self._resume_ai_pending_manual_requests()
             except Exception as exc:
                 log.debug(f"manual resume failed: {exc}")
+            if ready_plans:
+                for throttle_key, plan in ready_plans:
+                    try:
+                        self._handle_ai_ready_plan(throttle_key, plan)
+                    except Exception as exc:
+                        log.debug(f"handle ready plan fail {throttle_key}: {exc}")
         syms = self.universe.refresh()
+        priority_pairs = self._consume_ai_priority_symbols()
+        if priority_pairs:
+            priority_syms = [sym for sym, _ in priority_pairs if sym]
+            if priority_syms:
+                seen: Set[str] = set()
+                merged: List[str] = []
+                for sym in priority_syms + syms:
+                    if not sym or sym in seen:
+                        continue
+                    merged.append(sym)
+                    seen.add(sym)
+                syms = merged
 
         pending_manual: Set[str] = set()
         queue = self.state.get("manual_trade_requests")
@@ -4859,7 +4971,10 @@ class Bot:
             log.info("Cycle finished in %.2fs.", dt)
             if not running:
                 break
-            time.sleep(max(1, LOOP_SLEEP))
+            wait_time = max(1, LOOP_SLEEP)
+            triggered = self._ai_wakeup_event.wait(timeout=wait_time)
+            if triggered:
+                continue
         log.info("Bot stopped. Safe to exit.")
 
 # ========= main =========
