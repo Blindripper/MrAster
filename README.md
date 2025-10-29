@@ -26,14 +26,15 @@
 <summary><strong>Table of Contents</strong></summary>
 
 - [✨ Highlights](#-highlights)
+  - [AI Copilot Stack](#ai-copilot-stack)
   - [Trading Engine](#trading-engine)
   - [Risk and Order Management](#risk-and-order-management)
-  - [AI and Automation](#ai-and-automation)
   - [Observability & Resilience](#-observability--resilience)
 - [🚀 Quick Start](#-quick-start)
 - [🖥️ Dashboard Experience](#-dashboard-experience)
 - [🌍 Multilingual Dashboard](#-multilingual-dashboard)
 - [🤖 AI Mode Explained](#-ai-mode-explained)
+  - [Learning Loops & Self-Tuning](#learning-loops--self-tuning)
 - [🧭 Architecture Overview](#-architecture-overview)
 - [⚙️ Configuration Reference](#-configuration-reference)
 - [🔐 Security Notice](#-security-notice)
@@ -41,6 +42,15 @@
 </details>
 
 ## ✨ Highlights
+
+### AI Copilot Stack
+- **AITradeAdvisor** weighs dozens of technical, sentiment, and risk factors to deliver TAKE/SKIP calls, size overrides, leverage hints, and natural-language rationale in one JSON response.
+- **News Sentinel** (`ASTER_AI_SENTINEL_*`) feeds macro and hype scores into the advisor, vetoing trades when event risk spikes.
+- **PostmortemLearning** (see [Learning Loops & Self-Tuning](#learning-loops--self-tuning)) captures qualitative LLM annotations from completed trades and feeds them back as numeric features for future plans.
+- **ParameterTuner** continuously recomputes stop-loss/take-profit multipliers and bucket-specific size biases, escalating to structured LLM calls only when a statistically meaningful sample is available.
+- **PlaybookManager** synthesises regime playbooks — momentum, mean-reversion, volatility compression — that the advisor injects into every payload to stay aligned with the prevailing market mode.
+- **BudgetLearner** keeps OpenAI spend proportional to realised edge, downshifting cost-per-symbol when performance deteriorates.
+- **Budget-aware orchestration** with `ASTER_AI_DAILY_BUDGET_USD`, `ASTER_AI_STRICT_BUDGET`, and per-request price cards in the dashboard make the copilot economical to run.
 
 ### Trading Engine
 - **RSI-driven signals with trend confirmation** configurable via `ASTER_*` environment variables or the dashboard editor.
@@ -52,12 +62,6 @@
 - **BracketGuard** (`brackets_guard.py`) repairs stop-loss and take-profit orders while respecting both legacy and new bot signatures.
 - **FastTP** trims adverse moves with ATR-bound checkpoints and cooldown logic.
 - **Equity and exposure caps** (`ASTER_MAX_OPEN_*`, `ASTER_EQUITY_FRACTION`) plus persistent state (`aster_state.json`) ensure continuity across restarts.
-
-### AI and Automation
-- **AITradeAdvisor** adapts leverage, size, and rationale in real time, logging every decision to the dashboard feed.
-- **News Sentinel** (`ASTER_AI_SENTINEL_*`) blocks trades near scheduled events or high-volatility bursts.
-- **Budget-aware orchestration** with `ASTER_AI_DAILY_BUDGET_USD` and `ASTER_AI_STRICT_BUDGET` keeps OpenAI spending in check.
-- **Machine-learning policy** (`ml_policy.py`) merges contextual bandits with the optional alpha classifier for trade admission and sizing control.
 
 ### 🛰️ Observability & Resilience
 - **Dashboard-native monitoring** covers log streaming, process control, environment editing, AI chat, and analytics cards.
@@ -115,11 +119,23 @@ When you toggle the dashboard to **AI** (or set `ASTER_MODE=ai` / `ASTER_AI_MODE
 
 1. **Signal intake** – Momentum, RSI, ATR, spread, funding, and trend context flow into the AI payload alongside bid/ask levels, stop/TP distances, and per-symbol risk limits.
 2. **Sentinel context** – `NewsTrendSentinel` caches 24h ticker stats and optional external news to inject hype/event-risk scores and veto flags.
-3. **AI decision** – The advisor calls `plan_trade()` for classical signals or `plan_trend_trade()` for discretionary setups, returning JSON with TAKE/SKIP, sizing overrides, leverage hints, and human-readable explanations.
-4. **Budget enforcement** – `DailyBudgetTracker` estimates cost, enforces `ASTER_AI_DAILY_BUDGET_USD`, and respects `ASTER_AI_STRICT_BUDGET` before every API call.
-5. **Execution & telemetry** – Approved trades inherit AI adjustments and persist rationale, sentinel state, and budget snapshots in `aster_state.json` for dashboard visualization and post-mortems.
+3. **Context enrichment** – `PostmortemLearning`, `ParameterTuner`, and `PlaybookManager` inject their latest feature vectors, regime hints, and bias multipliers before every request. `BudgetLearner` can temporarily downscale AI help for symbols that underperform.
+4. **AI decision** – The advisor calls `plan_trade()` for classical signals or `plan_trend_trade()` for discretionary setups, returning JSON with TAKE/SKIP, sizing overrides, leverage hints, and human-readable explanations.
+5. **Budget enforcement** – `DailyBudgetTracker` estimates cost, enforces `ASTER_AI_DAILY_BUDGET_USD`, and respects `ASTER_AI_STRICT_BUDGET` before every API call.
+6. **Execution & telemetry** – Approved trades inherit AI adjustments and persist rationale, sentinel state, and budget snapshots in `aster_state.json` for dashboard visualization and post-mortems.
 
-> **Learning loop.** The `note_exit` hook updates bandit matrices and the alpha model after every closed trade, with state serialized through `to_dict`/`from_dict` so progress survives restarts.
+> **Learning loop.** The `note_exit` hook updates bandit matrices, the alpha model, and AI learning stores after every closed trade, with state serialized through `to_dict`/`from_dict` so progress survives restarts.
+
+### Learning Loops & Self-Tuning
+
+The AI stack keeps improving as it trades. Four cooperating services share the persistent state stored in `aster_state.json`:
+
+- **PostmortemLearning** translates qualitative LLM trade reviews (e.g., “macro event,” “liquidity gap”) into weighted numeric signals that reappear in future trade payloads, letting the advisor learn from discretionary notes.
+- **ParameterTuner** records per-trade features, recomputes local stop/take biases, and periodically asks the LLM for structured JSON overrides once enough evidence accumulates.
+- **PlaybookManager** snapshots market breadth, volatility, and sentiment, then refreshes a playbook (“momentum squeeze,” “sideways chop”) that the advisor uses as regime context.
+- **BudgetLearner** tracks token spend vs. realised reward for each symbol and throttles costly post-mortems or tuning calls when edge deteriorates.
+
+Every component is transparent inside the dashboard: AI call receipts, current playbook, post-mortem feature weights, and tuning overrides are surfaced in the AI panel so you can audit the loop in real time.
 
 ## 🧭 Architecture Overview
 
