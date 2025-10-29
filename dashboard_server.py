@@ -118,6 +118,9 @@ ENV_DEFAULTS: Dict[str, str] = {
 ALLOWED_ENV_KEYS = set(ENV_DEFAULTS.keys())
 
 
+REALIZED_PNL_MATCH_PADDING_SECONDS = 180.0
+
+
 CG_ID: Dict[str, str] = {
     "BTC": "bitcoin",
     "ETH": "ethereum",
@@ -273,6 +276,177 @@ def _fetch_position_snapshot(env: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
 
 
 POSITION_HINT_KEYS = {"entry", "entryPrice", "qty", "quantity", "positionAmt", "side", "tp", "sl", "mark"}
+
+
+def _fetch_realized_pnl_entries(env: Dict[str, Any], limit: int = 400) -> List[Dict[str, Any]]:
+    base = (env.get("ASTER_EXCHANGE_BASE") or "https://fapi.asterdex.com").rstrip("/")
+    api_key = (env.get("ASTER_API_KEY") or "").strip()
+    api_secret = (env.get("ASTER_API_SECRET") or "").strip()
+    if not api_key or not api_secret:
+        return []
+    if _is_truthy(env.get("ASTER_PAPER")):
+        return []
+
+    try:
+        recv_window = int(float(env.get("ASTER_RECV_WINDOW", 10000)))
+    except (TypeError, ValueError):
+        recv_window = 10000
+
+    try:
+        limit_val = int(limit)
+    except (TypeError, ValueError):
+        limit_val = 400
+    limit_val = max(50, min(limit_val, 1000))
+
+    params = {
+        "timestamp": int(time.time() * 1000),
+        "recvWindow": recv_window,
+        "incomeType": "REALIZED_PNL",
+        "limit": limit_val,
+    }
+    ordered = [(k, params[k]) for k in sorted(params)]
+    qs = urlencode(ordered, doseq=True)
+    signature = hmac.new(api_secret.encode(), qs.encode(), hashlib.sha256).hexdigest()
+    url = f"{base}/fapi/v1/income?{qs}&signature={signature}"
+    headers = {"X-MBX-APIKEY": api_key, "Content-Type": "application/x-www-form-urlencoded"}
+
+    try:
+        resp = requests.get(url, headers=headers, timeout=8)
+        resp.raise_for_status()
+        payload = resp.json()
+    except Exception as exc:
+        logger.debug("realized pnl fetch failed: %s", exc)
+        return []
+
+    if isinstance(payload, dict):
+        if isinstance(payload.get("rows"), list):
+            entries = payload["rows"]
+        elif isinstance(payload.get("data"), list):
+            entries = payload["data"]
+        else:
+            lists = [value for value in payload.values() if isinstance(value, list)]
+            entries = lists[0] if lists else []
+    else:
+        entries = payload
+
+    results: List[Dict[str, Any]] = []
+    if not isinstance(entries, list):
+        return results
+
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        symbol_raw = item.get("symbol") or item.get("asset")
+        if not symbol_raw:
+            continue
+        symbol = str(symbol_raw).upper().strip()
+        if not symbol:
+            continue
+
+        income_val = _safe_float(item.get("income"))
+        if income_val is None:
+            income_val = _safe_float(item.get("realizedPnl"))
+        if income_val is None:
+            income_val = _safe_float(item.get("amount"))
+        if income_val is None:
+            continue
+
+        time_raw = item.get("time") or item.get("T") or item.get("timestamp") or item.get("tradeTime")
+        if time_raw is None:
+            continue
+        time_val = _safe_float(time_raw)
+        if time_val is None:
+            continue
+        if time_val > 1e12:
+            time_val /= 1000.0
+        elif time_val > 1e10:
+            time_val /= 1000.0
+
+        entry: Dict[str, Any] = {
+            "symbol": symbol,
+            "income": income_val,
+            "time": time_val,
+        }
+
+        for key in ("incomeType", "tradeId", "orderId", "positionSide", "matchOrderId"):
+            if key in item:
+                entry[key] = item.get(key)
+
+        results.append(entry)
+
+    results.sort(key=lambda e: e["time"])
+    return results
+
+
+def _parse_trade_timestamp(trade: Dict[str, Any], numeric_key: str, iso_key: str) -> Optional[float]:
+    value = _safe_float(trade.get(numeric_key))
+    if value is not None and value > 0:
+        return value
+    iso_value = trade.get(iso_key)
+    if isinstance(iso_value, str) and iso_value:
+        try:
+            return datetime.fromisoformat(iso_value).timestamp()
+        except ValueError:
+            return None
+    return None
+
+
+def _merge_realized_pnl(history: List[Dict[str, Any]], realized: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not history or not realized:
+        return history
+
+    timeline: Dict[str, List[Dict[str, Any]]] = {}
+    for entry in realized:
+        symbol = entry.get("symbol")
+        income = entry.get("income")
+        ts = entry.get("time")
+        if not symbol or income is None or ts is None:
+            continue
+        timeline.setdefault(symbol, []).append(entry)
+
+    for entries in timeline.values():
+        entries.sort(key=lambda item: item.get("time", 0))
+
+    merged: List[Dict[str, Any]] = []
+    for trade in history:
+        record = dict(trade)
+        symbol_raw = record.get("symbol")
+        symbol = str(symbol_raw).upper().strip() if symbol_raw else ""
+        if symbol and symbol in timeline:
+            open_ts = _parse_trade_timestamp(record, "opened_at", "opened_at_iso")
+            close_ts = _parse_trade_timestamp(record, "closed_at", "closed_at_iso")
+            if close_ts is None and open_ts is not None:
+                close_ts = open_ts
+            if open_ts is None and close_ts is not None:
+                open_ts = close_ts
+
+            if open_ts is not None and close_ts is not None:
+                window_start = min(open_ts, close_ts) - REALIZED_PNL_MATCH_PADDING_SECONDS
+                window_end = max(open_ts, close_ts) + REALIZED_PNL_MATCH_PADDING_SECONDS
+                candidates = timeline.get(symbol, [])
+                matched: List[Dict[str, Any]] = []
+                remaining: List[Dict[str, Any]] = []
+                for entry in candidates:
+                    ts = entry.get("time")
+                    if ts is None:
+                        continue
+                    if window_start <= ts <= window_end:
+                        matched.append(entry)
+                    else:
+                        remaining.append(entry)
+
+                if matched:
+                    realized_sum = sum(_safe_float(e.get("income")) or 0.0 for e in matched)
+                    if record.get("pnl") is not None and "estimated_pnl" not in record:
+                        try:
+                            record["estimated_pnl"] = float(record.get("pnl") or 0.0)
+                        except (TypeError, ValueError):
+                            record["estimated_pnl"] = record.get("pnl")
+                    record["realized_pnl"] = realized_sum
+                    timeline[symbol] = remaining
+        merged.append(record)
+
+    return merged
 
 
 def _looks_like_position_record(candidate: Dict[str, Any]) -> bool:
@@ -962,6 +1136,19 @@ def _format_ts(ts: Optional[float]) -> Optional[str]:
         return None
 
 
+def _extract_trade_pnl(trade: Dict[str, Any]) -> float:
+    if not isinstance(trade, dict):
+        return 0.0
+    for key in ("realized_pnl", "realizedPnl", "pnl"):
+        value = trade.get(key)
+        if value is None:
+            continue
+        numeric = _safe_float(value)
+        if numeric is not None:
+            return numeric
+    return 0.0
+
+
 def _compute_stats(history: List[Dict[str, Any]]) -> TradeStats:
     if not history:
         return TradeStats(
@@ -973,14 +1160,14 @@ def _compute_stats(history: List[Dict[str, Any]]) -> TradeStats:
             worst_trade=None,
             ai_hint="",
         )
-    total_pnl = sum(float(h.get("pnl", 0.0) or 0.0) for h in history)
+    total_pnl = sum(_extract_trade_pnl(h) for h in history)
     total_r = sum(float(h.get("pnl_r", 0.0) or 0.0) for h in history)
-    wins = [h for h in history if (h.get("pnl", 0.0) or 0.0) > 0]
-    losses = [h for h in history if (h.get("pnl", 0.0) or 0.0) < 0]
+    wins = [h for h in history if _extract_trade_pnl(h) > 0]
+    losses = [h for h in history if _extract_trade_pnl(h) < 0]
     count = len(history)
     win_rate = (len(wins) / count) if count else 0.0
-    best = max(history, key=lambda h: h.get("pnl", 0.0))
-    worst = min(history, key=lambda h: h.get("pnl", 0.0))
+    best = max(history, key=_extract_trade_pnl)
+    worst = min(history, key=_extract_trade_pnl)
 
     hint: str
     if count < 10:
@@ -3104,12 +3291,34 @@ async def ai_execute_proposal(request: ProposalExecutionRequest) -> Dict[str, An
 @app.get("/api/trades")
 async def trades() -> Dict[str, Any]:
     state = _read_state()
-    history: List[Dict[str, Any]] = state.get("trade_history", [])[-200:]
-    for item in history:
-        item["opened_at_iso"] = _format_ts(item.get("opened_at"))
-        item["closed_at_iso"] = _format_ts(item.get("closed_at"))
-    open_trades = state.get("live_trades", {})
+    raw_history: List[Any] = state.get("trade_history", [])[-200:]
+    history: List[Dict[str, Any]] = []
+    for entry in raw_history:
+        if isinstance(entry, dict):
+            record = dict(entry)
+        else:
+            continue
+        record["opened_at_iso"] = _format_ts(record.get("opened_at"))
+        record["closed_at_iso"] = _format_ts(record.get("closed_at"))
+        history.append(record)
+
     env_cfg = CONFIG.get("env", {})
+
+    realized_entries: List[Dict[str, Any]] = []
+    if history:
+        try:
+            fetch_limit = max(len(history) * 3, 200)
+            realized_entries = await asyncio.to_thread(
+                _fetch_realized_pnl_entries, env_cfg, fetch_limit
+            )
+        except Exception as exc:
+            logger.debug("realized pnl enrichment failed: %s", exc)
+            realized_entries = []
+
+    if realized_entries:
+        history = _merge_realized_pnl(history, realized_entries)
+
+    open_trades = state.get("live_trades", {})
     try:
         enriched_open = await asyncio.to_thread(enrich_open_positions, open_trades, env_cfg)
     except Exception as exc:

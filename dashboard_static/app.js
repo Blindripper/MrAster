@@ -4541,7 +4541,7 @@ function createTradeDetail(label, value, options = {}) {
 }
 
 function buildTradeDetailContent(trade) {
-  const pnl = Number(trade.pnl ?? 0);
+  const pnl = extractRealizedPnl(trade);
   const pnlTone = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'neutral';
   const pnlDisplay = `${pnl > 0 ? '+' : ''}${formatNumber(pnl, 2)} USDT`;
   const rValue = Number(trade.pnl_r ?? 0);
@@ -4565,7 +4565,8 @@ function buildTradeDetailContent(trade) {
 
   const resultGroup = document.createElement('div');
   resultGroup.className = 'trade-detail-group';
-  const pnlLabel = pnlTone === 'profit' ? 'Profit' : pnlTone === 'loss' ? 'Loss' : 'PNL';
+  const pnlLabel =
+    pnlTone === 'profit' ? 'Realized profit' : pnlTone === 'loss' ? 'Realized loss' : 'Realized PNL';
   resultGroup.append(
     createTradeDetail(pnlLabel, pnlDisplay, { tone: pnlTone }),
     createTradeDetail('R multiple', rDisplay, { tone: rTone, muted: rTone === 'neutral' })
@@ -4595,7 +4596,7 @@ function buildTradeDetailContent(trade) {
   const metricGrid = document.createElement('div');
   metricGrid.className = 'trade-metric-grid';
   const metrics = [
-    createMetric('PNL (USDT)', pnlDisplay, pnlTone),
+    createMetric('Realized PNL (USDT)', pnlDisplay, pnlTone),
     createMetric('R multiple', rDisplay, rTone),
     createMetric('Size', formatNumber(trade.qty, 4)),
     createMetric('Bandit bucket', trade.bucket ? trade.bucket.toString().toUpperCase() : '–'),
@@ -4754,7 +4755,7 @@ function buildTradeDetailContent(trade) {
 }
 
 function buildTradeSummaryCard(trade) {
-  const pnl = Number(trade.pnl ?? 0);
+  const pnl = extractRealizedPnl(trade);
   const pnlTone = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'neutral';
   const pnlDisplay = `${pnl > 0 ? '+' : ''}${formatNumber(pnl, 2)} USDT`;
   const rValue = Number(trade.pnl_r ?? 0);
@@ -4904,6 +4905,28 @@ function getTradeTimestamp(trade) {
   return Number.isFinite(opened) ? opened : 0;
 }
 
+function extractRealizedPnl(trade) {
+  if (!trade || typeof trade !== 'object') {
+    return 0;
+  }
+  const candidates = [
+    trade.realized_pnl,
+    trade.realizedPnl,
+    trade.realizedPNL,
+    trade.pnl,
+  ];
+  for (const candidate of candidates) {
+    if (candidate === undefined || candidate === null) {
+      continue;
+    }
+    const value = Number(candidate);
+    if (!Number.isNaN(value)) {
+      return value;
+    }
+  }
+  return 0;
+}
+
 function renderTradeHistory(history) {
   if (!tradeList) return;
   tradeList.innerHTML = '';
@@ -4937,7 +4960,7 @@ function handleTradeModalKeydown(event) {
 function openTradeModal(trade, returnTarget) {
   if (!tradeModal || !tradeModalBody) return;
 
-  const pnl = Number(trade.pnl ?? 0);
+  const pnl = extractRealizedPnl(trade);
   const pnlTone = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'neutral';
   const pnlDisplay = `${pnl > 0 ? '+' : ''}${formatNumber(pnl, 2)} USDT`;
   const durationSeconds = computeDurationSeconds(trade.opened_at_iso, trade.closed_at_iso);
@@ -4951,7 +4974,8 @@ function openTradeModal(trade, returnTarget) {
     tradeModalTitle.textContent = titleParts.join(' · ');
   }
 
-  const outcomeLabel = pnlTone === 'profit' ? 'Profit' : pnlTone === 'loss' ? 'Loss' : 'Flat';
+  const outcomeLabel =
+    pnlTone === 'profit' ? 'Realized profit' : pnlTone === 'loss' ? 'Realized loss' : 'Flat';
   const timestampLabel = formatTimestamp(trade.closed_at_iso || trade.opened_at_iso);
   const subtitleParts = [];
   if (timestampLabel && timestampLabel !== '–') {
@@ -6296,7 +6320,7 @@ function renderTradeSummary(stats) {
       tone: 'neutral',
     },
     {
-      label: translate('trades.metric.totalPnl', 'Total PNL'),
+      label: translate('trades.metric.totalPnl', 'Realized PNL'),
       value: `${stats.total_pnl > 0 ? '+' : ''}${formatNumber(stats.total_pnl, 2)} USDT`,
       tone: stats.total_pnl > 0 ? 'profit' : stats.total_pnl < 0 ? 'loss' : 'neutral',
     },
@@ -6721,15 +6745,21 @@ function renderPnlChart(history) {
   if (!pnlChartCanvas || typeof Chart === 'undefined') return;
 
   const entries = Array.isArray(history) ? history.slice() : [];
-  const sorted = entries
-    .filter((trade) => trade && trade.pnl !== undefined && trade.pnl !== null)
+  const prepared = entries
+    .map((trade) => {
+      if (!trade || typeof trade !== 'object') return null;
+      const pnl = extractRealizedPnl(trade);
+      if (Number.isNaN(pnl)) return null;
+      return { trade, pnl };
+    })
+    .filter(Boolean)
     .sort((a, b) => {
-      const aDate = new Date(a.closed_at_iso || a.opened_at_iso || 0).getTime();
-      const bDate = new Date(b.closed_at_iso || b.opened_at_iso || 0).getTime();
+      const aDate = new Date(a.trade.closed_at_iso || a.trade.opened_at_iso || 0).getTime();
+      const bDate = new Date(b.trade.closed_at_iso || b.trade.opened_at_iso || 0).getTime();
       return aDate - bDate;
     });
 
-  if (sorted.length === 0) {
+  if (prepared.length === 0) {
     if (pnlChart) {
       pnlChart.destroy();
       pnlChart = null;
@@ -6757,9 +6787,7 @@ function renderPnlChart(history) {
   const labels = [];
   const values = [];
   let cumulative = 0;
-  for (const trade of sorted) {
-    const pnl = Number(trade.pnl ?? 0);
-    if (Number.isNaN(pnl)) continue;
+  for (const { trade, pnl } of prepared) {
     cumulative += pnl;
     const timestamp = trade.closed_at_iso || trade.opened_at_iso;
     if (timestamp) {
