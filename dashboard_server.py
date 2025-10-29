@@ -2533,6 +2533,17 @@ class AIChatEngine:
             "message": message,
             "payload": action,
         }
+        proposal_id: Optional[str] = None
+        if isinstance(action.get("proposal_id"), str):
+            proposal_id = action["proposal_id"].strip() or None
+        if proposal_id is None:
+            payload_inner = action.get("payload")
+            if isinstance(payload_inner, dict):
+                raw_id = payload_inner.get("proposal_id")
+                if isinstance(raw_id, str):
+                    proposal_id = raw_id.strip() or None
+        if proposal_id:
+            request["proposal_id"] = proposal_id
         size_mult = action.get("size_multiplier")
         if size_mult is not None:
             try:
@@ -2609,6 +2620,7 @@ class AIChatEngine:
                 "note": note or f"AI proposal {symbol} {direction}",
                 "payload": payload,
             }
+            action["proposal_id"] = proposal_key
             if normalized.get("size_multiplier") is not None:
                 action["size_multiplier"] = normalized["size_multiplier"]
             if normalized.get("notional") is not None:

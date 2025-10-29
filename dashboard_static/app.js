@@ -2030,7 +2030,7 @@ function getPendingTradeProposals() {
   return Array.from(tradeProposalRegistry.values())
     .filter((proposal) => {
       const status = (proposal.status || '').toString().toLowerCase();
-      return !['queued', 'executed', 'completed'].includes(status);
+      return !['queued', 'executed', 'completed', 'processing'].includes(status);
     })
     .sort((a, b) => {
       const aTs = Number(a.ts || a.queued_at || 0);
@@ -5614,16 +5614,44 @@ function appendTradeProposalCard(proposal) {
   const updateCardState = (cardEl, data) => {
     if (!cardEl || !data) return;
     const statusText = (data.status || '').toString().toLowerCase();
-    if (statusText === 'queued' || statusText === 'executed' || statusText === 'completed') {
+    const statusEl = cardEl.querySelector('.ai-trade-proposal__status');
+    const actionBtn = cardEl.querySelector('.ai-trade-proposal__action');
+    const errorMessage = (data.error || '').toString().trim();
+    cardEl.classList.remove('queued', 'failed');
+    if (statusText === 'executed' || statusText === 'completed') {
       cardEl.classList.add('queued');
-      const statusEl = cardEl.querySelector('.ai-trade-proposal__status');
+      if (statusEl) {
+        statusEl.textContent = translate('chat.proposal.statusExecuted', 'Manual trade executed by the bot.');
+      }
+      if (actionBtn) {
+        actionBtn.disabled = true;
+        actionBtn.textContent = translate('chat.proposal.executedLabel', 'Executed');
+      }
+    } else if (statusText === 'queued') {
+      cardEl.classList.add('queued');
       if (statusEl) {
         statusEl.textContent = translate('chat.proposal.statusQueued', 'Manual trade queued for execution.');
       }
-      const actionBtn = cardEl.querySelector('.ai-trade-proposal__action');
       if (actionBtn) {
         actionBtn.disabled = true;
         actionBtn.textContent = translate('chat.proposal.queued', 'Manual trade queued');
+      }
+    } else if (statusText === 'failed') {
+      cardEl.classList.add('failed');
+      if (statusEl) {
+        statusEl.textContent = errorMessage || translate('chat.proposal.statusFailedDetailed', 'The bot could not execute this trade.');
+      }
+      if (actionBtn) {
+        actionBtn.disabled = false;
+        actionBtn.textContent = translate('chat.proposal.retry', 'Retry');
+      }
+    } else if (statusText === 'processing') {
+      if (statusEl) {
+        statusEl.textContent = translate('chat.proposal.statusProcessing', 'Bot is executing this trade…');
+      }
+      if (actionBtn) {
+        actionBtn.disabled = true;
+        actionBtn.textContent = translate('chat.proposal.executing', 'Queuing…');
       }
     }
     registerTradeProposal(data);
