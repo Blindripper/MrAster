@@ -1625,10 +1625,58 @@ class AITradeAdvisor:
 
         try:
             choices = data.get("choices") or []
-            content = choices[0]["message"]["content"] if choices else ""
-            return str(content or "").strip()
+            if not choices:
+                return None
+            content = self._extract_choice_content(choices[0])
+            return content.strip() if content else None
         except Exception:
             return None
+
+    @staticmethod
+    def _extract_choice_content(choice: Dict[str, Any]) -> str:
+        """Normalize the various chat completion payload shapes to plain text."""
+        if not isinstance(choice, dict):
+            return ""
+        message = choice.get("message") or {}
+        if not isinstance(message, dict):
+            return ""
+        content = message.get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, dict):
+            text = content.get("text")
+            return str(text or "") if text is not None else ""
+        if isinstance(content, list):
+            parts: List[str] = []
+            for block in content:
+                if isinstance(block, dict):
+                    block_type = str(block.get("type") or "").lower()
+                    if block_type in {"text", "output_text", "message"}:
+                        text_val = block.get("text")
+                        if isinstance(text_val, str):
+                            parts.append(text_val)
+                            continue
+                        if isinstance(text_val, dict):
+                            nested = text_val.get("value")
+                            if isinstance(nested, str):
+                                parts.append(nested)
+                                continue
+                    text_val = block.get("content")
+                    if isinstance(text_val, str):
+                        parts.append(text_val)
+                        continue
+                    if isinstance(text_val, dict):
+                        nested = text_val.get("value")
+                        if isinstance(nested, str):
+                            parts.append(nested)
+                elif isinstance(block, str):
+                    parts.append(block)
+            if parts:
+                return "".join(parts)
+        refusal = message.get("refusal")
+        if isinstance(refusal, str):
+            return refusal
+        return ""
 
     def _parse_structured(self, content: str) -> Optional[Dict[str, Any]]:
         if not content:
