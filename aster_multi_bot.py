@@ -1845,13 +1845,14 @@ class AITradeAdvisor:
         if isinstance(leverage, (int, float)):
             plan["leverage"] = clamp(float(leverage), 1.0, max(LEVERAGE * 2.0, 1.0))
         if isinstance(fasttp_overrides, dict):
+            fallback_fasttp = fallback.get("fasttp_overrides")
+            if isinstance(fallback_fasttp, dict):
+                base_min_r = fallback_fasttp.get("min_r", FASTTP_MIN_R)
+            else:
+                base_min_r = FASTTP_MIN_R
             overrides = {
                 "enabled": bool(fasttp_overrides.get("enabled", True)),
-                "min_r": float(
-                    fasttp_overrides.get(
-                        "min_r", fallback.get("fasttp_overrides", {}).get("min_r", FASTTP_MIN_R)
-                    )
-                ),
+                "min_r": float(fasttp_overrides.get("min_r", base_min_r)),
                 "ret1": float(fasttp_overrides.get("ret1", FAST_TP_RET1)),
                 "ret3": float(fasttp_overrides.get("ret3", FAST_TP_RET3)),
                 "snap_atr": float(fasttp_overrides.get("snap_atr", FASTTP_SNAP_ATR)),
