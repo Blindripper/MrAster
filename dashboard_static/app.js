@@ -5328,7 +5328,10 @@ function renderAiActivity(feed) {
     if (!entry || typeof entry !== 'object') return;
     const data = entry.data && typeof entry.data === 'object' ? entry.data : null;
     if (!data) return;
-    const requestId = data.request_id;
+    const rawRequestId = Object.prototype.hasOwnProperty.call(data, 'request_id')
+      ? data.request_id
+      : undefined;
+    const requestId = rawRequestId === undefined || rawRequestId === null ? '' : String(rawRequestId).trim();
     if (!requestId || entry.kind === 'query') return;
     const list = responseLookup.get(requestId) || [];
     list.push({ index, item: entry });
@@ -5385,7 +5388,10 @@ function renderAiActivity(feed) {
         detail.textContent = parts.join(' · ');
         body.append(detail);
       }
-      const requestId = itemData && itemData.request_id ? String(itemData.request_id) : '';
+      const requestId =
+        itemData && Object.prototype.hasOwnProperty.call(itemData, 'request_id')
+          ? String(itemData.request_id ?? '').trim()
+          : '';
       if (requestId) {
         const candidates = (responseLookup.get(requestId) || []).filter((entry) => entry.index > index);
         if (candidates.length > 0) {
