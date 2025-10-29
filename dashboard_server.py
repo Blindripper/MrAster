@@ -984,7 +984,7 @@ def _compute_stats(history: List[Dict[str, Any]]) -> TradeStats:
 
     hint: str
     if count < 10:
-        hint = "Limited data so far — observe a few more trades before tweaking parameters."
+        hint = ""
     elif win_rate > 0.6 and total_r > 0:
         hint = "Strong performance! Consider nudging the size multiplier slightly higher."
     elif win_rate < 0.4 and total_r < 0:

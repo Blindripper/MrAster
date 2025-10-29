@@ -1818,6 +1818,7 @@ let automationCountdownIntervalId = null;
 let automationTargetTimestamp = null;
 const decisionReasonEvents = new Map();
 const DECISION_REASON_EVENT_LIMIT = 40;
+let pendingAiResponseCount = 0;
 const tradeProposalRegistry = new Map();
 let heroMetricsSnapshot = {
   totalTrades: 0,
@@ -5348,6 +5349,27 @@ if (typeof window !== 'undefined' && tradeList) {
   window.addEventListener('resize', () => requestTradeListViewportSync());
 }
 
+function createActivityList(items, options = {}) {
+  const values = Array.isArray(items)
+    ? items
+        .map((value) => (value ?? '').toString().trim())
+        .filter((value) => value.length > 0)
+    : [];
+  if (!values.length) return null;
+  const { muted = false } = options;
+  const list = document.createElement('ul');
+  list.className = 'ai-activity-list';
+  if (muted) {
+    list.classList.add('muted');
+  }
+  values.forEach((value) => {
+    const item = document.createElement('li');
+    item.textContent = value;
+    list.append(item);
+  });
+  return list;
+}
+
 function renderAiActivity(feed) {
   if (!aiActivityFeed) return;
   const shouldAutoScroll = autoScrollEnabled && isScrolledToBottom(aiActivityFeed);
@@ -5384,21 +5406,36 @@ function renderAiActivity(feed) {
     list.push({ index, item: entry });
     responseLookup.set(requestId, list);
   });
+  let awaitingResponses = 0;
   items.forEach((raw, index) => {
     const item = raw || {};
     const wrapper = document.createElement('div');
     wrapper.className = 'ai-activity-item';
 
-    const kind = document.createElement('div');
-    kind.className = 'ai-activity-kind';
-    const kindText = (item.kind || 'info').toString().toUpperCase();
-    kind.textContent = kindText;
+    const rawKind = (item.kind || 'info').toString();
+    const normalizedKind = rawKind.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'info';
+    const kindText = rawKind.toUpperCase();
+
+    const timeline = document.createElement('div');
+    timeline.className = 'ai-activity-timeline';
+    const marker = document.createElement('span');
+    marker.className = `ai-activity-marker ai-activity-marker--${normalizedKind}`;
+    marker.title = kindText;
+    timeline.append(marker);
 
     const body = document.createElement('div');
+    body.className = 'ai-activity-content';
+    const header = document.createElement('div');
+    header.className = 'ai-activity-header';
+    const kindTag = document.createElement('span');
+    kindTag.className = `ai-activity-kind ai-activity-kind--${normalizedKind}`;
+    kindTag.textContent = kindText;
+    header.append(kindTag);
     const headline = document.createElement('h4');
     headline.className = 'ai-activity-headline';
     headline.textContent = item.headline || kindText;
-    body.append(headline);
+    header.append(headline);
+    body.append(header);
 
     if (item.body) {
       const bodyText = document.createElement('p');
@@ -5437,11 +5474,9 @@ function renderAiActivity(feed) {
       if (multiplierParts.length > 0) {
         decisionDetails.push(`Multipliers: ${multiplierParts.join(' · ')}`);
       }
-      if (decisionDetails.length > 0) {
-        const detail = document.createElement('p');
-        detail.className = 'ai-activity-body secondary';
-        detail.textContent = decisionDetails.join(' · ');
-        body.append(detail);
+      const detailList = createActivityList(decisionDetails);
+      if (detailList) {
+        body.append(detailList);
       }
     }
 
@@ -5454,11 +5489,9 @@ function renderAiActivity(feed) {
         queryParts.push(noteInfo.notes[0]);
         consumedNotes = 1;
       }
-      if (queryParts.length > 0) {
-        const detail = document.createElement('p');
-        detail.className = 'ai-activity-body secondary';
-        detail.textContent = queryParts.join(' · ');
-        body.append(detail);
+      const queryList = createActivityList(queryParts, { muted: true });
+      if (queryList) {
+        body.append(queryList);
         reasonDetailRendered = true;
       }
       const requestId =
@@ -5508,6 +5541,7 @@ function renderAiActivity(feed) {
           awaiting.className = 'ai-activity-response awaiting';
           awaiting.textContent = translate('ai.feed.awaitingResponse', 'Awaiting AI response…');
           body.append(awaiting);
+          awaitingResponses += 1;
         }
       }
     }
@@ -5521,20 +5555,18 @@ function renderAiActivity(feed) {
         generalParts.push(noteInfo.notes[consumedNotes]);
         consumedNotes += 1;
       }
-      if (generalParts.length > 0) {
-        const detail = document.createElement('p');
-        detail.className = 'ai-activity-body secondary';
-        detail.textContent = generalParts.join(' · ');
-        body.append(detail);
+      const generalList = createActivityList(generalParts, { muted: true });
+      if (generalList) {
+        body.append(generalList);
         reasonDetailRendered = true;
       }
     }
 
     if (noteInfo.notes.length > consumedNotes) {
-      const extraDetail = document.createElement('p');
-      extraDetail.className = 'ai-activity-body secondary';
-      extraDetail.textContent = noteInfo.notes.slice(consumedNotes).join(' · ');
-      body.append(extraDetail);
+      const extraList = createActivityList(noteInfo.notes.slice(consumedNotes), { muted: true });
+      if (extraList) {
+        body.append(extraList);
+      }
     }
 
     const meta = document.createElement('div');
@@ -5555,9 +5587,19 @@ function renderAiActivity(feed) {
       body.append(meta);
     }
 
-    wrapper.append(kind, body);
+    wrapper.append(timeline, body);
     aiActivityFeed.append(wrapper);
   });
+  if (awaitingResponses > 0) {
+    const changed = pendingAiResponseCount !== awaitingResponses;
+    pendingAiResponseCount = awaitingResponses;
+    const delay = awaitingResponses > 2 ? 1600 : 1100;
+    if (changed || !tradesRefreshTimer) {
+      scheduleTradesRefresh(delay);
+    }
+  } else if (pendingAiResponseCount !== 0) {
+    pendingAiResponseCount = 0;
+  }
   if (shouldAutoScroll) {
     const behavior = aiActivityFeed.scrollHeight > aiActivityFeed.clientHeight ? 'smooth' : 'auto';
     // Ensure the newest activity remains visible when new entries arrive.

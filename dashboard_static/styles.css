@@ -2079,42 +2079,167 @@ body.ai-mode .ai-mode-window {
   text-align: left;
 }
 
+
 .ai-activity-item {
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.75rem;
+  grid-template-columns: 1.1rem 1fr;
+  gap: 0.85rem;
   align-items: start;
-  padding: 0.9rem 1rem;
+  padding: 1rem 1.1rem;
   border-radius: 0.9rem;
   background: rgba(17, 18, 28, 0.85);
   box-shadow: inset 0 0 0 1px rgba(245, 196, 107, 0.08);
 }
 
+.ai-activity-timeline {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  min-height: 100%;
+}
+
+.ai-activity-item:not(:last-child) .ai-activity-timeline::after {
+  content: '';
+  position: absolute;
+  top: 1.4rem;
+  bottom: -1.2rem;
+  width: 2px;
+  background: rgba(148, 163, 184, 0.18);
+}
+
+.ai-activity-marker {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: rgba(245, 196, 107, 0.95);
+  box-shadow: 0 0 0 2px rgba(245, 196, 107, 0.16);
+  margin-top: 0.15rem;
+}
+
+.ai-activity-marker--analysis {
+  background: rgba(96, 165, 250, 0.95);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.ai-activity-marker--decision {
+  background: rgba(74, 222, 128, 0.95);
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.22);
+}
+
+.ai-activity-marker--manual {
+  background: rgba(248, 113, 113, 0.95);
+  box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.22);
+}
+
+.ai-activity-marker--query {
+  background: rgba(251, 191, 36, 0.95);
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.18);
+}
+
+.ai-activity-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.ai-activity-header {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
 .ai-activity-item .ai-activity-kind {
-  font-size: 0.72rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(245, 196, 107, 0.75);
+  color: rgba(245, 196, 107, 0.85);
+  background: rgba(245, 196, 107, 0.14);
+}
+
+.ai-activity-kind--analysis {
+  color: rgba(96, 165, 250, 0.92);
+  background: rgba(59, 130, 246, 0.18);
+}
+
+.ai-activity-kind--decision {
+  color: rgba(74, 222, 128, 0.9);
+  background: rgba(34, 197, 94, 0.18);
+}
+
+.ai-activity-kind--manual {
+  color: rgba(248, 113, 113, 0.92);
+  background: rgba(248, 113, 113, 0.18);
+}
+
+.ai-activity-kind--query {
+  color: rgba(251, 191, 36, 0.92);
+  background: rgba(251, 191, 36, 0.18);
 }
 
 .ai-activity-item .ai-activity-headline {
   margin: 0;
   font-weight: 600;
-  font-size: 0.98rem;
+  font-size: 1rem;
   letter-spacing: 0.01em;
 }
 
 .ai-activity-item .ai-activity-body {
-  margin: 0.35rem 0 0;
+  margin: 0.4rem 0 0;
   color: var(--text-subtle);
   font-size: 0.9rem;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 .ai-activity-item .ai-activity-body.secondary {
-  margin-top: 0.45rem;
+  margin-top: 0.4rem;
   color: var(--text-muted);
   font-size: 0.84rem;
+}
+
+.ai-activity-list {
+  margin: 0.45rem 0 0;
+  padding: 0.35rem 0 0 0.95rem;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.32rem;
+  border-left: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.ai-activity-list li {
+  position: relative;
+  font-size: 0.86rem;
+  color: var(--text-subtle);
+  line-height: 1.45;
+  padding-left: 0.15rem;
+}
+
+.ai-activity-list li::before {
+  content: '';
+  position: absolute;
+  left: -0.6rem;
+  top: 0.48rem;
+  width: 0.36rem;
+  height: 0.36rem;
+  border-radius: 50%;
+  background: rgba(245, 196, 107, 0.85);
+  box-shadow: 0 0 0 1px rgba(245, 196, 107, 0.24);
+}
+
+.ai-activity-list.muted {
+  color: var(--text-muted);
+  border-left-color: rgba(148, 163, 184, 0.14);
+}
+
+.ai-activity-list.muted li::before {
+  background: rgba(148, 163, 184, 0.6);
+  box-shadow: none;
 }
 
 .ai-activity-item .ai-activity-meta {
@@ -2124,6 +2249,21 @@ body.ai-mode .ai-mode-window {
   display: flex;
   gap: 0.8rem;
   flex-wrap: wrap;
+}
+
+.ai-activity-item .ai-activity-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.ai-activity-item .ai-activity-meta span:first-child {
+  background: rgba(245, 196, 107, 0.16);
+  color: rgba(245, 196, 107, 0.85);
+  font-weight: 600;
 }
 
 .ai-activity-response {
