@@ -15,6 +15,9 @@ FEATURES = (
     "slope_htf",
     "rsi",
     "funding",
+    "funding_edge",
+    "oracle_gap",
+    "oracle_gap_clamped",
     "qv_score",
     "trend",
     "regime_adx",
@@ -25,6 +28,7 @@ FEATURES = (
     "bb_position",
     "bb_width",
     "stoch_rsi_d",
+    "non_arb_region",
 )
 
 def _vec_from_ctx(ctx: Dict[str, float]) -> "np.ndarray":

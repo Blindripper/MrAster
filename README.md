@@ -46,6 +46,7 @@
 - **RSI-driven signals with trend confirmation** configurable via `ASTER_*` environment variables or the dashboard editor.
 - **Multi-armed bandit policy (`BanditPolicy`)** blends LinUCB exploration with the optional alpha model (`ml_policy.py`) to decide TAKE/SKIP and size buckets (S/M/L).
 - **Market hygiene filters** keep the feed clean: funding and spread guards, wickiness filters, and cached klines/24h tickers smooth out exchange noise.
+- **Oracle-aware non-arbitrage guard** clamps the mark/oracle gap using the premium index (per Jez, 2025) and steers entries away from funding traps.
 
 ### Risk and Order Management
 - **BracketGuard** (`brackets_guard.py`) repairs stop-loss and take-profit orders while respecting both legacy and new bot signatures.
@@ -185,6 +186,10 @@ All variables can be edited via environment overrides or through the dashboard (
 | `FASTTP_COOLDOWN_S` | `15` | Wait time between FastTP checks. |
 | `ASTER_FUNDING_FILTER_ENABLED` | `true` | Enables funding limitations. |
 | `ASTER_FUNDING_MAX_LONG` / `ASTER_FUNDING_MAX_SHORT` | `0.0010` | Funding caps per direction. |
+| `ASTER_NON_ARB_FILTER_ENABLED` | `true` | Activates the mark/oracle clamp derived from Jez (2025) to avoid negative-funding arbitrage. |
+| `ASTER_NON_ARB_CLAMP_BPS` | `0.0005` | Width of the clamp applied to the premium (±bps). |
+| `ASTER_NON_ARB_EDGE_THRESHOLD` | `0.00005` | Funding edge tolerated before the guard blocks a biased entry. |
+| `ASTER_NON_ARB_SKIP_GAP` | `0.0015` | Absolute mark/oracle gap that forces a skip regardless of direction. |
 
 *When launched from the dashboard, values seed to 51/49 RSI and 0.007 risk share. CLI-only launches fall back to 52/48 and 0.006 until overridden or synced via `dashboard_config.json`.*
 
