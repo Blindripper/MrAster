@@ -3404,6 +3404,40 @@ class Strategy:
         }
         return sig, float(atr), ctx, float(mid or last)
 
+def merge_ai_trade_proposals(state: Dict[str, Any], disk_state: Dict[str, Any]) -> None:
+    queue_disk = disk_state.get("ai_trade_proposals")
+    if not isinstance(queue_disk, list):
+        return
+
+    mem_queue = state.get("ai_trade_proposals")
+    if not isinstance(mem_queue, list):
+        mem_queue = []
+
+    merged: List[Any] = []
+    seen_ids: Set[str] = set()
+
+    for item in queue_disk:
+        if isinstance(item, dict):
+            item_id = item.get("id")
+            if isinstance(item_id, str) and item_id:
+                seen_ids.add(item_id)
+            merged.append(item)
+        else:
+            merged.append(item)
+
+    if mem_queue:
+        for item in mem_queue:
+            if isinstance(item, dict):
+                item_id = item.get("id")
+                if isinstance(item_id, str) and item_id in seen_ids:
+                    continue
+                merged.append(item)
+            else:
+                merged.append(item)
+
+    state["ai_trade_proposals"] = merged
+
+
 # ========= Trade Manager =========
 class TradeManager:
     def __init__(self, exchange: Exchange, policy: Optional[BanditPolicy], state: Dict[str, Any]):
@@ -3566,7 +3600,7 @@ class TradeManager:
                         item_id = item.get("id")
                         if item_id and item_id not in existing_ids:
                             mem_queue.append(item)
-                self._merge_ai_trade_proposals(disk_state)
+                merge_ai_trade_proposals(self.state, disk_state)
         try:
             with open(STATE_FILE, "w") as f:
                 json.dump(self.state, f, indent=2)
@@ -4010,32 +4044,7 @@ class Bot:
             self.state["manual_trade_requests"] = queue_mem
 
     def _merge_ai_trade_proposals(self, disk_state: Dict[str, Any]) -> None:
-        queue_disk = disk_state.get("ai_trade_proposals")
-        if not isinstance(queue_disk, list):
-            return
-        mem_queue = self.state.get("ai_trade_proposals")
-        if not isinstance(mem_queue, list):
-            mem_queue = []
-        merged: List[Any] = []
-        seen_ids: Set[str] = set()
-        for item in queue_disk:
-            if isinstance(item, dict):
-                item_id = item.get("id")
-                if isinstance(item_id, str) and item_id:
-                    seen_ids.add(item_id)
-                merged.append(item)
-            else:
-                merged.append(item)
-        if mem_queue:
-            for item in mem_queue:
-                if isinstance(item, dict):
-                    item_id = item.get("id")
-                    if isinstance(item_id, str) and item_id in seen_ids:
-                        continue
-                    merged.append(item)
-                else:
-                    merged.append(item)
-        self.state["ai_trade_proposals"] = merged
+        merge_ai_trade_proposals(self.state, disk_state)
 
     def _resume_ai_pending_manual_requests(self) -> None:
         if not self.ai_advisor:
