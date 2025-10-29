@@ -407,44 +407,70 @@ def _merge_realized_pnl(history: List[Dict[str, Any]], realized: List[Dict[str, 
     for entries in timeline.values():
         entries.sort(key=lambda item: item.get("time", 0))
 
-    merged: List[Dict[str, Any]] = []
-    for trade in history:
-        record = dict(trade)
+    merged: List[Dict[str, Any]] = [dict(trade) for trade in history]
+
+    trades_by_symbol: Dict[str, List[Dict[str, Any]]] = {}
+    for index, record in enumerate(merged):
         symbol_raw = record.get("symbol")
         symbol = str(symbol_raw).upper().strip() if symbol_raw else ""
-        if symbol and symbol in timeline:
-            open_ts = _parse_trade_timestamp(record, "opened_at", "opened_at_iso")
-            close_ts = _parse_trade_timestamp(record, "closed_at", "closed_at_iso")
-            if close_ts is None and open_ts is not None:
-                close_ts = open_ts
-            if open_ts is None and close_ts is not None:
-                open_ts = close_ts
+        if not symbol or symbol not in timeline:
+            continue
 
-            if open_ts is not None and close_ts is not None:
-                window_start = min(open_ts, close_ts) - REALIZED_PNL_MATCH_PADDING_SECONDS
-                window_end = max(open_ts, close_ts) + REALIZED_PNL_MATCH_PADDING_SECONDS
-                candidates = timeline.get(symbol, [])
-                matched: List[Dict[str, Any]] = []
-                remaining: List[Dict[str, Any]] = []
-                for entry in candidates:
-                    ts = entry.get("time")
-                    if ts is None:
-                        continue
-                    if window_start <= ts <= window_end:
-                        matched.append(entry)
-                    else:
-                        remaining.append(entry)
+        open_ts = _parse_trade_timestamp(record, "opened_at", "opened_at_iso")
+        close_ts = _parse_trade_timestamp(record, "closed_at", "closed_at_iso")
+        if close_ts is None and open_ts is not None:
+            close_ts = open_ts
+        if open_ts is None and close_ts is not None:
+            open_ts = close_ts
 
-                if matched:
-                    realized_sum = sum(_safe_float(e.get("income")) or 0.0 for e in matched)
-                    if record.get("pnl") is not None and "estimated_pnl" not in record:
-                        try:
-                            record["estimated_pnl"] = float(record.get("pnl") or 0.0)
-                        except (TypeError, ValueError):
-                            record["estimated_pnl"] = record.get("pnl")
-                    record["realized_pnl"] = realized_sum
-                    timeline[symbol] = remaining
-        merged.append(record)
+        if open_ts is None or close_ts is None:
+            continue
+
+        window_start = min(open_ts, close_ts) - REALIZED_PNL_MATCH_PADDING_SECONDS
+        window_end = max(open_ts, close_ts) + REALIZED_PNL_MATCH_PADDING_SECONDS
+        trades_by_symbol.setdefault(symbol, []).append(
+            {
+                "index": index,
+                "open_ts": open_ts,
+                "close_ts": close_ts,
+                "window_start": window_start,
+                "window_end": window_end,
+                "matched": [],
+            }
+        )
+
+    for symbol, entries in timeline.items():
+        trades = trades_by_symbol.get(symbol)
+        if not trades:
+            continue
+        for entry in entries:
+            ts = entry.get("time")
+            if ts is None:
+                continue
+            candidates = [
+                trade
+                for trade in trades
+                if trade["window_start"] <= ts <= trade["window_end"]
+            ]
+            if not candidates:
+                continue
+            best = min(candidates, key=lambda trade: abs(ts - trade["close_ts"]))
+            best["matched"].append(entry)
+
+    for trades in trades_by_symbol.values():
+        for trade in trades:
+            matched = trade["matched"]
+            if not matched:
+                continue
+            index = trade["index"]
+            record = merged[index]
+            realized_sum = sum(_safe_float(e.get("income")) or 0.0 for e in matched)
+            if record.get("pnl") is not None and "estimated_pnl" not in record:
+                try:
+                    record["estimated_pnl"] = float(record.get("pnl") or 0.0)
+                except (TypeError, ValueError):
+                    record["estimated_pnl"] = record.get("pnl")
+            record["realized_pnl"] = realized_sum
 
     return merged
 
