@@ -155,6 +155,14 @@ EXCLUDE = set(_split_env_symbols(os.getenv("ASTER_EXCLUDE_SYMBOLS", "")))
 UNIVERSE_MAX = int(os.getenv("ASTER_UNIVERSE_MAX", "0"))
 UNIVERSE_ROTATE = os.getenv("ASTER_UNIVERSE_ROTATE", "true").lower() in ("1", "true", "yes", "on")
 
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except Exception:
+        return max(0, int(default))
+    return max(0, value)
+
 MIN_QUOTE_VOL = float(os.getenv("ASTER_MIN_QUOTE_VOL_USDT", "150000"))
 SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.0030"))  # 0.30 %
 WICKINESS_MAX = float(os.getenv("ASTER_WICKINESS_MAX", "0.97"))
@@ -207,8 +215,8 @@ HTTP_BACKOFF = max(0.0, float(os.getenv("ASTER_HTTP_BACKOFF", "0.6")))
 HTTP_TIMEOUT = max(5.0, float(os.getenv("ASTER_HTTP_TIMEOUT", "20")))
 KLINE_CACHE_SEC = max(5.0, float(os.getenv("ASTER_KLINE_CACHE_SEC", "45")))
 
-MAX_OPEN_GLOBAL = int(os.getenv("ASTER_MAX_OPEN_GLOBAL", "4"))
-MAX_OPEN_PER_SYMBOL = int(os.getenv("ASTER_MAX_OPEN_PER_SYMBOL", "1"))
+MAX_OPEN_GLOBAL = _int_env("ASTER_MAX_OPEN_GLOBAL", 0)
+MAX_OPEN_PER_SYMBOL = _int_env("ASTER_MAX_OPEN_PER_SYMBOL", 0)
 
 STATE_FILE = os.getenv("ASTER_STATE_FILE", "aster_state.json")
 PAPER = os.getenv("ASTER_PAPER", "false").lower() in ("1", "true", "yes", "on")
@@ -4544,7 +4552,8 @@ class Bot:
 
         # bereits offene Position?
         amt = float(pos_map.get(symbol, 0.0) or 0.0)
-        if abs(amt) > 1e-12:
+        symbol_open = abs(amt) > 1e-12
+        if MAX_OPEN_PER_SYMBOL > 0 and symbol_open:
             pending_queue = self.state.get("manual_trade_requests")
             if isinstance(pending_queue, list):
                 for item in pending_queue:
@@ -4554,7 +4563,46 @@ class Bot:
                         continue
                     if str(item.get("status") or "pending").lower() != "pending":
                         continue
-                    self._complete_manual_request(item, "failed", error="Position already open")
+                    self._complete_manual_request(item, "failed", error="Per-symbol cap reached")
+            if self.decision_tracker:
+                self.decision_tracker.record_rejection("max_open_symbol")
+            log.info(
+                "Skip %s — per-symbol position cap reached (%d).",
+                symbol,
+                MAX_OPEN_PER_SYMBOL,
+            )
+            return
+
+        active_positions_total = sum(
+            1 for qty in pos_map.values() if abs(float(qty or 0.0)) > 1e-12
+        )
+        if (
+            MAX_OPEN_GLOBAL > 0
+            and not symbol_open
+            and active_positions_total >= MAX_OPEN_GLOBAL
+        ):
+            pending_queue = self.state.get("manual_trade_requests")
+            if isinstance(pending_queue, list):
+                for item in pending_queue:
+                    if not isinstance(item, dict):
+                        continue
+                    if str(item.get("symbol") or "").upper() != symbol.upper():
+                        continue
+                    if str(item.get("status") or "pending").lower() != "pending":
+                        continue
+                    self._complete_manual_request(
+                        item,
+                        "failed",
+                        error="Global position cap reached",
+                    )
+            if self.decision_tracker:
+                self.decision_tracker.record_rejection("max_open_global")
+            log.info(
+                "Skip %s — global position cap reached (%d/%d).",
+                symbol,
+                active_positions_total,
+                MAX_OPEN_GLOBAL,
+            )
             return
 
         sig, atr_abs, ctx, price = self.strategy.compute_signal(symbol, book_ticker=book_ticker)
@@ -5251,6 +5299,13 @@ class Bot:
                         "target": float(tp),
                     },
                 )
+            try:
+                filled_qty = float(q_str)
+            except (TypeError, ValueError):
+                filled_qty = float(qty)
+            current_amt = float(pos_map.get(symbol, 0.0) or 0.0)
+            delta = filled_qty if sig == "BUY" else -filled_qty
+            pos_map[symbol] = current_amt + delta
             alpha_msg = ""
             if alpha_prob is not None:
                 alpha_msg = f" alpha={alpha_prob:.3f}/{(alpha_conf or 0.0):.2f}"
