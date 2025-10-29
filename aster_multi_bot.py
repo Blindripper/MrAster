@@ -3631,6 +3631,7 @@ class Bot:
         self._ai_priority_queue: deque[Tuple[str, Optional[str]]] = deque()
         self._ai_priority_keys: Set[Tuple[str, Optional[str]]] = set()
         self._ai_priority_hint: Dict[str, Optional[str]] = {}
+        self._ai_feed_pending_requests: Set[str] = set()
         self.policy: Optional[BanditPolicy] = None
         if BANDIT_ENABLED:
             pol_state = self.state.get("policy") if isinstance(self.state, dict) else None
@@ -3903,9 +3904,25 @@ class Bot:
             return
         if data and data.get("ai_request") is False:
             return
+        request_id: Optional[str] = None
+        if isinstance(data, dict):
+            raw_request_id = data.get("request_id")
+            if isinstance(raw_request_id, str):
+                request_id = raw_request_id.strip() or None
+            elif raw_request_id is not None:
+                request_id = str(raw_request_id)
+        kind_label = str(kind or "info")
+        kind_normalized = kind_label.lower()
+        if request_id:
+            if kind_normalized == "query":
+                if request_id in self._ai_feed_pending_requests:
+                    return
+                self._ai_feed_pending_requests.add(request_id)
+            else:
+                self._ai_feed_pending_requests.discard(request_id)
         entry: Dict[str, Any] = {
             "ts": datetime.now(timezone.utc).isoformat(),
-            "kind": str(kind or "info"),
+            "kind": kind_label,
             "headline": str(headline or ""),
         }
         if body:
