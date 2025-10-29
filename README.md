@@ -50,7 +50,7 @@
 - **ParameterTuner** continuously recomputes stop-loss/take-profit multipliers and bucket-specific size biases, escalating to structured LLM calls only when a statistically meaningful sample is available.
 - **PlaybookManager** synthesises regime playbooks — momentum, mean-reversion, volatility compression — that the advisor injects into every payload to stay aligned with the prevailing market mode.
 - **BudgetLearner** keeps OpenAI spend proportional to realised edge, downshifting cost-per-symbol when performance deteriorates.
-- **Budget-aware orchestration** with `ASTER_AI_DAILY_BUDGET_USD`, `ASTER_AI_STRICT_BUDGET`, and per-request price cards in the dashboard make the copilot economical to run.
+- **Budget-aware orchestration** with `ASTER_AI_DAILY_BUDGET_USD`, `ASTER_AI_STRICT_BUDGET`, and per-request price cards in the dashboard make the copilot economical to run—while the High and ATT presets intentionally remove the cap for maximum autonomy.
 
 ### Trading Engine
 - **RSI-driven signals with trend confirmation** configurable via `ASTER_*` environment variables or the dashboard editor.
@@ -91,7 +91,7 @@
 
 - **One-click bot control**: start, stop, or relaunch the supervised `aster_multi_bot.py` process and inspect PID, uptime, and exit reasons.
 - **Live log streaming** with auto-scroll toggles, compact/detailed views, and downloadable snapshots.
-- **Risk presets & pro mode**: switch between Standard (Low/Mid/High presets + sliders) and Pro (full `ASTER_*` surface) on demand.
+- **Risk presets & pro mode**: switch between Standard (Low/Mid/High presets + sliders) and Pro (full `ASTER_*` surface) on demand; High and ATT automatically lift the AI spend cap for uncapped execution.
 - **Safe configuration editing** writes to `dashboard_config.json`, validates keys, and syncs changes back into the running bot.
 - **Credential vaulting** keeps exchange and OpenAI keys isolated from general config edits.
 - **Performance analytics**: PnL charts, trade history, aggregated trade summaries, and market heat-strips update continuously.
@@ -224,7 +224,7 @@ All variables can be edited via environment overrides or through the dashboard (
 | `ASTER_OPENAI_API_KEY` | empty | API key for AITradeAdvisor. |
 | `ASTER_CHAT_OPENAI_API_KEY` | empty | Optional dashboard chat-only OpenAI key; falls back to `ASTER_OPENAI_API_KEY`. |
 | `ASTER_AI_MODEL` | `gpt-4o` | Model ID for AI analysis. |
-| `ASTER_AI_DAILY_BUDGET_USD` | `20` | Daily budget limit (USD). |
+| `ASTER_AI_DAILY_BUDGET_USD` | `20` | Daily budget limit (USD). Ignored when `ASTER_PRESET_MODE` is `high` or `att`. |
 | `ASTER_AI_STRICT_BUDGET` | `true` | Stops AI calls after hitting the budget. |
 | `ASTER_AI_MIN_INTERVAL_SECONDS` | `8` | Cooldown before the AI re-evaluates the same symbol. |
 | `ASTER_AI_SENTINEL_ENABLED` | `true` | Activates the News Sentinel. |

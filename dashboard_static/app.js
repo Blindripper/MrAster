@@ -2517,7 +2517,9 @@ const PRESETS = {
   },
   high: {
     label: 'High',
-    summary: 'High-frequency execution with wider risk budgets and leverage up to the aggressive limit.',
+    summary:
+      'High-frequency execution with wider risk budgets, leverage up to the aggressive limit, and an unlimited AI spend cap.',
+    unlimitedBudget: true,
     risk: 2.0,
     leverage: 4,
     edgeMinR: 0.04,
@@ -2557,7 +2559,9 @@ const PRESETS = {
   },
   att: {
     label: 'ATT',
-    summary: 'Against-the-trend fading: contrarian plays with tighter stops and disciplined sizing.',
+    summary:
+      'Against-the-trend fading: contrarian plays with tighter stops, disciplined sizing, and no AI budget ceiling.',
+    unlimitedBudget: true,
     risk: 0.75,
     leverage: 2,
     edgeMinR: 0.07,
@@ -5252,20 +5256,27 @@ function renderAiBudget(budget) {
   }
   let limit = Number((budget && budget.limit) ?? 0);
   const spent = Number((budget && budget.spent) ?? 0);
+  const presetMode = (currentConfig?.env?.ASTER_PRESET_MODE || '').toString().toLowerCase();
+  const presetForcesUnlimited = presetMode === 'high' || presetMode === 'att';
   if (!Number.isFinite(limit) || limit <= 0) {
     const envLimit = Number(currentConfig?.env?.ASTER_AI_DAILY_BUDGET_USD ?? 0);
-    if (Number.isFinite(envLimit) && envLimit > 0) {
+    if (!presetForcesUnlimited && Number.isFinite(envLimit) && envLimit > 0) {
       limit = envLimit;
     }
   }
   const hasLimit = Number.isFinite(limit) && limit > 0;
   aiBudgetCard.classList.toggle('unlimited', !hasLimit);
   if (!hasLimit) {
+    const presetNote = presetForcesUnlimited
+      ? presetMode === 'high'
+        ? ' · High preset removes the AI spend cap.'
+        : ' · ATT preset removes the AI spend cap.'
+      : '';
     aiBudgetFill.style.width = '0%';
     aiBudgetMeta.textContent = translate(
-      'status.aiBudgetMeta.unlimited',
-      `Spent ${spent.toFixed(2)} USD · unlimited budget`,
-      { spent: spent.toFixed(2) }
+      presetForcesUnlimited ? 'status.aiBudgetMeta.unlimitedPreset' : 'status.aiBudgetMeta.unlimited',
+      `Spent ${spent.toFixed(2)} USD · unlimited budget${presetNote}`,
+      { spent: spent.toFixed(2), note: presetNote }
     );
     return;
   }
@@ -7397,6 +7408,10 @@ function buildQuickSetupPayload() {
     ASTER_ALPHA_WARMUP: toFixedString(preset?.alphaWarmup ?? 40, 0),
   };
 
+  if (preset.unlimitedBudget) {
+    payload.ASTER_AI_DAILY_BUDGET_USD = '0';
+  }
+
   if (inputDefaultNotional) {
     const value = inputDefaultNotional.value.trim();
     if (value !== '') {
@@ -7500,7 +7515,8 @@ function applyPreset(key, options = {}) {
     }
   });
   if (presetDescription) {
-    presetDescription.textContent = `${preset.label} preset: ${preset.summary}`;
+    const summary = `${preset.label} preset: ${preset.summary}`;
+    presetDescription.textContent = preset.unlimitedBudget ? `${summary} (AI budget: unlimited).` : summary;
   }
   if (riskSlider) {
     riskSlider.value = preset.risk.toString();

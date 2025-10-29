@@ -68,10 +68,15 @@ API_SECRET = os.getenv("ASTER_API_SECRET", "")
 RECV_WINDOW = int(os.getenv("ASTER_RECV_WINDOW", "10000"))
 
 MODE = os.getenv("ASTER_MODE", "standard").strip().lower()
+PRESET_MODE = os.getenv("ASTER_PRESET_MODE", "mid").strip().lower()
 AI_MODE_ENABLED = MODE == "ai" or os.getenv("ASTER_AI_MODE", "").lower() in ("1", "true", "yes", "on")
 OPENAI_API_KEY = os.getenv("ASTER_OPENAI_API_KEY", "").strip()
 AI_MODEL = os.getenv("ASTER_AI_MODEL", "gpt-4o").strip() or "gpt-4o"
 AI_DAILY_BUDGET = float(os.getenv("ASTER_AI_DAILY_BUDGET_USD", "20") or 0)
+if PRESET_MODE in {"high", "att"}:
+    if AI_DAILY_BUDGET > 0:
+        log.info("Preset %s forces unlimited AI budget (overriding %.2f USD cap)", PRESET_MODE.upper(), AI_DAILY_BUDGET)
+    AI_DAILY_BUDGET = 0.0
 AI_STRICT_BUDGET = os.getenv("ASTER_AI_STRICT_BUDGET", "true").lower() in ("1", "true", "yes", "on")
 SENTINEL_ENABLED = os.getenv("ASTER_AI_SENTINEL_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 SENTINEL_DECAY_MINUTES = float(os.getenv("ASTER_AI_SENTINEL_DECAY_MINUTES", "90") or 90)
