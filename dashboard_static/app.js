@@ -2471,7 +2471,7 @@ const PRESETS = {
     alphaEnabled: true,
     equityFraction: 0.22,
     maxOpenGlobal: 0,
-    maxOpenPerSymbol: 0,
+    maxOpenPerSymbol: 1,
     trendBias: 'with',
   },
   mid: {
@@ -2511,7 +2511,7 @@ const PRESETS = {
     alphaEnabled: true,
     equityFraction: 0.28,
     maxOpenGlobal: 0,
-    maxOpenPerSymbol: 0,
+    maxOpenPerSymbol: 1,
     trendBias: 'with',
   },
   high: {
@@ -2551,7 +2551,7 @@ const PRESETS = {
     alphaEnabled: true,
     equityFraction: 0.34,
     maxOpenGlobal: 0,
-    maxOpenPerSymbol: 0,
+    maxOpenPerSymbol: 1,
     trendBias: 'with',
   },
   att: {
@@ -2591,7 +2591,7 @@ const PRESETS = {
     alphaEnabled: true,
     equityFraction: 0.24,
     maxOpenGlobal: 0,
-    maxOpenPerSymbol: 0,
+    maxOpenPerSymbol: 1,
     trendBias: 'against',
   },
 };
@@ -7342,7 +7342,7 @@ function buildQuickSetupPayload() {
     ASTER_SIZE_MULT_L: toFixedString(preset.sizeMult.l * ratio, 2),
     ASTER_EQUITY_FRACTION: toFixedString(preset.equityFraction, 2),
     ASTER_MAX_OPEN_GLOBAL: toFixedString(preset.maxOpenGlobal ?? 0, 0),
-    ASTER_MAX_OPEN_PER_SYMBOL: toFixedString(preset.maxOpenPerSymbol ?? 0, 0),
+    ASTER_MAX_OPEN_PER_SYMBOL: toFixedString(preset.maxOpenPerSymbol ?? 1, 0),
     ASTER_FUNDING_FILTER_ENABLED: preset?.funding?.enabled === false ? 'false' : 'true',
     ASTER_FUNDING_MAX_LONG: toFixedString(preset?.funding?.maxLong ?? 0.001, 4),
     ASTER_FUNDING_MAX_SHORT: toFixedString(preset?.funding?.maxShort ?? 0.001, 4),

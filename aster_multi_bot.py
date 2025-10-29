@@ -216,7 +216,7 @@ HTTP_TIMEOUT = max(5.0, float(os.getenv("ASTER_HTTP_TIMEOUT", "20")))
 KLINE_CACHE_SEC = max(5.0, float(os.getenv("ASTER_KLINE_CACHE_SEC", "45")))
 
 MAX_OPEN_GLOBAL = _int_env("ASTER_MAX_OPEN_GLOBAL", 0)
-MAX_OPEN_PER_SYMBOL = _int_env("ASTER_MAX_OPEN_PER_SYMBOL", 0)
+MAX_OPEN_PER_SYMBOL = _int_env("ASTER_MAX_OPEN_PER_SYMBOL", 1)
 
 STATE_FILE = os.getenv("ASTER_STATE_FILE", "aster_state.json")
 PAPER = os.getenv("ASTER_PAPER", "false").lower() in ("1", "true", "yes", "on")
