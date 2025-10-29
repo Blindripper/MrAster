@@ -2684,25 +2684,81 @@ class Exchange:
 
 # ========= Universe =========
 class SymbolUniverse:
-    def __init__(self, exchange: Exchange, quote: str, max_n: int, exclude: set, rotate: bool, include: Optional[List[str]] = None):
+    def __init__(
+        self,
+        exchange: Exchange,
+        quote: str,
+        max_n: int,
+        exclude: set,
+        rotate: bool,
+        include: Optional[List[str]] = None,
+    ):
         self.exchange = exchange
         self.quote = quote
-        self.max_n = max_n
-        self.exclude = exclude
-        self.rotate = rotate
-        self.include = include or []
+        self.max_n = int(max_n)
+        self.rotate = bool(rotate)
+        self.include = [str(sym).upper() for sym in include] if include else []
+        # exclude kann später noch erweitert werden (siehe Bot.setup)
+        self.exclude: Set[str] = {str(sym).upper() for sym in (exclude or set())}
+        self._cursor = 0
+        self._universe_snapshot: List[str] = []
+
+    def _normalize_symbols(self, symbols: Sequence[Dict[str, Any]]) -> List[str]:
+        normalized: List[str] = []
+        for entry in symbols:
+            try:
+                if entry.get("quoteAsset") != self.quote:
+                    continue
+                symbol = str(entry.get("symbol") or "").upper()
+                if symbol:
+                    normalized.append(symbol)
+            except Exception:
+                continue
+        return normalized
 
     def refresh(self) -> List[str]:
         try:
             info = self.exchange.get_exchange_info()
-            syms = [s["symbol"] for s in info.get("symbols", []) if s.get("quoteAsset") == self.quote]
+            syms = self._normalize_symbols(info.get("symbols", [])) if isinstance(info, dict) else []
         except Exception:
             syms = []
+
+        if not syms:
+            return []
+
+        include_index: Dict[str, int] = {}
         if self.include:
-            syms = [s for s in syms if s in self.include]
+            include_index = {sym: idx for idx, sym in enumerate(self.include)}
+            syms = [s for s in syms if s in include_index]
+            syms.sort(key=lambda s: include_index.get(s, len(include_index)))
+        else:
+            syms.sort()
+
         if self.exclude:
-            syms = [s for s in syms if s not in self.exclude]
-        return sorted(syms)[: self.max_n]
+            exclude_normalized = {str(sym).upper() for sym in self.exclude}
+            syms = [s for s in syms if s not in exclude_normalized]
+
+        if syms != self._universe_snapshot:
+            self._universe_snapshot = list(syms)
+            self._cursor = 0
+
+        if self.max_n <= 0 or len(syms) <= self.max_n:
+            if not self.rotate:
+                self._cursor = 0
+            return list(syms)
+
+        if not self.rotate:
+            return list(syms[: self.max_n])
+
+        start = self._cursor % len(syms)
+        take = min(self.max_n, len(syms))
+        selected: List[str] = []
+        idx = start
+        for _ in range(take):
+            selected.append(syms[idx])
+            idx = (idx + 1) % len(syms)
+        self._cursor = (start + take) % len(syms)
+        return selected
 
 # ========= Risk =========
 class RiskManager:
