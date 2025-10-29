@@ -196,6 +196,11 @@ FUNDING_FILTER_ENABLED = os.getenv("ASTER_FUNDING_FILTER_ENABLED", "true").lower
 FUNDING_MAX_LONG = float(os.getenv("ASTER_FUNDING_MAX_LONG", "0.0010"))  # 0.10 %
 FUNDING_MAX_SHORT = float(os.getenv("ASTER_FUNDING_MAX_SHORT", "0.0010"))  # 0.10 %
 
+NON_ARB_FILTER_ENABLED = os.getenv("ASTER_NON_ARB_FILTER_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+NON_ARB_CLAMP_BPS = abs(float(os.getenv("ASTER_NON_ARB_CLAMP_BPS", "0.0005"))) or 0.0005
+NON_ARB_EDGE_THRESHOLD = abs(float(os.getenv("ASTER_NON_ARB_EDGE_THRESHOLD", "0.00005")))
+NON_ARB_SKIP_GAP = abs(float(os.getenv("ASTER_NON_ARB_SKIP_GAP", str(NON_ARB_CLAMP_BPS * 3.0))))
+
 HTTP_RETRIES = max(0, int(os.getenv("ASTER_HTTP_RETRIES", "2")))
 HTTP_BACKOFF = max(0.0, float(os.getenv("ASTER_HTTP_BACKOFF", "0.6")))
 HTTP_TIMEOUT = max(5.0, float(os.getenv("ASTER_HTTP_TIMEOUT", "20")))
@@ -2616,6 +2621,12 @@ class Exchange:
             return self.get("/fapi/v1/ticker/bookTicker", params)
         return self.get("/fapi/v1/ticker/bookTicker")
 
+    def get_premium_index(self, symbol: Optional[str] = None) -> Any:
+        params = {"symbol": symbol} if symbol else None
+        if params:
+            return self.get("/fapi/v1/premiumIndex", params)
+        return self.get("/fapi/v1/premiumIndex")
+
     def get_position_risk(self) -> Any:
         return self.signed("get", "/fapi/v2/positionRisk", {})
 
@@ -2792,6 +2803,9 @@ class Strategy:
         self._t24_cache: Dict[str, dict] = {}
         self._t24_ts = 0.0
         self._t24_ttl = 120
+        self._premium_cache: Dict[str, dict] = {}
+        self._premium_ts = 0.0
+        self._premium_ttl = 60
         self._kl_cache: Dict[Tuple[str, str, int], Tuple[float, Tuple[Tuple[float, ...], ...]]] = {}
         self._kl_cache_ttl = KLINE_CACHE_SEC
         self._kl_cache_hits = 0
@@ -2873,6 +2887,51 @@ class Strategy:
                 single = self.exchange.get_ticker_24hr(symbol)
                 if isinstance(single, dict):
                     self._t24_cache[symbol] = single
+                    rec = single
+            except Exception:
+                rec = None
+        return rec
+
+    def prime_premium_cache(
+        self, payload: Dict[str, Dict[str, Any]], *, timestamp: Optional[float] = None
+    ) -> None:
+        if not payload:
+            return
+        now = float(timestamp or time.time())
+        sanitized: Dict[str, Dict[str, Any]] = {}
+        for sym, rec in payload.items():
+            if not sym or not isinstance(rec, dict):
+                continue
+            sanitized[sym] = dict(rec)
+        if not sanitized:
+            return
+        if not self._premium_cache:
+            self._premium_cache = sanitized
+        else:
+            self._premium_cache.update(sanitized)
+        self._premium_ts = now
+
+    def _premium_index(self, symbol: str) -> Optional[Dict[str, Any]]:
+        now = time.time()
+        try:
+            if (now - self._premium_ts) > self._premium_ttl or not self._premium_cache:
+                data = self.exchange.get_premium_index()
+                if isinstance(data, list):
+                    mapping = {
+                        d.get("symbol"): d for d in data if isinstance(d, dict) and d.get("symbol")
+                    }
+                    self.prime_premium_cache(mapping, timestamp=now)
+                elif isinstance(data, dict) and data.get("symbol"):
+                    self.prime_premium_cache({data.get("symbol"): data}, timestamp=now)
+        except Exception:
+            self._premium_cache = {}
+            self._premium_ts = now
+        rec = self._premium_cache.get(symbol)
+        if rec is None:
+            try:
+                single = self.exchange.get_premium_index(symbol)
+                if isinstance(single, dict):
+                    self._premium_cache[symbol] = single
                     rec = single
             except Exception:
                 rec = None
@@ -3201,6 +3260,11 @@ class Strategy:
                 funding = float(t24.get("lastFundingRate", 0.0) or 0.0)
             except Exception:
                 funding = 0.0
+        premium_index = None
+        try:
+            premium_index = self._premium_index(symbol)
+        except Exception:
+            premium_index = None
         ctx_base["qv_score"] = float(qv_score)
         ctx_base["quote_volume"] = float(quote_volume)
         ctx_base["min_quote_volume"] = float(self.min_quote_vol)
@@ -3213,6 +3277,103 @@ class Strategy:
                 price=mid,
                 atr=atr,
             )
+
+        mark_price = None
+        oracle_price = None
+        oracle_gap = None
+        oracle_gap_clamped = None
+        funding_edge = None
+        non_arb_region = 0.0
+        if isinstance(premium_index, dict):
+            try:
+                if funding == 0.0:
+                    funding = float(premium_index.get("lastFundingRate", funding) or funding)
+            except Exception:
+                pass
+            try:
+                mark_price = float(premium_index.get("markPrice", 0.0) or 0.0)
+            except Exception:
+                mark_price = None
+            try:
+                oracle_price = float(premium_index.get("indexPrice", 0.0) or 0.0)
+            except Exception:
+                oracle_price = None
+            if mark_price and oracle_price:
+                try:
+                    oracle_gap = (mark_price - oracle_price) / max(oracle_price, 1e-9)
+                except Exception:
+                    oracle_gap = None
+                if oracle_gap is not None:
+                    oracle_gap_clamped = clamp(
+                        oracle_gap,
+                        -NON_ARB_CLAMP_BPS,
+                        NON_ARB_CLAMP_BPS,
+                    )
+                    funding_edge = funding - oracle_gap_clamped
+                    if oracle_gap < -NON_ARB_CLAMP_BPS:
+                        non_arb_region = -1.0
+                    elif oracle_gap > NON_ARB_CLAMP_BPS:
+                        non_arb_region = 1.0
+                    ctx_base.update(
+                        {
+                            "mark_price": float(mark_price),
+                            "oracle_price": float(oracle_price),
+                            "oracle_gap": float(oracle_gap),
+                            "oracle_gap_clamped": float(oracle_gap_clamped),
+                            "funding_edge": float(funding_edge),
+                            "non_arb_region": float(non_arb_region),
+                        }
+                    )
+                    if NON_ARB_FILTER_ENABLED and sig in ("BUY", "SELL"):
+                        if NON_ARB_SKIP_GAP > 0 and abs(oracle_gap) > NON_ARB_SKIP_GAP:
+                            return self._skip(
+                                "oracle_gap",
+                                symbol,
+                                {
+                                    "gap_pct": f"{oracle_gap * 100:.3f}%",
+                                    "limit_pct": f"{NON_ARB_SKIP_GAP * 100:.3f}%",
+                                },
+                                ctx=ctx_base,
+                                price=mid,
+                                atr=atr,
+                            )
+                        if (
+                            NON_ARB_EDGE_THRESHOLD > 0
+                            and funding_edge is not None
+                            and sig == "BUY"
+                            and funding_edge > NON_ARB_EDGE_THRESHOLD
+                        ):
+                            ctx_base["non_arb_bias"] = float(funding_edge)
+                            return self._skip(
+                                "non_arb_bias_long",
+                                symbol,
+                                {
+                                    "edge": f"{funding_edge:.6f}",
+                                    "max": f"{NON_ARB_EDGE_THRESHOLD:.6f}",
+                                },
+                                ctx=ctx_base,
+                                price=mid,
+                                atr=atr,
+                            )
+                        if (
+                            NON_ARB_EDGE_THRESHOLD > 0
+                            and funding_edge is not None
+                            and sig == "SELL"
+                            and funding_edge < -NON_ARB_EDGE_THRESHOLD
+                        ):
+                            ctx_base["non_arb_bias"] = float(funding_edge)
+                            return self._skip(
+                                "non_arb_bias_short",
+                                symbol,
+                                {
+                                    "edge": f"{funding_edge:.6f}",
+                                    "max": f"{-NON_ARB_EDGE_THRESHOLD:.6f}",
+                                },
+                                ctx=ctx_base,
+                                price=mid,
+                                atr=atr,
+                            )
+
         ctx_base["funding"] = float(funding)
 
         if FUNDING_FILTER_ENABLED and sig in ("BUY", "SELL"):
