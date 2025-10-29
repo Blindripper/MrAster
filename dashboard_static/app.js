@@ -5301,6 +5301,34 @@ if (typeof window !== 'undefined' && tradeList) {
   window.addEventListener('resize', () => requestTradeListViewportSync());
 }
 
+function normalizeRequestId(value) {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'string') return value.trim();
+  try {
+    const converted = String(value);
+    return converted ? converted.trim() : '';
+  } catch (err) {
+    return '';
+  }
+}
+
+function extractRequestId(data) {
+  if (!data || typeof data !== 'object') return '';
+  if (Object.prototype.hasOwnProperty.call(data, 'request_id')) {
+    const requestId = normalizeRequestId(data.request_id);
+    if (requestId) return requestId;
+  }
+  if (Object.prototype.hasOwnProperty.call(data, 'ai_request_id')) {
+    const requestId = normalizeRequestId(data.ai_request_id);
+    if (requestId) return requestId;
+  }
+  if (Object.prototype.hasOwnProperty.call(data, 'manual_request_id')) {
+    const requestId = normalizeRequestId(data.manual_request_id);
+    if (requestId) return requestId;
+  }
+  return '';
+}
+
 function renderAiActivity(feed) {
   if (!aiActivityFeed) return;
   const shouldAutoScroll = autoScrollEnabled && isScrolledToBottom(aiActivityFeed);
@@ -5328,7 +5356,7 @@ function renderAiActivity(feed) {
     if (!entry || typeof entry !== 'object') return;
     const data = entry.data && typeof entry.data === 'object' ? entry.data : null;
     if (!data) return;
-    const requestId = data.request_id;
+    const requestId = extractRequestId(data);
     if (!requestId || entry.kind === 'query') return;
     const list = responseLookup.get(requestId) || [];
     list.push({ index, item: entry });
@@ -5385,7 +5413,7 @@ function renderAiActivity(feed) {
         detail.textContent = parts.join(' · ');
         body.append(detail);
       }
-      const requestId = itemData && itemData.request_id ? String(itemData.request_id) : '';
+      const requestId = extractRequestId(itemData);
       if (requestId) {
         const candidates = (responseLookup.get(requestId) || []).filter((entry) => entry.index > index);
         if (candidates.length > 0) {
