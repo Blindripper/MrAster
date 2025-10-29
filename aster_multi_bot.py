@@ -1169,6 +1169,13 @@ class AITradeAdvisor:
         info = self._pending_requests.get(throttle_key)
         if not info:
             return None, None
+        if not isinstance(fallback, dict):
+            log.debug(
+                "pending request %s provided non-dict fallback (%s); coercing to empty plan",
+                throttle_key,
+                type(fallback).__name__,
+            )
+            fallback = {}
         kind = str(info.get("kind", "plan"))
         note = info.get("note") or "Waiting for AI plan response"
         future = info.get("future")
@@ -1320,7 +1327,11 @@ class AITradeAdvisor:
                 continue
             fallback = info.get("fallback")
             if not isinstance(fallback, dict):
-                continue
+                log.debug(
+                    "pending request %s missing fallback payload; using empty defaults",
+                    throttle_key,
+                )
+                fallback = {}
             status, payload = self._process_pending_request(throttle_key, fallback, now)
             if status != "response":
                 continue
