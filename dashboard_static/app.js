@@ -2365,8 +2365,13 @@ async function runMarketAnalysis(options = {}) {
       setChatStatus(translate('chat.status.ready', 'Market analysis ready.'));
     }
     setChatKeyIndicator('ready', translate('chat.key.ready', 'Dedicated chat key active'));
-    if (Array.isArray(data.trade_proposals) && data.trade_proposals.length > 0) {
-      data.trade_proposals.forEach((proposal) => appendTradeProposalCard(proposal));
+    const tradeProposals = Array.isArray(data.trade_proposals) ? data.trade_proposals : [];
+    if (tradeProposals.length > 0) {
+      tradeProposals.forEach((proposal) => appendTradeProposalCard(proposal));
+    } else {
+      loadTrades().catch((err) => {
+        console.warn('Failed to refresh trade proposals after analysis', err);
+      });
     }
     success = true;
   } catch (err) {
