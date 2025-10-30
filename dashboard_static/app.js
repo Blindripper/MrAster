@@ -90,14 +90,9 @@ const heroTotalTrades = document.getElementById('hero-total-trades');
 const heroTotalPnl = document.getElementById('hero-total-pnl');
 const heroTotalWinRate = document.getElementById('hero-total-win-rate');
 const shareFeedback = document.getElementById('share-feedback');
-const MR_ASTER_REPO_URL = 'https://github.com/Blindripper/MrAster';
 const MEME_COMPOSER_WINDOW_NAME = 'mraster-meme-composer';
 const MEME_COMPOSER_WINDOW_FEATURES =
   'width=920,height=1080,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes';
-const SHARE_PNL_FORMATTER = new Intl.NumberFormat('de-DE', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
 
 const languageButtons = document.querySelectorAll('.language-button[data-lang]');
 const i18nElements = document.querySelectorAll('[data-i18n]');
@@ -6582,26 +6577,7 @@ function setShareFeedback(message, { tone } = {}) {
 }
 
 function buildShareText(snapshot) {
-  const totalTradesRaw = Number(snapshot?.totalTrades ?? 0);
-  const totalTrades = Number.isFinite(totalTradesRaw) ? Math.max(0, Math.round(totalTradesRaw)) : 0;
-  const totalTradesDisplay = totalTrades.toLocaleString('de-DE');
-
-  const totalPnlRaw = Number(snapshot?.totalPnl ?? 0);
-  const totalPnl = Number.isFinite(totalPnlRaw) ? totalPnlRaw : 0;
-  const normalizedPnl = Math.abs(totalPnl) < 0.0005 ? 0 : totalPnl;
-  const totalPnlDisplay = `${SHARE_PNL_FORMATTER.format(normalizedPnl)} USDT`;
-
-  const winRateRaw = Number(snapshot?.winRate ?? 0);
-  const clampedWinRate = Number.isFinite(winRateRaw) ? Math.min(Math.max(winRateRaw, 0), 1) : 0;
-  const winRateDisplay = `${(clampedWinRate * 100).toFixed(1)}%`;
-
-  const lines = [
-    `Total Trades: ${totalTradesDisplay}`,
-    `Total PNL: ${totalPnlDisplay}`,
-    `Total Win Rate: ${winRateDisplay}`,
-    '',
-    MR_ASTER_REPO_URL,
-  ];
+  const lines = ['Paste this Meme into your X Post. Simply drag and drop the Picture.'];
 
   return lines.join('\n');
 }
@@ -6838,8 +6814,9 @@ function openMemeComposerShell() {
             }
             .composer-hint {
               margin: 0 0 16px;
-              font-size: 14px;
-              opacity: 0.75;
+              font-size: 18px;
+              font-weight: 600;
+              opacity: 0.9;
             }
             .composer-caption pre {
               margin: 0;
@@ -6946,7 +6923,7 @@ function renderMemeComposer(windowRef, image, shareText) {
       </div>
       <div class="composer-caption">
         <h2>Post text</h2>
-        <p class="composer-hint">Paste this text into the X composer. Drag or copy the meme preview above to attach it.</p>
+        <p class="composer-hint">Paste this Meme into your X Post. Simply drag and drop the Picture.</p>
         <pre>${shareHtml}</pre>
       </div>
     `;
