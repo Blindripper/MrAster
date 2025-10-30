@@ -861,6 +861,22 @@ body.paper-mode .hero-paper-toggle span {
   gap: 1.05rem;
 }
 
+.active-positions-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.active-positions-summary-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--text-subtle);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .active-positions-mode {
   display: inline-flex;
   align-items: center;
@@ -4544,6 +4560,15 @@ footer p {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.75rem;
+  }
+
+  .active-positions-summary {
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  .active-positions-summary-label {
+    text-align: left;
   }
 
   .card h2 {
