@@ -3403,7 +3403,23 @@ function formatSideLabel(side) {
 
 const ACTIVE_POSITION_ALIASES = {
   symbol: ['symbol', 'sym', 'ticker', 'pair'],
-  size: ['size', 'qty', 'quantity', 'positionAmt', 'position_amt', 'position_amount'],
+  size: [
+    'notional',
+    'notional_usdt',
+    'notionalUsd',
+    'notionalUSD',
+    'positionNotional',
+    'position_notional',
+    'size_usdt',
+    'sizeUSDT',
+    'sizeUsd',
+    'size',
+    'qty',
+    'quantity',
+    'positionAmt',
+    'position_amt',
+    'position_amount',
+  ],
   entry: ['entry', 'entry_price', 'entryPrice'],
   mark: ['mark', 'mark_price', 'markPrice', 'lastPrice', 'price'],
   roe: ['roe', 'roe_percent', 'roe_pct', 'roePercent', 'pnl_percent', 'pnl_pct'],
@@ -3890,22 +3906,21 @@ function formatPercentField(field, digits = 2) {
 function formatPositionSize(value) {
   if (!Number.isFinite(value)) return '–';
   const abs = Math.abs(value);
+  let formatted;
   if (abs >= 1000) {
-    return abs.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    formatted = abs.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  } else if (abs >= 100) {
+    formatted = abs.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  } else if (abs >= 10) {
+    formatted = abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  } else if (abs >= 1) {
+    formatted = abs.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  } else if (abs >= 0.1) {
+    formatted = abs.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+  } else {
+    formatted = abs.toLocaleString(undefined, { minimumFractionDigits: 5, maximumFractionDigits: 5 });
   }
-  if (abs >= 100) {
-    return abs.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-  }
-  if (abs >= 10) {
-    return abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
-  if (abs >= 1) {
-    return abs.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-  }
-  if (abs >= 0.1) {
-    return abs.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 });
-  }
-  return abs.toLocaleString(undefined, { minimumFractionDigits: 5, maximumFractionDigits: 5 });
+  return `${formatted} USDT`;
 }
 
 function getPositionSymbol(position) {

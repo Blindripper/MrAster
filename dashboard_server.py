@@ -250,9 +250,14 @@ def _fetch_position_snapshot(env: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         mark_price = _safe_float(item.get("markPrice"))
         unrealized = _safe_float(item.get("unRealizedProfit"))
         leverage = _safe_float(item.get("leverage"))
-        notional = None
-        if entry_price is not None:
-            notional = abs(position_amt) * entry_price
+        notional: Optional[float] = None
+        price_for_notional = None
+        if mark_price is not None and mark_price > 0:
+            price_for_notional = mark_price
+        elif entry_price is not None and entry_price > 0:
+            price_for_notional = entry_price
+        if price_for_notional is not None:
+            notional = abs(position_amt) * price_for_notional
 
         roe = None
         if unrealized is not None and notional and notional > 0:
@@ -261,7 +266,7 @@ def _fetch_position_snapshot(env: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
             except ZeroDivisionError:
                 roe = None
 
-        snapshot[symbol] = {
+        snapshot_entry: Dict[str, Any] = {
             "symbol": symbol,
             "positionAmt": position_amt,
             "entryPrice": entry_price,
@@ -271,6 +276,15 @@ def _fetch_position_snapshot(env: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
             "roe_percent": roe,
             "updateTime": item.get("updateTime") or item.get("update_time"),
         }
+
+        if notional is not None:
+            snapshot_entry["notional"] = notional
+            snapshot_entry["notional_usdt"] = notional
+            snapshot_entry["notionalUsd"] = notional
+            snapshot_entry["positionNotional"] = notional
+            snapshot_entry["size_usdt"] = notional
+
+        snapshot[symbol] = snapshot_entry
 
     return snapshot
 
@@ -495,6 +509,14 @@ def _merge_position_record(
         merged["mark_price"] = mark_price
         merged["markPrice"] = mark_price
         merged["mark"] = mark_price
+
+    notional = extra.get("notional") or extra.get("notional_usdt") or extra.get("positionNotional")
+    if notional is not None:
+        merged.setdefault("notional", notional)
+        merged.setdefault("notional_usdt", notional)
+        merged.setdefault("notionalUsd", notional)
+        merged.setdefault("positionNotional", notional)
+        merged.setdefault("size_usdt", notional)
 
     position_amt = extra.get("positionAmt")
     if position_amt is not None:
