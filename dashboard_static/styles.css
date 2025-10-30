@@ -3243,9 +3243,10 @@ body.pro-mode .log-stream {
 
 .ai-request-card__header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 0.85rem;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
 
 .ai-request-card__title {
@@ -3253,6 +3254,7 @@ body.pro-mode .log-stream {
   align-items: center;
   gap: 0.6rem;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .ai-request-card__symbol {
@@ -3293,7 +3295,11 @@ body.pro-mode .log-stream {
   font-weight: 600;
   background: rgba(148, 163, 184, 0.18);
   color: var(--text-muted);
-  white-space: nowrap;
+  flex-shrink: 0;
+  max-width: 100%;
+  white-space: normal;
+  text-align: right;
+  align-self: flex-start;
 }
 
 .ai-request-card__meta {
