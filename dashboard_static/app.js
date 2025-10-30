@@ -91,6 +91,13 @@ const heroTotalPnl = document.getElementById('hero-total-pnl');
 const heroTotalWinRate = document.getElementById('hero-total-win-rate');
 const shareFeedback = document.getElementById('share-feedback');
 const MR_ASTER_REPO_URL = 'https://github.com/Blindripper/MrAster';
+const MEME_COMPOSER_WINDOW_NAME = 'mraster-meme-composer';
+const MEME_COMPOSER_WINDOW_FEATURES =
+  'width=920,height=1080,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes';
+const SHARE_PNL_FORMATTER = new Intl.NumberFormat('de-DE', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
 
 const languageButtons = document.querySelectorAll('.language-button[data-lang]');
 const i18nElements = document.querySelectorAll('[data-i18n]');
@@ -6575,48 +6582,28 @@ function setShareFeedback(message, { tone } = {}) {
 }
 
 function buildShareText(snapshot) {
-  const totalTrades = Number(snapshot?.totalTrades ?? 0) || 0;
-  const totalPnlDisplay = snapshot?.totalPnlDisplay || '0 USDT';
-  const winRateDisplay = snapshot?.winRateDisplay || '0.0%';
-  const totalPnl = Number(snapshot?.totalPnl ?? 0) || 0;
-  const positive = totalPnl >= 0;
+  const totalTradesRaw = Number(snapshot?.totalTrades ?? 0);
+  const totalTrades = Number.isFinite(totalTradesRaw) ? Math.max(0, Math.round(totalTradesRaw)) : 0;
+  const totalTradesDisplay = totalTrades.toLocaleString('de-DE');
 
-  const statsBlock = [
-    `Trades executed: ${totalTrades.toLocaleString()}`,
-    `Total PnL: ${totalPnlDisplay}`,
-    `Win rate: ${winRateDisplay}`,
-  ].join('\n');
+  const totalPnlRaw = Number(snapshot?.totalPnl ?? 0);
+  const totalPnl = Number.isFinite(totalPnlRaw) ? totalPnlRaw : 0;
+  const normalizedPnl = Math.abs(totalPnl) < 0.0005 ? 0 : totalPnl;
+  const totalPnlDisplay = `${SHARE_PNL_FORMATTER.format(normalizedPnl)} USDT`;
 
-  const positiveVariants = [
-    (stats) => `🚀 Locked in fresh gains with MrAster\n${stats}\n\nStill letting the bots chase the breakout while I sip coffee.`,
-    (stats) => `📈 Automation for the win.\n${stats}\n\nMrAster kept the momentum rolling today.`,
-    (stats) => `🟢 Another green session banked.\n${stats}\n\nLetting MrAster steer the trades feels good.`,
-    (stats) => `🤖 MrAster kept the edge alive.\n${stats}\n\nStaying disciplined and letting signals lead.`,
-    (stats) => `✅ Stats checkpoint with MrAster.\n${stats}\n\nAlgorithm humming along nicely.`,
-    (stats) => `🔥 Heat check passed.\n${stats}\n\nAuto strategies locking in smart entries.`,
-    (stats) => `🌟 Another run in the green.\n${stats}\n\nPatience plus automation keeps stacking results.`,
-    (stats) => `🎯 Precision day for the bot.\n${stats}\n\nSignals synced, execution tight.`,
-    (stats) => `⚡ Momentum captured.\n${stats}\n\nMrAster dialed in on the right side of the move.`,
-    (stats) => `💹 Portfolio glow-up courtesy of MrAster.\n${stats}\n\nOn to the next setup.`,
+  const winRateRaw = Number(snapshot?.winRate ?? 0);
+  const clampedWinRate = Number.isFinite(winRateRaw) ? Math.min(Math.max(winRateRaw, 0), 1) : 0;
+  const winRateDisplay = `${(clampedWinRate * 100).toFixed(1)}%`;
+
+  const lines = [
+    `Total Trades: ${totalTradesDisplay}`,
+    `Total PNL: ${totalPnlDisplay}`,
+    `Total Win Rate: ${winRateDisplay}`,
+    '',
+    MR_ASTER_REPO_URL,
   ];
 
-  const negativeVariants = [
-    (stats) => `🛠️ MrAster is recalibrating after a choppy run.\n${stats}\n\nTightening the screws and respecting risk.`,
-    (stats) => `📉 Tough tape today.\n${stats}\n\nReviewing signals and keeping losses contained.`,
-    (stats) => `🔄 Reset mode engaged.\n${stats}\n\nMrAster is adapting the playbook for the next swing.`,
-    (stats) => `🧭 Course correction underway.\n${stats}\n\nSticking with the system, trusting the data.`,
-    (stats) => `🪫 Battery low, but recharging.\n${stats}\n\nLetting the bot re-evaluate setups before the next push.`,
-    (stats) => `🌧️ Weathered a red session.\n${stats}\n\nRisk controls held—looking for clearer skies.`,
-    (stats) => `🧠 Lessons logged.\n${stats}\n\nAdjusting parameters and preparing for the rebound.`,
-    (stats) => `🚧 Drawdown alert.\n${stats}\n\nMrAster is trimming exposure until the tape calms.`,
-    (stats) => `⏸️ Pause for recalibration.\n${stats}\n\nDiscipline first, recovery next.`,
-    (stats) => `🧰 Tooling up for a comeback.\n${stats}\n\nStaying systematic through the rough patch.`,
-  ];
-
-  const variants = positive ? positiveVariants : negativeVariants;
-  const pick = variants[Math.floor(Math.random() * variants.length)];
-  const baseText = pick(statsBlock);
-  return `${baseText}\n\n${MR_ASTER_REPO_URL}`;
+  return lines.join('\n');
 }
 
 async function copyShareText(text) {
@@ -6745,6 +6732,261 @@ async function copyShareImageToClipboard(image) {
   }
 }
 
+function escapeHtml(value) {
+  return (value ?? '')
+    .toString()
+    .replace(/[&<>'"]/g, (char) => {
+      switch (char) {
+        case '&':
+          return '&amp;';
+        case '<':
+          return '&lt;';
+        case '>':
+          return '&gt;';
+        case '"':
+          return '&quot;';
+        case "'":
+          return '&#39;';
+        default:
+          return char;
+      }
+    });
+}
+
+function openMemeComposerShell() {
+  try {
+    const popup = window.open('', MEME_COMPOSER_WINDOW_NAME, MEME_COMPOSER_WINDOW_FEATURES);
+    if (!popup) {
+      return null;
+    }
+
+    popup.opener = null;
+    const doc = popup.document;
+    doc.open();
+    doc.write(`
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta charset="utf-8" />
+          <title>MrAster Meme Composer</title>
+          <style>
+            :root { color-scheme: dark; }
+            * { box-sizing: border-box; }
+            body {
+              margin: 0;
+              padding: 24px;
+              background: #05060c;
+              color: #f5f6fa;
+              font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+              display: flex;
+              justify-content: center;
+            }
+            .composer {
+              width: 100%;
+              max-width: 880px;
+              display: flex;
+              flex-direction: column;
+              gap: 24px;
+            }
+            .composer h1 {
+              margin: 0;
+              font-size: 24px;
+              font-weight: 600;
+            }
+            .composer-content {
+              background: #0f111a;
+              border-radius: 18px;
+              padding: 24px;
+              border: 1px solid rgba(255, 255, 255, 0.08);
+              min-height: 200px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              text-align: center;
+            }
+            .composer-content.composer-ready {
+              flex-direction: column;
+              gap: 24px;
+              align-items: stretch;
+              justify-content: flex-start;
+              text-align: left;
+            }
+            .composer-status {
+              margin: 0;
+              font-size: 16px;
+              opacity: 0.75;
+            }
+            .composer-image,
+            .composer-caption {
+              background: #0f111a;
+              border-radius: 18px;
+              border: 1px solid rgba(255, 255, 255, 0.08);
+              overflow: hidden;
+            }
+            .composer-image img {
+              display: block;
+              width: 100%;
+              height: auto;
+            }
+            .composer-caption {
+              padding: 24px;
+            }
+            .composer-caption h2 {
+              margin-top: 0;
+              margin-bottom: 12px;
+              font-size: 18px;
+            }
+            .composer-hint {
+              margin: 0 0 16px;
+              font-size: 14px;
+              opacity: 0.75;
+            }
+            .composer-caption pre {
+              margin: 0;
+              padding: 16px;
+              border-radius: 12px;
+              background: rgba(255, 255, 255, 0.05);
+              font-family: 'JetBrains Mono', 'Fira Code', monospace;
+              font-size: 14px;
+              white-space: pre-wrap;
+              word-break: break-word;
+              border: 1px solid rgba(255, 255, 255, 0.08);
+            }
+            .composer-error {
+              margin: 0;
+              color: #ff9393;
+              font-weight: 500;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="composer">
+            <h1>MrAster Meme Composer</h1>
+            <div class="composer-content" data-composer-root>
+              <p class="composer-status">Preparing meme…</p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    if (!popup.__mrAsterComposerUnloadHandler) {
+      popup.__mrAsterComposerUnloadHandler = () => {
+        if (typeof popup.__mrAsterComposerCleanup === 'function') {
+          try {
+            popup.__mrAsterComposerCleanup();
+          } catch (cleanupError) {
+            console.warn('Failed to release meme composer resources', cleanupError);
+          }
+          popup.__mrAsterComposerCleanup = null;
+        }
+        popup.__mrAsterComposerUnloadAttached = false;
+      };
+    }
+    popup.__mrAsterComposerUnloadAttached = false;
+
+    return popup;
+  } catch (error) {
+    console.warn('Unable to open meme composer window', error);
+    return null;
+  }
+}
+
+function renderMemeComposer(windowRef, image, shareText) {
+  if (!windowRef) return false;
+  try {
+    const doc = windowRef.document;
+    const container = doc?.querySelector('[data-composer-root]');
+    if (!container) {
+      return false;
+    }
+
+    if (typeof windowRef.__mrAsterComposerCleanup === 'function') {
+      try {
+        windowRef.__mrAsterComposerCleanup();
+      } catch (cleanupError) {
+        console.warn('Failed to reset previous meme composer state', cleanupError);
+      }
+      windowRef.__mrAsterComposerCleanup = null;
+    }
+
+    let imageSrc = '';
+    let cleanup = null;
+    if (image?.blob instanceof Blob) {
+      const objectUrl = URL.createObjectURL(image.blob);
+      imageSrc = objectUrl;
+      cleanup = () => {
+        try {
+          URL.revokeObjectURL(objectUrl);
+        } catch (revokeError) {
+          console.warn('Failed to revoke meme composer object URL', revokeError);
+        }
+      };
+    } else if (image?.url) {
+      imageSrc = image.url;
+    }
+
+    if (cleanup) {
+      windowRef.__mrAsterComposerCleanup = cleanup;
+      if (!windowRef.__mrAsterComposerUnloadAttached && windowRef.__mrAsterComposerUnloadHandler) {
+        windowRef.addEventListener('beforeunload', windowRef.__mrAsterComposerUnloadHandler, { once: true });
+        windowRef.__mrAsterComposerUnloadAttached = true;
+      }
+    }
+
+    const shareHtml = escapeHtml(shareText ?? '').replace(/\r?\n/g, '<br />');
+    container.innerHTML = `
+      <div class="composer-image">
+        ${
+          imageSrc
+            ? `<img src="${imageSrc}" alt="MrAster meme preview" draggable="true" />`
+            : '<p class="composer-error">We could not load the meme image.</p>'
+        }
+      </div>
+      <div class="composer-caption">
+        <h2>Post text</h2>
+        <p class="composer-hint">Paste this text into the X composer. Drag or copy the meme preview above to attach it.</p>
+        <pre>${shareHtml}</pre>
+      </div>
+    `;
+    container.classList.add('composer-ready');
+
+    windowRef.focus();
+    return true;
+  } catch (error) {
+    console.warn('Failed to render meme composer content', error);
+    return false;
+  }
+}
+
+function renderMemeComposerError(windowRef, message) {
+  if (!windowRef) return false;
+  try {
+    const doc = windowRef.document;
+    const container = doc?.querySelector('[data-composer-root]');
+    if (!container) {
+      return false;
+    }
+
+    if (typeof windowRef.__mrAsterComposerCleanup === 'function') {
+      try {
+        windowRef.__mrAsterComposerCleanup();
+      } catch (cleanupError) {
+        console.warn('Failed to reset meme composer on error', cleanupError);
+      }
+      windowRef.__mrAsterComposerCleanup = null;
+    }
+
+    container.classList.remove('composer-ready');
+    container.innerHTML = `<p class="composer-error">${escapeHtml(message || 'Unable to load meme composer.')}</p>`;
+    return true;
+  } catch (error) {
+    console.warn('Failed to render meme composer error state', error);
+    return false;
+  }
+}
+
 async function handlePostToX(event) {
   if (event?.preventDefault) {
     event.preventDefault();
@@ -6753,12 +6995,15 @@ async function handlePostToX(event) {
   const snapshot = heroMetricsSnapshot || {};
   const shareText = buildShareText(snapshot);
   const variant = determineShareVariant(snapshot);
+  const memeComposerWindow = openMemeComposerShell();
+  let memeComposerReady = false;
 
   btnPostX.disabled = true;
   setShareFeedback('Preparing your X post…');
 
   try {
     const image = await fetchShareImage(variant);
+    memeComposerReady = renderMemeComposer(memeComposerWindow, image, shareText);
     const sharedViaSystem = await shareImageToX(image, shareText);
 
     if (sharedViaSystem) {
@@ -6774,20 +7019,43 @@ async function handlePostToX(event) {
     const composerOpened = openTweetComposer(shareText);
 
     if (clipboardSuccess && imageCopied) {
-      setShareFeedback('Post text and image copied! The composer opened—paste to attach the snapshot instantly.');
+      setShareFeedback(
+        memeComposerReady
+          ? 'Post text and image copied! The X composer and meme composer opened—paste the meme directly into your post.'
+          : 'Post text and image copied! The composer opened—paste to attach the snapshot instantly.'
+      );
     } else if (clipboardSuccess) {
-      setShareFeedback('Post text copied! Use the composer to add the image manually if it was not copied.');
+      setShareFeedback(
+        memeComposerReady
+          ? 'Post text copied! Grab the meme from the composer window and add it to the X composer.'
+          : 'Post text copied! Use the composer to add the image manually if it was not copied.'
+      );
     } else if (imageCopied) {
-      setShareFeedback('Image copied to your clipboard! Paste it into the composer and add your text manually.');
+      setShareFeedback(
+        memeComposerReady
+          ? 'Image copied to your clipboard! The meme composer is open if you need to drag or download it. Add your text manually in X.'
+          : 'Image copied to your clipboard! Paste it into the composer and add your text manually.'
+      );
     } else {
-      setShareFeedback('Compose window opened. Copy the stats manually if clipboard access is blocked.');
+      setShareFeedback(
+        memeComposerReady
+          ? 'Compose windows opened. Copy the stats manually if clipboard access is blocked.'
+          : 'Compose window opened. Copy the stats manually if clipboard access is blocked.'
+      );
     }
 
     if (!composerOpened) {
       console.warn('Tweet composer window blocked');
     }
+    if (memeComposerWindow && !memeComposerReady) {
+      console.warn('Meme composer window blocked or failed to render');
+    }
   } catch (error) {
     console.error('Failed to prepare X post', error);
+    renderMemeComposerError(
+      memeComposerWindow,
+      'We could not load the meme preview. Close this window and try sharing again.'
+    );
     setShareFeedback('We could not prepare the X post. Please try again.');
   } finally {
     btnPostX.disabled = false;
