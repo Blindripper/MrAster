@@ -583,6 +583,13 @@ body.pro-mode [data-normal-only] {
   color: var(--accent);
 }
 
+.hero-metric-note {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.3;
+  color: var(--text-subtle);
+}
+
 .hero-visual {
   position: relative;
   display: flex;

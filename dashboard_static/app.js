@@ -88,6 +88,7 @@ const btnPostX = document.getElementById('btn-post-x');
 const paperModeToggle = document.getElementById('paper-mode-toggle');
 const heroTotalTrades = document.getElementById('hero-total-trades');
 const heroTotalPnl = document.getElementById('hero-total-pnl');
+const heroTotalPnlNote = document.getElementById('hero-total-pnl-note');
 const heroTotalWinRate = document.getElementById('hero-total-win-rate');
 const shareFeedback = document.getElementById('share-feedback');
 const MEME_COMPOSER_WINDOW_NAME = 'mraster-meme-composer';
@@ -1898,6 +1899,8 @@ let heroMetricsSnapshot = {
   totalTrades: 0,
   totalPnl: 0,
   totalPnlDisplay: '0 USDT',
+  realizedPnl: 0,
+  aiBudgetSpent: 0,
   winRate: 0,
   winRateDisplay: '0.0%',
 };
@@ -1968,6 +1971,9 @@ function applyTranslations(lang) {
   renderTradeSummary(lastTradeStats);
   renderDecisionStats(lastDecisionStats);
   renderAiBudget(lastAiBudget);
+  if (latestTradesSnapshot) {
+    renderHeroMetrics(latestTradesSnapshot.cumulative_stats, latestTradesSnapshot.stats);
+  }
   if (btnSaveConfig) {
     const state = btnSaveConfig.dataset.state || 'idle';
     if (state === 'saving') {
@@ -6547,16 +6553,81 @@ function renderHeroMetrics(cumulativeStats, sessionStats) {
   const totalTrades = Number.isFinite(totalTradesRaw) && totalTradesRaw > 0 ? totalTradesRaw : 0;
   heroTotalTrades.textContent = totalTrades.toLocaleString();
 
-  const totalPnlRaw = Number(totals.total_pnl ?? fallback.total_pnl ?? 0);
-  if (Number.isFinite(totalPnlRaw)) {
-    const formatted = Math.abs(totalPnlRaw).toLocaleString(undefined, {
+  const netPnlCandidate = totals.total_pnl ?? fallback.total_pnl ?? 0;
+  let netPnlRaw = Number(netPnlCandidate);
+  let realizedPnlRaw = Number(
+    totals.realized_pnl ?? totals.realizedPnl ?? fallback.realized_pnl ?? NaN,
+  );
+  let aiBudgetSpentRaw = Number(
+    totals.ai_budget_spent ?? totals.aiBudgetSpent ?? fallback.ai_budget_spent ?? NaN,
+  );
+
+  if (!Number.isFinite(aiBudgetSpentRaw)) {
+    aiBudgetSpentRaw = Number((sessionStats || {}).ai_budget_spent ?? NaN);
+  }
+
+  if (!Number.isFinite(aiBudgetSpentRaw)) {
+    aiBudgetSpentRaw = 0;
+  }
+
+  if (!Number.isFinite(realizedPnlRaw)) {
+    realizedPnlRaw = Number(fallback.total_pnl ?? NaN);
+  }
+
+  if (!Number.isFinite(realizedPnlRaw) && Number.isFinite(netPnlRaw)) {
+    realizedPnlRaw = Number(netPnlRaw) + Number(aiBudgetSpentRaw);
+  }
+
+  if (!Number.isFinite(netPnlRaw) && Number.isFinite(realizedPnlRaw)) {
+    netPnlRaw = Number(realizedPnlRaw) - Number(aiBudgetSpentRaw);
+  }
+
+  if (!Number.isFinite(netPnlRaw)) {
+    netPnlRaw = 0;
+  }
+
+  const netPnl = netPnlRaw;
+  const realizedPnl = Number.isFinite(realizedPnlRaw) ? realizedPnlRaw : netPnl + aiBudgetSpentRaw;
+  const aiBudgetSpent = Number.isFinite(aiBudgetSpentRaw)
+    ? aiBudgetSpentRaw
+    : Math.max((realizedPnl || 0) - netPnl, 0);
+
+  if (Number.isFinite(netPnl)) {
+    const formatted = Math.abs(netPnl).toLocaleString(undefined, {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
-    const prefix = totalPnlRaw > 0 ? '+' : totalPnlRaw < 0 ? '-' : '';
+    const prefix = netPnl > 0 ? '+' : netPnl < 0 ? '-' : '';
     heroTotalPnl.textContent = `${prefix}${formatted} USDT`;
   } else {
     heroTotalPnl.textContent = '0 USDT';
+  }
+
+  if (heroTotalPnlNote) {
+    const formatSignedValue = (value, unit) => {
+      if (!Number.isFinite(value)) return `—`;
+      const absValue = Math.abs(value).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+      const prefix = value > 0 ? '+' : value < 0 ? '-' : '';
+      return `${prefix}${absValue} ${unit}`;
+    };
+    const formatUnsignedValue = (value, unit) => {
+      if (!Number.isFinite(value)) return '—';
+      const absValue = Math.abs(value).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+      return `${absValue} ${unit}`;
+    };
+    const realizedDisplay = formatSignedValue(realizedPnl, 'USDT');
+    const aiSpentDisplay = formatUnsignedValue(aiBudgetSpent, 'USD');
+    heroTotalPnlNote.textContent = translate(
+      'hero.metrics.pnlNote.detail',
+      'Realized {{realized}} − AI budget {{spent}}',
+      { realized: realizedDisplay, spent: aiSpentDisplay },
+    );
   }
 
   const winsRaw = Number(totals.wins ?? 0);
@@ -6573,8 +6644,10 @@ function renderHeroMetrics(cumulativeStats, sessionStats) {
 
   heroMetricsSnapshot = {
     totalTrades,
-    totalPnl: Number.isFinite(totalPnlRaw) ? totalPnlRaw : 0,
+    totalPnl: Number.isFinite(netPnl) ? netPnl : 0,
     totalPnlDisplay: heroTotalPnl.textContent,
+    realizedPnl: Number.isFinite(realizedPnl) ? realizedPnl : Number.isFinite(netPnl) ? netPnl : 0,
+    aiBudgetSpent: Number.isFinite(aiBudgetSpent) ? aiBudgetSpent : 0,
     winRate,
     winRateDisplay: heroTotalWinRate.textContent,
   };
