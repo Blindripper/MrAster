@@ -15,6 +15,7 @@ const compactLogStream = document.getElementById('log-brief');
 const autoScrollToggles = document.querySelectorAll('input[data-autoscroll]');
 const tradeList = document.getElementById('trade-list');
 const tradeSummary = document.getElementById('trade-summary');
+const aiRequestList = document.getElementById('ai-request-list');
 const tradeModal = document.getElementById('trade-modal');
 const tradeModalClose = document.getElementById('trade-modal-close');
 const tradeModalBody = document.getElementById('trade-modal-body');
@@ -199,6 +200,15 @@ const TRANSLATIONS = {
       'Здесь отображается телеметрия стратегии и автономные действия ИИ. Разговоры перенесены в отдельный чат дашборда.',
     'ai.feed.disabled': 'Включите AI-режим, чтобы увидеть ленту активности.',
     'ai.feed.empty': 'Автономные решения появятся здесь в реальном времени по мере событий.',
+    'ai.requests.title': 'Решения ИИ',
+    'ai.requests.subtitle': 'Свежие проверки и выводы ИИ по торговым запросам.',
+    'ai.requests.empty': 'История решений ИИ появится здесь.',
+    'ai.requests.status.pending': 'Ожидает ответа',
+    'ai.requests.status.responded': 'Ответ получен',
+    'ai.requests.status.accepted': 'Вход одобрен',
+    'ai.requests.status.rejected': 'Вход отклонён',
+    'ai.requests.status.analysed': 'Анализ завершён',
+    'ai.requests.status.decided': 'Решение зафиксировано',
     'ai.feed.reasonLabel': 'Причина',
     'ai.feed.responseLabel': 'Последний ответ',
     'ai.feed.awaitingResponse': 'Ожидаем ответ ИИ…',
@@ -435,6 +445,15 @@ const TRANSLATIONS = {
       'Hier erscheinen Strategie-Telemetrie und autonome KI-Aktionen. Unterhaltungen findest du im separaten Dashboard-Chat.',
     'ai.feed.disabled': 'Aktiviere den KI-Modus, um den Aktivitätsfeed zu sehen.',
     'ai.feed.empty': 'Autonome Entscheidungen werden hier in Echtzeit angezeigt, sobald Ereignisse eintreten.',
+    'ai.requests.title': 'KI-Entscheidungen',
+    'ai.requests.subtitle': 'Neueste KI-Prüfungen und Ergebnisse zu Handelssignalen.',
+    'ai.requests.empty': 'Noch keine protokollierten KI-Entscheidungen.',
+    'ai.requests.status.pending': 'Wartet auf Antwort',
+    'ai.requests.status.responded': 'Antwort eingetroffen',
+    'ai.requests.status.accepted': 'Einstieg bestätigt',
+    'ai.requests.status.rejected': 'Einstieg abgelehnt',
+    'ai.requests.status.analysed': 'Analyse abgeschlossen',
+    'ai.requests.status.decided': 'Entscheidung vorliegend',
     'ai.feed.reasonLabel': 'Grund',
     'ai.feed.responseLabel': 'Letzte Antwort',
     'ai.feed.awaitingResponse': 'KI-Antwort steht noch aus…',
@@ -674,6 +693,15 @@ const TRANSLATIONS = {
       '전략 텔레메트리와 AI 자율 작업이 여기에 표시됩니다. 대화는 대시보드 채팅 섹션에서 분리되어 제공됩니다.',
     'ai.feed.disabled': 'AI 모드를 활성화하면 활동 피드를 볼 수 있습니다.',
     'ai.feed.empty': '자율 의사결정이 발생하면 실시간으로 여기에 나타납니다.',
+    'ai.requests.title': 'AI 결정 로그',
+    'ai.requests.subtitle': '거래 요청에 대한 최신 AI 검토와 결과입니다.',
+    'ai.requests.empty': 'AI 결정 기록이 여기에 표시됩니다.',
+    'ai.requests.status.pending': '응답 대기 중',
+    'ai.requests.status.responded': '응답 수신',
+    'ai.requests.status.accepted': '진입 승인',
+    'ai.requests.status.rejected': '진입 거부',
+    'ai.requests.status.analysed': '분석 완료',
+    'ai.requests.status.decided': '결정 확정',
     'ai.feed.reasonLabel': '사유',
     'ai.feed.responseLabel': '최근 응답',
     'ai.feed.awaitingResponse': 'AI 응답 대기 중…',
@@ -913,6 +941,15 @@ const TRANSLATIONS = {
       'La télémétrie de stratégie et les actions autonomes de l’IA apparaissent ici. Les conversations se déroulent dans le chat du tableau de bord.',
     'ai.feed.disabled': 'Activez le mode IA pour voir le flux d’activité.',
     'ai.feed.empty': 'Les décisions autonomes apparaîtront ici en temps réel dès qu’elles surviennent.',
+    'ai.requests.title': 'Décisions de l’IA',
+    'ai.requests.subtitle': 'Dernières revues et décisions de l’IA sur les demandes de trading.',
+    'ai.requests.empty': 'Les décisions de l’IA apparaîtront ici.',
+    'ai.requests.status.pending': 'En attente de réponse',
+    'ai.requests.status.responded': 'Réponse reçue',
+    'ai.requests.status.accepted': 'Entrée validée',
+    'ai.requests.status.rejected': 'Entrée refusée',
+    'ai.requests.status.analysed': 'Analyse terminée',
+    'ai.requests.status.decided': 'Décision enregistrée',
     'ai.feed.reasonLabel': 'Raison',
     'ai.feed.responseLabel': 'Dernière réponse',
     'ai.feed.awaitingResponse': 'En attente de la réponse de l’IA…',
@@ -1152,6 +1189,15 @@ const TRANSLATIONS = {
       'Aquí aparecen la telemetría de la estrategia y las acciones autónomas de la IA. Las conversaciones viven en el chat del dashboard.',
     'ai.feed.disabled': 'Activa el modo IA para ver el feed de actividad.',
     'ai.feed.empty': 'Las decisiones autónomas aparecerán aquí en tiempo real conforme sucedan.',
+    'ai.requests.title': 'Decisiones de la IA',
+    'ai.requests.subtitle': 'Revisiones y resultados más recientes de la IA para las señales de trading.',
+    'ai.requests.empty': 'Aquí aparecerá el historial de decisiones de la IA.',
+    'ai.requests.status.pending': 'Esperando respuesta',
+    'ai.requests.status.responded': 'Respuesta recibida',
+    'ai.requests.status.accepted': 'Entrada aprobada',
+    'ai.requests.status.rejected': 'Entrada rechazada',
+    'ai.requests.status.analysed': 'Análisis completado',
+    'ai.requests.status.decided': 'Decisión registrada',
     'ai.feed.reasonLabel': 'Motivo',
     'ai.feed.responseLabel': 'Última respuesta',
     'ai.feed.awaitingResponse': 'Esperando la respuesta de la IA…',
@@ -1389,6 +1435,15 @@ const TRANSLATIONS = {
     'ai.feed.subtitle': 'Burada strateji telemetrisi ve yapay zekânın otonom aksiyonları görünür. Sohbetler gösterge panosundaki ayrı bir sohbette yer alır.',
     'ai.feed.disabled': 'Aktivite akışını görmek için AI modunu açın.',
     'ai.feed.empty': 'Otonom kararlar gerçekleşir gerçekleşmez burada belirecek.',
+    'ai.requests.title': 'YZ kararları',
+    'ai.requests.subtitle': 'İşlem taleplerine ait en güncel YZ incelemeleri ve sonuçları.',
+    'ai.requests.empty': 'YZ karar geçmişi burada görünecek.',
+    'ai.requests.status.pending': 'Yanıt bekleniyor',
+    'ai.requests.status.responded': 'Yanıt alındı',
+    'ai.requests.status.accepted': 'Giriş onaylandı',
+    'ai.requests.status.rejected': 'Giriş reddedildi',
+    'ai.requests.status.analysed': 'Analiz tamamlandı',
+    'ai.requests.status.decided': 'Karar kaydedildi',
     'ai.feed.reasonLabel': 'Gerekçe',
     'ai.feed.responseLabel': 'Son yanıt',
     'ai.feed.awaitingResponse': 'Yapay zekâ yanıtı bekleniyor…',
@@ -1621,6 +1676,15 @@ const TRANSLATIONS = {
     'ai.feed.subtitle': '此处显示策略遥测与 AI 自主操作。聊天内容被放在仪表盘单独的聊天区。',
     'ai.feed.disabled': '开启 AI 模式后即可查看活动信息流。',
     'ai.feed.empty': '自主决策会在事件发生时实时显示在此处。',
+    'ai.requests.title': 'AI 决策',
+    'ai.requests.subtitle': '展示策略副驾对交易请求的最新审核与结果。',
+    'ai.requests.empty': 'AI 决策记录会显示在这里。',
+    'ai.requests.status.pending': '等待回复',
+    'ai.requests.status.responded': '已收到回复',
+    'ai.requests.status.accepted': '准许入场',
+    'ai.requests.status.rejected': '拒绝入场',
+    'ai.requests.status.analysed': '分析完成',
+    'ai.requests.status.decided': '决策已记录',
     'ai.feed.reasonLabel': '原因',
     'ai.feed.responseLabel': '最新回复',
     'ai.feed.awaitingResponse': '等待 AI 回复…',
@@ -5628,7 +5692,7 @@ function renderAiActivity(feed) {
   if (awaitingResponses > 0) {
     const changed = pendingAiResponseCount !== awaitingResponses;
     pendingAiResponseCount = awaitingResponses;
-    const delay = awaitingResponses > 2 ? 1600 : 1100;
+    const delay = awaitingResponses > 2 ? 900 : 600;
     if (changed || !tradesRefreshTimer) {
       scheduleTradesRefresh(delay);
     }
@@ -5640,6 +5704,205 @@ function renderAiActivity(feed) {
     // Ensure the newest activity remains visible when new entries arrive.
     scrollToBottom(aiActivityFeed, behavior);
   }
+}
+
+function renderAiRequests(requests) {
+  if (!aiRequestList) return;
+  aiRequestList.innerHTML = '';
+  if (!aiMode) {
+    const disabled = document.createElement('div');
+    disabled.className = 'ai-request-empty';
+    disabled.textContent = translate('ai.feed.disabled', 'Enable AI mode to view the activity feed.');
+    aiRequestList.append(disabled);
+    return;
+  }
+  const items = Array.isArray(requests) ? requests.slice(0, 30) : [];
+  if (items.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'ai-request-empty';
+    empty.textContent = translate(
+      'ai.requests.empty',
+      'AI decisions will appear here once the bot consults the strategy copilot.'
+    );
+    aiRequestList.append(empty);
+    return;
+  }
+  const fallbackStatusLabels = {
+    pending: 'Awaiting response',
+    responded: 'Response received',
+    accepted: 'Entry approved',
+    rejected: 'Entry rejected',
+    analysed: 'Analysis complete',
+    decided: 'Decision logged',
+  };
+  const toMillis = (value) => {
+    if (!value) return 0;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 0;
+    return date.getTime();
+  };
+  items.forEach((rawItem, index) => {
+    if (!rawItem || typeof rawItem !== 'object') return;
+    const item = rawItem;
+    const statusKey = (item.status || 'pending').toString().toLowerCase();
+    const statusLabel = translate(
+      `ai.requests.status.${statusKey}`,
+      fallbackStatusLabels[statusKey] || fallbackStatusLabels.pending
+    );
+    const symbol = (item.symbol || '').toString().toUpperCase();
+    const side = formatSideLabel(item.side || '');
+    const card = document.createElement('details');
+    card.className = 'ai-request-card';
+    card.dataset.status = statusKey;
+    card.setAttribute('role', 'listitem');
+    if (statusKey === 'pending' && index === 0) {
+      card.open = true;
+    }
+
+    const summary = document.createElement('summary');
+    const symbolEl = document.createElement('span');
+    symbolEl.className = 'ai-request-card__symbol';
+    symbolEl.textContent = symbol || '—';
+    summary.append(symbolEl);
+
+    if (side && side !== '—') {
+      const sideEl = document.createElement('span');
+      sideEl.className = 'ai-request-card__side';
+      sideEl.textContent = side;
+      summary.append(sideEl);
+    } else {
+      const spacer = document.createElement('span');
+      spacer.className = 'ai-request-card__side';
+      spacer.textContent = '—';
+      spacer.style.visibility = 'hidden';
+      summary.append(spacer);
+    }
+
+    const statusEl = document.createElement('span');
+    statusEl.className = `ai-request-card__status ${statusKey}`;
+    statusEl.textContent = statusLabel;
+    summary.append(statusEl);
+
+    const timestamp = item.updated_at || item.created_at;
+    const timeEl = document.createElement('span');
+    timeEl.className = 'ai-request-card__time';
+    timeEl.textContent = formatTimestamp(timestamp);
+    timeEl.dateTime = timestamp || '';
+    summary.append(timeEl);
+
+    card.append(summary);
+
+    const body = document.createElement('div');
+    body.className = 'ai-request-card__body';
+
+    const metrics = document.createElement('div');
+    metrics.className = 'ai-request-card__metrics';
+    const metricsParts = [];
+    const decisionText = (item.decision || '').toString().trim();
+    if (decisionText) {
+      metricsParts.push(`Decision: ${decisionText}`);
+    }
+    const takeValue = item.take;
+    if (typeof takeValue === 'boolean' && !decisionText) {
+      metricsParts.push(`Decision: ${takeValue ? 'Take trade' : 'Skip trade'}`);
+    }
+    const confidenceVal = Number(item.confidence);
+    if (Number.isFinite(confidenceVal)) {
+      metricsParts.push(`Confidence ${confidenceVal.toFixed(2)}`);
+    }
+    const sizeMult = Number(item.size_multiplier);
+    if (Number.isFinite(sizeMult)) {
+      metricsParts.push(`Size ×${sizeMult.toFixed(2)}`);
+    }
+    const slMult = Number(item.sl_multiplier);
+    if (Number.isFinite(slMult)) {
+      metricsParts.push(`SL ×${slMult.toFixed(2)}`);
+    }
+    const tpMult = Number(item.tp_multiplier);
+    if (Number.isFinite(tpMult)) {
+      metricsParts.push(`TP ×${tpMult.toFixed(2)}`);
+    }
+    metricsParts.forEach((text) => {
+      const chip = document.createElement('span');
+      chip.textContent = text;
+      metrics.append(chip);
+    });
+    if (metrics.children.length > 0) {
+      body.append(metrics);
+    }
+
+    const noteCandidates = [];
+    const pushNote = (value) => {
+      if (!value) return;
+      const text = value.toString().trim();
+      if (!text) return;
+      if (!noteCandidates.includes(text)) {
+        noteCandidates.push(text);
+      }
+    };
+    pushNote(item.decision_reason);
+    pushNote(item.decision_note);
+    pushNote(item.risk_note);
+    if (Array.isArray(item.notes)) {
+      item.notes.forEach((note) => pushNote(note));
+    }
+    if (noteCandidates.length > 0) {
+      const noteList = document.createElement('ul');
+      noteList.className = 'ai-request-card__notes';
+      noteCandidates.slice(0, 6).forEach((note) => {
+        const li = document.createElement('li');
+        li.textContent = note;
+        noteList.append(li);
+      });
+      body.append(noteList);
+    }
+
+    const events = Array.isArray(item.events) ? item.events.slice() : [];
+    if (events.length > 0) {
+      events.sort((a, b) => toMillis(a?.ts) - toMillis(b?.ts));
+      const timeline = document.createElement('ol');
+      timeline.className = 'ai-request-card__events';
+      events.forEach((event) => {
+        if (!event || typeof event !== 'object') return;
+        const eventItem = document.createElement('li');
+        const kind = (event.kind || 'info').toString().toLowerCase();
+        eventItem.className = `ai-request-card__event ai-request-card__event--${kind}`;
+        const header = document.createElement('div');
+        header.className = 'ai-request-card__event-header';
+        const kindLabel = document.createElement('span');
+        kindLabel.className = 'ai-request-card__event-kind';
+        kindLabel.textContent = kind.toUpperCase();
+        header.append(kindLabel);
+        const eventTime = document.createElement('span');
+        eventTime.className = 'ai-request-card__event-time';
+        eventTime.textContent = formatTimeShort(event.ts) || formatTimestamp(event.ts);
+        eventTime.dateTime = event.ts || '';
+        header.append(eventTime);
+        eventItem.append(header);
+        const headline = (event.headline || '').toString().trim();
+        if (headline) {
+          const headlineEl = document.createElement('div');
+          headlineEl.className = 'ai-request-card__event-headline';
+          headlineEl.textContent = headline;
+          eventItem.append(headlineEl);
+        }
+        const bodyText = (event.body || '').toString().trim();
+        if (bodyText) {
+          const bodyEl = document.createElement('div');
+          bodyEl.className = 'ai-request-card__event-body';
+          bodyEl.textContent = bodyText;
+          eventItem.append(bodyEl);
+        }
+        timeline.append(eventItem);
+      });
+      if (timeline.children.length > 0) {
+        body.append(timeline);
+      }
+    }
+
+    card.append(body);
+    aiRequestList.append(card);
+  });
 }
 
 function setAiHintMessage(message) {
@@ -7755,6 +8018,7 @@ async function loadTrades() {
     renderDecisionStats(data.decision_stats);
     renderPnlChart(data.history);
     renderAiBudget(data.ai_budget);
+    renderAiRequests(data.ai_requests);
     renderAiActivity(data.ai_activity);
     renderActivePositions(data.open);
     const proposals = Array.isArray(data.ai_trade_proposals) ? data.ai_trade_proposals : [];

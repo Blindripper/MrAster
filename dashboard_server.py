@@ -1136,6 +1136,169 @@ def _format_ts(ts: Optional[float]) -> Optional[str]:
         return None
 
 
+def _parse_activity_ts(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.fromtimestamp(float(value), tz=timezone.utc)
+        except Exception:
+            return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            return datetime.fromisoformat(text)
+        except ValueError:
+            return None
+    return None
+
+
+def _summarize_ai_requests(
+    ai_activity: List[Dict[str, Any]],
+    limit: int = 40,
+) -> List[Dict[str, Any]]:
+    requests: Dict[str, Dict[str, Any]] = {}
+    for entry in ai_activity:
+        if not isinstance(entry, dict):
+            continue
+        data = entry.get("data")
+        if not isinstance(data, dict):
+            continue
+        raw_request_id = data.get("request_id")
+        request_id = None
+        if isinstance(raw_request_id, str):
+            request_id = raw_request_id.strip() or None
+        elif raw_request_id is not None:
+            request_id = str(raw_request_id)
+        if not request_id:
+            continue
+        ts = _parse_activity_ts(entry.get("ts"))
+        ts_iso = ts.isoformat() if ts else None
+        record = requests.get(request_id)
+        if record is None:
+            record = {
+                "id": request_id,
+                "symbol": (data.get("symbol") or "").strip(),
+                "side": (data.get("side") or None),
+                "status": "pending",
+                "decision": None,
+                "take": None,
+                "confidence": None,
+                "size_multiplier": None,
+                "sl_multiplier": None,
+                "tp_multiplier": None,
+                "notes": [],
+                "decision_reason": None,
+                "decision_note": None,
+                "risk_note": None,
+                "events": [],
+                "created_at": ts_iso,
+                "updated_at": ts_iso,
+            }
+            requests[request_id] = record
+        if not record.get("symbol") and data.get("symbol"):
+            record["symbol"] = str(data.get("symbol") or "").strip()
+        if not record.get("side") and data.get("side"):
+            record["side"] = data.get("side")
+        if ts_iso:
+            record["updated_at"] = ts_iso
+            if record.get("created_at") is None:
+                record["created_at"] = ts_iso
+
+        kind = str(entry.get("kind") or "info").lower()
+        record["events"].append(
+            {
+                "kind": kind,
+                "headline": entry.get("headline"),
+                "body": entry.get("body"),
+                "ts": ts_iso,
+            }
+        )
+
+        numeric_fields = {
+            "confidence": "confidence",
+            "size_multiplier": "size_multiplier",
+            "sl_multiplier": "sl_multiplier",
+            "tp_multiplier": "tp_multiplier",
+        }
+        for source_key, target_key in numeric_fields.items():
+            value = data.get(source_key)
+            try:
+                numeric_value = float(value)
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(numeric_value):
+                continue
+            record[target_key] = numeric_value
+
+        text_fields = {
+            "decision_reason": "decision_reason",
+            "decision_note": "decision_note",
+            "risk_note": "risk_note",
+        }
+        for source_key, target_key in text_fields.items():
+            raw_value = data.get(source_key)
+            if isinstance(raw_value, str):
+                cleaned = " ".join(raw_value.split())
+                if cleaned:
+                    record[target_key] = cleaned
+
+        raw_notes = data.get("notes")
+        if isinstance(raw_notes, list):
+            for note in raw_notes:
+                if isinstance(note, str):
+                    cleaned = " ".join(note.split())
+                    if cleaned and cleaned not in record["notes"]:
+                        record["notes"].append(cleaned)
+
+        decision_label = data.get("decision")
+        if isinstance(decision_label, str) and decision_label.strip():
+            record["decision"] = decision_label.strip()
+
+        if kind == "query":
+            if record.get("status") not in {"accepted", "rejected"}:
+                record["status"] = "pending"
+        elif kind == "response":
+            if record.get("status") not in {"accepted", "rejected"}:
+                record["status"] = "responded"
+        elif kind == "decision":
+            take_value = data.get("take")
+            if isinstance(take_value, bool):
+                record["take"] = take_value
+            if record.get("decision") is None:
+                headline = entry.get("headline")
+                if isinstance(headline, str) and headline.strip():
+                    record["decision"] = headline.strip()
+            if record.get("take") is True:
+                record["status"] = "accepted"
+            elif record.get("take") is False:
+                record["status"] = "rejected"
+            else:
+                decision_text = (record.get("decision") or "").lower()
+                if "reject" in decision_text:
+                    record["status"] = "rejected"
+                elif any(keyword in decision_text for keyword in ("approve", "accept", "take")):
+                    record["status"] = "accepted"
+                else:
+                    record["status"] = "decided"
+        elif kind == "analysis" and record.get("status") == "pending":
+            record["status"] = "analysed"
+
+    summaries = list(requests.values())
+    summaries.sort(key=lambda item: item.get("updated_at") or "", reverse=True)
+    if limit > 0:
+        summaries = summaries[:limit]
+    for item in summaries:
+        notes = item.get("notes")
+        if isinstance(notes, list) and not notes:
+            item["notes"] = []
+    return summaries
+
+
 def _extract_trade_pnl(trade: Dict[str, Any]) -> float:
     if not isinstance(trade, dict):
         return 0.0
@@ -3335,6 +3498,7 @@ async def trades() -> Dict[str, Any]:
         ai_activity = list(ai_activity_raw[-120:])
     else:
         ai_activity = []
+    ai_requests = _summarize_ai_requests(ai_activity)
     proposals: List[Dict[str, Any]] = []
     raw_proposals = state.get("ai_trade_proposals")
     if isinstance(raw_proposals, list):
@@ -3359,6 +3523,7 @@ async def trades() -> Dict[str, Any]:
         "cumulative_stats": _cumulative_summary(state),
         "ai_budget": ai_budget,
         "ai_activity": ai_activity,
+        "ai_requests": ai_requests,
         "ai_trade_proposals": proposals,
     }
 
