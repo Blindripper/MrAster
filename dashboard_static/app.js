@@ -5805,20 +5805,26 @@ function collectAiRequestDetailData(item) {
   if (typeof takeValue === 'boolean' && !decisionText) {
     metricsParts.push(`Decision: ${takeValue ? 'Take trade' : 'Skip trade'}`);
   }
-  const confidenceVal = Number(safe.confidence);
-  if (Number.isFinite(confidenceVal)) {
+  const parseNumeric = (value) => {
+    if (value === null || value === undefined) return null;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  };
+
+  const confidenceVal = parseNumeric(safe.confidence);
+  if (confidenceVal !== null) {
     metricsParts.push(`Confidence ${confidenceVal.toFixed(2)}`);
   }
-  const sizeMult = Number(safe.size_multiplier);
-  if (Number.isFinite(sizeMult)) {
+  const sizeMult = parseNumeric(safe.size_multiplier);
+  if (sizeMult !== null) {
     metricsParts.push(`Size ×${sizeMult.toFixed(2)}`);
   }
-  const slMult = Number(safe.sl_multiplier);
-  if (Number.isFinite(slMult)) {
+  const slMult = parseNumeric(safe.sl_multiplier);
+  if (slMult !== null) {
     metricsParts.push(`SL ×${slMult.toFixed(2)}`);
   }
-  const tpMult = Number(safe.tp_multiplier);
-  if (Number.isFinite(tpMult)) {
+  const tpMult = parseNumeric(safe.tp_multiplier);
+  if (tpMult !== null) {
     metricsParts.push(`TP ×${tpMult.toFixed(2)}`);
   }
 
