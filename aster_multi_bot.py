@@ -5959,8 +5959,6 @@ class Bot:
                     merged.append(sym)
                     seen.add(sym)
                 syms = merged
-        syms_queue: deque[str] = deque(syms)
-
         pending_manual: Set[str] = set()
         queue = self.state.get("manual_trade_requests")
         if isinstance(queue, list):
@@ -6067,6 +6065,7 @@ class Bot:
         last_ai_drain = time.time()
         ai_flush_interval = 2.5
 
+        syms_queue: deque[str] = deque(syms)
         processed_symbols: Set[str] = set()
 
         while syms_queue:
