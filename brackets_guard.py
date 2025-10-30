@@ -8,12 +8,22 @@
 from __future__ import annotations
 import os, time, math, json, logging, hmac, hashlib
 from typing import Dict, Optional, Tuple, List
+from pathlib import Path
 from urllib.parse import urlencode
 
 import requests
 
-ASTER_STATE_FILE = os.getenv("ASTER_STATE_FILE", "aster_state.json")
-ASTER_QUEUE_FILE = os.getenv("ASTER_BRACKETS_QUEUE_FILE", "brackets_queue.json")
+_ROOT_DIR = Path(__file__).resolve().parent
+
+def _resolve_path(env_key: str, default_name: str) -> str:
+    raw = os.getenv(env_key, default_name) or default_name
+    candidate = Path(raw)
+    if not candidate.is_absolute():
+        candidate = _ROOT_DIR / candidate
+    return str(candidate)
+
+ASTER_STATE_FILE = _resolve_path("ASTER_STATE_FILE", "aster_state.json")
+ASTER_QUEUE_FILE = _resolve_path("ASTER_BRACKETS_QUEUE_FILE", "brackets_queue.json")
 
 def _envf(k: str, default: float) -> float:
     try:
