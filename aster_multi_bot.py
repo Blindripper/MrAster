@@ -2194,6 +2194,18 @@ class AITradeAdvisor:
             plan["explanation"] = self._ensure_bounds(explanation, fallback.get("explanation", ""))
         if isinstance(confidence, (int, float)):
             plan["confidence"] = clamp(float(confidence), 0.0, 1.0)
+        elif isinstance(confidence, str):
+            token = confidence.strip()
+            if token:
+                try:
+                    if token.endswith("%"):
+                        numeric = float(token.rstrip("% ")) / 100.0
+                    else:
+                        numeric = float(token)
+                except (TypeError, ValueError):
+                    numeric = None
+                else:
+                    plan["confidence"] = clamp(float(numeric), 0.0, 1.0)
 
         entry_px = (
             parsed.get("entry_price")
@@ -2311,7 +2323,7 @@ class AITradeAdvisor:
             "Analyze the provided indicator stats and sentinel hints to decide if the bot should execute the trade. "
             "Respond ONLY with a single minified JSON object (no prose or markdown). The object must include the keys: "
             "take (bool), decision, decision_reason, decision_note, size_multiplier, sl_multiplier, tp_multiplier, leverage, "
-            "risk_note, explanation, fasttp_overrides (object with enabled,min_r,ret1,ret3,snap_atr). "
+            "risk_note, explanation, confidence (0-1), fasttp_overrides (object with enabled,min_r,ret1,ret3,snap_atr). "
             "If take is true, also include numeric levels entry_price, stop_loss, take_profit. When declining, set take=false, "
             "decision=\"skip\", leave explanation as an empty string, and still populate the remaining required fields."
         )
