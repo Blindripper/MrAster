@@ -1234,7 +1234,7 @@ button:focus-visible {
   flex: 1;
   align-content: start;
   align-items: stretch;
-  max-width: var(--layout-max-width);
+  max-width: calc(var(--layout-max-width) + var(--page-inline-padding) * 2);
   margin-inline: auto;
   width: 100%;
 }
