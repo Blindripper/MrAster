@@ -5384,6 +5384,35 @@ class Bot:
                     return
                 if not bool(plan.get("take", False)):
                     ctx["ai_plan_origin"] = plan_origin
+                    reason_token = str(
+                        plan.get("decision_reason")
+                        or plan.get("decision_note")
+                        or ""
+                    ).strip().lower()
+                    if (
+                        self.ai_advisor
+                        and getattr(self.ai_advisor, "budget_learner", None)
+                        and not plan.get("ai_fallback")
+                        and reason_token
+                        and not reason_token.startswith("plan_")
+                        and reason_token not in {"budget_bias", "sentinel_block"}
+                    ):
+                        meta_payload = {
+                            "origin": plan_origin,
+                            "request_id": plan.get("request_id"),
+                            "note": plan.get("decision_note"),
+                            "reason": plan.get("decision_reason"),
+                            "confidence": plan.get("confidence"),
+                        }
+                        try:
+                            self.ai_advisor.budget_learner.record_skip(
+                                symbol,
+                                "trend",
+                                plan.get("decision_reason") or plan.get("decision_note"),
+                                meta_payload,
+                            )
+                        except Exception:
+                            pass
                     if self.decision_tracker:
                         self.decision_tracker.record_rejection("ai_trend_skip", force=True)
                     if isinstance(explanation, str) and explanation.strip():
@@ -5495,6 +5524,36 @@ class Bot:
                 ctx["ai_plan_origin"] = plan_origin
                 decision_summary["side"] = sig
                 if not bool(plan.get("take", True)):
+                    reason_token = str(
+                        plan.get("decision_reason")
+                        or plan.get("decision_note")
+                        or ""
+                    ).strip().lower()
+                    if (
+                        self.ai_advisor
+                        and getattr(self.ai_advisor, "budget_learner", None)
+                        and not plan.get("ai_fallback")
+                        and reason_token
+                        and not reason_token.startswith("plan_")
+                        and reason_token not in {"budget_bias", "sentinel_block"}
+                    ):
+                        meta_payload = {
+                            "origin": plan_origin,
+                            "request_id": plan.get("request_id"),
+                            "note": plan.get("decision_note"),
+                            "reason": plan.get("decision_reason"),
+                            "side": sig,
+                            "confidence": plan.get("confidence"),
+                        }
+                        try:
+                            self.ai_advisor.budget_learner.record_skip(
+                                symbol,
+                                "plan",
+                                plan.get("decision_reason") or plan.get("decision_note"),
+                                meta_payload,
+                            )
+                        except Exception:
+                            pass
                     if self.decision_tracker:
                         self.decision_tracker.record_rejection("ai_decision", force=True)
                     if isinstance(explanation, str) and explanation.strip():

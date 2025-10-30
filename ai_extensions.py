@@ -335,6 +335,19 @@ class BudgetLearner:
         )
         self._cost_window = 50
         self._min_samples = 4
+        self._skip_half_life = 3 * 3600  # roughly 3 hours
+        self._skip_penalty_cap = 5.0
+        self._skip_reason_cap = 6
+        self._skip_penalty_factor = 0.22
+        self._skip_penalty_increment = {
+            "plan": 0.7,
+            "trend": 0.55,
+            "postmortem": 0.25,
+        }
+        self._skip_limit_plan = 1.6
+        self._skip_limit_trend = 1.2
+        self._skip_limit_any = 2.4
+        self._skip_limit_soft = 0.6
 
     def record_cost(self, kind: str, cost: float, meta: Optional[Dict[str, Any]] = None) -> None:
         symbol = None
@@ -356,10 +369,30 @@ class BudgetLearner:
         pnl_r = float(trade.get("pnl_r", 0.0) or 0.0)
         sym_state = self._state.setdefault("symbols", {}).setdefault(
             symbol,
-            {"count": 0, "reward": 0.0, "cost": 0.0, "bias": 1.0, "updated": 0.0},
+            {
+                "count": 0,
+                "reward": 0.0,
+                "cost": 0.0,
+                "bias": 1.0,
+                "updated": 0.0,
+                "skip_weight": 0.0,
+                "skip_updated": 0.0,
+                "skip_reasons": {},
+                "skip_meta": [],
+            },
         )
         sym_state["count"] = int(sym_state.get("count", 0)) + 1
         sym_state["reward"] = float(sym_state.get("reward", 0.0) or 0.0) + pnl_r
+        skip_penalty = self._decayed_skip_penalty(sym_state, update=True)
+        if skip_penalty > 0:
+            # Successful trades reduce the severity of prior AI skips.
+            reduced = max(0.0, skip_penalty * 0.6)
+            if reduced <= 1e-4:
+                sym_state["skip_weight"] = 0.0
+                sym_state["skip_updated"] = 0.0
+            else:
+                sym_state["skip_weight"] = reduced
+                sym_state["skip_updated"] = time.time()
         sym_state["updated"] = time.time()
         sym_state["bias"] = self._compute_bias(sym_state)
         self._state.setdefault("symbols", {})[symbol] = sym_state
@@ -368,9 +401,26 @@ class BudgetLearner:
         if not symbol:
             return True
         sym_state = self._state.get("symbols", {}).get(symbol)
-        if not sym_state or sym_state.get("count", 0) < self._min_samples:
+        if not sym_state:
             return True
-        bias = float(sym_state.get("bias", 1.0) or 1.0)
+        if sym_state.get("count", 0) < self._min_samples:
+            skip_penalty = self._decayed_skip_penalty(sym_state, update=True)
+            if skip_penalty >= self._skip_limit_any:
+                return False
+            if kind == "trend" and skip_penalty >= self._skip_limit_trend:
+                return False
+            if kind != "trend" and skip_penalty >= self._skip_limit_plan:
+                return False
+            if skip_penalty < self._skip_limit_soft:
+                return True
+        skip_penalty = self._decayed_skip_penalty(sym_state, update=True)
+        if skip_penalty >= self._skip_limit_any:
+            return False
+        if kind == "trend" and skip_penalty >= self._skip_limit_trend:
+            return False
+        if kind != "trend" and skip_penalty >= self._skip_limit_plan:
+            return False
+        bias = float(self._compute_bias(sym_state) or sym_state.get("bias", 1.0) or 1.0)
         if bias >= 0.5:
             return True
         if kind == "postmortem":
@@ -381,11 +431,101 @@ class BudgetLearner:
         sym_state = self._state.get("symbols", {}).get(symbol)
         if not sym_state:
             return 1.0
-        return float(sym_state.get("bias", 1.0) or 1.0)
+        bias = self._compute_bias(sym_state)
+        sym_state["bias"] = bias
+        return float(bias or 1.0)
 
-    def _compute_bias(self, sym_state: Dict[str, Any]) -> float:
+    def record_skip(
+        self,
+        symbol: Optional[str],
+        kind: str,
+        reason: Optional[str],
+        meta: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        sym_key = symbol or "*"
+        sym_state = self._state.setdefault("symbols", {}).setdefault(
+            sym_key,
+            {
+                "count": 0,
+                "reward": 0.0,
+                "cost": 0.0,
+                "bias": 1.0,
+                "updated": 0.0,
+                "skip_weight": 0.0,
+                "skip_updated": 0.0,
+                "skip_reasons": {},
+                "skip_meta": [],
+            },
+        )
+        now = time.time()
+        current = self._decayed_skip_penalty(sym_state, now=now, update=True)
+        increment = float(self._skip_penalty_increment.get(kind, 0.5))
+        new_weight = min(self._skip_penalty_cap, current + increment)
+        sym_state["skip_weight"] = new_weight
+        sym_state["skip_updated"] = now
+        reason_token = str(reason or "unknown").strip()
+        if reason_token:
+            reasons: Dict[str, Dict[str, Any]] = sym_state.setdefault("skip_reasons", {})
+            reason_entry = reasons.get(reason_token)
+            if not isinstance(reason_entry, dict):
+                reason_entry = {"count": 0, "last": 0.0}
+            reason_entry["count"] = int(reason_entry.get("count", 0)) + 1
+            reason_entry["last"] = now
+            reasons[reason_token] = reason_entry
+            if len(reasons) > self._skip_reason_cap:
+                oldest = min(reasons.items(), key=lambda item: item[1].get("last", now))[0]
+                reasons.pop(oldest, None)
+        if meta:
+            sanitized: Dict[str, Any] = {}
+            for key, value in meta.items():
+                if isinstance(value, (str, int, float, bool)):
+                    sanitized[str(key)] = value
+            if reason_token:
+                sanitized.setdefault("reason", reason_token)
+            if sanitized:
+                sanitized["ts"] = now
+                history: List[Dict[str, Any]] = sym_state.setdefault("skip_meta", [])
+                history.append(sanitized)
+                if len(history) > 8:
+                    del history[: len(history) - 8]
+        sym_state["updated"] = now
+        sym_state["bias"] = self._compute_bias(sym_state, now=now)
+        self._state.setdefault("symbols", {})[sym_key] = sym_state
+
+    def _compute_bias(self, sym_state: Dict[str, Any], now: Optional[float] = None) -> float:
         reward = float(sym_state.get("reward", 0.0) or 0.0)
         count = max(1, int(sym_state.get("count", 0) or 0))
         avg = reward / count
-        bias = 1.0 + avg * 0.25
+        skip_penalty = self._decayed_skip_penalty(sym_state, now=now, update=True)
+        bias = 1.0 + avg * 0.25 - skip_penalty * self._skip_penalty_factor
         return max(0.1, min(1.6, bias))
+
+    def _decayed_skip_penalty(
+        self,
+        sym_state: Dict[str, Any],
+        *,
+        now: Optional[float] = None,
+        update: bool = False,
+    ) -> float:
+        weight = float(sym_state.get("skip_weight", 0.0) or 0.0)
+        if weight <= 1e-6:
+            if update and weight:
+                sym_state["skip_weight"] = 0.0
+                sym_state["skip_updated"] = 0.0
+            return 0.0
+        last = float(sym_state.get("skip_updated", 0.0) or 0.0)
+        now_val = float(now if now is not None else time.time())
+        elapsed = max(0.0, now_val - last) if last else 0.0
+        if elapsed <= 0 or self._skip_half_life <= 0:
+            decayed = weight
+        else:
+            decay_factor = pow(0.5, elapsed / float(self._skip_half_life))
+            decayed = weight * decay_factor
+        if update:
+            if decayed <= 1e-4:
+                sym_state["skip_weight"] = 0.0
+                sym_state["skip_updated"] = 0.0
+            else:
+                sym_state["skip_weight"] = decayed
+                sym_state["skip_updated"] = now_val
+        return decayed
