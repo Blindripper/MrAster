@@ -1485,7 +1485,7 @@ class AITradeAdvisor:
         else:
             plan_ready = self._apply_plan_overrides(fallback, parsed)
         if isinstance(plan_ready, dict) and request_id:
-            plan_ready.setdefault("request_id", request_id)
+            plan_ready["request_id"] = request_id
         if cache_key_ready:
             self._cache_store(str(cache_key_ready), plan_ready)
         self._recent_plan_store(throttle_key, plan_ready, now, delivered=False)
