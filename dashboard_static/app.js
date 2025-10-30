@@ -6577,7 +6577,51 @@ function setShareFeedback(message, { tone } = {}) {
 }
 
 function buildShareText(snapshot) {
-  const lines = ['Paste this Meme into your X Post. Simply drag and drop the Picture.'];
+  const totalTradesRaw = Number(
+    snapshot?.totalTrades ?? snapshot?.total_trades ?? snapshot?.count ?? 0,
+  );
+  const totalTrades = Number.isFinite(totalTradesRaw) ? totalTradesRaw : 0;
+
+  const totalPnlRaw = Number(snapshot?.totalPnl ?? snapshot?.total_pnl ?? 0);
+  const totalPnlFormatted = Number.isFinite(totalPnlRaw)
+    ? `${
+        totalPnlRaw < 0
+          ? '-'
+          : ''
+      }${Math.abs(totalPnlRaw).toLocaleString('de-DE', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })} USDT`
+    : '0,00 USDT';
+
+  let winRateRaw = snapshot?.winRate;
+  if (!Number.isFinite(winRateRaw)) {
+    winRateRaw = Number(snapshot?.win_rate);
+  }
+  if (!Number.isFinite(winRateRaw)) {
+    winRateRaw = 0;
+  }
+  const winRatePercent = (winRateRaw * 100).toFixed(1);
+
+  const funnyLines = [
+    'Bot says: still stretching before the next moon mission 🚀',
+    'Trading desk vibes: coffee in hand, charts on loop ☕📈',
+    'Status update: gains loading… please hold the line ⏳',
+    'Today’s alpha: patience is the ultimate leverage 🧘',
+    'Meanwhile, MrAster is polishing its crystal ball 🔮',
+  ];
+  const funnyIndex = Math.floor(Math.random() * funnyLines.length);
+  const funnyLine = funnyLines[funnyIndex] ?? funnyLines[0];
+
+  const lines = [
+    `Total Trades: ${totalTrades.toLocaleString()}`,
+    `Total PNL: ${totalPnlFormatted}`,
+    `Total Win Rate: ${winRatePercent}%`,
+    '',
+    funnyLine,
+    '',
+    'https://github.com/Blindripper/MrAster',
+  ];
 
   return lines.join('\n');
 }
@@ -6912,7 +6956,6 @@ function renderMemeComposer(windowRef, image, shareText) {
       }
     }
 
-    const shareHtml = escapeHtml(shareText ?? '').replace(/\r?\n/g, '<br />');
     container.innerHTML = `
       <div class="composer-image">
         ${
@@ -6924,7 +6967,6 @@ function renderMemeComposer(windowRef, image, shareText) {
       <div class="composer-caption">
         <h2>Post text</h2>
         <p class="composer-hint">Paste this Meme into your X Post. Simply drag and drop the Picture.</p>
-        <pre>${shareHtml}</pre>
       </div>
     `;
     container.classList.add('composer-ready');
