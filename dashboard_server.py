@@ -1192,6 +1192,7 @@ def _summarize_ai_requests(
                 key = request_id
                 record["id"] = request_id
                 record["request_id"] = request_id
+                requests[key] = record
         if record is None:
             record = {
                 "id": key,
