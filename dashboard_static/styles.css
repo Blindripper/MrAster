@@ -20,8 +20,8 @@
   --success: #4ade80;
   --grid-line: rgba(148, 163, 184, 0.08);
   --glass-border: linear-gradient(135deg, rgba(245, 196, 107, 0.28), rgba(95, 81, 237, 0.18));
-  --layout-max-width: 1200px;
-  --page-inline-padding: clamp(1.5rem, 5vw, 3.8rem);
+  --layout-max-width: 1320px;
+  --page-inline-padding: clamp(1.5rem, 4.5vw, 3.8rem);
 }
 
 body {
@@ -37,7 +37,7 @@ body {
   overflow-x: hidden;
   font-family: var(--font-sans);
   letter-spacing: -0.01em;
-  padding: 0 clamp(1.5rem, 6vw, 4rem) clamp(2rem, 6vw, 4rem);
+  padding: 0 clamp(1.5rem, 5vw, 4rem) clamp(2rem, 6vw, 4rem);
 }
 
 body::before,
