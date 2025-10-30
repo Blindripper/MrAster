@@ -3909,6 +3909,31 @@ function formatPercentField(field, digits = 2) {
   return { text: `${sign}${abs}%`, numeric };
 }
 
+function computeActivePositionsTotalPnl(positions) {
+  const entries = Array.isArray(positions) ? positions : [];
+  let total = 0;
+  let counted = 0;
+
+  entries.forEach((position) => {
+    const pnlField = pickNumericField(position, ACTIVE_POSITION_ALIASES.pnl || []);
+    if (Number.isFinite(pnlField.numeric)) {
+      total += pnlField.numeric;
+      counted += 1;
+    }
+  });
+
+  if (counted === 0) {
+    if (entries.length === 0) {
+      return { text: '0.00 USDT', tone: null };
+    }
+    return { text: '–', tone: null };
+  }
+
+  const formatted = formatSignedNumber(total, 2) ?? '0.00';
+  const tone = total > 0 ? 'profit' : total < 0 ? 'loss' : null;
+  return { text: `${formatted} USDT`, tone };
+}
+
 function formatPositionSize(value) {
   if (!Number.isFinite(value)) return '–';
   const abs = Math.abs(value);
@@ -3981,10 +4006,16 @@ function updateActivePositionsView() {
 
   const hasRows = sorted.length > 0;
 
+  const totalPnlInfo = computeActivePositionsTotalPnl(sorted);
+
   if (activePositionsModeLabel) {
-    activePositionsModeLabel.textContent = paperMode
-      ? translate('active.mode.paper', 'Paper mode')
-      : translate('active.mode', 'All modes');
+    activePositionsModeLabel.classList.remove('tone-profit', 'tone-loss');
+    activePositionsModeLabel.textContent = totalPnlInfo.text;
+    if (totalPnlInfo.tone === 'profit') {
+      activePositionsModeLabel.classList.add('tone-profit');
+    } else if (totalPnlInfo.tone === 'loss') {
+      activePositionsModeLabel.classList.add('tone-loss');
+    }
   }
   if (activePositionsEmpty) {
     activePositionsEmpty.innerHTML = paperMode
