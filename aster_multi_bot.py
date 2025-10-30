@@ -1171,11 +1171,17 @@ class AITradeAdvisor:
                 pass
 
     def _has_pending_capacity(self, key: str) -> bool:
-        if key in self._pending_requests:
-            return True
+        self._prune_pending_queue()
+        info = self._pending_requests.get(key)
+        if info:
+            future = info.get("future")
+            if isinstance(future, Future) and not future.done():
+                return False
+            if future is None and not info.get("cancelled"):
+                # Request is queued but not yet dispatched – wait for it to settle
+                return False
         if self._pending_limit <= 0:
             return True
-        self._prune_pending_queue()
         return len(self._pending_requests) < self._pending_limit
 
     def _register_pending_key(self, key: str) -> None:

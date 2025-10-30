@@ -1174,16 +1174,30 @@ def _summarize_ai_requests(
             request_id = raw_request_id.strip() or None
         elif raw_request_id is not None:
             request_id = str(raw_request_id)
-        if not request_id:
+        symbol_hint = str(data.get("symbol") or "").strip().upper()
+        side_hint = str(data.get("side") or "").strip().upper()
+        fallback_key = None
+        if symbol_hint:
+            fallback_side = side_hint or "UNKNOWN"
+            fallback_key = f"{symbol_hint}::{fallback_side}"
+
+        key = request_id or fallback_key
+        if not key:
             continue
-        ts = _parse_activity_ts(entry.get("ts"))
-        ts_iso = ts.isoformat() if ts else None
-        record = requests.get(request_id)
+        record = requests.get(key)
+        if record is None and request_id and fallback_key and fallback_key in requests:
+            # Merge historical placeholder keyed by symbol into the resolved request id
+            record = requests.pop(fallback_key)
+            if record is not None:
+                key = request_id
+                record["id"] = request_id
+                record["request_id"] = request_id
         if record is None:
             record = {
-                "id": request_id,
-                "symbol": (data.get("symbol") or "").strip(),
-                "side": (data.get("side") or None),
+                "id": key,
+                "request_id": request_id,
+                "symbol": symbol_hint,
+                "side": side_hint or None,
                 "status": "pending",
                 "decision": None,
                 "take": None,
@@ -1196,14 +1210,19 @@ def _summarize_ai_requests(
                 "decision_note": None,
                 "risk_note": None,
                 "events": [],
-                "created_at": ts_iso,
-                "updated_at": ts_iso,
+                "created_at": None,
+                "updated_at": None,
             }
-            requests[request_id] = record
-        if not record.get("symbol") and data.get("symbol"):
-            record["symbol"] = str(data.get("symbol") or "").strip()
-        if not record.get("side") and data.get("side"):
-            record["side"] = data.get("side")
+            requests[key] = record
+        else:
+            if request_id and not record.get("request_id"):
+                record["request_id"] = request_id
+        if symbol_hint and not record.get("symbol"):
+            record["symbol"] = symbol_hint
+        if side_hint and not record.get("side"):
+            record["side"] = side_hint
+        ts = _parse_activity_ts(entry.get("ts"))
+        ts_iso = ts.isoformat() if ts else None
         if ts_iso:
             record["updated_at"] = ts_iso
             if record.get("created_at") is None:
