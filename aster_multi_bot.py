@@ -4315,11 +4315,11 @@ class Bot:
     def __init__(self):
         if not API_KEY:
             log.warning(
-                "ASTER_API_KEY ist nicht gesetzt – ohne Schlüssel können keine Live-Trades ausgeführt werden."
+                "ASTER_API_KEY is not set—live trades cannot be executed without credentials."
             )
         if AI_MODE_ENABLED and not OPENAI_API_KEY:
             log.warning(
-                "AI-Modus ist aktiviert, aber ASTER_OPENAI_API_KEY fehlt – KI-Funktionen bleiben deaktiviert."
+                "AI mode is enabled, but ASTER_OPENAI_API_KEY is missing—AI features remain disabled."
             )
         self.exchange = Exchange(BASE, API_KEY, API_SECRET, RECV_WINDOW)
         self.universe = SymbolUniverse(self.exchange, QUOTE, UNIVERSE_MAX, EXCLUDE, UNIVERSE_ROTATE, include=INCLUDE)
@@ -4408,7 +4408,7 @@ class Bot:
         remaining_budget = self.budget_tracker.remaining()
         if self.budget_tracker.limit > 0 and remaining_budget is not None and remaining_budget <= 0:
             log.warning(
-                "AI-Tagesbudget von %.2f USD ist bereits ausgeschöpft – neue KI-Anfragen werden blockiert.",
+                "Daily AI budget of %.2f USD is already exhausted—blocking new AI requests.",
                 self.budget_tracker.limit,
             )
         sentinel_active = SENTINEL_ENABLED or AI_MODE_ENABLED
