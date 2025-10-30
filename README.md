@@ -97,6 +97,8 @@
 - **Performance analytics**: PnL charts, trade history, aggregated trade summaries, and market heat-strips update continuously.
 - **AI copilots**: review explanations, monitor budget usage, and chat with the advisor directly in the dashboard.
 - **Sentinel awareness**: event warnings, budget guards, and AI status surface instantly from the state file.
+- **AI decisions log**: a dedicated hero card chronicles every copilot consultation so you can audit TAKE/SKIP calls and
+  overrides without leaving the dashboard.
 
 ## 🌍 Multilingual Dashboard
 
@@ -125,6 +127,21 @@ When you toggle the dashboard to **AI** (or set `ASTER_MODE=ai` / `ASTER_AI_MODE
 6. **Execution & telemetry** – Approved trades inherit AI adjustments and persist rationale, sentinel state, and budget snapshots in `aster_state.json` for dashboard visualization and post-mortems.
 
 > **Learning loop.** The `note_exit` hook updates bandit matrices, the alpha model, and AI learning stores after every closed trade, with state serialized through `to_dict`/`from_dict` so progress survives restarts.
+
+### AI Decisions Feed & Tag Legend
+
+The **AI decisions** card mirrors the autonomous feed and surfaces the most recent copilot requests without opening the modal.
+Each entry includes:
+
+- **Symbol & side** – The instrument under review and whether the advisor evaluated a long or short idea.
+- **Status pill** – Color-coded tags that map to the advisor lifecycle:
+  - `Pending` (grey): request queued—awaiting an LLM response.
+  - `Response received` (indigo): analysis returned, but the policy is still evaluating execution.
+  - `Analysis complete` / `Decision logged` (blue): qualitative output recorded while guardrails finalise the action.
+  - `Entry approved` (green): the copilot authorised the trade and handed back any size/SL/TP overrides.
+  - `Entry rejected` (red): the copilot or guardrail vetoed the setup; the headline summarises the block.
+- **Metric chips** – Inline badges extracted from the JSON payload (`Decision: TAKE`, `Confidence 0.82`, `Size ×1.20`, `SL ×0.85`, `TP ×1.35`, etc.) so overrides are obvious at a glance.
+- **Notes excerpt** – The top rationale, risk note, or sentinel callout trimmed for readability. Click the card to open the modal for the full event timeline and supporting telemetry.
 
 ### Learning Loops & Self-Tuning
 
