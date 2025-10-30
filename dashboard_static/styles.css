@@ -3204,7 +3204,7 @@ body.pro-mode .log-stream {
   display: flex;
   flex-direction: column;
   gap: 0.8rem;
-  max-height: clamp(240px, 40vh, 400px);
+  max-height: clamp(260px, 42vh, 420px);
   overflow-y: auto;
   padding: 0.35rem 0.45rem 0.35rem 0;
   scrollbar-width: thin;
