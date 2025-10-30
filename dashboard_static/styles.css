@@ -831,7 +831,7 @@ body.paper-mode .hero-paper-toggle span {
   grid-template-columns: repeat(4, minmax(220px, 1fr));
   gap: 1.4rem;
   align-items: stretch;
-  grid-auto-rows: 1fr;
+  grid-auto-rows: minmax(0, auto);
 }
 
 .hero-overview-grid > .card {
