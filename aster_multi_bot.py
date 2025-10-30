@@ -989,6 +989,19 @@ class AITradeAdvisor:
         )
         self.budget_learner = BudgetLearner(self.state or {})
 
+    def _new_request_id(self, kind: str, throttle_key: Optional[str] = None) -> str:
+        prefix_bits: List[str] = []
+        kind_part = re.sub(r"[^a-z0-9]+", "-", (kind or "").strip().lower())
+        if kind_part:
+            prefix_bits.append(kind_part[:16])
+        if throttle_key:
+            throttle_part = re.sub(r"[^a-z0-9]+", "-", throttle_key.strip().lower())
+            if throttle_part:
+                prefix_bits.append(throttle_part[-24:])
+        prefix = "::".join(prefix_bits) if prefix_bits else "request"
+        token = uuid.uuid4().hex[:12]
+        return f"{prefix}:{token}"
+
     def _load_persistent_state(self) -> None:
         if not self.state:
             return
@@ -1066,10 +1079,18 @@ class AITradeAdvisor:
             estimate = 0.0018
         try:
             user_payload = payload or {}
-            user_prompt = json.dumps(user_payload, sort_keys=True, separators=(",", ":"))
         except Exception:
             return None
-        meta: Dict[str, Any] = {}
+        if not isinstance(user_payload, dict):
+            user_payload = {"payload": payload}
+        request_id = self._new_request_id(kind, kind)
+        payload_with_id = dict(user_payload)
+        payload_with_id["request_id"] = request_id
+        try:
+            user_prompt = json.dumps(payload_with_id, sort_keys=True, separators=(",", ":"))
+        except Exception:
+            return None
+        meta: Dict[str, Any] = {"request_id": request_id}
         symbol_hint = user_payload.get("symbol") if isinstance(user_payload, dict) else None
         if symbol_hint:
             meta["symbol"] = symbol_hint
@@ -1083,7 +1104,10 @@ class AITradeAdvisor:
         if not response:
             return None
         parsed = self._parse_structured(response)
-        return parsed if isinstance(parsed, dict) else None
+        if isinstance(parsed, dict):
+            parsed.setdefault("request_id", request_id)
+            return parsed
+        return None
 
     def inject_context_features(self, symbol: str, ctx: Dict[str, Any]) -> None:
         if not isinstance(ctx, dict):
@@ -1251,6 +1275,7 @@ class AITradeAdvisor:
         *,
         kind: str,
         budget_estimate: float,
+        request_meta: Optional[Dict[str, Any]] = None,
     ) -> Optional[Future]:
         if not self._executor:
             return None
@@ -1260,6 +1285,7 @@ class AITradeAdvisor:
             user_prompt,
             kind=kind,
             budget_estimate=budget_estimate,
+            request_meta=request_meta,
         )
 
     def _notify_ready(self, throttle_key: str) -> None:
@@ -1321,6 +1347,7 @@ class AITradeAdvisor:
                         info.get("user_prompt", ""),
                         kind=kind,
                         budget_estimate=float(info.get("estimate", 0.0) or 0.0),
+                        request_meta=info.get("request_meta"),
                     )
                     if future:
                         info["future"] = future
@@ -1394,6 +1421,21 @@ class AITradeAdvisor:
         now = now if now is not None else time.time()
         meta = info or {}
         cache_key_ready = meta.get("cache_key") if isinstance(meta, dict) else None
+        request_id: Optional[str] = None
+        if isinstance(meta, dict):
+            raw_id = meta.get("request_id")
+            if isinstance(raw_id, str):
+                request_id = raw_id.strip() or None
+            elif raw_id is not None:
+                request_id = str(raw_id)
+        if not request_id and isinstance(fallback, dict):
+            fallback_id = fallback.get("request_id")
+            if isinstance(fallback_id, str):
+                request_id = fallback_id.strip() or None
+            elif fallback_id is not None:
+                request_id = str(fallback_id)
+        if request_id and isinstance(fallback, dict):
+            fallback.setdefault("request_id", request_id)
         if not response_text:
             self._recent_plan_store(throttle_key, fallback, now)
             return fallback
@@ -1420,6 +1462,20 @@ class AITradeAdvisor:
                         request_payload = None
 
         kind = str(meta.get("kind", "plan")) if isinstance(meta, dict) else "plan"
+        request_id = None
+        if isinstance(meta, dict):
+            raw_id = meta.get("request_id")
+            if isinstance(raw_id, str):
+                request_id = raw_id.strip() or None
+            elif raw_id is not None:
+                request_id = str(raw_id)
+        if not request_id and isinstance(request_payload, dict):
+            payload_id = request_payload.get("request_id")
+            if isinstance(payload_id, str):
+                request_id = payload_id.strip() or None
+            elif payload_id is not None:
+                request_id = str(payload_id)
+
         if kind == "trend":
             plan_ready = self._apply_trend_plan_overrides(
                 fallback,
@@ -1428,6 +1484,8 @@ class AITradeAdvisor:
             )
         else:
             plan_ready = self._apply_plan_overrides(fallback, parsed)
+        if isinstance(plan_ready, dict) and request_id:
+            plan_ready.setdefault("request_id", request_id)
         if cache_key_ready:
             self._cache_store(str(cache_key_ready), plan_ready)
         self._recent_plan_store(throttle_key, plan_ready, now, delivered=False)
@@ -1566,7 +1624,10 @@ class AITradeAdvisor:
         return copy.deepcopy(self._cache[key])
 
     def _cache_store(self, key: str, value: Dict[str, Any]) -> None:
-        self._cache[key] = copy.deepcopy(value)
+        clean_value = copy.deepcopy(value)
+        if isinstance(clean_value, dict):
+            clean_value.pop("request_id", None)
+        self._cache[key] = clean_value
         self._cache.move_to_end(key)
         while len(self._cache) > self.CACHE_LIMIT:
             self._cache.popitem(last=False)
@@ -1598,7 +1659,10 @@ class AITradeAdvisor:
     ) -> None:
         if now is None:
             now = time.time()
-        self._recent_plans[key] = (now, copy.deepcopy(plan), bool(delivered))
+        plan_copy = copy.deepcopy(plan)
+        if isinstance(plan_copy, dict):
+            plan_copy.pop("request_id", None)
+        self._recent_plans[key] = (now, plan_copy, bool(delivered))
         self._recent_plans.move_to_end(key)
         while len(self._recent_plans) > self.RECENT_PLAN_LIMIT:
             self._recent_plans.popitem(last=False)
@@ -1697,6 +1761,26 @@ class AITradeAdvisor:
                 {"role": "user", "content": user_prompt},
             ],
         }
+
+        request_id_value: Optional[str] = None
+        if isinstance(request_meta, dict):
+            raw_id = request_meta.get("request_id")
+            if isinstance(raw_id, str):
+                request_id_value = raw_id.strip() or None
+            elif raw_id is not None:
+                request_id_value = str(raw_id)
+        if request_id_value:
+            payload["messages"].insert(
+                1,
+                {
+                    "role": "system",
+                    "content": (
+                        f"The request_id for this task is '{request_id_value}'. "
+                        "Return JSON that includes the exact same request_id field."
+                    ),
+                },
+            )
+            payload.setdefault("metadata", {})["request_id"] = request_id_value
 
         def _send_chat(p: Dict[str, Any]) -> requests.Response:
             return requests.post(
@@ -2274,20 +2358,30 @@ class AITradeAdvisor:
             user_payload["sentinel"] = sentinel_payload
         if constraints:
             user_payload["constraints"] = constraints
-        user_prompt = json.dumps(user_payload, sort_keys=True, separators=(",", ":"))
+        base_prompt = json.dumps(user_payload, sort_keys=True, separators=(",", ":"))
         cache_key = self._cache_key("plan", system_prompt, user_payload)
         cached_plan = self._cache_lookup(cache_key)
         if cached_plan is not None:
             self._recent_plan_store(throttle_key, cached_plan, now)
             return cached_plan
-        estimate = self._estimate_prospective_cost(system_prompt, user_prompt)
+        estimate = self._estimate_prospective_cost(system_prompt, base_prompt)
         if not async_mode or not self._executor:
+            request_id = self._new_request_id("plan", throttle_key)
+            payload_with_id = dict(user_payload)
+            payload_with_id["request_id"] = request_id
+            try:
+                user_prompt = json.dumps(payload_with_id, sort_keys=True, separators=(",", ":"))
+            except Exception:
+                self._recent_plan_store(throttle_key, fallback, now)
+                return fallback
+            fallback["request_id"] = request_id
+            meta = {"symbol": symbol, "context": "plan", "request_id": request_id}
             response = self._chat(
                 system_prompt,
                 user_prompt,
                 kind="plan",
                 budget_estimate=estimate,
-                request_meta={"symbol": symbol, "context": "plan"},
+                request_meta=meta,
             )
             if not response:
                 self._recent_plan_store(throttle_key, fallback, now)
@@ -2296,7 +2390,9 @@ class AITradeAdvisor:
             if not isinstance(parsed, dict):
                 self._recent_plan_store(throttle_key, fallback, now)
                 return fallback
+            parsed.setdefault("request_id", request_id)
             plan = self._apply_plan_overrides(fallback, parsed)
+            plan.setdefault("request_id", request_id)
             self._cache_store(cache_key, plan)
             self._recent_plan_store(throttle_key, plan, now)
             return plan
@@ -2304,6 +2400,17 @@ class AITradeAdvisor:
         if not self.budget.can_spend(estimate, kind="plan", model=self.model):
             self._recent_plan_store(throttle_key, fallback, now)
             return fallback
+
+        request_id = self._new_request_id("plan", throttle_key)
+        payload_with_id = dict(user_payload)
+        payload_with_id["request_id"] = request_id
+        try:
+            user_prompt = json.dumps(payload_with_id, sort_keys=True, separators=(",", ":"))
+        except Exception:
+            self._recent_plan_store(throttle_key, fallback, now)
+            return fallback
+        meta = {"symbol": symbol, "context": "plan", "request_id": request_id}
+        fallback["request_id"] = request_id
 
         cooldown_blocked = AI_GLOBAL_COOLDOWN > 0 and (now - self._last_global_request) < AI_GLOBAL_COOLDOWN
         if cooldown_blocked or self._active_pending() >= AI_CONCURRENCY:
@@ -2321,7 +2428,7 @@ class AITradeAdvisor:
                 "fallback": fallback,
                 "system_prompt": system_prompt,
                 "user_prompt": user_prompt,
-                "user_payload": user_payload,
+                "user_payload": payload_with_id,
                 "cache_key": cache_key,
                 "kind": "plan",
                 "estimate": estimate,
@@ -2329,14 +2436,16 @@ class AITradeAdvisor:
                 "ready_after": now + max(0.5, AI_GLOBAL_COOLDOWN or 0.5),
                 "note": "Queued for AI planning",
                 "notified": False,
+                "request_meta": meta,
             }
             stub = self._pending_stub(
                 fallback,
                 "plan_pending",
                 "Queued for AI planning",
                 throttle_key=throttle_key,
+                request_id=request_id,
             )
-            pending_info["request_id"] = stub.get("request_id")
+            pending_info["request_id"] = request_id
             self._pending_requests[throttle_key] = pending_info
             self._register_pending_key(throttle_key)
             return stub
@@ -2356,6 +2465,7 @@ class AITradeAdvisor:
             user_prompt,
             kind="plan",
             budget_estimate=estimate,
+            request_meta=meta,
         )
         if not future:
             self._recent_plan_store(throttle_key, fallback, now)
@@ -2365,13 +2475,15 @@ class AITradeAdvisor:
             "fallback": fallback,
             "system_prompt": system_prompt,
             "user_prompt": user_prompt,
-            "user_payload": user_payload,
+            "user_payload": payload_with_id,
             "cache_key": cache_key,
             "kind": "plan",
             "estimate": estimate,
             "queued_at": now,
             "dispatched_at": now,
             "notified": False,
+            "request_meta": meta,
+            "request_id": request_id,
         }
         self._register_pending_key(throttle_key)
         self._last_global_request = now
@@ -2381,8 +2493,8 @@ class AITradeAdvisor:
             "plan_pending",
             "Waiting for AI plan response",
             throttle_key=throttle_key,
+            request_id=request_id,
         )
-        self._pending_requests[throttle_key]["request_id"] = stub.get("request_id")
         return stub
 
     def plan_trend_trade(
@@ -2534,20 +2646,30 @@ class AITradeAdvisor:
             user_payload["sentinel"] = sentinel_payload
         if constraints:
             user_payload["constraints"] = constraints
-        user_prompt = json.dumps(user_payload, sort_keys=True, separators=(",", ":"))
+        base_prompt = json.dumps(user_payload, sort_keys=True, separators=(",", ":"))
         cache_key = self._cache_key("trend", system_prompt, user_payload)
         cached_plan = self._cache_lookup(cache_key)
         if cached_plan is not None:
             self._recent_plan_store(throttle_key, cached_plan, now)
             return cached_plan
-        estimate = self._estimate_prospective_cost(system_prompt, user_prompt)
+        estimate = self._estimate_prospective_cost(system_prompt, base_prompt)
         if not async_mode or not self._executor:
+            request_id = self._new_request_id("trend", throttle_key)
+            payload_with_id = dict(user_payload)
+            payload_with_id["request_id"] = request_id
+            try:
+                user_prompt = json.dumps(payload_with_id, sort_keys=True, separators=(",", ":"))
+            except Exception:
+                self._recent_plan_store(throttle_key, fallback, now)
+                return fallback
+            fallback["request_id"] = request_id
+            meta = {"symbol": symbol, "context": "trend", "request_id": request_id}
             response = self._chat(
                 system_prompt,
                 user_prompt,
                 kind="trend",
                 budget_estimate=estimate,
-                request_meta={"symbol": symbol, "context": "trend"},
+                request_meta=meta,
             )
             if not response:
                 self._recent_plan_store(throttle_key, fallback, now)
@@ -2556,11 +2678,13 @@ class AITradeAdvisor:
             if not isinstance(parsed, dict):
                 self._recent_plan_store(throttle_key, fallback, now)
                 return fallback
+            parsed.setdefault("request_id", request_id)
             plan = self._apply_trend_plan_overrides(
                 fallback,
                 parsed,
-                request_payload=user_payload,
+                request_payload=payload_with_id,
             )
+            plan.setdefault("request_id", request_id)
             self._cache_store(cache_key, plan)
             self._recent_plan_store(throttle_key, plan, now)
             return plan
@@ -2568,6 +2692,17 @@ class AITradeAdvisor:
         if not self.budget.can_spend(estimate, kind="trend", model=self.model):
             self._recent_plan_store(throttle_key, fallback, now)
             return fallback
+
+        request_id = self._new_request_id("trend", throttle_key)
+        payload_with_id = dict(user_payload)
+        payload_with_id["request_id"] = request_id
+        try:
+            user_prompt = json.dumps(payload_with_id, sort_keys=True, separators=(",", ":"))
+        except Exception:
+            self._recent_plan_store(throttle_key, fallback, now)
+            return fallback
+        meta = {"symbol": symbol, "context": "trend", "request_id": request_id}
+        fallback["request_id"] = request_id
 
         cooldown_blocked = AI_GLOBAL_COOLDOWN > 0 and (now - self._last_global_request) < AI_GLOBAL_COOLDOWN
         if cooldown_blocked or self._active_pending() >= AI_CONCURRENCY:
@@ -2585,7 +2720,7 @@ class AITradeAdvisor:
                 "fallback": fallback,
                 "system_prompt": system_prompt,
                 "user_prompt": user_prompt,
-                "user_payload": user_payload,
+                "user_payload": payload_with_id,
                 "cache_key": cache_key,
                 "kind": "trend",
                 "estimate": estimate,
@@ -2593,14 +2728,16 @@ class AITradeAdvisor:
                 "ready_after": now + max(0.5, AI_GLOBAL_COOLDOWN or 0.5),
                 "note": "Queued for AI planning",
                 "notified": False,
+                "request_meta": meta,
             }
             stub = self._pending_stub(
                 fallback,
                 "trend_pending",
                 "Queued for AI planning",
                 throttle_key=throttle_key,
+                request_id=request_id,
             )
-            pending_info["request_id"] = stub.get("request_id")
+            pending_info["request_id"] = request_id
             self._pending_requests[throttle_key] = pending_info
             self._register_pending_key(throttle_key)
             return stub
@@ -2620,6 +2757,7 @@ class AITradeAdvisor:
             user_prompt,
             kind="trend",
             budget_estimate=estimate,
+            request_meta=meta,
         )
         if not future:
             self._recent_plan_store(throttle_key, fallback, now)
@@ -2629,13 +2767,15 @@ class AITradeAdvisor:
             "fallback": fallback,
             "system_prompt": system_prompt,
             "user_prompt": user_prompt,
-            "user_payload": user_payload,
+            "user_payload": payload_with_id,
             "cache_key": cache_key,
             "kind": "trend",
             "estimate": estimate,
             "queued_at": now,
             "dispatched_at": now,
             "notified": False,
+            "request_meta": meta,
+            "request_id": request_id,
         }
         self._register_pending_key(throttle_key)
         self._last_global_request = now
@@ -2645,8 +2785,8 @@ class AITradeAdvisor:
             "trend_pending",
             "Waiting for AI plan response",
             throttle_key=throttle_key,
+            request_id=request_id,
         )
-        self._pending_requests[throttle_key]["request_id"] = stub.get("request_id")
         return stub
 
     def generate_postmortem(self, trade: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -2676,18 +2816,24 @@ class AITradeAdvisor:
             "You are a trading coach. Analyse the trade JSON and respond with a 40-70 word paragraph summarising what went right, "
             "what could improve, and one actionable tweak."
         )
-        user_prompt = json.dumps(trade, sort_keys=True, separators=(",", ":"))
+        request_id = self._new_request_id("postmortem", str(symbol or ""))
+        payload_with_id = dict(trade)
+        payload_with_id["request_id"] = request_id
+        fallback["request_id"] = request_id
+        user_prompt = json.dumps(payload_with_id, sort_keys=True, separators=(",", ":"))
+        meta = {"symbol": symbol, "context": "postmortem", "request_id": request_id}
         response = self._chat(
             system_prompt,
             user_prompt,
             kind="postmortem",
-            request_meta={"symbol": symbol, "context": "postmortem"},
+            request_meta=meta,
         )
         labels: List[str] = []
         feature_scores: Dict[str, float] = {}
         if response:
             structured = self._parse_structured(response)
             if isinstance(structured, dict):
+                structured.setdefault("request_id", request_id)
                 analysis = structured.get("analysis") or structured.get("summary")
                 if isinstance(analysis, str) and analysis.strip():
                     fallback["analysis"] = self._ensure_bounds(analysis, fallback_text)
