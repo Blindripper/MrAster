@@ -5577,14 +5577,26 @@ function renderAiActivity(feed) {
     responseLookup.set(requestId, list);
   });
   let awaitingResponses = 0;
+  const consumedRequestIds = new Set();
   items.forEach((raw, index) => {
     const item = raw || {};
-    const wrapper = document.createElement('div');
-    wrapper.className = 'ai-activity-item';
-
     const rawKind = (item.kind || 'info').toString();
     const normalizedKind = rawKind.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'info';
     const kindText = rawKind.toUpperCase();
+    const itemData = item.data && typeof item.data === 'object' ? item.data : null;
+    let requestId = '';
+    if (itemData && Object.prototype.hasOwnProperty.call(itemData, 'request_id')) {
+      const rawRequestId = itemData.request_id;
+      if (rawRequestId !== undefined && rawRequestId !== null) {
+        requestId = String(rawRequestId).trim();
+      }
+    }
+    if (requestId && normalizedKind !== 'query' && consumedRequestIds.has(requestId)) {
+      return;
+    }
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'ai-activity-item';
 
     const timeline = document.createElement('div');
     timeline.className = 'ai-activity-timeline';
@@ -5614,7 +5626,6 @@ function renderAiActivity(feed) {
       body.append(bodyText);
     }
 
-    const itemData = item.data && typeof item.data === 'object' ? item.data : null;
     const noteInfo = extractDecisionNotes(itemData);
     let consumedNotes = 0;
     let reasonDetailRendered = false;
@@ -5664,10 +5675,6 @@ function renderAiActivity(feed) {
         body.append(queryList);
         reasonDetailRendered = true;
       }
-      const requestId =
-        itemData && Object.prototype.hasOwnProperty.call(itemData, 'request_id')
-          ? String(itemData.request_id ?? '').trim()
-          : '';
       if (requestId) {
         const candidates = (responseLookup.get(requestId) || []).filter((entry) => entry.index > index);
         if (candidates.length > 0) {
@@ -5759,6 +5766,10 @@ function renderAiActivity(feed) {
 
     wrapper.append(timeline, body);
     aiActivityFeed.append(wrapper);
+
+    if (requestId && normalizedKind === 'query') {
+      consumedRequestIds.add(requestId);
+    }
   });
   if (awaitingResponses > 0) {
     const changed = pendingAiResponseCount !== awaitingResponses;
