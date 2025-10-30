@@ -4540,6 +4540,36 @@ class Bot:
             self._ai_priority_keys.clear()
         return items
 
+    def _drain_ai_ready_queue(self, *, clear_event: bool = False) -> None:
+        if clear_event:
+            self._ai_wakeup_event.clear()
+        if not self.ai_advisor:
+            return
+
+        ready_plans: List[Tuple[str, Dict[str, Any]]] = []
+        try:
+            ready_plans = self.ai_advisor.flush_pending()
+        except Exception as exc:
+            log.debug(f"pending flush failed: {exc}")
+            ready_plans = []
+
+        manual_dirty_before = self._manual_state_dirty
+        try:
+            self._resume_ai_pending_manual_requests()
+        except Exception as exc:
+            log.debug(f"manual resume failed: {exc}")
+
+        if ready_plans:
+            for throttle_key, plan in ready_plans:
+                try:
+                    self._handle_ai_ready_plan(throttle_key, plan)
+                except Exception as exc:
+                    log.debug(f"handle ready plan fail {throttle_key}: {exc}")
+        elif not manual_dirty_before and self._manual_state_dirty:
+            # ensure we propagate manual state updates triggered by resume even
+            # when no explicit plan bundle was returned from flush_pending()
+            log.debug("manual queue resumed from AI cache")
+
     def _handle_ai_ready_plan(self, throttle_key: str, plan: Dict[str, Any]) -> None:
         if not isinstance(throttle_key, str) or not throttle_key:
             return
@@ -5902,23 +5932,7 @@ class Bot:
                     self._quote_volume_cooldown_dirty = True
         self._ai_wakeup_event.clear()
         self._refresh_manual_requests()
-        ready_plans: List[Tuple[str, Dict[str, Any]]] = []
-        if self.ai_advisor:
-            try:
-                ready_plans = self.ai_advisor.flush_pending()
-            except Exception as exc:
-                log.debug(f"pending flush failed: {exc}")
-                ready_plans = []
-            try:
-                self._resume_ai_pending_manual_requests()
-            except Exception as exc:
-                log.debug(f"manual resume failed: {exc}")
-            if ready_plans:
-                for throttle_key, plan in ready_plans:
-                    try:
-                        self._handle_ai_ready_plan(throttle_key, plan)
-                    except Exception as exc:
-                        log.debug(f"handle ready plan fail {throttle_key}: {exc}")
+        self._drain_ai_ready_queue()
         syms = self.universe.refresh()
         priority_pairs = self._consume_ai_priority_symbols()
         if priority_pairs:
@@ -6036,7 +6050,17 @@ class Bot:
             book_ticker_map[str(book_payload.get("symbol"))] = dict(book_payload)
         bulk_book_available = bool(book_ticker_map)
 
+        last_ai_drain = time.time()
+        ai_flush_interval = 2.5
+
         for sym in syms:
+            if self.ai_advisor:
+                if self._ai_wakeup_event.is_set():
+                    self._drain_ai_ready_queue(clear_event=True)
+                    last_ai_drain = time.time()
+                elif (time.time() - last_ai_drain) >= ai_flush_interval:
+                    self._drain_ai_ready_queue()
+                    last_ai_drain = time.time()
             # Preis tracken für FastTP
             mid = 0.0
             bt = book_ticker_map.get(sym)
