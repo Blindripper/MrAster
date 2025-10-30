@@ -1449,7 +1449,12 @@ def _friendly_decision_reason(reason: Optional[str]) -> Optional[str]:
     return token.replace("_", " ").strip().capitalize()
 
 
-def _cumulative_summary(state: Dict[str, Any]) -> Dict[str, Any]:
+def _cumulative_summary(
+    state: Dict[str, Any],
+    *,
+    stats: Optional[TradeStats] = None,
+    ai_budget: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     metrics = state.get("cumulative_metrics") or {}
     summary = {
         "total_trades": int(metrics.get("total_trades", 0) or 0),
@@ -1458,6 +1463,30 @@ def _cumulative_summary(state: Dict[str, Any]) -> Dict[str, Any]:
         "losses": int(metrics.get("losses", 0) or 0),
         "draws": int(metrics.get("draws", 0) or 0),
     }
+
+    realized_total: Optional[float] = None
+    if stats is not None:
+        realized_total = float(stats.total_pnl or 0.0)
+        summary["total_trades"] = max(summary["total_trades"], int(stats.count or 0))
+
+    if realized_total is None:
+        candidate = metrics.get("realized_pnl")
+        candidate_val = _safe_float(candidate)
+        if candidate_val is not None:
+            realized_total = candidate_val
+
+    if realized_total is None:
+        realized_total = summary["total_pnl"]
+
+    budget_source = ai_budget if ai_budget is not None else state.get("ai_budget", {})
+    spent_val = _safe_float((budget_source or {}).get("spent"))
+    spent = float(spent_val or 0.0)
+
+    net_total = float(realized_total or 0.0) - spent
+    summary["total_pnl"] = net_total
+    summary["realized_pnl"] = float(realized_total or 0.0)
+    summary["ai_budget_spent"] = spent
+
     updated_at = metrics.get("updated_at")
     if updated_at is not None:
         summary["updated_at"] = updated_at
@@ -3570,7 +3599,7 @@ async def trades() -> Dict[str, Any]:
         "history": history[::-1],
         "stats": stats.dict(),
         "decision_stats": decision_stats,
-        "cumulative_stats": _cumulative_summary(state),
+        "cumulative_stats": _cumulative_summary(state, stats=stats, ai_budget=ai_budget),
         "ai_budget": ai_budget,
         "ai_activity": ai_activity,
         "ai_requests": ai_requests,
