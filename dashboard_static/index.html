@@ -743,6 +743,32 @@
       </div>
     </div>
 
+    <div id="ai-request-modal" class="trade-modal ai-request-modal" hidden aria-hidden="true">
+      <div
+        class="trade-modal-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ai-request-modal-title"
+        aria-describedby="ai-request-modal-subtitle"
+      >
+        <div class="trade-modal-header">
+          <div>
+            <h2 id="ai-request-modal-title">AI decision</h2>
+            <p class="trade-modal-subtitle" id="ai-request-modal-subtitle"></p>
+          </div>
+          <button
+            type="button"
+            id="ai-request-modal-close"
+            class="trade-modal-close"
+            aria-label="Close AI decision details"
+          >
+            <span data-i18n="common.close">Close</span>
+          </button>
+        </div>
+        <div class="trade-modal-body" id="ai-request-modal-body"></div>
+      </div>
+    </div>
+
     <div id="pnl-modal" class="pnl-modal" hidden aria-hidden="true">
       <div class="pnl-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="pnl-modal-title">
         <div class="pnl-modal-header">

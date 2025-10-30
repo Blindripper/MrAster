@@ -16,6 +16,11 @@ const autoScrollToggles = document.querySelectorAll('input[data-autoscroll]');
 const tradeList = document.getElementById('trade-list');
 const tradeSummary = document.getElementById('trade-summary');
 const aiRequestList = document.getElementById('ai-request-list');
+const aiRequestModal = document.getElementById('ai-request-modal');
+const aiRequestModalClose = document.getElementById('ai-request-modal-close');
+const aiRequestModalBody = document.getElementById('ai-request-modal-body');
+const aiRequestModalTitle = document.getElementById('ai-request-modal-title');
+const aiRequestModalSubtitle = document.getElementById('ai-request-modal-subtitle');
 const tradeModal = document.getElementById('trade-modal');
 const tradeModalClose = document.getElementById('trade-modal-close');
 const tradeModalBody = document.getElementById('trade-modal-body');
@@ -1873,6 +1878,9 @@ let pnlModalReturnTarget = null;
 let tradeModalHideTimer = null;
 let tradeModalFinalizeHandler = null;
 let tradeModalReturnTarget = null;
+let aiRequestModalHideTimer = null;
+let aiRequestModalFinalizeHandler = null;
+let aiRequestModalReturnTarget = null;
 let decisionModalHideTimer = null;
 let decisionModalFinalizeHandler = null;
 let decisionModalReturnTarget = null;
@@ -5706,6 +5714,161 @@ function renderAiActivity(feed) {
   }
 }
 
+const AI_REQUEST_STATUS_FALLBACKS = {
+  pending: 'Awaiting response',
+  responded: 'Response received',
+  accepted: 'Entry approved',
+  rejected: 'Entry rejected',
+  analysed: 'Analysis complete',
+  decided: 'Decision logged',
+};
+
+function getAiRequestStatusLabel(statusKey) {
+  const normalized = (statusKey || 'pending').toString().toLowerCase();
+  return translate(
+    `ai.requests.status.${normalized}`,
+    AI_REQUEST_STATUS_FALLBACKS[normalized] || AI_REQUEST_STATUS_FALLBACKS.pending
+  );
+}
+
+function collectAiRequestDetailData(item) {
+  const metricsParts = [];
+  const safe = item && typeof item === 'object' ? item : {};
+  const decisionText = (safe.decision || '').toString().trim();
+  if (decisionText) {
+    metricsParts.push(`Decision: ${decisionText}`);
+  }
+  const takeValue = safe.take;
+  if (typeof takeValue === 'boolean' && !decisionText) {
+    metricsParts.push(`Decision: ${takeValue ? 'Take trade' : 'Skip trade'}`);
+  }
+  const confidenceVal = Number(safe.confidence);
+  if (Number.isFinite(confidenceVal)) {
+    metricsParts.push(`Confidence ${confidenceVal.toFixed(2)}`);
+  }
+  const sizeMult = Number(safe.size_multiplier);
+  if (Number.isFinite(sizeMult)) {
+    metricsParts.push(`Size ×${sizeMult.toFixed(2)}`);
+  }
+  const slMult = Number(safe.sl_multiplier);
+  if (Number.isFinite(slMult)) {
+    metricsParts.push(`SL ×${slMult.toFixed(2)}`);
+  }
+  const tpMult = Number(safe.tp_multiplier);
+  if (Number.isFinite(tpMult)) {
+    metricsParts.push(`TP ×${tpMult.toFixed(2)}`);
+  }
+
+  const noteCandidates = [];
+  const pushUniqueNote = (value) => {
+    if (!value) return;
+    const text = value.toString().trim();
+    if (!text) return;
+    if (!noteCandidates.includes(text)) {
+      noteCandidates.push(text);
+    }
+  };
+  pushUniqueNote(safe.decision_reason);
+  pushUniqueNote(safe.decision_note);
+  pushUniqueNote(safe.risk_note);
+  if (Array.isArray(safe.notes)) {
+    safe.notes.forEach((note) => pushUniqueNote(note));
+  }
+
+  const events = Array.isArray(safe.events) ? safe.events.slice() : [];
+
+  return { metricsParts, noteCandidates, events };
+}
+
+function buildAiRequestDetailContent(item) {
+  const { metricsParts, noteCandidates, events } = collectAiRequestDetailData(item);
+  const container = document.createElement('div');
+  container.className = 'ai-request-modal-content';
+
+  const body = document.createElement('div');
+  body.className = 'ai-request-card__body';
+
+  if (metricsParts.length > 0) {
+    const metrics = document.createElement('div');
+    metrics.className = 'ai-request-card__metrics';
+    metricsParts.forEach((text) => {
+      const chip = document.createElement('span');
+      chip.textContent = text;
+      metrics.append(chip);
+    });
+    body.append(metrics);
+  }
+
+  if (noteCandidates.length > 0) {
+    const noteList = document.createElement('ul');
+    noteList.className = 'ai-request-card__notes';
+    noteCandidates.slice(0, 6).forEach((note) => {
+      const li = document.createElement('li');
+      li.textContent = note;
+      noteList.append(li);
+    });
+    body.append(noteList);
+  }
+
+  if (events.length > 0) {
+    const toMillis = (value) => {
+      if (!value) return 0;
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return 0;
+      return date.getTime();
+    };
+    events.sort((a, b) => toMillis(a?.ts) - toMillis(b?.ts));
+    const timeline = document.createElement('ol');
+    timeline.className = 'ai-request-card__events';
+    events.forEach((event) => {
+      if (!event || typeof event !== 'object') return;
+      const eventItem = document.createElement('li');
+      const kind = (event.kind || 'info').toString().toLowerCase();
+      eventItem.className = `ai-request-card__event ai-request-card__event--${kind}`;
+      const header = document.createElement('div');
+      header.className = 'ai-request-card__event-header';
+      const kindLabel = document.createElement('span');
+      kindLabel.className = 'ai-request-card__event-kind';
+      kindLabel.textContent = kind.toUpperCase();
+      header.append(kindLabel);
+      const eventTime = document.createElement('span');
+      eventTime.className = 'ai-request-card__event-time';
+      eventTime.textContent = formatTimeShort(event.ts) || formatTimestamp(event.ts);
+      eventTime.dateTime = event.ts || '';
+      header.append(eventTime);
+      eventItem.append(header);
+      const headline = (event.headline || '').toString().trim();
+      if (headline) {
+        const headlineEl = document.createElement('div');
+        headlineEl.className = 'ai-request-card__event-headline';
+        headlineEl.textContent = headline;
+        eventItem.append(headlineEl);
+      }
+      const bodyText = (event.body || '').toString().trim();
+      if (bodyText) {
+        const bodyEl = document.createElement('div');
+        bodyEl.className = 'ai-request-card__event-body';
+        bodyEl.textContent = bodyText;
+        eventItem.append(bodyEl);
+      }
+      timeline.append(eventItem);
+    });
+    if (timeline.children.length > 0) {
+      body.append(timeline);
+    }
+  }
+
+  if (body.children.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'ai-request-modal-empty';
+    empty.textContent = translate('ai.requests.modal.empty', 'No additional details available.');
+    body.append(empty);
+  }
+
+  container.append(body);
+  return container;
+}
+
 function renderAiRequests(requests) {
   if (!aiRequestList) return;
   aiRequestList.innerHTML = '';
@@ -5727,183 +5890,255 @@ function renderAiRequests(requests) {
     aiRequestList.append(empty);
     return;
   }
-  const fallbackStatusLabels = {
-    pending: 'Awaiting response',
-    responded: 'Response received',
-    accepted: 'Entry approved',
-    rejected: 'Entry rejected',
-    analysed: 'Analysis complete',
-    decided: 'Decision logged',
-  };
-  const toMillis = (value) => {
-    if (!value) return 0;
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return 0;
-    return date.getTime();
-  };
-  items.forEach((rawItem, index) => {
+  items.forEach((rawItem) => {
     if (!rawItem || typeof rawItem !== 'object') return;
     const item = rawItem;
     const statusKey = (item.status || 'pending').toString().toLowerCase();
-    const statusLabel = translate(
-      `ai.requests.status.${statusKey}`,
-      fallbackStatusLabels[statusKey] || fallbackStatusLabels.pending
-    );
+    const statusLabel = getAiRequestStatusLabel(statusKey);
     const symbol = (item.symbol || '').toString().toUpperCase();
-    const side = formatSideLabel(item.side || '');
-    const card = document.createElement('details');
+    const sideLabel = formatSideLabel(item.side || '');
+    const detailData = collectAiRequestDetailData(item);
+    const card = document.createElement('button');
+    card.type = 'button';
     card.className = 'ai-request-card';
     card.dataset.status = statusKey;
     card.setAttribute('role', 'listitem');
-    if (statusKey === 'pending' && index === 0) {
-      card.open = true;
-    }
 
-    const summary = document.createElement('summary');
+    const header = document.createElement('div');
+    header.className = 'ai-request-card__header';
+
+    const title = document.createElement('div');
+    title.className = 'ai-request-card__title';
     const symbolEl = document.createElement('span');
     symbolEl.className = 'ai-request-card__symbol';
     symbolEl.textContent = symbol || '—';
-    summary.append(symbolEl);
+    title.append(symbolEl);
 
-    if (side && side !== '—') {
+    if (sideLabel && sideLabel !== '—') {
       const sideEl = document.createElement('span');
       sideEl.className = 'ai-request-card__side';
-      sideEl.textContent = side;
-      summary.append(sideEl);
-    } else {
-      const spacer = document.createElement('span');
-      spacer.className = 'ai-request-card__side';
-      spacer.textContent = '—';
-      spacer.style.visibility = 'hidden';
-      summary.append(spacer);
+      sideEl.textContent = sideLabel;
+      title.append(sideEl);
     }
 
-    const statusEl = document.createElement('span');
-    statusEl.className = `ai-request-card__status ${statusKey}`;
-    statusEl.textContent = statusLabel;
-    summary.append(statusEl);
+    header.append(title);
+
+    if (statusLabel) {
+      const statusEl = document.createElement('span');
+      statusEl.className = `ai-request-card__status ${statusKey}`;
+      statusEl.textContent = statusLabel;
+      header.append(statusEl);
+    }
+
+    card.append(header);
 
     const timestamp = item.updated_at || item.created_at;
-    const timeEl = document.createElement('span');
-    timeEl.className = 'ai-request-card__time';
-    timeEl.textContent = formatTimestamp(timestamp);
-    timeEl.dateTime = timestamp || '';
-    summary.append(timeEl);
-
-    card.append(summary);
-
-    const body = document.createElement('div');
-    body.className = 'ai-request-card__body';
-
-    const metrics = document.createElement('div');
-    metrics.className = 'ai-request-card__metrics';
-    const metricsParts = [];
-    const decisionText = (item.decision || '').toString().trim();
-    if (decisionText) {
-      metricsParts.push(`Decision: ${decisionText}`);
-    }
-    const takeValue = item.take;
-    if (typeof takeValue === 'boolean' && !decisionText) {
-      metricsParts.push(`Decision: ${takeValue ? 'Take trade' : 'Skip trade'}`);
-    }
-    const confidenceVal = Number(item.confidence);
-    if (Number.isFinite(confidenceVal)) {
-      metricsParts.push(`Confidence ${confidenceVal.toFixed(2)}`);
-    }
-    const sizeMult = Number(item.size_multiplier);
-    if (Number.isFinite(sizeMult)) {
-      metricsParts.push(`Size ×${sizeMult.toFixed(2)}`);
-    }
-    const slMult = Number(item.sl_multiplier);
-    if (Number.isFinite(slMult)) {
-      metricsParts.push(`SL ×${slMult.toFixed(2)}`);
-    }
-    const tpMult = Number(item.tp_multiplier);
-    if (Number.isFinite(tpMult)) {
-      metricsParts.push(`TP ×${tpMult.toFixed(2)}`);
-    }
-    metricsParts.forEach((text) => {
-      const chip = document.createElement('span');
-      chip.textContent = text;
-      metrics.append(chip);
-    });
-    if (metrics.children.length > 0) {
-      body.append(metrics);
+    const timestampLabel = formatTimestamp(timestamp);
+    const meta = document.createElement('div');
+    meta.className = 'ai-request-card__meta';
+    if (timestampLabel && timestampLabel !== '–') {
+      const timeEl = document.createElement('span');
+      timeEl.className = 'ai-request-card__time';
+      timeEl.textContent = timestampLabel;
+      timeEl.dateTime = timestamp || '';
+      meta.append(timeEl);
     }
 
-    const noteCandidates = [];
-    const pushNote = (value) => {
-      if (!value) return;
-      const text = value.toString().trim();
-      if (!text) return;
-      if (!noteCandidates.includes(text)) {
-        noteCandidates.push(text);
-      }
-    };
-    pushNote(item.decision_reason);
-    pushNote(item.decision_note);
-    pushNote(item.risk_note);
-    if (Array.isArray(item.notes)) {
-      item.notes.forEach((note) => pushNote(note));
+    const decisionMetric = detailData.metricsParts.find((text) => text.startsWith('Decision:'));
+    if (decisionMetric) {
+      const decisionPreview = document.createElement('span');
+      decisionPreview.textContent = decisionMetric.replace(/^Decision:\s*/, '');
+      meta.append(decisionPreview);
     }
-    if (noteCandidates.length > 0) {
-      const noteList = document.createElement('ul');
-      noteList.className = 'ai-request-card__notes';
-      noteCandidates.slice(0, 6).forEach((note) => {
-        const li = document.createElement('li');
-        li.textContent = note;
-        noteList.append(li);
+
+    if (meta.children.length > 0) {
+      card.append(meta);
+    }
+
+    if (detailData.metricsParts.length > 0) {
+      const preview = document.createElement('div');
+      preview.className = 'ai-request-card__metrics ai-request-card__preview';
+      detailData.metricsParts.slice(0, 3).forEach((text) => {
+        const chip = document.createElement('span');
+        chip.textContent = text;
+        preview.append(chip);
       });
-      body.append(noteList);
+      card.append(preview);
     }
 
-    const events = Array.isArray(item.events) ? item.events.slice() : [];
-    if (events.length > 0) {
-      events.sort((a, b) => toMillis(a?.ts) - toMillis(b?.ts));
-      const timeline = document.createElement('ol');
-      timeline.className = 'ai-request-card__events';
-      events.forEach((event) => {
-        if (!event || typeof event !== 'object') return;
-        const eventItem = document.createElement('li');
-        const kind = (event.kind || 'info').toString().toLowerCase();
-        eventItem.className = `ai-request-card__event ai-request-card__event--${kind}`;
-        const header = document.createElement('div');
-        header.className = 'ai-request-card__event-header';
-        const kindLabel = document.createElement('span');
-        kindLabel.className = 'ai-request-card__event-kind';
-        kindLabel.textContent = kind.toUpperCase();
-        header.append(kindLabel);
-        const eventTime = document.createElement('span');
-        eventTime.className = 'ai-request-card__event-time';
-        eventTime.textContent = formatTimeShort(event.ts) || formatTimestamp(event.ts);
-        eventTime.dateTime = event.ts || '';
-        header.append(eventTime);
-        eventItem.append(header);
-        const headline = (event.headline || '').toString().trim();
-        if (headline) {
-          const headlineEl = document.createElement('div');
-          headlineEl.className = 'ai-request-card__event-headline';
-          headlineEl.textContent = headline;
-          eventItem.append(headlineEl);
-        }
-        const bodyText = (event.body || '').toString().trim();
-        if (bodyText) {
-          const bodyEl = document.createElement('div');
-          bodyEl.className = 'ai-request-card__event-body';
-          bodyEl.textContent = bodyText;
-          eventItem.append(bodyEl);
-        }
-        timeline.append(eventItem);
-      });
-      if (timeline.children.length > 0) {
-        body.append(timeline);
-      }
+    const notePreviewText = detailData.noteCandidates[0];
+    if (notePreviewText) {
+      const notePreview = document.createElement('p');
+      notePreview.className = 'ai-request-card__note';
+      notePreview.textContent =
+        notePreviewText.length > 160 ? `${notePreviewText.slice(0, 157).trimEnd()}…` : notePreviewText;
+      card.append(notePreview);
     }
 
-    card.append(body);
+    const actions = document.createElement('div');
+    actions.className = 'ai-request-card__actions';
+    const hint = document.createElement('span');
+    hint.className = 'ai-request-card__hint';
+    hint.textContent = translate('trades.viewDetails', 'View details');
+    actions.append(hint);
+    card.append(actions);
+
+    const accessibleParts = [];
+    if (sideLabel && sideLabel !== '—') {
+      accessibleParts.push(sideLabel);
+    }
+    if (statusLabel) {
+      accessibleParts.push(statusLabel);
+    }
+    if (timestampLabel && timestampLabel !== '–') {
+      accessibleParts.push(timestampLabel);
+    }
+    if (decisionMetric) {
+      accessibleParts.push(decisionMetric.replace(/^Decision:\s*/, ''));
+    }
+    const accessibleSuffix = accessibleParts.length > 0 ? ` (${accessibleParts.join(' · ')})` : '';
+    const baseLabel = symbol ? `View AI decision for ${symbol}` : 'View AI decision details';
+    card.setAttribute('aria-label', `${baseLabel}${accessibleSuffix}`);
+
+    card.addEventListener('click', () => openAiRequestModal(item, card));
+
     aiRequestList.append(card);
   });
 }
+
+function openAiRequestModal(request, returnTarget) {
+  if (!aiRequestModal || !aiRequestModalBody) return;
+
+  const safe = request && typeof request === 'object' ? request : {};
+  const statusKey = (safe.status || 'pending').toString().toLowerCase();
+  const statusLabel = getAiRequestStatusLabel(statusKey);
+  const symbol = (safe.symbol || '').toString().toUpperCase();
+  const sideLabel = formatSideLabel(safe.side || '');
+  const detailData = collectAiRequestDetailData(safe);
+
+  const titleParts = [];
+  if (symbol) {
+    titleParts.push(symbol);
+  }
+  if (sideLabel && sideLabel !== '—') {
+    titleParts.push(sideLabel);
+  }
+  if (aiRequestModalTitle) {
+    aiRequestModalTitle.textContent =
+      titleParts.length > 0 ? titleParts.join(' · ') : translate('ai.requests.modal.title', 'AI decision');
+  }
+
+  const decisionMetric = detailData.metricsParts.find((text) => text.startsWith('Decision:'));
+  const timestamp = safe.updated_at || safe.created_at;
+  const timestampLabel = formatTimestamp(timestamp);
+  const subtitleParts = [];
+  if (statusLabel) {
+    subtitleParts.push(statusLabel);
+  }
+  if (timestampLabel && timestampLabel !== '–') {
+    subtitleParts.push(timestampLabel);
+  }
+  if (decisionMetric) {
+    subtitleParts.push(decisionMetric.replace(/^Decision:\s*/, ''));
+  }
+  if (aiRequestModalSubtitle) {
+    aiRequestModalSubtitle.textContent =
+      subtitleParts.filter(Boolean).join(' · ') ||
+      translate('ai.requests.modal.noMetadata', 'No additional context available.');
+  }
+
+  const active =
+    returnTarget instanceof HTMLElement
+      ? returnTarget
+      : document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+  aiRequestModalReturnTarget = active && active !== document.body ? active : null;
+
+  if (aiRequestModalHideTimer) {
+    clearTimeout(aiRequestModalHideTimer);
+    aiRequestModalHideTimer = null;
+  }
+  if (aiRequestModalFinalizeHandler) {
+    aiRequestModal.removeEventListener('transitionend', aiRequestModalFinalizeHandler);
+    aiRequestModalFinalizeHandler = null;
+  }
+
+  aiRequestModalBody.innerHTML = '';
+  const content = buildAiRequestDetailContent(safe);
+  aiRequestModalBody.append(content);
+  aiRequestModalBody.scrollTop = 0;
+
+  aiRequestModal.removeAttribute('hidden');
+  aiRequestModal.removeAttribute('aria-hidden');
+  requestAnimationFrame(() => {
+    aiRequestModal.classList.add('is-active');
+  });
+  document.body.classList.add('modal-open');
+
+  document.addEventListener('keydown', handleAiRequestModalKeydown);
+  if (aiRequestModalClose) {
+    setTimeout(() => aiRequestModalClose.focus(), 120);
+  }
+}
+
+function closeAiRequestModal() {
+  if (!aiRequestModal) {
+    return;
+  }
+
+  if (aiRequestModalHideTimer) {
+    clearTimeout(aiRequestModalHideTimer);
+    aiRequestModalHideTimer = null;
+  }
+  if (aiRequestModalFinalizeHandler) {
+    aiRequestModal.removeEventListener('transitionend', aiRequestModalFinalizeHandler);
+    aiRequestModalFinalizeHandler = null;
+  }
+  if (aiRequestModal.hasAttribute('hidden')) {
+    return;
+  }
+
+  aiRequestModal.classList.remove('is-active');
+  aiRequestModal.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('modal-open');
+
+  const finalize = () => {
+    if (aiRequestModalHideTimer) {
+      clearTimeout(aiRequestModalHideTimer);
+      aiRequestModalHideTimer = null;
+    }
+    if (!aiRequestModal.hasAttribute('hidden')) {
+      aiRequestModal.setAttribute('hidden', '');
+    }
+    if (aiRequestModalFinalizeHandler) {
+      aiRequestModal.removeEventListener('transitionend', aiRequestModalFinalizeHandler);
+      aiRequestModalFinalizeHandler = null;
+    }
+    const restoreTarget =
+      aiRequestModalReturnTarget && typeof aiRequestModalReturnTarget.focus === 'function'
+        ? aiRequestModalReturnTarget
+        : null;
+    aiRequestModalReturnTarget = null;
+    if (restoreTarget) {
+      restoreTarget.focus({ preventScroll: true });
+    }
+  };
+
+  aiRequestModalFinalizeHandler = finalize;
+  aiRequestModal.addEventListener('transitionend', finalize);
+  aiRequestModalHideTimer = setTimeout(finalize, 280);
+
+  document.removeEventListener('keydown', handleAiRequestModalKeydown);
+}
+
+function handleAiRequestModalKeydown(event) {
+  if (event.key === 'Escape') {
+    closeAiRequestModal();
+  }
+}
+
+
 
 function setAiHintMessage(message) {
   if (!aiHint) return;
@@ -8178,6 +8413,18 @@ if (decisionReasons) {
 tradeModalClose?.addEventListener('click', () => {
   closeTradeModal();
 });
+
+aiRequestModalClose?.addEventListener('click', () => {
+  closeAiRequestModal();
+});
+
+if (aiRequestModal) {
+  aiRequestModal.addEventListener('click', (event) => {
+    if (event.target === aiRequestModal) {
+      closeAiRequestModal();
+    }
+  });
+}
 
 if (tradeModal) {
   tradeModal.addEventListener('click', (event) => {
