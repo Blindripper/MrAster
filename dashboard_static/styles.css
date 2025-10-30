@@ -830,12 +830,12 @@ body.paper-mode .hero-paper-toggle span {
   display: grid;
   grid-template-columns: repeat(4, minmax(220px, 1fr));
   gap: 1.4rem;
-  align-items: stretch;
+  align-items: start;
   grid-auto-rows: minmax(0, auto);
 }
 
 .hero-overview-grid > .card {
-  height: 100%;
+  height: auto;
 }
 
 .hero-overview-grid > .pnl-card {
