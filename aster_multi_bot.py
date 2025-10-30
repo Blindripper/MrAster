@@ -5837,6 +5837,19 @@ class Bot:
                 "tp": float(tp),
                 "bucket": bucket,
             }
+            if plan and isinstance(plan, dict):
+                req_id = plan.get("request_id")
+                if isinstance(req_id, str):
+                    req_id = req_id.strip()
+                if req_id:
+                    activity_data["request_id"] = req_id
+                origin = plan.get("origin") or plan_origin
+            else:
+                origin = plan_origin
+            if not origin:
+                origin = ctx.get("ai_plan_origin")
+            if isinstance(origin, str) and origin.strip():
+                activity_data["origin"] = origin.strip()
             if alpha_prob is not None:
                 try:
                     activity_data["alpha_prob"] = float(alpha_prob)
