@@ -1184,6 +1184,7 @@ def _summarize_ai_requests(
     limit: int = 40,
 ) -> List[Dict[str, Any]]:
     requests: Dict[str, Dict[str, Any]] = {}
+    symbol_side_index: Dict[str, str] = {}
     for entry in ai_activity:
         if not isinstance(entry, dict):
             continue
@@ -1201,28 +1202,42 @@ def _summarize_ai_requests(
         origin_hint = str(
             data.get("origin") or data.get("plan_origin") or ""
         ).strip()
-        fallback_key = None
+        base_key = None
         if symbol_hint:
             fallback_side = side_hint or "UNKNOWN"
-            fallback_key = f"{symbol_hint}::{fallback_side}"
+            base_key = f"{symbol_hint}::{fallback_side}"
+        fallback_key = None
+        if base_key:
             if origin_hint:
-                fallback_key = f"{fallback_key}::{origin_hint.lower()}"
+                fallback_key = f"{base_key}::{origin_hint.lower()}"
+            else:
+                fallback_key = base_key
 
-        key = request_id or fallback_key
-        if not key:
+        preferred_key = request_id or fallback_key or base_key
+        if not preferred_key:
             continue
-        record = requests.get(key)
-        if record is None and request_id and fallback_key and fallback_key in requests:
-            # Merge historical placeholder keyed by symbol into the resolved request id
-            record = requests.pop(fallback_key)
+
+        record_key = None
+        record = None
+
+        if request_id:
+            record_key = request_id
+            record = requests.get(request_id)
+
+        if record is None and fallback_key:
+            record_key = fallback_key
+            record = requests.get(fallback_key)
+
+        if record is None and base_key and base_key in symbol_side_index:
+            alias_key = symbol_side_index[base_key]
+            record = requests.get(alias_key)
             if record is not None:
-                key = request_id
-                record["id"] = request_id
-                record["request_id"] = request_id
-                requests[key] = record
+                record_key = alias_key
+
         if record is None:
+            record_key = preferred_key
             record = {
-                "id": key,
+                "id": preferred_key,
                 "request_id": request_id,
                 "symbol": symbol_hint,
                 "side": side_hint or None,
@@ -1242,10 +1257,22 @@ def _summarize_ai_requests(
                 "created_at": None,
                 "updated_at": None,
             }
-            requests[key] = record
+            requests[record_key] = record
         else:
             if request_id and not record.get("request_id"):
                 record["request_id"] = request_id
+        if request_id and record_key != request_id:
+            # Re-key the record under the resolved request id to prevent duplicates
+            requests.pop(record_key, None)
+            record_key = request_id
+            record["id"] = request_id
+            record["request_id"] = request_id
+            requests[record_key] = record
+        elif preferred_key and record_key != preferred_key:
+            requests.pop(record_key, None)
+            record_key = preferred_key
+            record["id"] = preferred_key
+            requests[record_key] = record
         if symbol_hint and not record.get("symbol"):
             record["symbol"] = symbol_hint
         if side_hint and not record.get("side"):
@@ -1258,6 +1285,9 @@ def _summarize_ai_requests(
             record["updated_at"] = ts_iso
             if record.get("created_at") is None:
                 record["created_at"] = ts_iso
+
+        if base_key:
+            symbol_side_index[base_key] = record_key
 
         kind = str(entry.get("kind") or "info").lower()
         record["events"].append(
