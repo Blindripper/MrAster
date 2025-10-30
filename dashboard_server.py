@@ -1176,10 +1176,15 @@ def _summarize_ai_requests(
             request_id = str(raw_request_id)
         symbol_hint = str(data.get("symbol") or "").strip().upper()
         side_hint = str(data.get("side") or "").strip().upper()
+        origin_hint = str(
+            data.get("origin") or data.get("plan_origin") or ""
+        ).strip()
         fallback_key = None
         if symbol_hint:
             fallback_side = side_hint or "UNKNOWN"
             fallback_key = f"{symbol_hint}::{fallback_side}"
+            if origin_hint:
+                fallback_key = f"{fallback_key}::{origin_hint.lower()}"
 
         key = request_id or fallback_key
         if not key:
@@ -1199,6 +1204,7 @@ def _summarize_ai_requests(
                 "request_id": request_id,
                 "symbol": symbol_hint,
                 "side": side_hint or None,
+                "origin": origin_hint or None,
                 "status": "pending",
                 "decision": None,
                 "take": None,
@@ -1222,6 +1228,8 @@ def _summarize_ai_requests(
             record["symbol"] = symbol_hint
         if side_hint and not record.get("side"):
             record["side"] = side_hint
+        if origin_hint and not record.get("origin"):
+            record["origin"] = origin_hint
         ts = _parse_activity_ts(entry.get("ts"))
         ts_iso = ts.isoformat() if ts else None
         if ts_iso:
