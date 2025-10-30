@@ -5959,6 +5959,7 @@ class Bot:
                     merged.append(sym)
                     seen.add(sym)
                 syms = merged
+        syms_queue: deque[str] = deque(syms)
 
         pending_manual: Set[str] = set()
         queue = self.state.get("manual_trade_requests")
@@ -6066,14 +6067,33 @@ class Bot:
         last_ai_drain = time.time()
         ai_flush_interval = 2.5
 
-        for sym in syms:
+        processed_symbols: Set[str] = set()
+
+        while syms_queue:
+            sym = syms_queue.popleft()
+            processed_symbols.add(sym)
             if self.ai_advisor:
+                priority_updated = False
                 if self._ai_wakeup_event.is_set():
                     self._drain_ai_ready_queue(clear_event=True)
                     last_ai_drain = time.time()
+                    priority_updated = True
                 elif (time.time() - last_ai_drain) >= ai_flush_interval:
                     self._drain_ai_ready_queue()
                     last_ai_drain = time.time()
+                    priority_updated = True
+                if priority_updated:
+                    new_priority = self._consume_ai_priority_symbols()
+                    if new_priority:
+                        for pri_sym, _ in reversed(new_priority):
+                            if not pri_sym:
+                                continue
+                            token = pri_sym.strip().upper()
+                            if not token:
+                                continue
+                            if token in syms_queue and token not in processed_symbols:
+                                continue
+                            syms_queue.appendleft(token)
             # Preis tracken für FastTP
             mid = 0.0
             bt = book_ticker_map.get(sym)
