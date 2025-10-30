@@ -384,7 +384,7 @@ class BudgetLearner:
         sym_state["count"] = int(sym_state.get("count", 0)) + 1
         sym_state["reward"] = float(sym_state.get("reward", 0.0) or 0.0) + pnl_r
         skip_penalty = self._decayed_skip_penalty(sym_state, update=True)
-        if skip_penalty > 0:
+        if pnl_r > 0 and skip_penalty > 0:
             # Successful trades reduce the severity of prior AI skips.
             reduced = max(0.0, skip_penalty * 0.6)
             if reduced <= 1e-4:
