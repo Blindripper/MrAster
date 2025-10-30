@@ -21,6 +21,7 @@
   --grid-line: rgba(148, 163, 184, 0.08);
   --glass-border: linear-gradient(135deg, rgba(245, 196, 107, 0.28), rgba(95, 81, 237, 0.18));
   --layout-max-width: 1200px;
+  --page-inline-padding: clamp(1.5rem, 5vw, 3.8rem);
 }
 
 body {
@@ -420,7 +421,7 @@ body.pro-mode [data-normal-only] {
 
 .hero {
   position: relative;
-  padding: clamp(2.4rem, 4vw, 3rem) clamp(1.5rem, 5vw, 3.8rem);
+  padding: clamp(2.4rem, 4vw, 3rem) var(--page-inline-padding);
   padding-bottom: clamp(3.4rem, 6vw, 5rem);
   border-radius: 2rem;
   width: 100%;
@@ -794,7 +795,7 @@ body.paper-mode .hero-paper-toggle span {
 
 @media (max-width: 768px) {
   .hero {
-    padding: clamp(2rem, 8vw, 2.6rem) clamp(1.25rem, 6vw, 2.4rem);
+    padding: clamp(2rem, 8vw, 2.6rem) var(--page-inline-padding);
   }
 
   .hero-actions {
@@ -829,7 +830,7 @@ body.paper-mode .hero-paper-toggle span {
   }
 
   .hero-visual {
-    padding: 2rem 1.6rem;
+    padding: 2rem var(--page-inline-padding);
   }
 }
 
@@ -1229,7 +1230,7 @@ button:focus-visible {
   grid-auto-flow: row dense;
   grid-auto-rows: minmax(360px, auto);
   gap: 1.6rem;
-  padding: 2.35rem clamp(1.5rem, 4vw, 4rem) 3.2rem;
+  padding: 2.35rem var(--page-inline-padding) 3.2rem;
   flex: 1;
   align-content: start;
   align-items: stretch;
@@ -1280,8 +1281,8 @@ button:focus-visible {
 }
 
 @media (max-width: 1200px) {
-  .layout {
-    padding-inline: clamp(1rem, 5vw, 3rem);
+  :root {
+    --page-inline-padding: clamp(1rem, 5vw, 3rem);
   }
 
   .hero-overview-grid {
@@ -1304,11 +1305,15 @@ button:focus-visible {
 }
 
 @media (max-width: 900px) {
+  :root {
+    --page-inline-padding: clamp(1rem, 6vw, 2rem);
+  }
+
   .layout {
     grid-template-columns: minmax(0, 1fr);
     grid-auto-rows: auto;
     gap: 1.4rem;
-    padding-inline: clamp(1rem, 6vw, 2rem);
+    padding-inline: var(--page-inline-padding);
   }
 
   .layout > .card {
@@ -1323,6 +1328,18 @@ button:focus-visible {
 
   .ai-activity-feed {
     max-height: none;
+  }
+}
+
+@media (max-width: 768px) {
+  :root {
+    --page-inline-padding: clamp(1.25rem, 6vw, 2.4rem);
+  }
+}
+
+@media (max-width: 560px) {
+  :root {
+    --page-inline-padding: clamp(1rem, 6vw, 1.5rem);
   }
 }
 
