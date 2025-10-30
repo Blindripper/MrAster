@@ -29,6 +29,7 @@ import textwrap
 import re
 import copy
 import threading
+from pathlib import Path
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 from typing import Dict, List, Tuple, Optional, Any, Callable, Sequence, Set
@@ -229,7 +230,9 @@ KLINE_CACHE_SEC = max(5.0, float(os.getenv("ASTER_KLINE_CACHE_SEC", "45")))
 MAX_OPEN_GLOBAL = _int_env("ASTER_MAX_OPEN_GLOBAL", 0)
 MAX_OPEN_PER_SYMBOL = _int_env("ASTER_MAX_OPEN_PER_SYMBOL", 1)
 
-STATE_FILE = os.getenv("ASTER_STATE_FILE", "aster_state.json")
+_ROOT_DIR = Path(__file__).resolve().parent
+_STATE_FILE_ENV = os.getenv("ASTER_STATE_FILE", "aster_state.json")
+STATE_FILE = _ROOT_DIR / _STATE_FILE_ENV
 PAPER = os.getenv("ASTER_PAPER", "false").lower() in ("1", "true", "yes", "on")
 
 LOOP_SLEEP = int(os.getenv("ASTER_LOOP_SLEEP", "30"))  # Sekunden
