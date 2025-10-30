@@ -3407,6 +3407,15 @@ function formatSideLabel(side) {
   return normalized;
 }
 
+const ACTIVE_POSITION_SIGNED_SIZE_KEYS = [
+  'positionAmt',
+  'position_amt',
+  'position_amount',
+  'qty',
+  'quantity',
+  'size',
+];
+
 const ACTIVE_POSITION_ALIASES = {
   symbol: ['symbol', 'sym', 'ticker', 'pair'],
   size: [
@@ -3419,12 +3428,7 @@ const ACTIVE_POSITION_ALIASES = {
     'size_usdt',
     'sizeUSDT',
     'sizeUsd',
-    'size',
-    'qty',
-    'quantity',
-    'positionAmt',
-    'position_amt',
-    'position_amount',
+    ...ACTIVE_POSITION_SIGNED_SIZE_KEYS,
   ],
   entry: ['entry', 'entry_price', 'entryPrice'],
   mark: ['mark', 'mark_price', 'markPrice', 'lastPrice', 'price'],
@@ -3973,12 +3977,16 @@ function buildSideBadge(side) {
   return badge;
 }
 
-function extractPositionSide(position, sizeField) {
+function extractPositionSide(position, sizeField, signedQuantityField) {
   const field = pickFieldValue(position, ACTIVE_POSITION_ALIASES.side || []);
   if (field.value) return field.value;
-  if (sizeField && Number.isFinite(sizeField.numeric)) {
-    if (sizeField.numeric > 0) return 'BUY';
-    if (sizeField.numeric < 0) return 'SELL';
+  const numericSources = [signedQuantityField, sizeField].filter(
+    (candidate) => candidate && Number.isFinite(candidate.numeric),
+  );
+  for (let index = 0; index < numericSources.length; index += 1) {
+    const numeric = numericSources[index].numeric;
+    if (numeric > 0) return 'BUY';
+    if (numeric < 0) return 'SELL';
   }
   return null;
 }
@@ -4048,6 +4056,7 @@ function updateActivePositionsView() {
     const row = document.createElement('tr');
 
     const sizeField = pickNumericField(position, ACTIVE_POSITION_ALIASES.size || []);
+    const signedQuantityField = pickNumericField(position, ACTIVE_POSITION_SIGNED_SIZE_KEYS || []);
 
     const symbolCell = document.createElement('td');
     const symbolWrapper = document.createElement('div');
@@ -4057,7 +4066,7 @@ function updateActivePositionsView() {
     const symbolValue = getPositionSymbol(position);
     symbolLabel.textContent = symbolValue;
     symbolWrapper.append(symbolLabel);
-    const sideValue = extractPositionSide(position, sizeField);
+    const sideValue = extractPositionSide(position, sizeField, signedQuantityField);
     const sideBadge = buildSideBadge(sideValue);
     if (sideBadge) {
       symbolWrapper.append(sideBadge);
