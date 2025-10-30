@@ -56,6 +56,9 @@ const inputDefaultNotional = document.getElementById('input-default-notional');
 const inputAiDefaultNotional = document.getElementById('input-ai-default-notional');
 const decisionSummary = document.getElementById('decision-summary');
 const decisionReasons = document.getElementById('decision-reasons');
+const decisionReasonsContainer = document.getElementById('decision-reasons-container');
+const decisionReasonsToggle = document.getElementById('decision-reasons-toggle');
+const decisionReasonsToggleLabel = document.getElementById('decision-reasons-toggle-label');
 const btnApplyPreset = document.getElementById('btn-apply-preset');
 const tickerContainer = document.getElementById('market-ticker');
 const tickerTrack = document.getElementById('ticker-track');
@@ -176,6 +179,8 @@ const TRANSLATIONS = {
     'status.decisions.noneYet': 'Решений по сделкам пока нет.',
     'status.decisions.noReason': 'Для этой причины ещё нет сделок. Загляните после следующего решения.',
     'status.decisions.noReasonShort': 'Для этой причины ещё нет сделок.',
+    'status.decisions.showDetails': 'Показать детали',
+    'status.decisions.hideDetails': 'Скрыть детали',
     'credentials.title': 'Биржевые ключи',
     'credentials.apiKey.label': 'ASTER_API_KEY',
     'credentials.apiKey.placeholder': 'Введите API-ключ',
@@ -422,6 +427,8 @@ const TRANSLATIONS = {
     'status.decisions.noneYet': 'Noch keine Handelsentscheidungen.',
     'status.decisions.noReason': 'Für diesen Grund liegen noch keine Trades vor. Schau nach der nächsten Entscheidung wieder vorbei.',
     'status.decisions.noReasonShort': 'Für diesen Grund liegen noch keine Trades vor.',
+    'status.decisions.showDetails': 'Details anzeigen',
+    'status.decisions.hideDetails': 'Details verbergen',
     'credentials.title': 'Börsen-Zugangsdaten',
     'credentials.apiKey.label': 'ASTER_API_KEY',
     'credentials.apiKey.placeholder': 'API-Key eingeben',
@@ -671,6 +678,8 @@ const TRANSLATIONS = {
     'status.decisions.noneYet': '아직 거래 결정이 없습니다.',
     'status.decisions.noReason': '이 사유로 기록된 거래가 아직 없습니다. 다음 결정 이후에 다시 확인하세요.',
     'status.decisions.noReasonShort': '이 사유로 기록된 거래가 아직 없습니다.',
+    'status.decisions.showDetails': '상세 보기',
+    'status.decisions.hideDetails': '상세 접기',
     'credentials.title': '거래소 자격 증명',
     'credentials.apiKey.label': 'ASTER_API_KEY',
     'credentials.apiKey.placeholder': 'API 키 입력',
@@ -920,6 +929,8 @@ const TRANSLATIONS = {
     'status.decisions.noneYet': 'Pas encore de décisions de trading.',
     'status.decisions.noReason': 'Aucune opération pour ce motif pour l’instant. Revenez après la prochaine décision.',
     'status.decisions.noReasonShort': 'Aucune opération pour ce motif pour l’instant.',
+    'status.decisions.showDetails': 'Afficher les détails',
+    'status.decisions.hideDetails': 'Masquer les détails',
     'credentials.title': 'Identifiants d’exchange',
     'credentials.apiKey.label': 'ASTER_API_KEY',
     'credentials.apiKey.placeholder': 'Saisir la clé API',
@@ -1169,6 +1180,8 @@ const TRANSLATIONS = {
     'status.decisions.noneYet': 'Aún no hay decisiones de trading.',
     'status.decisions.noReason': 'Todavía no hay operaciones para este motivo. Vuelve tras la próxima decisión.',
     'status.decisions.noReasonShort': 'Todavía no hay operaciones para este motivo.',
+    'status.decisions.showDetails': 'Mostrar detalles',
+    'status.decisions.hideDetails': 'Ocultar detalles',
     'credentials.title': 'Credenciales del exchange',
     'credentials.apiKey.label': 'ASTER_API_KEY',
     'credentials.apiKey.placeholder': 'Introduce la clave API',
@@ -1417,6 +1430,8 @@ const TRANSLATIONS = {
     'status.decisions.noneYet': 'Henüz işlem kararı yok.',
     'status.decisions.noReason': 'Bu gerekçeye ait işlem yok. Sonraki karardan sonra tekrar bakın.',
     'status.decisions.noReasonShort': 'Bu gerekçeye ait işlem yok.',
+    'status.decisions.showDetails': 'Detayları göster',
+    'status.decisions.hideDetails': 'Detayları gizle',
     'credentials.title': 'Borsa anahtarları',
     'credentials.apiKey.label': 'ASTER_API_KEY',
     'credentials.apiKey.placeholder': 'API anahtarını girin',
@@ -1659,6 +1674,8 @@ const TRANSLATIONS = {
     'status.decisions.noneYet': '暂时还没有交易决策。',
     'status.decisions.noReason': '此原因下暂未出现交易。请在下一次决策后再查看。',
     'status.decisions.noReasonShort': '此原因下暂未出现交易。',
+    'status.decisions.showDetails': '显示详情',
+    'status.decisions.hideDetails': '隐藏详情',
     'credentials.title': '交易所凭证',
     'credentials.apiKey.label': 'ASTER_API_KEY',
     'credentials.apiKey.placeholder': '输入 API 密钥',
@@ -1894,6 +1911,8 @@ let aiRequestModalReturnTarget = null;
 let decisionModalHideTimer = null;
 let decisionModalFinalizeHandler = null;
 let decisionModalReturnTarget = null;
+let decisionReasonsExpanded = false;
+let decisionReasonsAvailable = false;
 let automationActive = false;
 let automationTimeoutId = null;
 let automationCountdownIntervalId = null;
@@ -7284,6 +7303,41 @@ function renderTradeSummary(stats) {
   setAiHintMessage(stats.ai_hint);
 }
 
+function updateDecisionReasonsVisibility() {
+  if (!decisionReasonsContainer) return;
+  const hasReasons = decisionReasonsAvailable;
+  const isExpanded = hasReasons && decisionReasonsExpanded;
+
+  if (decisionReasonsToggle) {
+    if (!hasReasons) {
+      decisionReasonsToggle.setAttribute('hidden', '');
+      decisionReasonsToggle.disabled = true;
+    } else {
+      decisionReasonsToggle.removeAttribute('hidden');
+      decisionReasonsToggle.disabled = false;
+    }
+    decisionReasonsToggle.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+    decisionReasonsToggle.classList.toggle('is-expanded', isExpanded);
+  }
+
+  if (!hasReasons) {
+    decisionReasonsContainer.setAttribute('hidden', '');
+  } else if (isExpanded) {
+    decisionReasonsContainer.removeAttribute('hidden');
+  } else {
+    decisionReasonsContainer.setAttribute('hidden', '');
+  }
+
+  const labelText = isExpanded
+    ? translate('status.decisions.hideDetails', 'Hide details')
+    : translate('status.decisions.showDetails', 'Details');
+  if (decisionReasonsToggleLabel) {
+    decisionReasonsToggleLabel.textContent = labelText;
+  } else if (decisionReasonsToggle) {
+    decisionReasonsToggle.textContent = labelText;
+  }
+}
+
 function renderDecisionStats(stats) {
   lastDecisionStats = stats || null;
   if (!decisionSummary || !decisionReasons) return;
@@ -7320,6 +7374,9 @@ function renderDecisionStats(stats) {
       ? translate('status.decisions.noneSkipped', 'No skipped trades recorded.')
       : translate('status.decisions.noneYet', 'No trade decisions yet.');
     decisionReasons.append(li);
+    decisionReasonsExpanded = false;
+    decisionReasonsAvailable = false;
+    updateDecisionReasonsVisibility();
     return;
   }
 
@@ -7345,6 +7402,9 @@ function renderDecisionStats(stats) {
     li.append(labelEl, countEl);
     decisionReasons.append(li);
   }
+
+  decisionReasonsAvailable = true;
+  updateDecisionReasonsVisibility();
 }
 
 function normaliseDecisionReason(reason) {
@@ -8848,6 +8908,14 @@ if (decisionReasons) {
     activateDecisionReasonItem(item);
   });
 }
+
+decisionReasonsToggle?.addEventListener('click', () => {
+  if (!decisionReasonsAvailable) return;
+  decisionReasonsExpanded = !decisionReasonsExpanded;
+  updateDecisionReasonsVisibility();
+});
+
+updateDecisionReasonsVisibility();
 
 tradeModalClose?.addEventListener('click', () => {
   closeTradeModal();

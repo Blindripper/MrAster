@@ -244,21 +244,36 @@
             </div>
             <div class="status-stats">
               <div class="status-stats-header">
-                <span class="label" data-i18n="status.tradeDecisions">Trade decisions</span>
-                <div class="decision-summary" id="decision-summary">
-                  <span class="decision-metric" data-metric="taken">
-                    <span data-i18n="status.decisions.accepted">Accepted:</span>
-                    <strong>0</strong>
-                  </span>
-                  <span class="decision-metric" data-metric="skipped">
-                    <span data-i18n="status.decisions.skipped">Skipped:</span>
-                    <strong>0</strong>
-                  </span>
+                <div class="decision-summary-group">
+                  <span class="label" data-i18n="status.tradeDecisions">Trade decisions</span>
+                  <div class="decision-summary" id="decision-summary">
+                    <span class="decision-metric" data-metric="taken">
+                      <span data-i18n="status.decisions.accepted">Accepted:</span>
+                      <strong>0</strong>
+                    </span>
+                    <span class="decision-metric" data-metric="skipped">
+                      <span data-i18n="status.decisions.skipped">Skipped:</span>
+                      <strong>0</strong>
+                    </span>
+                  </div>
                 </div>
+                <button
+                  id="decision-reasons-toggle"
+                  class="ghost collapse-toggle"
+                  type="button"
+                  aria-expanded="false"
+                  aria-controls="decision-reasons-container"
+                  hidden
+                >
+                  <span id="decision-reasons-toggle-label" data-i18n="status.decisions.showDetails">Details</span>
+                  <span class="collapse-toggle__icon" aria-hidden="true"></span>
+                </button>
               </div>
-              <ul class="decision-reasons" id="decision-reasons">
-                <li class="empty" data-i18n="status.decisions.empty">No trade decisions yet.</li>
-              </ul>
+              <div class="decision-reasons-container" id="decision-reasons-container" hidden>
+                <ul class="decision-reasons" id="decision-reasons">
+                  <li class="empty" data-i18n="status.decisions.empty">No trade decisions yet.</li>
+                </ul>
+              </div>
             </div>
           </section>
 
