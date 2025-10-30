@@ -2034,6 +2034,7 @@ class AITradeAdvisor:
         take_raw = parsed.get("take")
         decision_reason = parsed.get("decision_reason") or parsed.get("reason")
         decision_note = parsed.get("decision_note") or parsed.get("note")
+        confidence = parsed.get("confidence") or parsed.get("score")
 
         take = plan["take"]
         if isinstance(take_raw, bool):
@@ -2075,10 +2076,27 @@ class AITradeAdvisor:
             plan["fasttp_overrides"] = overrides
         if isinstance(risk_note, str) and risk_note.strip():
             plan["risk_note"] = risk_note.strip()
-        if isinstance(explanation, str) and explanation.strip():
-            plan["explanation"] = self._ensure_bounds(explanation, fallback.get("explanation", ""))
+        if isinstance(explanation, str):
+            if explanation.strip():
+                plan["explanation"] = self._ensure_bounds(explanation, fallback.get("explanation", ""))
+            else:
+                plan["explanation"] = ""
         else:
             plan["explanation"] = fallback.get("explanation")
+        if isinstance(confidence, (int, float)):
+            plan["confidence"] = clamp(float(confidence), 0.0, 1.0)
+        elif isinstance(confidence, str):
+            token = confidence.strip()
+            if token:
+                try:
+                    if token.endswith("%"):
+                        numeric = float(token.rstrip("% ")) / 100.0
+                    else:
+                        numeric = float(token)
+                except (TypeError, ValueError):
+                    numeric = None
+                else:
+                    plan["confidence"] = clamp(float(numeric), 0.0, 1.0)
 
         entry_px = (
             parsed.get("entry_price")
