@@ -7942,8 +7942,51 @@ function formatRelativeTime(input) {
 function summariseDataRecord(record) {
   if (!record || typeof record !== 'object') return '';
 
-  const MAX_SEGMENTS = 10;
-  const bannedTopKeys = new Set(['manual_request', 'request_id']);
+  const bannedTopKeys = new Set([
+    'manual_request',
+    'request_id',
+    'decision_note',
+    'risk_note',
+    'explanation',
+    'notes',
+    'indicators',
+    'bandit_features',
+    'features',
+  ]);
+
+  const highlightKeys = new Set([
+    'symbol',
+    'asset',
+    'ticker',
+    'side',
+    'direction',
+    'decision',
+    'take',
+    'bucket',
+    'policy_bucket',
+    'confidence',
+    'alpha_prob',
+    'alpha_conf',
+    'size_multiplier',
+    'policy_size_multiplier',
+    'sl_multiplier',
+    'tp_multiplier',
+    'decision_reason',
+    'reason',
+    'reason_label',
+    'qty',
+    'notional',
+    'entry',
+    'entry_price',
+    'sl',
+    'stop_loss',
+    'tp',
+    'take_profit',
+    'expected_r',
+    'expected_return',
+    'timeframe',
+  ]);
+
   const scalarEntries = [];
   Object.entries(record).forEach(([key, value]) => {
     if (bannedTopKeys.has(key)) return;
@@ -7974,82 +8017,44 @@ function summariseDataRecord(record) {
   const indicatorFormatting = {
     rsi: { label: 'RSI', digits: 1 },
     bb_position: { label: 'BB%', digits: 1, scale: 100 },
-    bb_width: { label: 'BBw', digits: 4 },
-    supertrend_dir: { label: 'STdir', digits: 1, signed: true },
-    supertrend: { label: 'ST', digits: 2 },
-    stoch_rsi_d: { label: 'StochD', digits: 1 },
-    stoch_rsi_k: { label: 'StochK', digits: 1 },
+    bb_width: { label: 'BB width', digits: 4 },
+    supertrend_dir: { label: 'Supertrend direction', digits: 1, signed: true },
+    supertrend: { label: 'Supertrend', digits: 2 },
+    stoch_rsi_d: { label: 'Stochastic %D', digits: 1 },
+    stoch_rsi_k: { label: 'Stochastic %K', digits: 1 },
   };
 
   const featureFormatting = {
-    atr_pct: { label: 'ATR%', digits: 2, scale: 100 },
+    atr_pct: { label: 'ATR %', digits: 2, scale: 100 },
     adx: { label: 'ADX', digits: 1 },
-    slope_htf: { label: 'Slope', digits: 3, signed: true },
-    spread_bps: { label: 'Spreadbps', digits: 1, scale: 10000 },
-    funding: { label: 'Funding%', digits: 4, scale: 100, signed: true },
-    qv_score: { label: 'QVol', digits: 2 },
+    slope_htf: { label: 'Slope (HTF)', digits: 3, signed: true },
+    spread_bps: { label: 'Spread (bps)', digits: 1, scale: 10000 },
+    funding: { label: 'Funding %', digits: 4, scale: 100, signed: true },
+    qv_score: { label: 'Quiet volatility', digits: 2 },
     trend: { label: 'Trend', digits: 0, signed: true },
-    regime_adx: { label: 'RegADX', digits: 1 },
-    regime_slope: { label: 'RegSlope', digits: 3, signed: true },
+    regime_adx: { label: 'Regime ADX', digits: 1 },
+    regime_slope: { label: 'Regime slope', digits: 3, signed: true },
   };
-
-  const priorityScalars = [
-    { key: 'symbol', label: 'Symbol', raw: true },
-    { key: 'side', label: 'Side', raw: true },
-    { key: 'decision', label: 'Decision', raw: true },
-    { key: 'take', label: 'Action', boolLabels: { true: 'enter', false: 'skip' } },
-    { key: 'bucket', label: 'Bucket', raw: true },
-    { key: 'confidence', label: 'Confidence', digits: 2 },
-    { key: 'size_multiplier', label: 'Size×', digits: 2 },
-    { key: 'sl_multiplier', label: 'SL×', digits: 2 },
-    { key: 'tp_multiplier', label: 'TP×', digits: 2 },
-    { key: 'decision_reason', label: 'Reason', formatter: friendlyReason },
-    { key: 'qty', label: 'Qty', raw: true },
-    { key: 'entry', label: 'Entry', digits: 4 },
-    { key: 'sl', label: 'SL', digits: 4 },
-    { key: 'tp', label: 'TP', digits: 4 },
-    { key: 'alpha_prob', label: 'α', digits: 3 },
-    { key: 'alpha_conf', label: 'αc', digits: 2 },
-    { key: 'expected_r', label: 'ExpR', digits: 2, signed: true },
-  ];
 
   const indicatorPriority = ['rsi', 'bb_position', 'bb_width', 'supertrend_dir', 'supertrend', 'stoch_rsi_d'];
   const featurePriority = ['atr_pct', 'adx', 'slope_htf', 'spread_bps', 'funding', 'qv_score', 'trend', 'regime_adx', 'regime_slope'];
 
-  const segments = [];
-
-  function formatValue(value, options = {}) {
-    const {
-      digits = 2,
-      signed = false,
-      scale = 1,
-      suffix = '',
-      raw = false,
-      boolLabels,
-      formatter,
-    } = options;
-    if (value === null || value === undefined) return '';
-    if (raw) return String(value);
-    if (typeof formatter === 'function') {
-      try {
-        const formatted = formatter(value);
-        if (formatted !== undefined && formatted !== null) {
-          return String(formatted);
+  function firstText(keys) {
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed) {
+          return trimmed;
         }
-      } catch (error) {
-        // ignore formatter errors and fall back to default formatting
       }
     }
-    if (typeof value === 'boolean') {
-      if (boolLabels && boolLabels[value] !== undefined) {
-        return String(boolLabels[value]);
-      }
-      return value ? 'yes' : 'no';
-    }
+    return null;
+  }
+
+  function formatNumber(value, { digits = 2, signed = false, scale = 1, suffix = '' } = {}) {
     const numeric = Number(value);
-    if (!Number.isFinite(numeric)) {
-      return String(value);
-    }
+    if (!Number.isFinite(numeric)) return '';
     const scaled = numeric * scale;
     let text = scaled.toFixed(digits);
     if (signed && scaled > 0) {
@@ -8058,57 +8063,215 @@ function summariseDataRecord(record) {
     return suffix ? `${text}${suffix}` : text;
   }
 
-  function appendFromMap(map, key, label, options = {}) {
-    if (segments.length >= MAX_SEGMENTS) return;
-    if (!map.has(key)) return;
-    const value = map.get(key);
-    const rendered = formatValue(value, options);
-    if (!rendered) {
-      map.delete(key);
-      return;
-    }
-    segments.push(`${label ?? key}: ${rendered}`);
-    map.delete(key);
+  function formatBoolean(value) {
+    return value ? 'yes' : 'no';
   }
 
-  priorityScalars.forEach((item) => {
-    appendFromMap(scalarMap, item.key, item.label, item);
-  });
+  function formatGeneralScalar(key, value) {
+    if (typeof value === 'boolean') {
+      return `${toTitleWords(key)} ${formatBoolean(value)}`;
+    }
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      const digits = Math.abs(numeric) >= 100 ? 0 : Math.abs(numeric) >= 10 ? 1 : 2;
+      return `${toTitleWords(key)} ${numeric.toFixed(digits)}`;
+    }
+    return `${toTitleWords(key)} ${String(value)}`;
+  }
 
-  indicatorPriority.forEach((key) => {
-    const fmt = indicatorFormatting[key] || { label: key };
-    appendFromMap(indicatorMap, key, fmt.label || key, fmt);
-  });
+  const sentences = [];
 
-  featurePriority.forEach((key) => {
-    const fmt = featureFormatting[key] || { label: key };
-    appendFromMap(featureMap, key, fmt.label || key, fmt);
-  });
+  const symbol = firstText(['symbol', 'asset', 'ticker']);
+  const side = firstText(['side', 'direction']);
+  const decision = firstText(['decision']);
+  const bucket = firstText(['bucket', 'policy_bucket']);
+  const takeValue = Object.prototype.hasOwnProperty.call(record, 'take') ? record.take : null;
+  const actionText = typeof takeValue === 'boolean' ? (takeValue ? 'enter the trade' : 'skip the trade') : '';
+  const summaryParts = [];
+  if (symbol) {
+    summaryParts.push(symbol.toUpperCase());
+    scalarMap.delete('symbol');
+  }
+  if (side) {
+    summaryParts.push(side.toUpperCase());
+    scalarMap.delete('side');
+  }
+  const decisionParts = [];
+  if (decision) {
+    decisionParts.push(decision.toUpperCase());
+    scalarMap.delete('decision');
+  }
+  if (actionText) {
+    decisionParts.push(actionText);
+    scalarMap.delete('take');
+  }
+  if (decisionParts.length > 0) {
+    summaryParts.push(decisionParts.join(' — '));
+  }
+  if (bucket) {
+    summaryParts.push(`bucket ${bucket}`);
+    scalarMap.delete('bucket');
+    scalarMap.delete('policy_bucket');
+  }
+  if (summaryParts.length > 0) {
+    sentences.push(`${summaryParts.join(', ')}.`);
+  }
 
-  if (segments.length < MAX_SEGMENTS) {
-    for (const key of Array.from(scalarMap.keys())) {
-      appendFromMap(scalarMap, key, key);
-      if (segments.length >= MAX_SEGMENTS) break;
+  const reasonLabel =
+    firstText(['reason_label']) ||
+    (record.decision_reason ? friendlyReason(record.decision_reason) : null) ||
+    firstText(['reason']);
+  if (reasonLabel) {
+    sentences.push(`Reason: ${reasonLabel}.`);
+    scalarMap.delete('reason_label');
+    scalarMap.delete('decision_reason');
+    scalarMap.delete('reason');
+  }
+
+  const confidenceParts = [];
+  if (Number.isFinite(Number(record.confidence))) {
+    confidenceParts.push(`confidence ${formatNumber(record.confidence)}`);
+    scalarMap.delete('confidence');
+  }
+  if (Number.isFinite(Number(record.alpha_prob))) {
+    confidenceParts.push(`alpha probability ${formatNumber(record.alpha_prob, { digits: 3 })}`);
+    scalarMap.delete('alpha_prob');
+  }
+  if (Number.isFinite(Number(record.alpha_conf))) {
+    confidenceParts.push(`alpha confidence ${formatNumber(record.alpha_conf)}`);
+    scalarMap.delete('alpha_conf');
+  }
+  if (confidenceParts.length > 0) {
+    sentences.push(`Confidence metrics: ${confidenceParts.join(', ')}.`);
+  }
+
+  const multiplierParts = [];
+  const sizeMultiplier =
+    Number.isFinite(Number(record.size_multiplier))
+      ? Number(record.size_multiplier)
+      : Number(record.policy_size_multiplier);
+  if (Number.isFinite(Number(sizeMultiplier))) {
+    multiplierParts.push(`size ×${formatNumber(sizeMultiplier, { digits: 2 })}`);
+    scalarMap.delete('size_multiplier');
+    scalarMap.delete('policy_size_multiplier');
+  }
+  if (Number.isFinite(Number(record.sl_multiplier))) {
+    multiplierParts.push(`stop-loss ×${formatNumber(record.sl_multiplier, { digits: 2 })}`);
+    scalarMap.delete('sl_multiplier');
+  }
+  if (Number.isFinite(Number(record.tp_multiplier))) {
+    multiplierParts.push(`take-profit ×${formatNumber(record.tp_multiplier, { digits: 2 })}`);
+    scalarMap.delete('tp_multiplier');
+  }
+  if (multiplierParts.length > 0) {
+    sentences.push(`Sizing multipliers: ${multiplierParts.join(', ')}.`);
+  }
+
+  const tradeLevels = [];
+  const entryPrice =
+    Number.isFinite(Number(record.entry))
+      ? Number(record.entry)
+      : Number.isFinite(Number(record.entry_price))
+        ? Number(record.entry_price)
+        : null;
+  if (Number.isFinite(entryPrice)) {
+    tradeLevels.push(`entry ${formatNumber(entryPrice, { digits: 4 })}`);
+    scalarMap.delete('entry');
+    scalarMap.delete('entry_price');
+  }
+  const stopPrice =
+    Number.isFinite(Number(record.sl))
+      ? Number(record.sl)
+      : Number.isFinite(Number(record.stop_loss))
+        ? Number(record.stop_loss)
+        : null;
+  if (Number.isFinite(stopPrice)) {
+    tradeLevels.push(`stop ${formatNumber(stopPrice, { digits: 4 })}`);
+    scalarMap.delete('sl');
+    scalarMap.delete('stop_loss');
+  }
+  const targetPrice =
+    Number.isFinite(Number(record.tp))
+      ? Number(record.tp)
+      : Number.isFinite(Number(record.take_profit))
+        ? Number(record.take_profit)
+        : null;
+  if (Number.isFinite(targetPrice)) {
+    tradeLevels.push(`target ${formatNumber(targetPrice, { digits: 4 })}`);
+    scalarMap.delete('tp');
+    scalarMap.delete('take_profit');
+  }
+  if (tradeLevels.length > 0) {
+    sentences.push(`Trade levels: ${tradeLevels.join(', ')}.`);
+  }
+
+  const quantityParts = [];
+  if (Number.isFinite(Number(record.qty))) {
+    quantityParts.push(`quantity ${formatNumber(record.qty, { digits: 4 })}`);
+    scalarMap.delete('qty');
+  }
+  if (Number.isFinite(Number(record.notional))) {
+    quantityParts.push(`notional ${formatNumber(record.notional, { digits: 2 })}`);
+    scalarMap.delete('notional');
+  }
+  const timeframe = firstText(['timeframe']);
+  if (timeframe) {
+    quantityParts.push(`timeframe ${timeframe}`);
+    scalarMap.delete('timeframe');
+  }
+  if (Number.isFinite(Number(record.expected_r))) {
+    quantityParts.push(`expected return ${formatNumber(record.expected_r, { digits: 2, signed: true })}`);
+    scalarMap.delete('expected_r');
+  } else if (Number.isFinite(Number(record.expected_return))) {
+    quantityParts.push(`expected return ${formatNumber(record.expected_return, { digits: 2, signed: true })}`);
+    scalarMap.delete('expected_return');
+  }
+  if (quantityParts.length > 0) {
+    sentences.push(`Position outline: ${quantityParts.join(', ')}.`);
+  }
+
+  function consumeMapEntries(sourceMap, priorityKeys, formatting, label) {
+    const fragments = [];
+
+    function consume(key) {
+      if (!sourceMap.has(key)) return;
+      const fmt = formatting[key] || {};
+      const rendered = formatNumber(sourceMap.get(key), fmt);
+      if (!rendered) {
+        sourceMap.delete(key);
+        return;
+      }
+      const prefix = fmt.label || toTitleWords(key);
+      fragments.push(`${prefix} ${rendered}`);
+      sourceMap.delete(key);
+    }
+
+    priorityKeys.forEach((key) => consume(key));
+
+    for (const key of Array.from(sourceMap.keys())) {
+      if (fragments.length >= 6) break;
+      consume(key);
+    }
+
+    if (fragments.length > 0) {
+      sentences.push(`${label}: ${fragments.join(', ')}.`);
     }
   }
 
-  if (segments.length < MAX_SEGMENTS) {
-    for (const key of Array.from(indicatorMap.keys())) {
-      const fmt = indicatorFormatting[key] || { label: key };
-      appendFromMap(indicatorMap, key, fmt.label || key, fmt);
-      if (segments.length >= MAX_SEGMENTS) break;
-    }
+  consumeMapEntries(indicatorMap, indicatorPriority, indicatorFormatting, 'Indicator snapshot');
+  consumeMapEntries(featureMap, featurePriority, featureFormatting, 'Model inputs');
+
+  const extraItems = [];
+  for (const [key, value] of scalarMap.entries()) {
+    if (highlightKeys.has(key)) continue;
+    extraItems.push(formatGeneralScalar(key, value));
+    if (extraItems.length >= 6) break;
+  }
+  if (extraItems.length > 0) {
+    sentences.push(`Additional data: ${extraItems.join(', ')}.`);
   }
 
-  if (segments.length < MAX_SEGMENTS) {
-    for (const key of Array.from(featureMap.keys())) {
-      const fmt = featureFormatting[key] || { label: key };
-      appendFromMap(featureMap, key, fmt.label || key, fmt);
-      if (segments.length >= MAX_SEGMENTS) break;
-    }
-  }
-
-  return segments.join(' · ');
+  return sentences.join(' ');
 }
 
 function sleep(ms) {
