@@ -964,6 +964,31 @@ body.paper-mode .hero-paper-toggle span {
   gap: 0.55rem;
 }
 
+.side-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+
+.side-badge.long {
+  color: var(--success);
+  background: rgba(74, 222, 128, 0.16);
+  border-color: rgba(74, 222, 128, 0.28);
+}
+
+.side-badge.short {
+  color: var(--danger);
+  background: rgba(248, 113, 113, 0.16);
+  border-color: rgba(248, 113, 113, 0.28);
+}
+
 .active-positions-symbol {
   font-weight: 600;
   letter-spacing: 0.02em;
