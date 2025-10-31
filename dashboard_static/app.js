@@ -111,6 +111,7 @@ const DEFAULT_BOT_STATUS = { running: false, pid: null, started_at: null, uptime
 
 const DEFAULT_LANGUAGE = 'en';
 const SUPPORTED_LANGUAGES = ['en', 'ru', 'zh', 'ko', 'de', 'fr', 'es', 'tr'];
+const COMPACT_SKIP_AGGREGATION_WINDOW = 600; // seconds
 
 const TRANSLATIONS = {
   ru: {
@@ -1880,6 +1881,7 @@ let aiMode = false;
 let paperMode = false;
 let selectedPreset = 'mid';
 let autoScrollEnabled = true;
+let compactSkipAggregate = null;
 let quickConfigPristine = true;
 let envCollapsed = true;
 let mostTradedTimer = null;
@@ -7850,12 +7852,12 @@ function appendCompactLog({ line, level, ts }) {
   if (friendly?.refreshTrades) {
     scheduleTradesRefresh(250);
   }
+  const timestampSeconds = Number.isFinite(ts)
+    ? Number(ts)
+    : friendly?.parsed?.timestamp
+      ? Date.parse(friendly.parsed.timestamp) / 1000
+      : undefined;
   if (friendly?.reason) {
-    const timestampSeconds = Number.isFinite(ts)
-      ? Number(ts)
-      : friendly.parsed?.timestamp
-        ? Date.parse(friendly.parsed.timestamp) / 1000
-        : undefined;
     recordDecisionEvent(friendly.reason, {
       type: 'log',
       symbol: friendly.symbol,
@@ -7868,6 +7870,44 @@ function appendCompactLog({ line, level, ts }) {
   }
   if (!friendly || !friendly.relevant) return;
 
+  const candidateTimestamp = Number.isFinite(timestampSeconds)
+    ? Number(timestampSeconds)
+    : Date.now() / 1000;
+  const isFewKlines = friendly.reason === 'few_klines';
+  const skipKey = isFewKlines ? `${friendly.symbol || ''}::${friendly.reason}` : '';
+
+  if (
+    isFewKlines &&
+    compactSkipAggregate &&
+    compactSkipAggregate.key === skipKey &&
+    compactSkipAggregate.element &&
+    compactSkipAggregate.element.isConnected
+  ) {
+    const withinWindow = !compactSkipAggregate.lastTimestamp
+      || candidateTimestamp - compactSkipAggregate.lastTimestamp <= COMPACT_SKIP_AGGREGATION_WINDOW;
+    if (withinWindow) {
+      compactSkipAggregate.count += 1;
+      const messageEl = compactSkipAggregate.element.querySelector('.log-message');
+      if (messageEl) {
+        const base =
+          compactSkipAggregate.baseText || messageEl.dataset.baseText || friendly.text || line;
+        messageEl.dataset.baseText = base;
+        messageEl.textContent = `${base} (x${compactSkipAggregate.count})`;
+      }
+      const timeEl = compactSkipAggregate.element.querySelector('.log-time');
+      if (timeEl) {
+        const dateObj = new Date(candidateTimestamp * 1000);
+        if (!Number.isNaN(dateObj.getTime())) {
+          timeEl.textContent = dateObj.toLocaleTimeString();
+        }
+      }
+      compactSkipAggregate.lastTimestamp = candidateTimestamp;
+      return;
+    }
+  }
+
+  compactSkipAggregate = null;
+
   const severity = (friendly.severity || level || 'info').toLowerCase();
   const el = document.createElement('div');
   el.className = `log-line ${severity}`.trim();
@@ -7875,10 +7915,12 @@ function appendCompactLog({ line, level, ts }) {
   const meta = document.createElement('div');
   meta.className = 'log-meta';
 
-  if (ts) {
+  const displayTimestamp =
+    Number.isFinite(timestampSeconds) || isFewKlines ? candidateTimestamp : undefined;
+  if (displayTimestamp) {
     const time = document.createElement('span');
     time.className = 'log-time';
-    time.textContent = new Date(ts * 1000).toLocaleTimeString();
+    time.textContent = new Date(displayTimestamp * 1000).toLocaleTimeString();
     meta.append(time);
   }
 
@@ -7889,10 +7931,33 @@ function appendCompactLog({ line, level, ts }) {
 
   const message = document.createElement('div');
   message.className = 'log-message';
+  message.dataset.baseText = friendly.text || line;
   message.textContent = friendly.text || line;
 
   el.append(meta, message);
+
+  if (isFewKlines) {
+    const note = document.createElement('div');
+    note.className = 'log-note';
+    note.textContent = translate(
+      'logs.activity.waitingForCandlesNote',
+      'Waiting for more recent candles on {{symbol}} before evaluating new trades.',
+      { symbol: friendly.symbol || 'this market' }
+    );
+    el.append(note);
+  }
+
   compactLogStream.append(el);
+
+  if (isFewKlines) {
+    compactSkipAggregate = {
+      key: skipKey,
+      element: el,
+      count: 1,
+      baseText: friendly.text || line,
+      lastTimestamp: candidateTimestamp,
+    };
+  }
 
   while (compactLogStream.children.length > 150) {
     compactLogStream.removeChild(compactLogStream.firstChild);

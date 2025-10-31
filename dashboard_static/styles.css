@@ -3031,6 +3031,12 @@ body.pro-mode .log-stream {
   line-height: 1.55;
 }
 
+.log-line .log-note {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
 .log-line.info {
   background: rgba(53, 53, 72, 0.55);
   border-color: rgba(245, 196, 107, 0.1);
