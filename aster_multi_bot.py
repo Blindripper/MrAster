@@ -5496,6 +5496,7 @@ class Bot:
                 except (TypeError, ValueError):
                     playbook_tp_factor = 1.0
         size_mult = policy_size_mult * sentinel_factor
+        score_info = self._symbol_score_cache.get(symbol, {})
         if not manual_override:
             size_mult *= tuning_bucket_factor
             size_mult *= playbook_size_factor
