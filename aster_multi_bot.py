@@ -570,9 +570,14 @@ class DailyBudgetTracker:
             bucket["spent"] = 0.0
             bucket["history"] = []
             bucket["stats"] = {}
+            bucket["count"] = 0
         bucket.setdefault("spent", 0.0)
-        bucket.setdefault("history", [])
+        history = bucket.setdefault("history", [])
         bucket.setdefault("stats", {})
+        count_val = bucket.get("count")
+        if not isinstance(count_val, (int, float)):
+            count_val = len(history)
+        bucket["count"] = max(int(count_val or 0), len(history))
         return bucket
 
     def spent(self) -> float:
@@ -614,6 +619,7 @@ class DailyBudgetTracker:
         if len(history) > 48:
             history = history[-48:]
         bucket["history"] = history
+        bucket["count"] = int(bucket.get("count", 0) or 0) + 1
         stats = bucket.setdefault("stats", {})
         model_key = str((meta or {}).get("model") or "default")
         kind_key = str((meta or {}).get("kind") or "unknown")
@@ -646,6 +652,7 @@ class DailyBudgetTracker:
             "history": list(bucket.get("history") or [])[-12:],
             "strict": self.strict,
             "stats": bucket.get("stats", {}),
+            "count": int(bucket.get("count", 0) or 0),
         }
 
     def average_cost(self, *, kind: Optional[str] = None, model: Optional[str] = None) -> Optional[float]:
