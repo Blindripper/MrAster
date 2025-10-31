@@ -3300,6 +3300,27 @@ class Strategy:
         self._kl_cache_ttl = KLINE_CACHE_SEC
         self._kl_cache_hits = 0
         self._kl_cache_miss = 0
+        self._symbol_score_cache: Dict[str, Dict[str, float]] = {}
+        if self.state:
+            scores = self.state.get("universe_scores")
+            if isinstance(scores, dict):
+                hydrated: Dict[str, Dict[str, float]] = {}
+                for sym, record in scores.items():
+                    if not isinstance(sym, str) or not sym:
+                        continue
+                    if not isinstance(record, dict):
+                        continue
+                    try:
+                        hydrated[sym] = {
+                            "score": float(record.get("score", 0.0) or 0.0),
+                            "qv_score": float(record.get("qv", record.get("qv_score", 0.0)) or 0.0),
+                            "perf_bias": float(record.get("perf_bias", 1.0) or 1.0),
+                            "budget_bias": float(record.get("budget_bias", 1.0) or 1.0),
+                        }
+                    except Exception:
+                        continue
+                if hydrated:
+                    self._symbol_score_cache = hydrated
 
     @property
     def tech_snapshot_dirty(self) -> bool:
@@ -4667,6 +4688,8 @@ class Bot:
         unique_syms = [str(sym).upper() for sym in symbols if sym]
         if not unique_syms:
             self._symbol_score_cache = {}
+            if getattr(self, "_strategy", None):
+                self._strategy._symbol_score_cache = {}
             return []
         base_index = {sym: idx for idx, sym in enumerate(unique_syms)}
         ticker_map = ticker_map or {}
@@ -4742,6 +4765,8 @@ class Bot:
             reverse=True,
         )
         self._symbol_score_cache = score_cache
+        if getattr(self, "_strategy", None):
+            self._strategy._symbol_score_cache = score_cache
         universe_state = {
             sym: {
                 "score": round(score_cache.get(sym, {}).get("score", 0.0), 6),
