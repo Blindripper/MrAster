@@ -5273,6 +5273,24 @@ class Bot:
             return
 
         sig, atr_abs, ctx, price = self.strategy.compute_signal(symbol, book_ticker=book_ticker)
+        score_info: Dict[str, Any] = {}
+        cache = getattr(self, "_symbol_score_cache", None)
+        if isinstance(cache, dict):
+            try:
+                cached_entry = cache.get(symbol)
+                if isinstance(cached_entry, dict):
+                    score_info = cached_entry
+            except Exception:
+                score_info = {}
+        if not score_info:
+            strategy_cache = getattr(self.strategy, "_symbol_score_cache", None)
+            if isinstance(strategy_cache, dict):
+                try:
+                    cached_entry = strategy_cache.get(symbol)
+                    if isinstance(cached_entry, dict):
+                        score_info = cached_entry
+                except Exception:
+                    score_info = {}
         if priority_side_hint and isinstance(ctx, dict):
             ctx.setdefault("ai_priority_side_hint", priority_side_hint)
         base_signal = sig
