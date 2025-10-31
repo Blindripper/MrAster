@@ -195,6 +195,62 @@ def _safe_float(value: Any) -> Optional[float]:
         return None
 
 
+def _normalize_ai_budget(raw: Any) -> Dict[str, Any]:
+    bucket: Dict[str, Any] = dict(raw) if isinstance(raw, dict) else {}
+    history = bucket.get("history")
+    if not isinstance(history, list):
+        history = []
+    bucket["history"] = history
+    count_val = bucket.get("count")
+    try:
+        count = int(count_val)
+    except (TypeError, ValueError):
+        count = None
+    if count is None:
+        count = len(history)
+    if count < len(history):
+        count = len(history)
+    bucket["count"] = max(count, 0)
+    return bucket
+
+
+def _ai_request_count(ai_budget: Dict[str, Any]) -> Optional[int]:
+    if not isinstance(ai_budget, dict):
+        return None
+    try:
+        count = int(ai_budget.get("count"))
+    except (TypeError, ValueError):
+        return None
+    return max(count, 0)
+
+
+def _summarize_ai_budget_line(ai_budget: Dict[str, Any]) -> Optional[str]:
+    if not isinstance(ai_budget, dict) or not ai_budget:
+        return None
+    limit_val = _safe_float(ai_budget.get("limit"))
+    spent_val = _safe_float(ai_budget.get("spent"))
+    request_count = _ai_request_count(ai_budget)
+    request_phrase = None
+    if request_count is not None:
+        noun = "request" if request_count == 1 else "requests"
+        request_phrase = f"{request_count} AI {noun} today"
+    if limit_val is not None and limit_val > 0 and spent_val is not None:
+        message = f"AI budget: {spent_val:.2f} / {limit_val:.2f} USD consumed today"
+        if request_phrase:
+            message += f" ({request_phrase})."
+        else:
+            message += "."
+        return message
+    if spent_val is not None:
+        note = "no configured cap"
+        if request_phrase:
+            note += f"; {request_phrase}"
+        return f"AI budget: {spent_val:.2f} USD spent today ({note})."
+    if request_phrase:
+        return f"AI budget requests so far: {request_phrase}."
+    return None
+
+
 def _fetch_position_snapshot(env: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     base = (env.get("ASTER_EXCHANGE_BASE") or "https://fapi.asterdex.com").rstrip("/")
     api_key = (env.get("ASTER_API_KEY") or "").strip()
@@ -2394,7 +2450,7 @@ class AIChatEngine:
         stats = _compute_stats(history)
         open_trades = state.get("live_trades", {})
         ai_activity = state.get("ai_activity", [])
-        ai_budget = state.get("ai_budget", {})
+        ai_budget = _normalize_ai_budget(state.get("ai_budget", {}))
         decision_stats = _decision_summary(state)
         recent_plans = self._recent_plan_summaries(state.get("ai_recent_plans"))
         technical_snapshot = state.get("technical_snapshot", {})
@@ -2457,13 +2513,9 @@ class AIChatEngine:
             lines.append(
                 f"Toughest trade: {worst_symbol} {worst_side} ended at {worst_pnl:.2f} USDT."
             )
-        if ai_budget:
-            limit = ai_budget.get("limit")
-            spent = ai_budget.get("spent")
-            if isinstance(limit, (int, float)) and limit:
-                lines.append(f"AI budget: {spent:.2f} / {limit:.2f} USD consumed today.")
-            elif isinstance(spent, (int, float)):
-                lines.append(f"AI budget: {spent:.2f} USD spent today (no configured cap).")
+        budget_summary = _summarize_ai_budget_line(ai_budget)
+        if budget_summary:
+            lines.append(budget_summary)
         if decision_stats:
             taken = int(decision_stats.get("taken", 0) or 0)
             rejected_total = int(decision_stats.get("rejected_total", 0) or 0)
@@ -2754,13 +2806,9 @@ class AIChatEngine:
             parts.append(
                 f"Latest AI event: {latest.get('headline', 'update')} — {latest.get('body', 'details pending')}"
             )
-        if ai_budget:
-            limit = ai_budget.get("limit")
-            spent = ai_budget.get("spent")
-            if isinstance(limit, (int, float)) and limit:
-                parts.append(f"AI spend {spent:.2f}/{limit:.2f} USD today.")
-            elif isinstance(spent, (int, float)):
-                parts.append(f"AI spend {spent:.2f} USD today.")
+        budget_summary = _summarize_ai_budget_line(ai_budget)
+        if budget_summary:
+            parts.append(budget_summary)
         action_payload = self._infer_trade_action(message, env)
         if action_payload:
             parts.append(
@@ -3598,7 +3646,7 @@ async def trades() -> Dict[str, Any]:
         enriched_open = open_trades
     stats = _compute_stats(history)
     decision_stats = _decision_summary(state)
-    ai_budget = state.get("ai_budget", {})
+    ai_budget = _normalize_ai_budget(state.get("ai_budget", {}))
     ai_activity_raw = state.get("ai_activity", [])
     if isinstance(ai_activity_raw, list):
         # Preserve chronological ordering so analysis entries appear before

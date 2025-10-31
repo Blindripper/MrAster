@@ -5447,7 +5447,10 @@ function renderAiBudget(budget) {
     return;
   }
   let limit = Number((budget && budget.limit) ?? 0);
-  const spent = Number((budget && budget.spent) ?? 0);
+  let spent = Number((budget && budget.spent) ?? 0);
+  if (!Number.isFinite(spent) || spent < 0) {
+    spent = 0;
+  }
   const presetMode = (currentConfig?.env?.ASTER_PRESET_MODE || '').toString().toLowerCase();
   const presetForcesUnlimited = presetMode === 'high' || presetMode === 'att';
   if (!Number.isFinite(limit) || limit <= 0) {
@@ -5458,6 +5461,19 @@ function renderAiBudget(budget) {
   }
   const hasLimit = Number.isFinite(limit) && limit > 0;
   aiBudgetCard.classList.toggle('unlimited', !hasLimit);
+  if (!Number.isFinite(limit) || limit < 0) {
+    limit = 0;
+  }
+  let requestCount = Number((budget && budget.count) ?? 0);
+  if (!Number.isFinite(requestCount) || requestCount < 0) {
+    requestCount = 0;
+  }
+  requestCount = Math.floor(requestCount);
+  const requestLabel = translate(
+    requestCount === 1 ? 'status.aiBudgetMeta.requests.one' : 'status.aiBudgetMeta.requests.many',
+    `${requestCount} ${requestCount === 1 ? 'request' : 'requests'} today`,
+    { count: requestCount }
+  );
   if (!hasLimit) {
     const presetNote = presetForcesUnlimited
       ? presetMode === 'high'
@@ -5467,8 +5483,8 @@ function renderAiBudget(budget) {
     aiBudgetFill.style.width = '0%';
     aiBudgetMeta.textContent = translate(
       presetForcesUnlimited ? 'status.aiBudgetMeta.unlimitedPreset' : 'status.aiBudgetMeta.unlimited',
-      `Spent ${spent.toFixed(2)} USD · unlimited budget${presetNote}`,
-      { spent: spent.toFixed(2), note: presetNote }
+      `Spent ${spent.toFixed(2)} USD · unlimited budget${presetNote} · ${requestLabel}`,
+      { spent: spent.toFixed(2), note: presetNote, requests: requestCount, requests_label: requestLabel }
     );
     return;
   }
@@ -5477,8 +5493,14 @@ function renderAiBudget(budget) {
   const remaining = Math.max(0, limit - spent);
   aiBudgetMeta.textContent = translate(
     'status.aiBudgetMeta.limited',
-    `Spent ${spent.toFixed(2)} / ${limit.toFixed(2)} USD · remaining ${remaining.toFixed(2)} USD`,
-    { spent: spent.toFixed(2), limit: limit.toFixed(2), remaining: remaining.toFixed(2) }
+    `Spent ${spent.toFixed(2)} / ${limit.toFixed(2)} USD · remaining ${remaining.toFixed(2)} USD · ${requestLabel}`,
+    {
+      spent: spent.toFixed(2),
+      limit: limit.toFixed(2),
+      remaining: remaining.toFixed(2),
+      requests: requestCount,
+      requests_label: requestLabel,
+    }
   );
 }
 
