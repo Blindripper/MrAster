@@ -3149,7 +3149,13 @@ class SymbolUniverse:
 
 # ========= Risk =========
 class RiskManager:
-    def __init__(self, exchange: Exchange, default_notional: float = DEFAULT_NOTIONAL):
+    def __init__(
+        self,
+        exchange: Exchange,
+        default_notional: float = DEFAULT_NOTIONAL,
+        *,
+        state: Optional[Dict[str, Any]] = None,
+    ):
         self.exchange = exchange
         self.default_notional = default_notional
         self.symbol_filters: Dict[str, Dict[str, Any]] = {}
@@ -3157,6 +3163,7 @@ class RiskManager:
         self._equity: Optional[float] = None
         self._equity_ts: float = 0.0
         self._equity_ttl = 10  # s
+        self.state = state if isinstance(state, dict) else None
 
     def load_filters(self) -> None:
         try:
@@ -3193,10 +3200,38 @@ class RiskManager:
         except Exception:
             return 0.0
 
+    def attach_state(self, state: Optional[Dict[str, Any]]) -> None:
+        self.state = state if isinstance(state, dict) else None
+
+    def _drawdown_factor(self) -> float:
+        if not self.state:
+            return 1.0
+        history = self.state.get("trade_history")
+        if not isinstance(history, list) or not history:
+            return 1.0
+        running = 0.0
+        peak = 0.0
+        trough = 0.0
+        for trade in history[-120:]:
+            try:
+                pnl = float(trade.get("pnl", 0.0) or 0.0)
+            except Exception:
+                pnl = 0.0
+            running += pnl
+            if running > peak:
+                peak = running
+            if running < trough:
+                trough = running
+        drawdown = peak - trough
+        if peak <= 0:
+            return 1.0
+        ratio = max(0.0, min(1.0, drawdown / max(abs(peak), 1e-9)))
+        return max(0.45, 1.0 - ratio * 0.55)
+
     def compute_qty(self, symbol: str, entry: float, sl: float, size_mult: float) -> float:
         step = float(self.symbol_filters.get(symbol, {}).get("stepSize", 0.0001) or 0.0001)
         # a) Basiskapital
-        notional_base = DEFAULT_NOTIONAL * max(0.0, size_mult)
+        notional_base = self.default_notional * max(0.0, size_mult)
         # b) risiko-konsistent (1R = Entry–SL)
         risk_notional = 0.0
         try:
@@ -3207,7 +3242,19 @@ class RiskManager:
                 risk_notional = target_loss / max(stop_dist / max(entry, 1e-9), 1e-9)
         except Exception:
             risk_notional = 0.0
-        notional = max(MIN_NOTIONAL_ENV, notional_base, risk_notional)
+        if risk_notional > 0:
+            notional = risk_notional
+            if notional_base > 0:
+                lower = notional_base * 0.4
+                upper = notional_base * 2.2
+                notional = max(notional, lower)
+                notional = min(notional, upper)
+                notional = (notional * 0.7) + (notional_base * 0.3)
+        else:
+            notional = notional_base
+        notional = max(MIN_NOTIONAL_ENV, notional)
+        notional *= self._drawdown_factor()
+        notional = max(MIN_NOTIONAL_ENV, notional)
         # c) Cap via Leverage & Equity-Fraction
         equity = self._equity_cached()
         dyn_cap = equity * LEVERAGE * EQUITY_FRACTION if equity > 0 else float("inf")
@@ -3437,6 +3484,25 @@ class Strategy:
         ctx_base: Dict[str, Any] = {
             "last_price": float(last),
         }
+
+        score_info = self._symbol_score_cache.get(symbol, {})
+        if score_info:
+            try:
+                ctx_base["universe_score"] = float(score_info.get("score", 0.0) or 0.0)
+            except Exception:
+                pass
+            try:
+                ctx_base["universe_qv_score"] = float(score_info.get("qv_score", 0.0) or 0.0)
+            except Exception:
+                pass
+            try:
+                ctx_base["universe_perf_bias"] = float(score_info.get("perf_bias", 1.0) or 1.0)
+            except Exception:
+                pass
+            try:
+                ctx_base["universe_budget_bias"] = float(score_info.get("budget_bias", 1.0) or 1.0)
+            except Exception:
+                pass
 
         # Spread (adaptiv an ATR%)
         mid = last
@@ -4341,6 +4407,10 @@ class Bot:
         self.state.setdefault("ai_trade_proposals", [])
         self.state.setdefault("manual_trade_requests", [])
         self.state.setdefault("manual_trade_history", [])
+        try:
+            self.risk.attach_state(self.state)
+        except Exception:
+            pass
         self._ensure_banned_state()
         cooldown_map = self.state.get("quote_volume_cooldown")
         if not isinstance(cooldown_map, dict):
@@ -4354,12 +4424,14 @@ class Bot:
         self._last_ai_activity_persist = 0.0
         self._manual_state_dirty = False
         self._quote_volume_cooldown_dirty = False
+        self._universe_state_dirty = False
         self._ai_wakeup_event = threading.Event()
         self._ai_priority_lock = threading.Lock()
         self._ai_priority_queue: deque[Tuple[str, Optional[str]]] = deque()
         self._ai_priority_keys: Set[Tuple[str, Optional[str]]] = set()
         self._ai_priority_hint: Dict[str, Optional[str]] = {}
         self._ai_feed_pending_requests: Set[str] = set()
+        self._symbol_score_cache: Dict[str, Dict[str, float]] = {}
         self.policy: Optional[BanditPolicy] = None
         if BANDIT_ENABLED:
             pol_state = self.state.get("policy") if isinstance(self.state, dict) else None
@@ -4586,6 +4658,112 @@ class Bot:
             self._ai_priority_queue.clear()
             self._ai_priority_keys.clear()
         return items
+
+    def _rank_symbols(
+        self,
+        symbols: Sequence[str],
+        ticker_map: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> List[str]:
+        unique_syms = [str(sym).upper() for sym in symbols if sym]
+        if not unique_syms:
+            self._symbol_score_cache = {}
+            return []
+        base_index = {sym: idx for idx, sym in enumerate(unique_syms)}
+        ticker_map = ticker_map or {}
+        history = []
+        if isinstance(self.state.get("trade_history"), list):
+            history = list(self.state.get("trade_history", []))[-120:]
+        perf_samples: Dict[str, List[float]] = {}
+        if history:
+            for trade in history:
+                sym = str(trade.get("symbol") or "").upper()
+                if sym not in base_index:
+                    continue
+                try:
+                    pnl_r = float(trade.get("pnl_r", 0.0) or 0.0)
+                except Exception:
+                    pnl_r = 0.0
+                perf_samples.setdefault(sym, []).append(max(min(pnl_r, 5.0), -5.0))
+        budget_bias_map: Dict[str, float] = {}
+        learner = None
+        if self.ai_advisor and getattr(self.ai_advisor, "budget_learner", None):
+            learner = self.ai_advisor.budget_learner
+        if learner:
+            for sym in unique_syms:
+                try:
+                    budget_bias_map[sym] = float(learner.context_bias(sym))
+                except Exception:
+                    budget_bias_map[sym] = 1.0
+        cooldown_map = self.state.get("quote_volume_cooldown")
+        if not isinstance(cooldown_map, dict):
+            cooldown_map = {}
+
+        score_cache: Dict[str, Dict[str, float]] = {}
+        for sym in unique_syms:
+            perf_list = perf_samples.get(sym, [])
+            if perf_list:
+                avg_r = sum(perf_list[-12:]) / max(len(perf_list[-12:]), 1)
+            else:
+                avg_r = 0.0
+            perf_bias = max(0.55, min(1.5, 1.0 + avg_r * 0.28))
+            record = ticker_map.get(sym)
+            if record and isinstance(record, dict):
+                try:
+                    qvol = float(record.get("quoteVolume", 0.0) or 0.0)
+                except Exception:
+                    qvol = 0.0
+                qv_score = min(2.5, qvol / max(self.strategy.min_quote_vol, 1e-9)) if qvol > 0 else 0.0
+            else:
+                try:
+                    qv_score, _, qvol = self.strategy._get_qv_score(sym)
+                except Exception:
+                    qv_score, qvol = 0.0, 0.0
+            budget_bias = budget_bias_map.get(sym, 1.0)
+            score = qv_score * perf_bias * (0.7 + 0.3 * max(0.1, budget_bias))
+            resume_cycle = cooldown_map.get(sym)
+            if resume_cycle is not None:
+                try:
+                    if int(resume_cycle) > getattr(self, "_current_cycle", 0):
+                        score *= 0.25
+                except Exception:
+                    pass
+            score_cache[sym] = {
+                "score": float(score),
+                "qv_score": float(qv_score),
+                "perf_bias": float(perf_bias),
+                "budget_bias": float(budget_bias),
+            }
+        ranked = sorted(
+            unique_syms,
+            key=lambda sym: (
+                score_cache.get(sym, {}).get("score", 0.0),
+                -base_index.get(sym, 0),
+            ),
+            reverse=True,
+        )
+        self._symbol_score_cache = score_cache
+        universe_state = {
+            sym: {
+                "score": round(score_cache.get(sym, {}).get("score", 0.0), 6),
+                "qv": round(score_cache.get(sym, {}).get("qv_score", 0.0), 4),
+                "perf_bias": round(score_cache.get(sym, {}).get("perf_bias", 0.0), 4),
+                "budget_bias": round(score_cache.get(sym, {}).get("budget_bias", 0.0), 4),
+            }
+            for sym in ranked
+        }
+        prev_state = self.state.get("universe_scores")
+        if prev_state != universe_state:
+            self.state["universe_scores"] = universe_state
+            self._universe_state_dirty = True
+        preferred_cut = max(5, min(len(ranked), (self.universe.max_n or 0) * 2 or 20))
+        preferred = ranked[:preferred_cut]
+        ignored = [sym for sym in ranked if score_cache.get(sym, {}).get("score", 0.0) < 0.1]
+        dynamic_state = self.state.setdefault("dynamic_universe", {})
+        if dynamic_state.get("preferred") != preferred or dynamic_state.get("ignored") != ignored:
+            dynamic_state["preferred"] = preferred
+            dynamic_state["ignored"] = ignored
+            self._universe_state_dirty = True
+        return ranked
 
     def _drain_ai_ready_queue(self, *, clear_event: bool = False) -> None:
         if clear_event:
@@ -5159,6 +5337,8 @@ class Bot:
             except Exception as exc:
                 log.debug(f"sentinel evaluate fail {symbol}: {exc}")
         actions = sentinel_info.get("actions", {}) or {}
+        event_risk = float(sentinel_info.get("event_risk", 0.0) or 0.0)
+        hype_score = float(sentinel_info.get("hype_score", 0.0) or 0.0)
 
         if self.ai_advisor:
             try:
@@ -5204,12 +5384,74 @@ class Bot:
         ctx["policy_bucket"] = bucket
         ctx["policy_size_multiplier"] = policy_size_mult
         sentinel_factor = float(actions.get("size_factor", 1.0) or 1.0)
+        sentinel_factor *= max(0.35, 1.0 - event_risk * 0.65)
+        if hype_score > 1.2:
+            sentinel_factor *= min(1.4, 1.0 + (hype_score - 1.0) * 0.25)
+        elif hype_score < 0.4:
+            sentinel_factor *= max(0.55, 0.85 + hype_score * 0.3)
         tuning_bucket_factor = 1.0
         overrides_sl_mult: Optional[float] = None
         overrides_tp_mult: Optional[float] = None
         playbook_size_factor = 1.0
         playbook_sl_factor = 1.0
         playbook_tp_factor = 1.0
+        sentinel_soft_block = False
+        if actions.get("hard_block") and not manual_override:
+            if event_risk >= 0.85:
+                veto_target = (
+                    sig
+                    if sig != "NONE"
+                    else base_signal
+                    if base_signal != "NONE"
+                    else "opportunity"
+                )
+                log.info(
+                    "Sentinel veto %s due to %s risk (event=%.2f, hype=%.2f)",
+                    symbol,
+                    sentinel_info.get("label", "red"),
+                    event_risk,
+                    hype_score,
+                )
+                self._log_ai_activity(
+                    "decision",
+                    f"Sentinel vetoed {symbol}",
+                    body=(
+                        f"Risk label {sentinel_info.get('label', 'red')} blocked the {veto_target} setup "
+                        "before contacting the strategy AI."
+                    ),
+                    data={
+                        "symbol": symbol,
+                        "side": veto_target,
+                        "event_risk": event_risk,
+                        "hype_score": hype_score,
+                        "ai_request": False,
+                    },
+                    force=True,
+                )
+                if self.decision_tracker:
+                    self.decision_tracker.record_rejection("sentinel_veto")
+                return
+            sentinel_soft_block = True
+            ctx["sentinel_soft_block"] = True
+            log.info(
+                "Sentinel soft-block for %s — scaling exposure (event=%.2f, hype=%.2f)",
+                symbol,
+                event_risk,
+                hype_score,
+            )
+            self._log_ai_activity(
+                "decision",
+                f"Sentinel throttled {symbol}",
+                body="Risk spike detected; reducing position size instead of full veto.",
+                data={
+                    "symbol": symbol,
+                    "side": sig if sig != "NONE" else base_signal,
+                    "event_risk": event_risk,
+                    "hype_score": hype_score,
+                    "ai_request": False,
+                },
+                force=True,
+            )
         if not manual_override:
             tuning_overrides = self.state.get("tuning_overrides")
             if isinstance(tuning_overrides, dict):
@@ -5260,44 +5502,32 @@ class Bot:
             budget_factor = ctx.get("budget_bias")
             try:
                 if budget_factor is not None:
-                    size_mult *= max(0.4, min(1.6, float(budget_factor)))
+                    bias_val = max(0.1, float(budget_factor))
+                    applied = max(0.25, min(1.9, bias_val))
+                    size_mult *= applied
+                    ctx["budget_bias_applied"] = float(applied)
             except (TypeError, ValueError):
                 pass
+            perf_bias_val = score_info.get("perf_bias") if isinstance(score_info, dict) else None
+            if isinstance(perf_bias_val, (int, float)):
+                perf_mult = max(0.6, min(1.6, float(perf_bias_val)))
+                size_mult *= perf_mult
+                ctx["universe_perf_multiplier"] = float(perf_mult)
+        if sentinel_soft_block and not manual_override:
+            soft_mult = max(0.2, 1.0 - event_risk * 0.8)
+            size_mult *= soft_mult
+            ctx["sentinel_soft_multiplier"] = float(soft_mult)
         ctx["tuning_size_bucket_multiplier"] = float(tuning_bucket_factor)
         ctx["playbook_size_multiplier"] = float(playbook_size_factor)
         ctx["sentinel_factor"] = sentinel_factor
-        ctx["sentinel_event_risk"] = float(sentinel_info.get("event_risk", 0.0) or 0.0)
-        ctx["sentinel_hype"] = float(sentinel_info.get("hype_score", 0.0) or 0.0)
+        ctx["sentinel_event_risk"] = event_risk
+        ctx["sentinel_hype"] = hype_score
         ctx["sentinel_label"] = sentinel_info.get("label", "green")
-
-        if actions.get("hard_block") and not manual_override:
-            veto_target = sig if sig != "NONE" else base_signal if base_signal != "NONE" else "opportunity"
-            log.info(
-                "Sentinel veto %s due to %s risk (event=%.2f, hype=%.2f)",
-                symbol,
-                sentinel_info.get("label", "red"),
-                float(sentinel_info.get("event_risk", 0.0) or 0.0),
-                float(sentinel_info.get("hype_score", 0.0) or 0.0),
-            )
-            self._log_ai_activity(
-                "decision",
-                f"Sentinel vetoed {symbol}",
-                body=(
-                    f"Risk label {sentinel_info.get('label', 'red')} blocked the {veto_target} setup "
-                    "before contacting the strategy AI."
-                ),
-                data={
-                    "symbol": symbol,
-                    "side": veto_target,
-                    "event_risk": float(sentinel_info.get("event_risk", 0.0) or 0.0),
-                    "hype_score": float(sentinel_info.get("hype_score", 0.0) or 0.0),
-                    "ai_request": False,
-                },
-                force=True,
-            )
-            if self.decision_tracker:
-                self.decision_tracker.record_rejection("sentinel_veto")
-            return
+        if "budget_bias_applied" not in ctx:
+            try:
+                ctx["budget_bias_applied"] = float(ctx.get("budget_bias", 1.0) or 1.0)
+            except Exception:
+                ctx["budget_bias_applied"] = 1.0
 
         # Entry/SL/TP foundation
         try:
@@ -6055,46 +6285,13 @@ class Bot:
         self._refresh_manual_requests()
         self._drain_ai_ready_queue()
         syms = self.universe.refresh()
-        priority_pairs = self._consume_ai_priority_symbols()
-        if priority_pairs:
-            priority_syms = [sym for sym, _ in priority_pairs if sym]
-            if priority_syms:
-                seen: Set[str] = set()
-                merged: List[str] = []
-                for sym in priority_syms + syms:
-                    if not sym or sym in seen:
-                        continue
-                    merged.append(sym)
-                    seen.add(sym)
-                syms = merged
-        syms_queue: deque[str] = deque(syms)
-
-        pending_manual: Set[str] = set()
-        queue = self.state.get("manual_trade_requests")
-        if isinstance(queue, list):
-            pending_manual = {
-                str(item.get("symbol") or "").upper().strip()
-                for item in queue
-                if isinstance(item, dict)
-                and str(item.get("status") or "pending").lower() == "pending"
-                and str(item.get("symbol") or "").strip()
-            }
-        if pending_manual:
-            existing = set(syms)
-            extra = [sym for sym in pending_manual if sym and sym not in existing]
-            if extra:
-                syms = syms + extra
-
-        log.info(
-            "Scanning %d symbols%s",
-            len(syms),
-            f": {', '.join(syms[:12])}{'...' if len(syms)>12 else ''}",
-        )
-
         ticker_map: Dict[str, Dict[str, Any]] = {}
         now = time.time()
-        need_bulk_ticker = self.sentinel is not None or (now - getattr(self.strategy, "_t24_ts", 0.0)) >= self.strategy._t24_ttl
-        if need_bulk_ticker:
+        need_bulk_ticker = (
+            self.sentinel is not None
+            or (now - getattr(self.strategy, "_t24_ts", 0.0)) >= self.strategy._t24_ttl
+        )
+        if need_bulk_ticker and syms:
             try:
                 payload = self.exchange.get_ticker_24hr()
             except Exception as exc:
@@ -6111,6 +6308,56 @@ class Bot:
                 ticker_map[str(payload.get("symbol"))] = dict(payload)
             if ticker_map:
                 self.strategy.prime_ticker_cache(ticker_map, timestamp=now)
+        ranked_syms = self._rank_symbols(syms, ticker_map)
+        priority_pairs = self._consume_ai_priority_symbols()
+        if priority_pairs:
+            ordered: List[str] = []
+            seen: Set[str] = set()
+            for sym, _ in priority_pairs:
+                token = str(sym or "").upper()
+                if not token or token in seen:
+                    continue
+                ordered.append(token)
+                seen.add(token)
+            for sym in ranked_syms:
+                if sym not in seen:
+                    ordered.append(sym)
+                    seen.add(sym)
+            syms = ordered
+        else:
+            syms = ranked_syms
+
+        pending_manual: Set[str] = set()
+        queue = self.state.get("manual_trade_requests")
+        if isinstance(queue, list):
+            pending_manual = {
+                str(item.get("symbol") or "").upper().strip()
+                for item in queue
+                if isinstance(item, dict)
+                and str(item.get("status") or "pending").lower() == "pending"
+                and str(item.get("symbol") or "").strip()
+            }
+        if pending_manual:
+            existing = set(syms)
+            extra = [sym for sym in pending_manual if sym and sym not in existing]
+            if extra:
+                syms = syms + extra
+        preview: List[str] = []
+        for sym in syms[:12]:
+            info = self._symbol_score_cache.get(sym, {})
+            score = info.get("score")
+            if isinstance(score, (int, float)) and score > 0:
+                preview.append(f"{sym}({score:.2f})")
+            else:
+                preview.append(sym)
+        suffix = ""
+        if preview:
+            suffix = f": {', '.join(preview)}"
+            if len(syms) > 12:
+                suffix += "..."
+        log.info("Scanning %d symbols%s", len(syms), suffix)
+
+        syms_queue: deque[str] = deque(syms)
 
         if self.sentinel:
             try:
@@ -6249,10 +6496,15 @@ class Bot:
             except Exception:
                 self.strategy._tech_snapshot_dirty = False  # type: ignore[attr-defined]
 
-        if self._manual_state_dirty or self._quote_volume_cooldown_dirty:
+        if (
+            self._manual_state_dirty
+            or self._quote_volume_cooldown_dirty
+            or self._universe_state_dirty
+        ):
             self.trade_mgr.save()
             self._manual_state_dirty = False
             self._quote_volume_cooldown_dirty = False
+            self._universe_state_dirty = False
 
     def run(self, loop: bool = True):
         log.info("Starting bot (mode=%s, loop=%s)", "PAPER" if PAPER else "LIVE", loop)

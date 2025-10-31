@@ -117,9 +117,9 @@ class ParameterTuner:
             },
         )
         self._request_fn = request_fn
-        self._min_trades = 12
-        self._ai_interval = 20 * 60
-        self._history_cap = 240
+        self._min_trades = 6
+        self._ai_interval = 8 * 60
+        self._history_cap = 200
 
     def observe(self, trade: Dict[str, Any], features: Dict[str, float]) -> None:
         record = {
@@ -142,12 +142,24 @@ class ParameterTuner:
         return dict(self._state.get("overrides", {}))
 
     def inject_context(self, ctx: Dict[str, Any]) -> None:
-        overrides = self.overrides()
-        if not overrides:
+        if not isinstance(ctx, dict):
             return
-        ctx["tuning_confidence"] = float(overrides.get("confidence", 0.0))
-        ctx["tuning_risk_bias"] = float(overrides.get("sl_atr_mult", 1.0))
-        ctx["tuning_size_bias"] = float(overrides.get("size_bias_global", 1.0))
+        overrides = self.overrides()
+        confidence = float(overrides.get("confidence", 0.0)) if overrides else 0.0
+        risk_bias = float(overrides.get("sl_atr_mult", 1.0)) if overrides else 1.0
+        size_global = float(overrides.get("size_bias_global", 1.0)) if overrides else 1.0
+        ctx["tuning_confidence"] = confidence
+        ctx["tuning_risk_bias"] = risk_bias
+        ctx["tuning_size_bias"] = size_global
+        ctx["tuning_size_bias_global"] = size_global
+        size_map = overrides.get("size_bias") if isinstance(overrides.get("size_bias"), dict) else {}
+        if size_map:
+            for bucket, value in size_map.items():
+                try:
+                    ctx[f"tuning_size_bias_{str(bucket).lower()}"] = float(value)
+                except (TypeError, ValueError):
+                    continue
+        ctx["tuning_active"] = 1.0 if overrides else 0.0
 
     def _recompute_local_overrides(self) -> None:
         history: List[Dict[str, Any]] = self._state.get("history", [])
@@ -260,7 +272,7 @@ class PlaybookManager:
             },
         )
         self._request_fn = request_fn
-        self._refresh_interval = 15 * 60
+        self._refresh_interval = 8 * 60
 
     def maybe_refresh(self, snapshot: Dict[str, Any]) -> None:
         active = self._state.get("active", {})
@@ -333,21 +345,21 @@ class BudgetLearner:
             "ai_budget_learning",
             {"symbols": {}, "usage": []},
         )
-        self._cost_window = 50
-        self._min_samples = 4
-        self._skip_half_life = 3 * 3600  # roughly 3 hours
+        self._cost_window = 40
+        self._min_samples = 3
+        self._skip_half_life = 2 * 3600  # roughly 2 hours
         self._skip_penalty_cap = 5.0
         self._skip_reason_cap = 6
-        self._skip_penalty_factor = 0.22
+        self._skip_penalty_factor = 0.28
         self._skip_penalty_increment = {
             "plan": 0.7,
             "trend": 0.55,
             "postmortem": 0.25,
         }
-        self._skip_limit_plan = 1.6
-        self._skip_limit_trend = 1.2
-        self._skip_limit_any = 2.4
-        self._skip_limit_soft = 0.6
+        self._skip_limit_plan = 1.4
+        self._skip_limit_trend = 1.0
+        self._skip_limit_any = 2.1
+        self._skip_limit_soft = 0.5
 
     def record_cost(self, kind: str, cost: float, meta: Optional[Dict[str, Any]] = None) -> None:
         symbol = None
@@ -421,11 +433,14 @@ class BudgetLearner:
         if kind != "trend" and skip_penalty >= self._skip_limit_plan:
             return False
         bias = float(self._compute_bias(sym_state) or sym_state.get("bias", 1.0) or 1.0)
-        if bias >= 0.5:
-            return True
+        sym_state["bias"] = bias
         if kind == "postmortem":
-            return bias >= 0.2
-        return bias >= 0.35
+            return bias >= 0.25
+        if bias < 0.45:
+            return False
+        if kind == "trend" and bias < 0.6:
+            return False
+        return bias >= 0.7 if kind != "trend" else True
 
     def context_bias(self, symbol: str) -> float:
         sym_state = self._state.get("symbols", {}).get(symbol)
@@ -497,8 +512,8 @@ class BudgetLearner:
         count = max(1, int(sym_state.get("count", 0) or 0))
         avg = reward / count
         skip_penalty = self._decayed_skip_penalty(sym_state, now=now, update=True)
-        bias = 1.0 + avg * 0.25 - skip_penalty * self._skip_penalty_factor
-        return max(0.1, min(1.6, bias))
+        bias = 1.0 + avg * 0.35 - skip_penalty * self._skip_penalty_factor
+        return max(0.1, min(1.7, bias))
 
     def _decayed_skip_penalty(
         self,
