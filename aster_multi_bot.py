@@ -3336,6 +3336,136 @@ class Strategy:
     def clear_tech_snapshot_dirty(self) -> None:
         self._tech_snapshot_dirty = False
 
+    @staticmethod
+    def _playbook_timestamp(value: Any) -> float:
+        if isinstance(value, (int, float)):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return 0.0
+        if isinstance(value, str):
+            try:
+                cleaned = value.replace("Z", "+00:00") if value.endswith("Z") else value
+                return datetime.fromisoformat(cleaned).timestamp()
+            except Exception:
+                return 0.0
+        return 0.0
+
+    def _playbook_sentinel_sample(
+        self, sentinel_state: Any, *, limit: int = 8
+    ) -> Dict[str, Any]:
+        if not isinstance(sentinel_state, dict):
+            return {}
+        entries: List[Tuple[float, str, Dict[str, Any]]] = []
+        for sym, payload in sentinel_state.items():
+            if not sym or not isinstance(payload, dict):
+                continue
+            ts = self._playbook_timestamp(payload.get("updated"))
+            entries.append((ts, sym, payload))
+        if not entries:
+            return {}
+        entries.sort(key=lambda item: item[0], reverse=True)
+        trimmed: Dict[str, Any] = {}
+        for _, sym, payload in entries[: max(limit, 1)]:
+            item: Dict[str, Any] = {}
+            try:
+                item["event_risk"] = float(payload.get("event_risk", 0.0) or 0.0)
+            except Exception:
+                pass
+            try:
+                item["hype_score"] = float(payload.get("hype_score", 0.0) or 0.0)
+            except Exception:
+                pass
+            label = payload.get("label")
+            if isinstance(label, str):
+                item["label"] = label
+            updated = payload.get("updated")
+            if isinstance(updated, (int, float, str)):
+                item["updated"] = updated
+            actions = payload.get("actions")
+            if isinstance(actions, dict):
+                reduced: Dict[str, Any] = {}
+                if "size_factor" in actions:
+                    try:
+                        reduced["size_factor"] = float(actions.get("size_factor", 0.0) or 0.0)
+                    except Exception:
+                        pass
+                if "hard_block" in actions:
+                    reduced["hard_block"] = bool(actions.get("hard_block"))
+                if reduced:
+                    item["actions"] = reduced
+            events = payload.get("events")
+            if isinstance(events, list):
+                reduced_events: List[Dict[str, Any]] = []
+                for event in events[:2]:
+                    if not isinstance(event, dict):
+                        continue
+                    reduced_event: Dict[str, Any] = {}
+                    title = (
+                        event.get("title")
+                        or event.get("name")
+                        or event.get("event")
+                        or event.get("headline")
+                    )
+                    if isinstance(title, str):
+                        reduced_event["title"] = title
+                    severity = event.get("severity")
+                    if severity is not None:
+                        reduced_event["severity"] = severity
+                    when = event.get("time") or event.get("ts") or event.get("timestamp")
+                    if isinstance(when, (int, float, str)):
+                        reduced_event["time"] = when
+                    if reduced_event:
+                        reduced_events.append(reduced_event)
+                if reduced_events:
+                    item["events"] = reduced_events
+            if item:
+                trimmed[sym] = item
+        return trimmed
+
+    def _playbook_snapshot(self) -> Dict[str, Any]:
+        tech_state = self.state.get("technical_snapshot") if self.state else None
+        if isinstance(tech_state, dict):
+            sample_items = list(
+                sorted(
+                    tech_state.items(),
+                    key=lambda item: float(item[1].get("ts", 0.0))
+                    if isinstance(item[1], dict)
+                    else 0.0,
+                )
+            )
+            technical_sample = {
+                key: value for key, value in sample_items[-6:]
+            }
+        else:
+            technical_sample = {}
+
+        sentinel_state = self.state.get("sentinel", {}) if self.state else {}
+        sentinel_sample = self._playbook_sentinel_sample(sentinel_state)
+
+        budget_snapshot: Dict[str, Any] = {}
+        tracker = getattr(self, "budget_tracker", None)
+        if tracker is not None:
+            try:
+                budget_snapshot = tracker.snapshot()
+            except Exception:
+                budget_snapshot = {}
+
+        recent_trades: List[Any] = []
+        if self.state:
+            trades = self.state.get("trade_history")
+            if isinstance(trades, list):
+                recent_trades = trades[-6:]
+
+        snapshot = {
+            "timestamp": time.time(),
+            "technical": technical_sample,
+            "sentinel": sentinel_sample,
+            "budget": budget_snapshot,
+            "recent_trades": recent_trades,
+        }
+        return snapshot
+
     def _klines_cached(self, symbol: str, interval: str, limit: int) -> Sequence[Sequence[float]]:
         key = (symbol, interval, int(limit))
         now = time.time()
@@ -6417,24 +6547,7 @@ class Bot:
 
         if self.ai_advisor:
             try:
-                tech_state = self.state.get("technical_snapshot")
-                if isinstance(tech_state, dict):
-                    sample = {
-                        k: v
-                        for k, v in list(sorted(
-                            tech_state.items(),
-                            key=lambda item: float(item[1].get("ts", 0.0)) if isinstance(item[1], dict) else 0.0,
-                        ))[-6:]
-                    }
-                else:
-                    sample = {}
-                snapshot = {
-                    "timestamp": time.time(),
-                    "technical": sample,
-                    "sentinel": self.state.get("sentinel", {}),
-                    "budget": self.budget_tracker.snapshot(),
-                    "recent_trades": self.state.get("trade_history", [])[-6:],
-                }
+                snapshot = self._playbook_snapshot()
                 self.ai_advisor.maybe_refresh_playbook(snapshot)
             except Exception as exc:
                 log.debug(f"playbook refresh failed: {exc}")
