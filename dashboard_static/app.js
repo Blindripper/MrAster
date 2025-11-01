@@ -67,7 +67,8 @@ const aiBudgetCard = document.getElementById('ai-budget');
 const aiBudgetModeLabel = document.getElementById('ai-budget-mode');
 const aiBudgetMeta = document.getElementById('ai-budget-meta');
 const aiBudgetFill = document.getElementById('ai-budget-fill');
-const aiActivityFeed = document.getElementById('ai-activity');
+const playbookSummaryContainer = document.getElementById('playbook-summary');
+const playbookActivityFeed = document.getElementById('playbook-activity');
 const aiChatMessages = document.getElementById('ai-chat-messages');
 const aiChatForm = document.getElementById('ai-chat-form');
 const aiChatInput = document.getElementById('ai-chat-input');
@@ -1922,7 +1923,9 @@ let automationTargetTimestamp = null;
 let lastModeBeforeStandard = null;
 const decisionReasonEvents = new Map();
 const DECISION_REASON_EVENT_LIMIT = 40;
-let pendingAiResponseCount = 0;
+let pendingPlaybookResponseCount = 0;
+let lastPlaybookState = null;
+let lastPlaybookActivity = [];
 const tradeProposalRegistry = new Map();
 let heroMetricsSnapshot = {
   totalTrades: 0,
@@ -5575,272 +5578,375 @@ if (typeof window !== 'undefined' && tradeList) {
   window.addEventListener('resize', () => requestTradeListViewportSync());
 }
 
-function createActivityList(items, options = {}) {
-  const values = Array.isArray(items)
-    ? items
-        .map((value) => (value ?? '').toString().trim())
-        .filter((value) => value.length > 0)
-    : [];
-  if (!values.length) return null;
-  const { muted = false } = options;
-  const list = document.createElement('ul');
-  list.className = 'ai-activity-list';
-  if (muted) {
-    list.classList.add('muted');
-  }
-  values.forEach((value) => {
-    const item = document.createElement('li');
-    item.textContent = value;
-    list.append(item);
-  });
-  return list;
+function toTitleCase(value) {
+  const text = (value ?? '').toString().trim();
+  if (!text) return '';
+  return text
+    .replace(/[_\-]+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 }
 
-function renderAiActivity(feed) {
-  if (!aiActivityFeed) return;
-  const shouldAutoScroll = autoScrollEnabled && isScrolledToBottom(aiActivityFeed);
-  aiActivityFeed.innerHTML = '';
+function formatPlaybookMultiplier(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '–';
+  return `×${numeric.toFixed(2)}`;
+}
+
+function formatPlaybookSigned(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '0.00';
+  const sign = numeric >= 0 ? '+' : '';
+  return `${sign}${numeric.toFixed(2)}`;
+}
+
+function getPlaybookKindLabel(kind) {
+  const normalized = (kind || '').toString().toLowerCase();
+  switch (normalized) {
+    case 'query':
+      return translate('playbook.kind.query', 'Request');
+    case 'playbook':
+      return translate('playbook.kind.applied', 'Applied');
+    case 'error':
+      return translate('playbook.kind.error', 'Error');
+    case 'warning':
+      return translate('playbook.kind.warning', 'Warning');
+    default:
+      return translate('playbook.kind.update', 'Update');
+  }
+}
+
+function getPlaybookKindClass(kind) {
+  const normalized = (kind || '').toString().toLowerCase();
+  if (normalized === 'query') return 'kind--query';
+  if (normalized === 'error') return 'kind--error';
+  if (normalized === 'warning') return 'kind--warning';
+  if (normalized === 'playbook') return 'kind--applied';
+  return '';
+}
+
+function buildPlaybookMeta(entry) {
+  if (!entry || typeof entry !== 'object') return [];
+  const rows = [];
+  const requestId = entry.request_id ? String(entry.request_id).trim() : '';
+  if (requestId) {
+    rows.push({ label: translate('playbook.meta.requestId', 'Request ID'), value: requestId });
+  }
+  const modeLabel = toTitleCase(entry.mode || '');
+  const biasLabel = toTitleCase(entry.bias || '');
+  if (modeLabel || biasLabel) {
+    const modeValue = biasLabel ? `${modeLabel} (${biasLabel})` : modeLabel;
+    rows.push({ label: translate('playbook.meta.mode', 'Mode'), value: modeValue });
+  }
+  if (entry.size_bias && typeof entry.size_bias === 'object') {
+    const parts = [];
+    if (entry.size_bias.BUY !== undefined) {
+      parts.push(`BUY ${formatPlaybookMultiplier(entry.size_bias.BUY)}`);
+    }
+    if (entry.size_bias.SELL !== undefined) {
+      parts.push(`SELL ${formatPlaybookMultiplier(entry.size_bias.SELL)}`);
+    }
+    if (parts.length > 0) {
+      rows.push({
+        label: translate('playbook.meta.sizeBias', 'Size bias'),
+        value: parts.join(' · '),
+      });
+    }
+  }
+  if (Number.isFinite(Number(entry.sl_bias))) {
+    rows.push({ label: translate('playbook.meta.sl', 'SL bias'), value: formatPlaybookMultiplier(entry.sl_bias) });
+  }
+  if (Number.isFinite(Number(entry.tp_bias))) {
+    rows.push({ label: translate('playbook.meta.tp', 'TP bias'), value: formatPlaybookMultiplier(entry.tp_bias) });
+  }
+  if (Array.isArray(entry.features) && entry.features.length > 0) {
+    const focusText = entry.features
+      .slice(0, 3)
+      .map((feature) => {
+        const name = feature && typeof feature.name === 'string' ? feature.name : '';
+        return `${name} ${formatPlaybookSigned(feature.value)}`.trim();
+      })
+      .join(' · ');
+    if (focusText) {
+      rows.push({ label: translate('playbook.meta.features', 'Focus'), value: focusText });
+    }
+  }
+  if (entry.snapshot_summary) {
+    rows.push({
+      label: translate('playbook.meta.snapshot', 'Snapshot'),
+      value: String(entry.snapshot_summary),
+    });
+  }
+  if (entry.reason) {
+    rows.push({ label: translate('playbook.meta.reason', 'Reason'), value: entry.reason });
+  }
+  if (entry.notes && (!entry.body || !entry.body.includes(entry.notes))) {
+    rows.push({ label: translate('playbook.meta.notes', 'Notes'), value: entry.notes });
+  }
+  return rows;
+}
+
+function renderPlaybookOverview(playbook, activity) {
+  lastPlaybookState = playbook && typeof playbook === 'object' ? { ...playbook } : null;
+  lastPlaybookActivity = Array.isArray(activity) ? activity.slice() : [];
+  renderPlaybookSummarySection();
+  renderPlaybookActivitySection();
+  updatePlaybookPendingState();
+}
+
+function renderPlaybookSummarySection() {
+  if (!playbookSummaryContainer) return;
+  const hintNode = aiHint && playbookSummaryContainer.contains(aiHint) ? aiHint : null;
+  playbookSummaryContainer.innerHTML = '';
+
   if (!aiMode) {
-    const disabled = document.createElement('div');
-    disabled.className = 'ai-feed-empty';
-    disabled.textContent = translate('ai.feed.disabled', 'Enable AI mode to see the activity feed.');
-    aiActivityFeed.append(disabled);
+    const disabled = document.createElement('p');
+    disabled.className = 'playbook-empty';
+    disabled.textContent = translate('playbook.disabled', 'Enable AI mode to view the playbook overview.');
+    playbookSummaryContainer.append(disabled);
+    if (hintNode) playbookSummaryContainer.append(hintNode);
     return;
   }
-  const items = Array.isArray(feed) ? feed.slice(-80) : [];
-  if (!items.length) {
+
+  if (!lastPlaybookState) {
     const empty = document.createElement('p');
-    empty.className = 'ai-feed-empty';
-    empty.textContent = translate(
-      'ai.feed.empty',
-      'Autonomous decisions appear here in real time as new actions occur.'
-    );
-    aiActivityFeed.append(empty);
+    empty.className = 'playbook-empty';
+    empty.textContent = translate('playbook.empty', 'No playbook has been applied yet.');
+    playbookSummaryContainer.append(empty);
+    if (hintNode) playbookSummaryContainer.append(hintNode);
     return;
   }
-  const responseLookup = new Map();
-  items.forEach((entry, index) => {
-    if (!entry || typeof entry !== 'object') return;
-    const data = entry.data && typeof entry.data === 'object' ? entry.data : null;
-    if (!data) return;
-    const rawRequestId = Object.prototype.hasOwnProperty.call(data, 'request_id')
-      ? data.request_id
-      : undefined;
-    const requestId = rawRequestId === undefined || rawRequestId === null ? '' : String(rawRequestId).trim();
-    if (!requestId || entry.kind === 'query') return;
-    const list = responseLookup.get(requestId) || [];
-    list.push({ index, item: entry });
-    responseLookup.set(requestId, list);
-  });
-  let awaitingResponses = 0;
-  const consumedRequestIds = new Set();
-  items.forEach((raw, index) => {
-    const item = raw || {};
-    const rawKind = (item.kind || 'info').toString();
-    const normalizedKind = rawKind.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'info';
-    const kindText = rawKind.toUpperCase();
-    const itemData = item.data && typeof item.data === 'object' ? item.data : null;
-    let requestId = '';
-    if (itemData && Object.prototype.hasOwnProperty.call(itemData, 'request_id')) {
-      const rawRequestId = itemData.request_id;
-      if (rawRequestId !== undefined && rawRequestId !== null) {
-        requestId = String(rawRequestId).trim();
-      }
+
+  const header = document.createElement('div');
+  header.className = 'playbook-summary-header';
+  const activeLabel = document.createElement('span');
+  activeLabel.textContent = translate('playbook.active', 'Active playbook:');
+  header.append(activeLabel);
+  const activeValue = document.createElement('strong');
+  const modeText = toTitleCase(lastPlaybookState.mode || 'baseline');
+  const biasText = toTitleCase(lastPlaybookState.bias || 'neutral');
+  activeValue.textContent = biasText ? `${modeText} (${biasText})` : modeText;
+  header.append(activeValue);
+  const refreshedValue = lastPlaybookState.refreshed_ts || lastPlaybookState.refreshed;
+  if (refreshedValue) {
+    const refreshed = document.createElement('span');
+    refreshed.textContent = `${translate('playbook.refreshed', 'Refreshed')} ${formatRelativeTime(refreshedValue)}`;
+    header.append(refreshed);
+  }
+  playbookSummaryContainer.append(header);
+
+  const stats = [];
+  if (Number.isFinite(Number(lastPlaybookState.sl_bias))) {
+    stats.push({ label: translate('playbook.sl', 'SL bias'), value: formatPlaybookMultiplier(lastPlaybookState.sl_bias) });
+  }
+  if (Number.isFinite(Number(lastPlaybookState.tp_bias))) {
+    stats.push({ label: translate('playbook.tp', 'TP bias'), value: formatPlaybookMultiplier(lastPlaybookState.tp_bias) });
+  }
+
+  if (stats.length > 0) {
+    const grid = document.createElement('div');
+    grid.className = 'playbook-summary-grid';
+    stats.forEach((stat) => {
+      const item = document.createElement('div');
+      item.className = 'playbook-summary-item';
+      const label = document.createElement('span');
+      label.className = 'label';
+      label.textContent = stat.label;
+      const value = document.createElement('span');
+      value.className = 'value';
+      value.textContent = stat.value;
+      item.append(label, value);
+      grid.append(item);
+    });
+    playbookSummaryContainer.append(grid);
+  }
+
+  const sizeBias = lastPlaybookState.size_bias;
+  if (sizeBias && typeof sizeBias === 'object' && (sizeBias.BUY !== undefined || sizeBias.SELL !== undefined)) {
+    const sizeSection = document.createElement('div');
+    sizeSection.className = 'playbook-size-bias';
+    const label = document.createElement('span');
+    label.className = 'label';
+    label.textContent = translate('playbook.sizeBias', 'Size bias');
+    sizeSection.append(label);
+    const values = document.createElement('div');
+    values.className = 'playbook-size-bias-values';
+    if (sizeBias.BUY !== undefined) {
+      const buy = document.createElement('span');
+      buy.textContent = `BUY ${formatPlaybookMultiplier(sizeBias.BUY)}`;
+      values.append(buy);
     }
-    if (requestId && normalizedKind !== 'query' && consumedRequestIds.has(requestId)) {
-      return;
+    if (sizeBias.SELL !== undefined) {
+      const sell = document.createElement('span');
+      sell.textContent = `SELL ${formatPlaybookMultiplier(sizeBias.SELL)}`;
+      values.append(sell);
     }
+    sizeSection.append(values);
+    playbookSummaryContainer.append(sizeSection);
+  }
 
-    const wrapper = document.createElement('div');
-    wrapper.className = 'ai-activity-item';
+  if (Array.isArray(lastPlaybookState.features) && lastPlaybookState.features.length > 0) {
+    const featuresSection = document.createElement('div');
+    featuresSection.className = 'playbook-features';
+    const title = document.createElement('div');
+    title.className = 'playbook-features-title';
+    title.textContent = translate('playbook.features', 'Focus signals');
+    featuresSection.append(title);
+    const list = document.createElement('div');
+    list.className = 'playbook-feature-list';
+    lastPlaybookState.features.forEach((feature) => {
+      if (!feature) return;
+      const chip = document.createElement('span');
+      chip.className = 'playbook-feature';
+      const name = feature && typeof feature.name === 'string' ? feature.name : '';
+      chip.textContent = `${name} ${formatPlaybookSigned(feature.value)}`.trim();
+      list.append(chip);
+    });
+    featuresSection.append(list);
+    playbookSummaryContainer.append(featuresSection);
+  }
 
-    const timeline = document.createElement('div');
-    timeline.className = 'ai-activity-timeline';
-    const marker = document.createElement('span');
-    marker.className = `ai-activity-marker ai-activity-marker--${normalizedKind}`;
-    marker.title = kindText;
-    timeline.append(marker);
+  if (lastPlaybookState.notes) {
+    const notes = document.createElement('p');
+    notes.className = 'playbook-notes';
+    notes.textContent = lastPlaybookState.notes;
+    playbookSummaryContainer.append(notes);
+  }
 
-    const body = document.createElement('div');
-    body.className = 'ai-activity-content';
-    const header = document.createElement('div');
-    header.className = 'ai-activity-header';
-    const kindTag = document.createElement('span');
-    kindTag.className = `ai-activity-kind ai-activity-kind--${normalizedKind}`;
-    kindTag.textContent = kindText;
-    header.append(kindTag);
-    const headline = document.createElement('h4');
-    headline.className = 'ai-activity-headline';
-    headline.textContent = item.headline || kindText;
-    header.append(headline);
-    body.append(header);
+  if (hintNode) {
+    playbookSummaryContainer.append(hintNode);
+  }
+}
 
-    if (item.body) {
-      const bodyText = document.createElement('p');
-      bodyText.className = 'ai-activity-body';
-      bodyText.textContent = item.body;
-      body.append(bodyText);
-    }
+function renderPlaybookActivitySection() {
+  if (!playbookActivityFeed) return;
+  const shouldAutoScroll = autoScrollEnabled && isScrolledToBottom(playbookActivityFeed);
+  playbookActivityFeed.innerHTML = '';
 
-    const noteInfo = extractDecisionNotes(itemData);
-    let consumedNotes = 0;
-    let reasonDetailRendered = false;
+  if (!aiMode) {
+    const disabled = document.createElement('p');
+    disabled.className = 'playbook-empty';
+    disabled.textContent = translate('playbook.disabled', 'Enable AI mode to view the playbook overview.');
+    playbookActivityFeed.append(disabled);
+    return;
+  }
 
-    if (itemData) {
-      const decisionDetails = [];
-      const decisionLabel = itemData.decision ? String(itemData.decision).trim().toUpperCase() : '';
-      const takeValue = Object.prototype.hasOwnProperty.call(itemData, 'take') ? itemData.take : undefined;
-      if (decisionLabel) {
-        const actionText =
-          typeof takeValue === 'boolean' ? (takeValue ? 'enter trade' : 'skip trade') : '';
-        const decisionText = actionText ? `${decisionLabel} (${actionText})` : decisionLabel;
-        decisionDetails.push(`Decision: ${decisionText}`);
-      } else if (typeof takeValue === 'boolean') {
-        decisionDetails.push(`Decision: ${takeValue ? 'enter trade' : 'skip trade'}`);
-      }
-      if (typeof itemData.confidence === 'number' && Number.isFinite(itemData.confidence)) {
-        decisionDetails.push(`Confidence: ${itemData.confidence.toFixed(2)}`);
-      }
-      const multiplierParts = [];
-      const sizeMult = Number(itemData.size_multiplier);
-      const slMult = Number(itemData.sl_multiplier);
-      const tpMult = Number(itemData.tp_multiplier);
-      if (Number.isFinite(sizeMult)) multiplierParts.push(`Size ×${sizeMult.toFixed(2)}`);
-      if (Number.isFinite(slMult)) multiplierParts.push(`SL ×${slMult.toFixed(2)}`);
-      if (Number.isFinite(tpMult)) multiplierParts.push(`TP ×${tpMult.toFixed(2)}`);
-      if (multiplierParts.length > 0) {
-        decisionDetails.push(`Multipliers: ${multiplierParts.join(' · ')}`);
-      }
-      const detailList = createActivityList(decisionDetails);
-      if (detailList) {
-        body.append(detailList);
-      }
-    }
+  const entries = Array.isArray(lastPlaybookActivity) ? lastPlaybookActivity.slice(-30) : [];
+  if (!entries.length) {
+    const empty = document.createElement('p');
+    empty.className = 'playbook-empty';
+    empty.textContent = translate('playbook.activity.empty', 'No playbook communications recorded yet.');
+    playbookActivityFeed.append(empty);
+    return;
+  }
 
-    if (item.kind === 'query') {
-      const queryParts = [];
-      if (noteInfo.reasonLabel) {
-        queryParts.push(`${translate('ai.feed.reasonLabel', 'Reason')}: ${noteInfo.reasonLabel}`);
-      }
-      if (noteInfo.notes.length > 0) {
-        queryParts.push(noteInfo.notes[0]);
-        consumedNotes = 1;
-      }
-      const queryList = createActivityList(queryParts, { muted: true });
-      if (queryList) {
-        body.append(queryList);
-        reasonDetailRendered = true;
-      }
-      if (requestId) {
-        const candidates = (responseLookup.get(requestId) || []).filter((entry) => entry.index > index);
-        if (candidates.length > 0) {
-          const latest = candidates[candidates.length - 1].item || {};
-          const responseBlock = document.createElement('div');
-          responseBlock.className = 'ai-activity-response';
-
-          const responseTitle = document.createElement('div');
-          responseTitle.className = 'ai-activity-response-title';
-          responseTitle.textContent = translate('ai.feed.responseLabel', 'Latest response');
-          responseBlock.append(responseTitle);
-
-          const responseHeadline = document.createElement('div');
-          responseHeadline.className = 'ai-activity-response-headline';
-          const responseHeadlineText =
-            latest.headline || (latest.kind ? String(latest.kind).toUpperCase() : '');
-          if (responseHeadlineText) {
-            responseHeadline.textContent = responseHeadlineText;
-            responseBlock.append(responseHeadline);
-          }
-
-          if (latest.body) {
-            const responseBody = document.createElement('div');
-            responseBody.className = 'ai-activity-response-body';
-            responseBody.textContent = latest.body;
-            responseBlock.append(responseBody);
-          }
-
-          const latestData = latest.data && typeof latest.data === 'object' ? latest.data : null;
-          const latestSummary = summariseDataRecord(latestData);
-          if (latestSummary) {
-            const responseMeta = document.createElement('div');
-            responseMeta.className = 'ai-activity-response-meta';
-            responseMeta.textContent = latestSummary;
-            responseBlock.append(responseMeta);
-          }
-
-          body.append(responseBlock);
-        } else {
-          const awaiting = document.createElement('div');
-          awaiting.className = 'ai-activity-response awaiting';
-          awaiting.textContent = translate('ai.feed.awaitingResponse', 'Awaiting AI response…');
-          body.append(awaiting);
-          awaitingResponses += 1;
-        }
-      }
-    }
-
-    if (!reasonDetailRendered) {
-      const generalParts = [];
-      if (noteInfo.reasonLabel) {
-        generalParts.push(`${translate('ai.feed.reasonLabel', 'Reason')}: ${noteInfo.reasonLabel}`);
-      }
-      if (noteInfo.notes.length > consumedNotes) {
-        generalParts.push(noteInfo.notes[consumedNotes]);
-        consumedNotes += 1;
-      }
-      const generalList = createActivityList(generalParts, { muted: true });
-      if (generalList) {
-        body.append(generalList);
-        reasonDetailRendered = true;
-      }
-    }
-
-    if (noteInfo.notes.length > consumedNotes) {
-      const extraList = createActivityList(noteInfo.notes.slice(consumedNotes), { muted: true });
-      if (extraList) {
-        body.append(extraList);
-      }
-    }
-
-    const meta = document.createElement('div');
-    meta.className = 'ai-activity-meta';
-    const timeText = formatRelativeTime(item.ts);
-    if (timeText) {
-      const timeEl = document.createElement('span');
-      timeEl.textContent = timeText;
-      meta.append(timeEl);
-    }
-    const summary = summariseDataRecord(itemData);
-    if (summary) {
-      const dataEl = document.createElement('span');
-      dataEl.textContent = summary;
-      meta.append(dataEl);
-    }
-    if (meta.children.length > 0) {
-      body.append(meta);
-    }
-
-    wrapper.append(timeline, body);
-    aiActivityFeed.append(wrapper);
-
-    if (requestId && normalizedKind === 'query') {
-      consumedRequestIds.add(requestId);
+  entries.forEach((entry) => {
+    const item = createPlaybookActivityItem(entry);
+    if (item) {
+      playbookActivityFeed.append(item);
     }
   });
+
+  if (shouldAutoScroll) {
+    const behavior = playbookActivityFeed.scrollHeight > playbookActivityFeed.clientHeight ? 'smooth' : 'auto';
+    scrollToBottom(playbookActivityFeed, behavior);
+  }
+}
+
+function createPlaybookActivityItem(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const wrapper = document.createElement('article');
+  wrapper.className = 'playbook-activity-item';
+
+  const headerRow = document.createElement('div');
+  headerRow.className = 'playbook-activity-header-row';
+  const titleWrap = document.createElement('div');
+  titleWrap.className = 'playbook-activity-title-wrap';
+  const kindEl = document.createElement('span');
+  const kindClass = getPlaybookKindClass(entry.kind);
+  kindEl.className = ['playbook-activity-kind', kindClass].filter(Boolean).join(' ');
+  kindEl.textContent = getPlaybookKindLabel(entry.kind);
+  titleWrap.append(kindEl);
+  const title = document.createElement('h4');
+  title.className = 'playbook-activity-title';
+  title.textContent = entry.headline || getPlaybookKindLabel(entry.kind);
+  titleWrap.append(title);
+  headerRow.append(titleWrap);
+  const time = document.createElement('span');
+  time.className = 'playbook-activity-time';
+  const timeText = formatRelativeTime(entry.ts_epoch || entry.ts);
+  if (timeText) {
+    time.textContent = timeText;
+    headerRow.append(time);
+  }
+  wrapper.append(headerRow);
+
+  const body = document.createElement('div');
+  body.className = 'playbook-activity-body';
+  const bodyText = typeof entry.body === 'string' ? entry.body.trim() : '';
+  if (bodyText) {
+    bodyText.split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .forEach((line) => {
+        const paragraph = document.createElement('p');
+        paragraph.textContent = line;
+        body.append(paragraph);
+      });
+  }
+
+  const metaItems = buildPlaybookMeta(entry);
+  if (metaItems.length > 0) {
+    const metaList = document.createElement('ul');
+    metaList.className = 'playbook-activity-meta';
+    metaItems.forEach((item) => {
+      const li = document.createElement('li');
+      const label = document.createElement('span');
+      label.className = 'label';
+      label.textContent = item.label;
+      const value = document.createElement('span');
+      value.className = 'value';
+      value.textContent = item.value;
+      li.append(label, value);
+      metaList.append(li);
+    });
+    body.append(metaList);
+  }
+
+  wrapper.append(body);
+  return wrapper;
+}
+
+function updatePlaybookPendingState() {
+  if (!aiMode) {
+    pendingPlaybookResponseCount = 0;
+    return;
+  }
+  const pendingIds = new Set();
+  for (const entry of lastPlaybookActivity) {
+    if (!entry || typeof entry !== 'object') continue;
+    const rawId = entry.request_id;
+    const requestId = rawId === undefined || rawId === null ? '' : String(rawId).trim();
+    if (!requestId) continue;
+    const kind = (entry.kind || '').toString().toLowerCase();
+    if (kind === 'query') {
+      pendingIds.add(requestId);
+    } else if (pendingIds.has(requestId)) {
+      pendingIds.delete(requestId);
+    }
+  }
+  const awaitingResponses = pendingIds.size;
   if (awaitingResponses > 0) {
-    const changed = pendingAiResponseCount !== awaitingResponses;
-    pendingAiResponseCount = awaitingResponses;
+    const changed = pendingPlaybookResponseCount !== awaitingResponses;
+    pendingPlaybookResponseCount = awaitingResponses;
     const delay = awaitingResponses > 2 ? 900 : 600;
     if (changed || !tradesRefreshTimer) {
       scheduleTradesRefresh(delay);
     }
-  } else if (pendingAiResponseCount !== 0) {
-    pendingAiResponseCount = 0;
-  }
-  if (shouldAutoScroll) {
-    const behavior = aiActivityFeed.scrollHeight > aiActivityFeed.clientHeight ? 'smooth' : 'auto';
-    // Ensure the newest activity remains visible when new entries arrive.
-    scrollToBottom(aiActivityFeed, behavior);
+  } else if (pendingPlaybookResponseCount !== 0) {
+    pendingPlaybookResponseCount = 0;
   }
 }
 
@@ -8821,7 +8927,7 @@ function setAiMode(state) {
   }
   document.body.classList.toggle('ai-mode', aiMode);
   renderAiBudget(lastAiBudget);
-  renderAiActivity(latestTradesSnapshot?.ai_activity);
+  renderPlaybookOverview(lastPlaybookState, lastPlaybookActivity);
   syncAiChatAvailability();
 }
 
@@ -9016,7 +9122,7 @@ async function loadTrades() {
     renderPnlChart(data.history);
     renderAiBudget(data.ai_budget);
     renderAiRequests(data.ai_requests);
-    renderAiActivity(data.ai_activity);
+    renderPlaybookOverview(data.playbook, data.playbook_activity);
     renderActivePositions(data.open);
     const proposals = Array.isArray(data.ai_trade_proposals) ? data.ai_trade_proposals : [];
     proposals.forEach((proposal) => appendTradeProposalCard(proposal));

@@ -1300,7 +1300,7 @@ button:focus-visible {
     grid-column: span 6;
   }
 
-  body.ai-mode .layout > .ai-mode-window {
+  body.ai-mode .layout > .playbook-overview {
     grid-column: span 4;
   }
 
@@ -1364,13 +1364,13 @@ button:focus-visible {
     grid-column: 1 / -1;
   }
 
-  .ai-mode-window-body {
+  .playbook-overview-body {
     height: auto;
     max-height: none;
     overflow: visible;
   }
 
-  .ai-activity-feed {
+  .playbook-activity-feed {
     max-height: none;
   }
 }
@@ -2077,7 +2077,7 @@ body.ai-mode .status .decision-metric {
   display: none;
 }
 
-.ai-mode-window {
+.playbook-overview {
   gap: 1.5rem;
   min-height: 360px;
   height: 100%;
@@ -2086,13 +2086,13 @@ body.ai-mode .status .decision-metric {
               var(--bg-card-strong);
 }
 
-body.ai-mode .ai-mode-window {
+body.ai-mode .playbook-overview {
   padding: 2.1rem 2rem;
   align-self: stretch;
   height: auto;
 }
 
-.ai-mode-window-header {
+.playbook-overview-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -2100,14 +2100,14 @@ body.ai-mode .ai-mode-window {
   gap: 1.2rem 2rem;
 }
 
-.ai-mode-window-header-main {
+.playbook-overview-header-main {
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
   flex: 1 1 280px;
 }
 
-.ai-mode-label {
+.playbook-badge {
   align-self: flex-start;
   padding: 0.45rem 1.1rem;
   border-radius: 999px;
@@ -2120,32 +2120,32 @@ body.ai-mode .ai-mode-window {
   box-shadow: 0 12px 30px rgba(245, 196, 107, 0.18);
 }
 
-.ai-mode-window-title {
+.playbook-overview-title {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
 }
 
-.ai-mode-window-header h2 {
+.playbook-overview-header h2 {
   margin: 0;
   font-size: clamp(1.75rem, 2.7vw, 2.2rem);
   letter-spacing: -0.01em;
 }
 
-.ai-mode-window-subtitle {
+.playbook-overview-subtitle {
   margin: 0;
   color: var(--text-subtle);
   line-height: 1.6;
   max-width: 66ch;
 }
 
-.ai-mode-window-body {
+.playbook-overview-body {
   flex: 0 0 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding: 1.1rem 1.3rem;
+  gap: 1.35rem;
+  padding: 1.2rem 1.4rem;
   border-radius: 1.2rem;
   background: rgba(12, 13, 20, 0.78);
   border: 1px solid rgba(245, 196, 107, 0.12);
@@ -2153,21 +2153,161 @@ body.ai-mode .ai-mode-window {
   scrollbar-gutter: stable both-edges;
 }
 
-.ai-mode-autoscroll {
-  align-self: flex-start;
-  font-size: 0.88rem;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.ai-mode-window-body .ai-hint {
+.playbook-overview-body .ai-hint {
   flex: 0 0 auto;
   background: none;
   border: none;
   font-size: 0.9rem;
 }
 
-.ai-activity-feed {
+.playbook-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.playbook-summary-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.2rem;
+  align-items: baseline;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.playbook-summary-header strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.playbook-summary-grid {
+  display: grid;
+  gap: 0.9rem 1.2rem;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.playbook-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.9rem 1rem;
+  border-radius: 1rem;
+  background: rgba(245, 196, 107, 0.08);
+  border: 1px solid rgba(245, 196, 107, 0.12);
+  box-shadow: inset 0 1px 0 rgba(245, 196, 107, 0.08);
+}
+
+.playbook-summary-item .label {
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.playbook-summary-item .value {
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.playbook-size-bias {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.playbook-size-bias .label {
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.playbook-size-bias-values {
+  display: inline-flex;
+  gap: 0.75rem;
+  font-size: 0.98rem;
+}
+
+.playbook-size-bias-values span {
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(31, 30, 46, 0.7);
+  border: 1px solid rgba(245, 196, 107, 0.14);
+  box-shadow: inset 0 1px 0 rgba(245, 196, 107, 0.07);
+}
+
+.playbook-features {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.playbook-features-title {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.playbook-feature-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.playbook-feature {
+  padding: 0.35rem 0.65rem;
+  border-radius: 0.75rem;
+  background: rgba(41, 43, 61, 0.85);
+  border: 1px solid rgba(245, 196, 107, 0.14);
+  font-size: 0.86rem;
+  letter-spacing: 0.01em;
+}
+
+.playbook-notes {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-radius: 0.9rem;
+  background: rgba(31, 30, 46, 0.75);
+  border: 1px solid rgba(245, 196, 107, 0.12);
+  color: var(--text-subtle);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.playbook-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.playbook-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.playbook-activity-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.playbook-activity-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  letter-spacing: -0.01em;
+}
+
+.playbook-activity-subtitle {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+
+.playbook-activity-feed {
   flex: 1 1 auto;
   min-height: clamp(180px, 28vh, 320px);
   max-height: clamp(220px, 38vh, 420px);
@@ -2176,6 +2316,113 @@ body.ai-mode .ai-mode-window {
   gap: 0.9rem;
   padding: 0.4rem 0.3rem;
   overflow-y: auto;
+}
+
+.playbook-activity-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.95rem 1.05rem;
+  border-radius: 1rem;
+  background: rgba(17, 18, 27, 0.92);
+  border: 1px solid rgba(245, 196, 107, 0.14);
+  box-shadow: inset 0 1px 0 rgba(245, 196, 107, 0.06);
+}
+
+.playbook-activity-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1.1rem;
+}
+
+.playbook-activity-title-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: baseline;
+}
+
+.playbook-activity-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  background: rgba(245, 196, 107, 0.18);
+  border: 1px solid rgba(245, 196, 107, 0.4);
+  color: var(--accent);
+}
+
+.playbook-activity-kind.kind--query {
+  background: rgba(80, 75, 241, 0.18);
+  border-color: rgba(80, 75, 241, 0.35);
+  color: #aeb6ff;
+}
+
+.playbook-activity-kind.kind--error {
+  background: rgba(248, 113, 113, 0.15);
+  border-color: rgba(248, 113, 113, 0.3);
+  color: var(--danger);
+}
+
+.playbook-activity-kind.kind--warning {
+  background: rgba(245, 196, 107, 0.18);
+  border-color: rgba(245, 196, 107, 0.35);
+  color: var(--accent);
+}
+
+.playbook-activity-title {
+  margin: 0;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+
+.playbook-activity-time {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.playbook-activity-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  color: var(--text-subtle);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.playbook-activity-body p {
+  margin: 0;
+}
+
+.playbook-activity-meta {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.45rem 1.2rem;
+}
+
+.playbook-activity-meta li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+}
+
+.playbook-activity-meta .label {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.playbook-activity-meta .value {
+  color: var(--text-primary);
 }
 
 .ai-feed-empty {
@@ -4453,7 +4700,7 @@ body.modal-open {
   body.ai-mode .status,
   body.ai-mode .mode-panel,
   body.ai-mode .pnl-card,
-  body.ai-mode .ai-mode-window {
+  body.ai-mode .playbook-overview {
     grid-column: 1 / -1;
   }
 
@@ -4556,11 +4803,11 @@ body.modal-open {
     padding: 1.45rem;
   }
 
-  body.ai-mode .ai-mode-window {
+  body.ai-mode .playbook-overview {
     padding: 2rem 1.6rem;
   }
 
-  .ai-mode-window-body {
+  .playbook-overview-body {
     padding: 1.1rem;
   }
 
@@ -4705,7 +4952,7 @@ footer p {
     font-size: 0.82rem;
   }
 
-  .ai-mode-window-body {
+  .playbook-overview-body {
     gap: 1rem;
   }
 
@@ -4833,11 +5080,11 @@ footer p {
     padding-inline: 1rem;
   }
 
-  .ai-mode-window {
+  .playbook-overview {
     padding: 1.6rem 1.4rem;
   }
 
-  .ai-mode-window-body {
+  .playbook-overview-body {
     min-height: clamp(280px, 56vh, 420px);
     height: auto;
     max-height: none;
@@ -4890,11 +5137,11 @@ footer p {
     padding-inline: 0.75rem;
   }
 
-  .ai-mode-window {
+  .playbook-overview {
     border-radius: 1.2rem;
   }
 
-  .ai-mode-window-body .ai-hint {
+  .playbook-overview-body .ai-hint {
     font-size: 0.9rem;
   }
 

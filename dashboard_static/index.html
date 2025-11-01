@@ -358,31 +358,31 @@
     </header>
 
     <main class="layout">
-      <section class="card ai-mode-window" data-ai-only>
-        <div class="ai-mode-window-header">
-          <div class="ai-mode-window-header-main">
-            <span class="ai-mode-label" data-i18n="ai.feed.label">Autonomous feed</span>
-            <div class="ai-mode-window-title">
-              <h2 data-i18n="ai.feed.title">Autonomous Strategy Cockpit</h2>
-              <p class="ai-mode-window-subtitle" data-i18n="ai.feed.subtitle">
-                The cockpit visualizes live strategy telemetry alongside the AI's autonomous decisions so you can track how plans evolve in real time.
+      <section class="card playbook-overview" data-ai-only>
+        <div class="playbook-overview-header">
+          <div class="playbook-overview-header-main">
+            <span class="playbook-badge" data-i18n="playbook.label">Playbook</span>
+            <div class="playbook-overview-title">
+              <h2 data-i18n="playbook.title">Playbook Overview</h2>
+              <p class="playbook-overview-subtitle" data-i18n="playbook.subtitle">
+                Track the active playbook regime, its bias multipliers, and every AI sync that keeps it fresh.
               </p>
             </div>
           </div>
-          <label class="toggle ai-mode-autoscroll" for="autoscroll-ai"
-            ><input type="checkbox" id="autoscroll-ai" data-autoscroll checked />
-            <span data-i18n="common.autoScroll">Auto-scroll</span></label
-          >
         </div>
-        <div class="ai-mode-window-body">
-          <div class="ai-hint" id="ai-hint" hidden></div>
-          <div
-            class="ai-activity-feed"
-            id="ai-activity"
-            role="log"
-            aria-live="polite"
-            aria-label="AI activity feed"
-          ></div>
+        <div class="playbook-overview-body">
+          <div class="playbook-summary" id="playbook-summary">
+            <div class="ai-hint" id="ai-hint" hidden></div>
+          </div>
+          <div class="playbook-activity">
+            <div class="playbook-activity-header">
+              <h3 data-i18n="playbook.activity.title">Playbook communications</h3>
+              <p class="playbook-activity-subtitle" data-i18n="playbook.activity.subtitle">
+                Requests, updates, and diagnostics between the bot and the AI.
+              </p>
+            </div>
+            <div class="playbook-activity-feed" id="playbook-activity" role="log" aria-live="polite"></div>
+          </div>
         </div>
       </section>
 
