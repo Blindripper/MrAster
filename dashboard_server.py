@@ -351,14 +351,27 @@ def _collect_playbook_activity(ai_activity: List[Any]) -> List[Dict[str, Any]]:
 
         relevant = "playbook" in normalized_headline
         if not relevant and kind_normalized:
-            if kind_normalized.startswith(allowed_kind_prefixes):
+            if kind_normalized.startswith(allowed_kind_prefixes) or "playbook" in kind_normalized:
                 relevant = True
 
         request_kind = None
+        normalized_request_kind = ""
         if isinstance(data, dict):
-            request_kind = str(data.get("request_kind") or "").strip().lower()
-            if request_kind in allowed_request_kinds:
+            raw_request_kind = data.get("request_kind")
+            if isinstance(raw_request_kind, str):
+                request_kind = raw_request_kind.strip() or None
+            elif raw_request_kind is not None:
+                request_kind = str(raw_request_kind)
+            if request_kind:
+                normalized_request_kind = request_kind.strip().lower()
+                if normalized_request_kind in allowed_request_kinds or "playbook" in normalized_request_kind:
+                    relevant = True
+
+        if not relevant and isinstance(data, dict):
+            playbook_keys = {"mode", "bias", "size_bias", "sl_bias", "tp_bias", "snapshot_meta", "features"}
+            if any(key in data for key in playbook_keys):
                 relevant = True
+
         if not relevant:
             continue
 
