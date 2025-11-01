@@ -3435,9 +3435,9 @@ function computeDurationSeconds(openedIso, closedIso) {
 function formatSideLabel(side) {
   if (!side) return '–';
   const normalized = side.toString().toUpperCase();
-  if (normalized === 'BUY') return 'LONG';
-  if (normalized === 'SELL') return 'SHORT';
-  return normalized;
+  if (normalized === 'BUY') return 'Long';
+  if (normalized === 'SELL') return 'Short';
+  return normalized.charAt(0) + normalized.slice(1).toLowerCase();
 }
 
 const ACTIVE_POSITION_SIGNED_SIZE_KEYS = [

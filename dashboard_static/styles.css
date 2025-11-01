@@ -972,8 +972,7 @@ body.paper-mode .hero-paper-toggle span {
   border-radius: 999px;
   font-size: 0.68rem;
   font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  letter-spacing: 0.08em;
   border: 1px solid transparent;
 }
 
