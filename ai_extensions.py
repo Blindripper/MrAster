@@ -168,7 +168,8 @@ class ParameterTuner:
         bucket_perf: Dict[str, List[float]] = {"S": [], "M": [], "L": []}
         wins: List[float] = []
         losses: List[float] = []
-        for item in history[-120:]:
+        recent_history = history[-120:]
+        for item in recent_history:
             pnl_r = float(item.get("pnl_r", 0.0) or 0.0)
             bucket = str(item.get("bucket") or "S").upper()
             bucket_perf.setdefault(bucket, []).append(pnl_r)
@@ -180,17 +181,50 @@ class ParameterTuner:
             return sum(values) / len(values) if values else 0.0
         overrides = dict(self._state.get("overrides", {}))
         overrides.setdefault("size_bias", {})
-        for bucket, values in bucket_perf.items():
-            avg = _avg(values)
-            overrides["size_bias"][bucket] = float(max(0.6, min(1.8, 1.0 + avg * 0.15)))
         avg_win = _avg(wins)
         avg_loss = _avg(losses)
+        loss_mag = abs(avg_loss)
+        recent_avg = _avg([float(item.get("pnl_r", 0.0) or 0.0) for item in recent_history])
+        risk_throttle = 1.0
+        if recent_history:
+            if recent_avg < 0:
+                risk_throttle = max(0.45, min(1.0, 1.0 + recent_avg * 0.65))
+            else:
+                gain = min(recent_avg, 0.8)
+                risk_throttle = min(1.15, 1.0 + gain * 0.35)
+        if losses and wins:
+            if loss_mag > 0 and avg_win > 0:
+                ratio = avg_win / loss_mag
+                if ratio < 1.0:
+                    risk_throttle = min(risk_throttle, max(0.5, 0.85 + ratio * 0.1))
+        elif losses and not wins:
+            risk_throttle = min(risk_throttle, 0.6)
+        for bucket, values in bucket_perf.items():
+            avg = _avg(values)
+            base = float(max(0.6, min(1.8, 1.0 + avg * 0.15)))
+            tuned = base * risk_throttle
+            overrides["size_bias"][bucket] = float(max(0.4, min(1.8, tuned)))
         if wins or losses:
-            sl_bias = max(0.6, min(1.5, 1.0 + (-avg_loss) * 0.05))
-            tp_bias = max(0.8, min(2.4, 1.0 + avg_win * 0.04))
+            sl_bias = 1.0
+            if losses:
+                sl_bias = 1.0 - max(0.0, loss_mag - 0.7) * 0.18
+            sl_bias = max(0.6, min(1.15, sl_bias))
+            tp_bias = 1.0
+            if wins:
+                tp_bias = 1.0 + max(0.0, avg_win - 0.6) * 0.12
+            tp_bias = max(0.9, min(2.4, tp_bias))
+            if tp_bias < sl_bias * 1.15:
+                tp_bias = min(2.4, sl_bias * 1.15)
             overrides["sl_atr_mult"] = sl_bias
             overrides["tp_atr_mult"] = tp_bias
-        overrides["size_bias_global"] = float(sum(overrides["size_bias"].values()) / max(len(overrides["size_bias"]) or 1, 1))
+        overrides["size_bias_global"] = float(
+            sum(overrides["size_bias"].values()) / max(len(overrides["size_bias"]) or 1, 1)
+        )
+        if risk_throttle < 1.0:
+            overrides["size_bias_global"] = max(
+                0.4,
+                min(1.5, overrides["size_bias_global"] * risk_throttle),
+            )
         overrides.setdefault("confidence", min(1.0, len(history) / 60.0))
         self._state["overrides"] = overrides
         self._root["tuning_overrides"] = overrides
