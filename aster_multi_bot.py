@@ -6547,7 +6547,7 @@ class Bot:
 
         if self.ai_advisor:
             try:
-                snapshot = self._playbook_snapshot()
+                snapshot = self.strategy._playbook_snapshot()
                 self.ai_advisor.maybe_refresh_playbook(snapshot)
             except Exception as exc:
                 log.debug(f"playbook refresh failed: {exc}")
