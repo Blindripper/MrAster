@@ -290,6 +290,9 @@ class PlaybookManager:
         state: Dict[str, Any],
         *,
         request_fn: Callable[[str, Dict[str, Any]], Optional[Dict[str, Any]]],
+        event_cb: Optional[
+            Callable[[str, Dict[str, Any], Optional[Dict[str, Any]]], None]
+        ] = None,
     ) -> None:
         self._root = state
         self._state = self._root.setdefault(
@@ -312,6 +315,7 @@ class PlaybookManager:
         self._bootstrap_deadline = time.time() + 120.0
         self._bootstrap_retry = 90.0
         self._bootstrap_cooldown_until = 0.0
+        self._event_cb = event_cb
 
     def maybe_refresh(self, snapshot: Dict[str, Any]) -> None:
         active = self._state.get("active", {})
@@ -344,6 +348,12 @@ class PlaybookManager:
         if bootstrap_triggered:
             self._bootstrap_pending = False
             self._bootstrap_cooldown_until = 0.0
+        if self._event_cb:
+            try:
+                context = {"raw": suggestions, "snapshot": snapshot}
+                self._event_cb("applied", dict(active), context)
+            except Exception:
+                pass
 
     def _snapshot_ready(self, snapshot: Dict[str, Any]) -> bool:
         if not isinstance(snapshot, dict):
@@ -426,6 +436,11 @@ class PlaybookManager:
             "notes": notes if isinstance(notes, str) else "",
             "refreshed": now,
         }
+        request_id = payload.get("request_id")
+        if isinstance(request_id, str):
+            token = request_id.strip()
+            if token:
+                active["request_id"] = token
         return active
 
 
