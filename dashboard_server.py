@@ -287,6 +287,20 @@ def _normalize_playbook_state(raw: Any) -> Optional[Dict[str, Any]]:
         features = features[:5]
 
     refreshed_raw = active.get("refreshed")
+    if isinstance(refreshed_raw, (int, float)):
+        if refreshed_raw <= 0:
+            refreshed_raw = None
+    elif isinstance(refreshed_raw, str):
+        token = refreshed_raw.strip()
+        if not token:
+            refreshed_raw = None
+        else:
+            try:
+                if float(token) <= 0:
+                    refreshed_raw = None
+            except (TypeError, ValueError):
+                # keep non-numeric strings such as ISO timestamps
+                pass
     refreshed_dt = _parse_activity_ts(refreshed_raw)
     refreshed_iso = refreshed_dt.isoformat() if refreshed_dt else None
     refreshed_epoch = refreshed_dt.timestamp() if refreshed_dt else None
@@ -324,21 +338,26 @@ def _collect_playbook_activity(ai_activity: List[Any]) -> List[Dict[str, Any]]:
         return []
 
     items: List[Dict[str, Any]] = []
+    allowed_request_kinds = {"playbook"}
+    allowed_kind_prefixes = ("playbook",)
     for entry in ai_activity:
         if not isinstance(entry, dict):
             continue
         data = entry.get("data")
         headline = str(entry.get("headline") or "")
         normalized_headline = headline.lower()
+        kind_label = str(entry.get("kind") or "")
+        kind_normalized = kind_label.strip().lower()
+
         relevant = "playbook" in normalized_headline
-        if not relevant and isinstance(data, dict):
-            request_kind = str(data.get("request_kind") or "").strip().lower()
-            if request_kind == "playbook":
+        if not relevant and kind_normalized:
+            if kind_normalized.startswith(allowed_kind_prefixes):
                 relevant = True
-            elif any(
-                key in data
-                for key in ("mode", "bias", "size_bias", "sl_bias", "tp_bias", "snapshot_meta", "notes", "reason")
-            ):
+
+        request_kind = None
+        if isinstance(data, dict):
+            request_kind = str(data.get("request_kind") or "").strip().lower()
+            if request_kind in allowed_request_kinds:
                 relevant = True
         if not relevant:
             continue
