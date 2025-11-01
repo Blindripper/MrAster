@@ -1356,6 +1356,7 @@ class AITradeAdvisor:
         data: Dict[str, Any] = {
             "ai_request": True,
             "request_id": request_id,
+            "request_kind": "playbook",
         }
         if snapshot_meta:
             data["snapshot_meta"] = snapshot_meta
@@ -1387,6 +1388,7 @@ class AITradeAdvisor:
         data: Dict[str, Any] = {
             "ai_request": True,
             "request_id": request_id,
+            "request_kind": "playbook",
             "reason": reason,
         }
         if snapshot_meta:
@@ -1453,6 +1455,7 @@ class AITradeAdvisor:
             "size_bias": {"BUY": size_buy, "SELL": size_sell},
             "sl_bias": sl_bias,
             "tp_bias": tp_bias,
+            "request_kind": "playbook",
         }
         if features:
             data["features"] = {
