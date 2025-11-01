@@ -30,7 +30,7 @@ import re
 import copy
 import threading
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from urllib.parse import urlencode
 from typing import Dict, List, Tuple, Optional, Any, Callable, Sequence, Set
 
@@ -39,6 +39,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 
 import requests
 
+from decimal import Decimal
 from requests.exceptions import RequestException
 
 try:
@@ -1099,6 +1100,54 @@ class AITradeAdvisor:
         self.state["ai_plan_cache"] = cache_dump
         self.state["ai_recent_plans"] = recent_dump
 
+    def _sanitize_for_json(self, value: Any, depth: int = 0) -> Any:
+        if depth >= 10:
+            return str(value)
+        if value is None:
+            return None
+        if isinstance(value, (bool, int)):
+            return value
+        if isinstance(value, float):
+            return value if math.isfinite(value) else 0.0
+        if isinstance(value, str):
+            return value
+        if isinstance(value, (datetime, date)):
+            try:
+                return value.isoformat()
+            except Exception:
+                return str(value)
+        if isinstance(value, Decimal):
+            try:
+                return float(value)
+            except Exception:
+                return str(value)
+        try:
+            import numpy as np
+
+            if isinstance(value, np.generic):
+                return self._sanitize_for_json(value.item(), depth=depth + 1)
+        except Exception:
+            pass
+        if isinstance(value, dict):
+            sanitized: Dict[str, Any] = {}
+            for key, sub in value.items():
+                if isinstance(key, str):
+                    key_str = key
+                elif isinstance(key, (int, float, bool)):
+                    key_str = str(key)
+                else:
+                    key_str = repr(key)
+                sanitized[key_str] = self._sanitize_for_json(sub, depth + 1)
+            return sanitized
+        if isinstance(value, (list, tuple, set, deque)):
+            return [self._sanitize_for_json(item, depth + 1) for item in list(value)]
+        if hasattr(value, "_asdict") and callable(getattr(value, "_asdict")):
+            try:
+                return self._sanitize_for_json(value._asdict(), depth + 1)
+            except Exception:
+                return str(value)
+        return str(value)
+
     def _structured_request(
         self, kind: str, payload: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
@@ -1134,28 +1183,21 @@ class AITradeAdvisor:
         if kind == "playbook":
             playbook_snapshot_meta = self._summarize_playbook_snapshot(user_payload)
             self._note_playbook_request(request_id, playbook_snapshot_meta)
-        def _json_fallback(obj: Any) -> Any:
-            if isinstance(obj, (datetime,)):
-                return obj.isoformat()
-            if isinstance(obj, (set, tuple)):
-                return list(obj)
-            try:
-                from decimal import Decimal
-
-                if isinstance(obj, Decimal):
-                    return float(obj)
-            except Exception:
-                pass
-            return str(obj)
-
         try:
+            sanitized_payload = self._sanitize_for_json(payload_with_id)
             user_prompt = json.dumps(
-                payload_with_id,
+                sanitized_payload,
                 sort_keys=True,
                 separators=(",", ":"),
-                default=_json_fallback,
             )
-        except Exception:
+        except Exception as exc:
+            log.debug("AI request payload serialization failed (%s): %s", kind, exc)
+            if kind == "playbook":
+                self._note_playbook_failure(
+                    request_id,
+                    "serialization_error",
+                    playbook_snapshot_meta,
+                )
             return None
         meta: Dict[str, Any] = {"request_id": request_id}
         symbol_hint = user_payload.get("symbol") if isinstance(user_payload, dict) else None
