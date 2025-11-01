@@ -72,7 +72,11 @@ RECV_WINDOW = int(os.getenv("ASTER_RECV_WINDOW", "10000"))
 MODE = os.getenv("ASTER_MODE", "standard").strip().lower()
 PRESET_MODE = os.getenv("ASTER_PRESET_MODE", "mid").strip().lower()
 AI_MODE_ENABLED = MODE == "ai" or os.getenv("ASTER_AI_MODE", "").lower() in ("1", "true", "yes", "on")
+# Allow falling back to the standard OPENAI_API_KEY environment variable so
+# existing setups keep working without extra configuration.
 OPENAI_API_KEY = os.getenv("ASTER_OPENAI_API_KEY", "").strip()
+if not OPENAI_API_KEY:
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 AI_MODEL = os.getenv("ASTER_AI_MODEL", "gpt-4o").strip() or "gpt-4o"
 AI_DAILY_BUDGET = float(os.getenv("ASTER_AI_DAILY_BUDGET_USD", "20") or 0)
 if PRESET_MODE in {"high", "att"}:
@@ -89,6 +93,12 @@ AI_CONCURRENCY = max(1, int(os.getenv("ASTER_AI_CONCURRENCY", "3") or 1))
 AI_GLOBAL_COOLDOWN = max(0.0, float(os.getenv("ASTER_AI_GLOBAL_COOLDOWN_SECONDS", "2.0") or 0.0))
 AI_PLAN_TIMEOUT = max(10.0, float(os.getenv("ASTER_AI_PLAN_TIMEOUT_SECONDS", "45") or 0.0))
 AI_PENDING_LIMIT = max(AI_CONCURRENCY, int(os.getenv("ASTER_AI_PENDING_LIMIT", str(AI_CONCURRENCY * 2)) or AI_CONCURRENCY))
+
+if AI_MODE_ENABLED and not OPENAI_API_KEY:
+    log.warning(
+        "AI mode is enabled but no OpenAI API key was provided via ASTER_OPENAI_API_KEY or OPENAI_API_KEY."
+        " AI requests will remain disabled until a key is configured."
+    )
 
 QUOTE = os.getenv("ASTER_QUOTE", "USDT")
 INTERVAL = os.getenv("ASTER_INTERVAL", "5m")
