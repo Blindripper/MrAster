@@ -42,6 +42,9 @@ FEATURES = (
     "playbook_range_bias",
     "playbook_trend_bias",
     "budget_bias",
+    "sentinel_event_risk",
+    "sentinel_hype",
+    "expected_r",
 )
 
 def _vec_from_ctx(ctx: Dict[str, float]) -> "np.ndarray":
@@ -339,6 +342,17 @@ class BanditPolicy:
 
         # Gate-Score: wir vergleichen TAKE vs. SKIP=0 baseline
         take_ucb = self.gate.predict_ucb(x) - self.skip_push
+        event_risk = float(ctx.get("sentinel_event_risk", 0.0) or 0.0)
+        hype_score = float(ctx.get("sentinel_hype", 0.0) or 0.0)
+        risk_penalty = 0.0
+        if event_risk > 0.32:
+            risk_penalty += (event_risk - 0.32) * 1.2
+            if event_risk > 0.55:
+                risk_penalty += 0.05
+        if hype_score > 0.86:
+            risk_penalty += (hype_score - 0.86) * 0.6
+        if risk_penalty > 0.0:
+            take_ucb -= risk_penalty
         # Warmup: am Anfang eher großzügig
         if self.n_trades < self.warmup_trades:
             take_ucb += 0.05
@@ -360,6 +374,10 @@ class BanditPolicy:
                 scores[b] = self.size.predict_ucb(xb)
             size_bucket = max(scores.items(), key=lambda kv: kv[1])[0]
         extras: Dict[str, Any] = {"size_bucket": size_bucket}
+        if risk_penalty > 0.0:
+            extras["risk_penalty"] = risk_penalty
+            extras["risk_event"] = event_risk
+            extras["risk_hype"] = hype_score
 
         if self.alpha:
             try:
@@ -377,6 +395,14 @@ class BanditPolicy:
                 extras["size_bucket"] = size_bucket
                 # kein direkter Eingriff in LinUCB; Bucket-Anpassung reicht
 
+        if decision == "TAKE" and self.enable_size and (event_risk > 0.45 or risk_penalty >= 0.2):
+            demote_steps = 1
+            if event_risk > 0.65 or risk_penalty >= 0.35:
+                demote_steps = 2
+            size_bucket = self._demote_bucket(size_bucket, demote_steps)
+            extras["size_bucket"] = size_bucket
+            extras["risk_demotion"] = demote_steps
+
         return decision, extras
 
     @staticmethod
@@ -387,6 +413,15 @@ class BanditPolicy:
         except ValueError:
             idx = 0
         return order[min(idx + 1, len(order) - 1)]
+
+    @staticmethod
+    def _demote_bucket(bucket: str, steps: int = 1) -> str:
+        order = ("S", "M", "L")
+        try:
+            idx = order.index(bucket)
+        except ValueError:
+            idx = 0
+        return order[max(0, idx - max(1, steps))]
 
     def note_entry(self, *args, **kwargs) -> None:
         """
