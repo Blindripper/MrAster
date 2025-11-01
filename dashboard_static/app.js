@@ -5853,6 +5853,20 @@ function renderPlaybookSummarySection() {
   }
 }
 
+function resolveTimestampMs(epochValue, isoValue) {
+  if (epochValue !== undefined && epochValue !== null) {
+    const numeric = Number(epochValue);
+    if (Number.isFinite(numeric)) {
+      return numeric > 1e12 ? numeric : numeric * 1000;
+    }
+  }
+  if (isoValue) {
+    const parsed = Date.parse(isoValue);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
 function renderPlaybookProcessSection() {
   if (!playbookProcessContainer) return;
   playbookProcessContainer.innerHTML = '';
@@ -5927,47 +5941,128 @@ function createPlaybookProcessItem(entry) {
 
   wrapper.append(header);
 
+  const referenceIso = entry.completed_ts_iso || entry.failed_ts_iso || entry.requested_ts_iso;
+  const referenceTimestampMs =
+    resolveTimestampMs(entry.completed_ts, entry.completed_ts_iso) ||
+    resolveTimestampMs(entry.failed_ts, entry.failed_ts_iso) ||
+    resolveTimestampMs(entry.requested_ts, referenceIso);
+
   const stepEntries = Array.isArray(entry.steps)
-    ? entry.steps.map((step) => (step && typeof step === 'object' ? { ...step } : step))
+    ? entry.steps
+        .map((step) => (step && typeof step === 'object' ? { ...step } : null))
+        .filter(Boolean)
     : [];
   if (entry.notes) {
     stepEntries.push({
       stage: 'info',
       headline: translate('playbook.process.notes', 'Notes'),
       body: entry.notes,
-      ts_epoch: referenceTs,
+      ts_epoch: entry.completed_ts || entry.failed_ts || entry.requested_ts,
+      ts: referenceIso,
     });
   }
 
   if (stepEntries.length > 0) {
+    const decoratedSteps = stepEntries
+      .map((step, index) => {
+        const tsMs = resolveTimestampMs(step.ts_epoch, step.ts) || referenceTimestampMs;
+        return { step, index, tsMs };
+      })
+      .sort((a, b) => {
+        const aHasTs = Number.isFinite(a.tsMs);
+        const bHasTs = Number.isFinite(b.tsMs);
+        if (aHasTs && bHasTs) return a.tsMs - b.tsMs;
+        if (aHasTs) return -1;
+        if (bHasTs) return 1;
+        return a.index - b.index;
+      })
+      .map((entry) => entry.step);
+
     const list = document.createElement('ol');
     list.className = 'playbook-process-steps';
-    stepEntries.forEach((step) => {
+
+    decoratedSteps.forEach((step, position) => {
       if (!step || typeof step !== 'object') return;
+
       const item = document.createElement('li');
       item.className = 'playbook-process-step';
 
-      const label = document.createElement('span');
+      const label = document.createElement('div');
       label.className = 'playbook-process-step-label';
-      label.textContent = getPlaybookProcessStageLabel(step.stage);
+
+      const stepPrefix = translate('playbook.process.stepLabel', 'Step');
+      const number = document.createElement('span');
+      number.className = 'playbook-process-step-number';
+      number.textContent = `${stepPrefix} ${position + 1}`;
+      label.append(number);
+
+      const stage = document.createElement('span');
+      stage.className = 'playbook-process-step-stage';
+      stage.textContent = getPlaybookProcessStageLabel(step.stage);
+      label.append(stage);
+
       item.append(label);
 
       const body = document.createElement('div');
       body.className = 'playbook-process-step-body';
-      const lines = [];
+
       const headlineText = typeof step.headline === 'string' ? step.headline.trim() : '';
       const summaryText = typeof step.snapshot_summary === 'string' ? step.snapshot_summary.trim() : '';
       const bodyText = typeof step.body === 'string' ? step.body.trim() : '';
-      if (headlineText) lines.push(headlineText);
-      if (summaryText && !lines.includes(summaryText)) lines.push(summaryText);
-      if (bodyText && !lines.includes(bodyText)) lines.push(bodyText);
-      const stepTime = formatRelativeTime(step.ts_epoch || step.ts);
-      if (stepTime && !lines.includes(stepTime)) lines.push(stepTime);
-      body.textContent = lines.join(' · ');
-      item.append(body);
 
+      const detailLines = [];
+      if (headlineText) detailLines.push({ className: 'playbook-process-step-headline', text: headlineText });
+      if (summaryText && summaryText !== headlineText)
+        detailLines.push({ className: 'playbook-process-step-summary', text: summaryText });
+      if (bodyText && bodyText !== headlineText && bodyText !== summaryText)
+        detailLines.push({ className: 'playbook-process-step-description', text: bodyText });
+
+      if (detailLines.length === 0) {
+        detailLines.push({
+          className: 'playbook-process-step-description',
+          text: translate('playbook.process.step.noDetails', 'No additional context provided.'),
+        });
+      }
+
+      detailLines.forEach((line) => {
+        const lineEl = document.createElement('p');
+        lineEl.className = `playbook-process-step-text ${line.className}`.trim();
+        lineEl.textContent = line.text;
+        body.append(lineEl);
+      });
+
+      const metaRow = document.createElement('div');
+      metaRow.className = 'playbook-process-step-meta';
+
+      const kindValue = typeof step.kind === 'string' ? step.kind.trim() : '';
+      if (kindValue) {
+        const kindLabel = getPlaybookKindLabel(kindValue);
+        const kindChip = document.createElement('span');
+        kindChip.className = 'playbook-process-step-kind';
+        kindChip.textContent = kindLabel;
+        metaRow.append(kindChip);
+      }
+
+      const tsMs = resolveTimestampMs(step.ts_epoch, step.ts) || referenceTimestampMs;
+      const timeText = formatRelativeTime(step.ts_epoch || step.ts || referenceTs);
+      if (timeText) {
+        const timeEl = document.createElement('time');
+        timeEl.className = 'playbook-process-step-time';
+        timeEl.textContent = timeText;
+        if (Number.isFinite(tsMs)) {
+          timeEl.dateTime = new Date(tsMs).toISOString();
+        }
+        metaRow.append(timeEl);
+      }
+
+      if (metaRow.childElementCount > 0) {
+        body.append(metaRow);
+      }
+
+      item.append(body);
       list.append(item);
     });
+
     wrapper.append(list);
   }
 
