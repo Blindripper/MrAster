@@ -4927,6 +4927,10 @@ class Bot:
         )
         self.state.setdefault("symbol_leverage", {})
         self.budget_tracker = DailyBudgetTracker(self.state, AI_DAILY_BUDGET, AI_STRICT_BUDGET)
+        try:
+            self._strategy.budget_tracker = self.budget_tracker
+        except Exception:
+            pass
         remaining_budget = self.budget_tracker.remaining()
         if self.budget_tracker.limit > 0 and remaining_budget is not None and remaining_budget <= 0:
             log.warning(
@@ -6873,7 +6877,7 @@ class Bot:
 
         if self.ai_advisor:
             try:
-                snapshot = self._playbook_snapshot()
+                snapshot = self.strategy._playbook_snapshot()
                 self.ai_advisor.maybe_refresh_playbook(snapshot)
             except Exception as exc:
                 log.debug(f"playbook refresh failed: {exc}")
