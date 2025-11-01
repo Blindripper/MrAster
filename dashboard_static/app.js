@@ -68,6 +68,7 @@ const aiBudgetModeLabel = document.getElementById('ai-budget-mode');
 const aiBudgetMeta = document.getElementById('ai-budget-meta');
 const aiBudgetFill = document.getElementById('ai-budget-fill');
 const playbookSummaryContainer = document.getElementById('playbook-summary');
+const playbookProcessContainer = document.getElementById('playbook-process');
 const playbookActivityFeed = document.getElementById('playbook-activity');
 const aiChatMessages = document.getElementById('ai-chat-messages');
 const aiChatForm = document.getElementById('ai-chat-form');
@@ -1926,6 +1927,7 @@ const DECISION_REASON_EVENT_LIMIT = 40;
 let pendingPlaybookResponseCount = 0;
 let lastPlaybookState = null;
 let lastPlaybookActivity = [];
+let lastPlaybookProcess = [];
 const tradeProposalRegistry = new Map();
 let heroMetricsSnapshot = {
   totalTrades: 0,
@@ -5589,6 +5591,19 @@ function toTitleCase(value) {
     .join(' ');
 }
 
+const PLAYBOOK_PROCESS_STATUS_FALLBACKS = {
+  pending: 'Awaiting AI response',
+  applied: 'Playbook applied',
+  failed: 'Refresh failed',
+};
+
+const PLAYBOOK_PROCESS_STAGE_FALLBACKS = {
+  requested: 'Request sent',
+  applied: 'Applied',
+  failed: 'Failed',
+  info: 'Update logged',
+};
+
 function formatPlaybookMultiplier(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return '–';
@@ -5600,6 +5615,22 @@ function formatPlaybookSigned(value) {
   if (!Number.isFinite(numeric)) return '0.00';
   const sign = numeric >= 0 ? '+' : '';
   return `${sign}${numeric.toFixed(2)}`;
+}
+
+function getPlaybookProcessStatusLabel(statusKey) {
+  const normalized = (statusKey || 'pending').toString().toLowerCase();
+  return translate(
+    `playbook.process.status.${normalized}`,
+    PLAYBOOK_PROCESS_STATUS_FALLBACKS[normalized] || PLAYBOOK_PROCESS_STATUS_FALLBACKS.pending
+  );
+}
+
+function getPlaybookProcessStageLabel(stageKey) {
+  const normalized = (stageKey || 'info').toString().toLowerCase();
+  return translate(
+    `playbook.process.stage.${normalized}`,
+    PLAYBOOK_PROCESS_STAGE_FALLBACKS[normalized] || PLAYBOOK_PROCESS_STAGE_FALLBACKS.info
+  );
 }
 
 function getPlaybookKindLabel(kind) {
@@ -5688,10 +5719,12 @@ function buildPlaybookMeta(entry) {
   return rows;
 }
 
-function renderPlaybookOverview(playbook, activity) {
+function renderPlaybookOverview(playbook, activity, process) {
   lastPlaybookState = playbook && typeof playbook === 'object' ? { ...playbook } : null;
   lastPlaybookActivity = Array.isArray(activity) ? activity.slice() : [];
+  lastPlaybookProcess = Array.isArray(process) ? process.slice() : [];
   renderPlaybookSummarySection();
+  renderPlaybookProcessSection();
   renderPlaybookActivitySection();
   updatePlaybookPendingState();
 }
@@ -5818,6 +5851,127 @@ function renderPlaybookSummarySection() {
   if (hintNode) {
     playbookSummaryContainer.append(hintNode);
   }
+}
+
+function renderPlaybookProcessSection() {
+  if (!playbookProcessContainer) return;
+  playbookProcessContainer.innerHTML = '';
+
+  if (!aiMode) {
+    const disabled = document.createElement('p');
+    disabled.className = 'playbook-process-empty';
+    disabled.textContent = translate('playbook.disabled', 'Enable AI mode to view the playbook overview.');
+    playbookProcessContainer.append(disabled);
+    return;
+  }
+
+  const entries = Array.isArray(lastPlaybookProcess) ? lastPlaybookProcess.slice(0, 6) : [];
+  if (!entries.length) {
+    const empty = document.createElement('p');
+    empty.className = 'playbook-process-empty';
+    empty.textContent = translate('playbook.process.empty', 'No refresh activity recorded yet.');
+    playbookProcessContainer.append(empty);
+    return;
+  }
+
+  entries.forEach((entry) => {
+    const item = createPlaybookProcessItem(entry);
+    if (item) {
+      playbookProcessContainer.append(item);
+    }
+  });
+}
+
+function createPlaybookProcessItem(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+
+  const wrapper = document.createElement('article');
+  wrapper.className = 'playbook-process-item';
+
+  const header = document.createElement('div');
+  header.className = 'playbook-process-item-header';
+
+  const statusKey = (entry.status || 'pending').toString().toLowerCase();
+  const status = document.createElement('span');
+  status.className = `playbook-process-status status-${statusKey}`;
+  status.textContent = getPlaybookProcessStatusLabel(statusKey);
+  header.append(status);
+
+  const headline = document.createElement('span');
+  headline.className = 'playbook-process-headline';
+  const modeText = toTitleCase(entry.mode || '');
+  const biasText = toTitleCase(entry.bias || '');
+  if (modeText && biasText) {
+    headline.textContent = `${modeText} (${biasText})`;
+  } else if (modeText) {
+    headline.textContent = modeText;
+  } else if (biasText) {
+    headline.textContent = biasText;
+  } else {
+    headline.textContent = translate('playbook.process.untitled', 'Playbook update');
+  }
+  header.append(headline);
+
+  const metaParts = [];
+  const referenceTs = entry.completed_ts || entry.failed_ts || entry.requested_ts;
+  const timeText = formatRelativeTime(referenceTs);
+  if (timeText) metaParts.push(timeText);
+  if (entry.request_id) metaParts.push(`#${entry.request_id}`);
+  if (entry.snapshot_summary) metaParts.push(entry.snapshot_summary);
+  if (metaParts.length > 0) {
+    const meta = document.createElement('span');
+    meta.className = 'playbook-process-meta';
+    meta.textContent = metaParts.join(' · ');
+    header.append(meta);
+  }
+
+  wrapper.append(header);
+
+  const stepEntries = Array.isArray(entry.steps)
+    ? entry.steps.map((step) => (step && typeof step === 'object' ? { ...step } : step))
+    : [];
+  if (entry.notes) {
+    stepEntries.push({
+      stage: 'info',
+      headline: translate('playbook.process.notes', 'Notes'),
+      body: entry.notes,
+      ts_epoch: referenceTs,
+    });
+  }
+
+  if (stepEntries.length > 0) {
+    const list = document.createElement('ol');
+    list.className = 'playbook-process-steps';
+    stepEntries.forEach((step) => {
+      if (!step || typeof step !== 'object') return;
+      const item = document.createElement('li');
+      item.className = 'playbook-process-step';
+
+      const label = document.createElement('span');
+      label.className = 'playbook-process-step-label';
+      label.textContent = getPlaybookProcessStageLabel(step.stage);
+      item.append(label);
+
+      const body = document.createElement('div');
+      body.className = 'playbook-process-step-body';
+      const lines = [];
+      const headlineText = typeof step.headline === 'string' ? step.headline.trim() : '';
+      const summaryText = typeof step.snapshot_summary === 'string' ? step.snapshot_summary.trim() : '';
+      const bodyText = typeof step.body === 'string' ? step.body.trim() : '';
+      if (headlineText) lines.push(headlineText);
+      if (summaryText && !lines.includes(summaryText)) lines.push(summaryText);
+      if (bodyText && !lines.includes(bodyText)) lines.push(bodyText);
+      const stepTime = formatRelativeTime(step.ts_epoch || step.ts);
+      if (stepTime && !lines.includes(stepTime)) lines.push(stepTime);
+      body.textContent = lines.join(' · ');
+      item.append(body);
+
+      list.append(item);
+    });
+    wrapper.append(list);
+  }
+
+  return wrapper;
 }
 
 function renderPlaybookActivitySection() {
@@ -8927,7 +9081,7 @@ function setAiMode(state) {
   }
   document.body.classList.toggle('ai-mode', aiMode);
   renderAiBudget(lastAiBudget);
-  renderPlaybookOverview(lastPlaybookState, lastPlaybookActivity);
+  renderPlaybookOverview(lastPlaybookState, lastPlaybookActivity, lastPlaybookProcess);
   syncAiChatAvailability();
 }
 
@@ -9122,7 +9276,7 @@ async function loadTrades() {
     renderPnlChart(data.history);
     renderAiBudget(data.ai_budget);
     renderAiRequests(data.ai_requests);
-    renderPlaybookOverview(data.playbook, data.playbook_activity);
+    renderPlaybookOverview(data.playbook, data.playbook_activity, data.playbook_process);
     renderActivePositions(data.open);
     const proposals = Array.isArray(data.ai_trade_proposals) ? data.ai_trade_proposals : [];
     proposals.forEach((proposal) => appendTradeProposalCard(proposal));
