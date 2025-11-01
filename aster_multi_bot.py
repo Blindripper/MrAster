@@ -1126,8 +1126,27 @@ class AITradeAdvisor:
         request_id = self._new_request_id(kind, kind)
         payload_with_id = dict(user_payload)
         payload_with_id["request_id"] = request_id
+        def _json_fallback(obj: Any) -> Any:
+            if isinstance(obj, (datetime,)):
+                return obj.isoformat()
+            if isinstance(obj, (set, tuple)):
+                return list(obj)
+            try:
+                from decimal import Decimal
+
+                if isinstance(obj, Decimal):
+                    return float(obj)
+            except Exception:
+                pass
+            return str(obj)
+
         try:
-            user_prompt = json.dumps(payload_with_id, sort_keys=True, separators=(",", ":"))
+            user_prompt = json.dumps(
+                payload_with_id,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=_json_fallback,
+            )
         except Exception:
             return None
         meta: Dict[str, Any] = {"request_id": request_id}
