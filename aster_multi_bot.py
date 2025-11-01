@@ -6547,7 +6547,10 @@ class Bot:
 
         if self.ai_advisor:
             try:
-                snapshot = self.strategy._playbook_snapshot()
+                strategy = getattr(self, "strategy", None)
+                if strategy is None:
+                    raise AttributeError("bot is missing strategy for playbook snapshot")
+                snapshot = strategy._playbook_snapshot()
                 self.ai_advisor.maybe_refresh_playbook(snapshot)
             except Exception as exc:
                 log.debug(f"playbook refresh failed: {exc}")
