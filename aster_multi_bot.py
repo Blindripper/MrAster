@@ -1006,6 +1006,34 @@ class AITradeAdvisor:
         self.budget_learner = BudgetLearner(self.state or {})
         self._playbook_request_meta: Dict[str, Dict[str, Any]] = {}
 
+    def _log_ai_activity(
+        self,
+        kind: str,
+        headline: str,
+        *,
+        body: Optional[str] = None,
+        data: Optional[Dict[str, Any]] = None,
+        force: bool = False,
+    ) -> None:
+        """Forward AI activity events to the configured logger, if any."""
+
+        if data and data.get("ai_request") is False:
+            return
+        if not (self._activity_logger and (force or AI_MODE_ENABLED)):
+            return
+        payload: Dict[str, Any] = {}
+        if isinstance(data, dict):
+            payload = dict(data)
+        try:
+            self._activity_logger(
+                str(kind or "info"),
+                str(headline or ""),
+                payload,
+                body,
+            )
+        except Exception:
+            log.debug("AI activity logger callback failed", exc_info=True)
+
     def _log_budget_block(self, kind: str, estimate: Optional[float] = None) -> None:
         if not self._activity_logger:
             return
