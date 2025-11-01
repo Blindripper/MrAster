@@ -1919,6 +1919,7 @@ let automationActive = false;
 let automationTimeoutId = null;
 let automationCountdownIntervalId = null;
 let automationTargetTimestamp = null;
+let lastModeBeforeStandard = null;
 const decisionReasonEvents = new Map();
 const DECISION_REASON_EVENT_LIMIT = 40;
 let pendingAiResponseCount = 0;
@@ -8730,6 +8731,7 @@ function syncQuickSetupFromEnv(env) {
 
 async function saveQuickSetup() {
   if (!btnApplyPreset) return;
+  const restoreMode = lastModeBeforeStandard;
   const payload = buildQuickSetupPayload();
   btnApplyPreset.disabled = true;
   btnApplyPreset.textContent = translate('quick.applyProgress', 'Applying…');
@@ -8750,7 +8752,7 @@ async function saveQuickSetup() {
     syncQuickSetupFromEnv(currentConfig.env);
     let restarted = false;
     try {
-      restarted = await restartBotIfNeeded();
+      restarted = await restartBotIfNeeded({ restoreMode });
     } catch (restartErr) {
       throw new Error(`Bot restart failed: ${restartErr.message}`);
     }
@@ -8835,6 +8837,7 @@ function setPaperMode(state) {
 }
 
 async function syncModeFromEnv(env) {
+  lastModeBeforeStandard = null;
   const raw = (env?.ASTER_MODE || '').toString().toLowerCase();
   if (raw === 'ai') {
     await selectMode('ai', { persist: false });
@@ -8900,6 +8903,11 @@ async function selectMode(mode, options = {}) {
   }
 
   const previous = current;
+  if (target === 'standard' && previous !== 'standard') {
+    lastModeBeforeStandard = previous;
+  } else if (target !== 'standard') {
+    lastModeBeforeStandard = null;
+  }
   applyModeState(target);
 
   if (!persist) {
@@ -9063,12 +9071,30 @@ async function waitForBotState(targetRunning, options = {}) {
   throw new Error(`Timed out waiting for bot to ${targetRunning ? 'start' : 'stop'}`);
 }
 
-async function restartBotIfNeeded() {
-  if (getCurrentMode() !== 'standard') {
+async function restartBotIfNeeded(options = {}) {
+  const { restoreMode = null } = options;
+  const currentMode = getCurrentMode();
+  const normalizedRestore = typeof restoreMode === 'string' ? restoreMode.toLowerCase() : null;
+  const wantsRestore = normalizedRestore && normalizedRestore !== 'standard';
+
+  if (currentMode !== 'standard' && !wantsRestore) {
     return false;
   }
+
+  if (wantsRestore && currentMode !== normalizedRestore) {
+    try {
+      await selectMode(normalizedRestore, { persist: true });
+    } catch (err) {
+      console.warn('Unable to restore previous mode before restart', err);
+      lastModeBeforeStandard = normalizedRestore;
+    }
+  }
+
   await updateStatus();
   if (!lastBotStatus.running) {
+    if (wantsRestore) {
+      lastModeBeforeStandard = null;
+    }
     return false;
   }
 
@@ -9090,6 +9116,11 @@ async function restartBotIfNeeded() {
     throw new Error(data.detail || 'Unable to start bot');
   }
   await waitForBotState(true);
+
+  if (wantsRestore) {
+    lastModeBeforeStandard = null;
+  }
+
   return true;
 }
 
