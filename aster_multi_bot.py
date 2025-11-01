@@ -975,7 +975,7 @@ class AITradeAdvisor:
         self.api_key = (api_key or "").strip()
         self.model = (model or "gpt-4o").strip()
         self.budget = budget
-        self.state = state if isinstance(state, dict) else None
+        self.state = state if isinstance(state, dict) else {}
         self.enabled = bool(enabled and self.api_key)
         self._temperature_supported = True
         self._temperature_override = self._resolve_temperature()
@@ -994,16 +994,17 @@ class AITradeAdvisor:
         if self.enabled and AI_CONCURRENCY > 0:
             self._executor = ThreadPoolExecutor(max_workers=AI_CONCURRENCY)
         self._load_persistent_state()
-        self.postmortem_learning = PostmortemLearning(self.state or {})
+        state_bucket = self.state if self.state is not None else {}
+        self.postmortem_learning = PostmortemLearning(state_bucket)
         self.parameter_tuner = ParameterTuner(
-            self.state or {}, request_fn=self._structured_request
+            state_bucket, request_fn=self._structured_request
         )
         self.playbook_manager = PlaybookManager(
-            self.state or {},
+            state_bucket,
             request_fn=self._structured_request,
             event_cb=self._handle_playbook_event,
         )
-        self.budget_learner = BudgetLearner(self.state or {})
+        self.budget_learner = BudgetLearner(state_bucket)
         self._playbook_request_meta: Dict[str, Dict[str, Any]] = {}
 
     def _log_budget_block(self, kind: str, estimate: Optional[float] = None) -> None:
