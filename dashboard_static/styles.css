@@ -2389,16 +2389,83 @@ body.ai-mode .playbook-overview {
 }
 
 .playbook-process-step-label {
-  font-size: 0.82rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 7.5rem;
   color: var(--text-muted);
 }
 
 .playbook-process-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
   font-size: 0.92rem;
   color: var(--text-subtle);
-  line-height: 1.45;
+  line-height: 1.5;
+}
+
+.playbook-process-step-number {
+  font-size: 0.74rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.playbook-process-step-stage {
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+}
+
+.playbook-process-step-text {
+  margin: 0;
+  color: inherit;
+  line-height: 1.5;
+}
+
+.playbook-process-step-headline {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.playbook-process-step-summary {
+  color: var(--text-subtle);
+}
+
+.playbook-process-step-description {
+  color: var(--text-subtle);
+}
+
+.playbook-process-step-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.8rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.playbook-process-step-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+  background: rgba(245, 196, 107, 0.16);
+  color: #f7c676;
+  border: 1px solid rgba(245, 196, 107, 0.18);
+}
+
+.playbook-process-step-time {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .playbook-empty {
