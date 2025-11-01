@@ -1176,9 +1176,12 @@ class AITradeAdvisor:
             estimate = 0.0012
         else:
             system_prompt = (
-                "You generate background playbooks for a trading bot. Analyse the snapshot and respond with JSON including "
-                "mode, bias, size_bias (BUY/SELL multipliers), sl_bias, tp_bias, features (object of numeric feature weights) "
-                "and optional notes."
+                "You are the market playbook architect for an automated futures trading bot. "
+                "The user payload is a compact market capture that summarises breadth, volatility, momentum leaders, "
+                "sentinel risk flags, and recent trade performance. Study these details and craft a regime strategy that "
+                "fits the current market. Respond with strict JSON containing: request_id, mode, bias, strategy (short title), "
+                "size_bias (object with BUY/SELL multipliers between 0.4 and 2.5), sl_bias, tp_bias, features (object mapping "
+                "descriptive feature names to numeric weights), and notes (string commentary)."
             )
             estimate = 0.0018
         try:

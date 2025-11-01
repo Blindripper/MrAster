@@ -1,9 +1,9 @@
 """AI-driven learning helpers for MrAster bot."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 import time
-from typing import Any, Callable, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 POSTMORTEM_FEATURE_MAP: Dict[str, str] = {
     "trend_break": "pm_trend_break",
@@ -306,47 +306,78 @@ class PlaybookManager:
                     "tp_bias": 1.0,
                     "features": {},
                     "refreshed": 0.0,
-                }
+                },
+                "history": [],
             },
         )
+        history = self._state.get("history", [])
+        self._history: List[Dict[str, Any]] = []
+        if isinstance(history, list):
+            for entry in history[-24:]:
+                if not isinstance(entry, dict):
+                    continue
+                ts = self._coerce_float(entry.get("ts"))
+                avg_rsi = self._coerce_float(entry.get("avg_rsi"))
+                trend = self._coerce_float(entry.get("trend_up_ratio"))
+                vol = self._coerce_float(entry.get("avg_atr_pct"))
+                self._history.append(
+                    {
+                        "ts": ts,
+                        "avg_rsi": avg_rsi,
+                        "trend_up_ratio": trend,
+                        "avg_atr_pct": vol,
+                    }
+                )
+        self._history = self._history[-24:]
         self._request_fn = request_fn
         self._refresh_interval = 8 * 60
         self._bootstrap_pending = True
-        self._bootstrap_deadline = time.time() + 120.0
-        self._bootstrap_retry = 90.0
+        self._bootstrap_deadline = time.time() + 150.0
+        self._bootstrap_retry = 120.0
         self._bootstrap_cooldown_until = 0.0
         self._event_cb = event_cb
 
     def maybe_refresh(self, snapshot: Dict[str, Any]) -> None:
-        active = self._state.get("active", {})
         now = time.time()
+        digest = self._build_market_digest(snapshot, now)
+        if digest is None:
+            return
+        payload = digest["payload"]
+        ready = digest["ready"]
+        history_point = digest["history_point"]
+        self._history.append(history_point)
+        self._history = self._history[-24:]
+        self._state["history"] = list(self._history)
+        self._state["last_snapshot"] = digest["digest"]
+        active = self._state.get("active", {})
         last_raw = active.get("refreshed", 0.0)
         last = self._parse_timestamp(last_raw)
         if isinstance(active, dict) and last == 0.0 and last_raw not in (0, 0.0, None):
             active["refreshed"] = 0.0
+
         bootstrap_triggered = False
         if self._bootstrap_pending:
             if now < self._bootstrap_cooldown_until:
                 return
-            ready = self._snapshot_ready(snapshot)
-            if not ready and last <= 0.0 and isinstance(snapshot, dict) and snapshot:
-                # brand-new state: accept any non-empty snapshot payload to avoid stalling
-                ready = True
             if ready or now >= self._bootstrap_deadline:
                 bootstrap_triggered = True
             else:
                 return
+        else:
+            if not ready:
+                return
         if not bootstrap_triggered and now - last < self._refresh_interval:
             return
-        suggestions = self._request_fn("playbook", snapshot)
+
+        suggestions = self._request_fn("playbook", payload)
         if not suggestions:
             if bootstrap_triggered:
-                # retry once we either have data or hit the next deadline
                 self._bootstrap_cooldown_until = time.time() + self._bootstrap_retry
                 if self._bootstrap_deadline < self._bootstrap_cooldown_until:
                     self._bootstrap_deadline = self._bootstrap_cooldown_until
             return
-        active = self._normalize_playbook(suggestions, now)
+
+        active = self._normalize_playbook(suggestions, now, digest["digest"])
         self._state["active"] = active
         self._root["ai_playbook"] = self._state
         if bootstrap_triggered:
@@ -354,27 +385,41 @@ class PlaybookManager:
             self._bootstrap_cooldown_until = 0.0
         if self._event_cb:
             try:
-                context = {"raw": suggestions, "snapshot": snapshot}
+                context = {
+                    "raw": suggestions,
+                    "snapshot": payload,
+                    "digest": digest["digest"],
+                }
                 self._event_cb("applied", dict(active), context)
             except Exception:
                 pass
 
-    def _snapshot_ready(self, snapshot: Dict[str, Any]) -> bool:
-        if not isinstance(snapshot, dict):
-            return False
-        if snapshot.get("technical"):
-            return True
-        if snapshot.get("sentinel"):
-            return True
-        if snapshot.get("recent_trades"):
-            return True
-        budget = snapshot.get("budget")
-        if isinstance(budget, dict) and budget:
-            return True
-        return False
-
     def active(self) -> Dict[str, Any]:
         return dict(self._state.get("active", {}))
+
+    @staticmethod
+    def _coerce_float(value: Any, default: float = 0.0) -> float:
+        try:
+            if value is None:
+                return default
+            if isinstance(value, (int, float)):
+                return float(value)
+            token = str(value).strip()
+            if not token:
+                return default
+            return float(token)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _coerce_str(value: Any) -> Optional[str]:
+        if isinstance(value, str):
+            token = value.strip()
+            return token or None
+        if value is None:
+            return None
+        token = str(value).strip()
+        return token or None
 
     @staticmethod
     def _parse_timestamp(value: Any) -> float:
@@ -402,16 +447,39 @@ class PlaybookManager:
         features = active.get("features", {})
         if isinstance(features, dict):
             for key, value in features.items():
-                ctx[key] = float(value)
+                try:
+                    ctx[key] = float(value)
+                except (TypeError, ValueError):
+                    continue
         ctx["playbook_mode"] = active.get("mode", "baseline")
         ctx["playbook_bias"] = active.get("bias", "neutral")
+        ctx["playbook_sl_bias"] = float(active.get("sl_bias", 1.0) or 1.0)
+        ctx["playbook_tp_bias"] = float(active.get("tp_bias", 1.0) or 1.0)
         ctx["playbook_size_bias"] = float(
             (active.get("size_bias", {}) or {}).get(str(ctx.get("side") or "").upper(), 1.0)
         )
+        market_meta = active.get("market_overview")
+        if isinstance(market_meta, dict):
+            trend_ratio = self._coerce_float(market_meta.get("trend_up_ratio"), default=0.0)
+            ctx["playbook_market_trend_ratio"] = trend_ratio
+            ctx["playbook_market_avg_rsi"] = self._coerce_float(
+                market_meta.get("avg_rsi"),
+                default=50.0,
+            )
+            ctx["playbook_market_avg_atr_pct"] = self._coerce_float(
+                market_meta.get("avg_atr_pct"),
+                default=1.0,
+            )
 
-    def _normalize_playbook(self, payload: Dict[str, Any], now: float) -> Dict[str, Any]:
+    def _normalize_playbook(
+        self,
+        payload: Dict[str, Any],
+        now: float,
+        digest: Dict[str, Any],
+    ) -> Dict[str, Any]:
         mode = str(payload.get("mode") or payload.get("regime") or "baseline")
         bias = str(payload.get("bias") or "neutral")
+        strategy = self._coerce_str(payload.get("strategy"))
         size_bias = payload.get("size_bias") or {}
         if not isinstance(size_bias, dict):
             size_bias = {"BUY": 1.0, "SELL": 1.0}
@@ -427,25 +495,393 @@ class PlaybookManager:
                     normalized_features[str(key)] = float(value)
                 except (TypeError, ValueError):
                     continue
-        notes = payload.get("note") or payload.get("notes")
+        elif isinstance(features, list):
+            for entry in features:
+                if not isinstance(entry, dict):
+                    continue
+                name = entry.get("name") or entry.get("key") or entry.get("feature")
+                name_token = self._coerce_str(name)
+                if not name_token:
+                    continue
+                try:
+                    normalized_features[name_token] = float(entry.get("value", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    continue
+        notes = payload.get("note") or payload.get("notes") or payload.get("narrative")
         if isinstance(notes, list):
             notes = "; ".join(str(n) for n in notes)
+        market_overview = digest.get("market_overview", {}) if isinstance(digest, dict) else {}
         active = {
             "mode": mode,
             "bias": bias,
+            "strategy": strategy or "",
             "size_bias": normalized_size,
             "sl_bias": float(max(0.4, min(2.5, float(payload.get("sl_bias", 1.0) or 1.0)))),
             "tp_bias": float(max(0.6, min(3.0, float(payload.get("tp_bias", 1.0) or 1.0)))),
             "features": normalized_features,
             "notes": notes if isinstance(notes, str) else "",
             "refreshed": now,
+            "market_overview": {
+                "avg_rsi": market_overview.get("avg_rsi", 50.0),
+                "avg_atr_pct": market_overview.get("avg_atr_pct", 1.0),
+                "trend_up_ratio": market_overview.get("trend_up_ratio", 0.0),
+                "trend_down_ratio": market_overview.get("trend_down_ratio", 0.0),
+            },
         }
         request_id = payload.get("request_id")
         if isinstance(request_id, str):
             token = request_id.strip()
             if token:
                 active["request_id"] = token
+        if digest.get("narrative"):
+            active.setdefault("snapshot_note", digest.get("narrative"))
+        trade_stats = digest.get("trade_stats")
+        if isinstance(trade_stats, dict):
+            active["trade_stats"] = trade_stats
+        sentinel = digest.get("sentinel_summary")
+        if isinstance(sentinel, dict):
+            active["sentinel"] = sentinel
         return active
+
+    def _build_market_digest(
+        self,
+        snapshot: Optional[Dict[str, Any]],
+        now: float,
+    ) -> Optional[Dict[str, Any]]:
+        if not isinstance(snapshot, dict):
+            snapshot = {}
+        technical_raw = snapshot.get("technical")
+        technical = self._normalize_technical_sample(technical_raw)
+        sentinel = snapshot.get("sentinel") if isinstance(snapshot.get("sentinel"), dict) else {}
+        budget = self._sanitize_budget(snapshot.get("budget"))
+        trades_summary, trades_trimmed = self._summarize_trades(snapshot.get("recent_trades"))
+        market_metrics = self._compute_market_metrics(technical)
+        ready = market_metrics["universe"] >= 3 or trades_summary.get("count", 0) >= 3
+        if sentinel:
+            ready = True
+        iso_ts = datetime.fromtimestamp(now, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+        sentinel_summary = self._summarize_sentinel_snapshot(sentinel)
+        history_point = {
+            "ts": now,
+            "avg_rsi": market_metrics.get("avg_rsi", 50.0),
+            "trend_up_ratio": market_metrics.get("trend_up_ratio", 0.0),
+            "avg_atr_pct": market_metrics.get("avg_atr_pct", 1.0),
+        }
+        narrative = self._compose_narrative(
+            market_metrics,
+            sentinel_summary,
+            trades_summary,
+        )
+        digest = {
+            "captured_at": iso_ts,
+            "market_overview": {
+                "universe": market_metrics.get("universe", 0),
+                "avg_rsi": market_metrics.get("avg_rsi", 50.0),
+                "avg_atr_pct": market_metrics.get("avg_atr_pct", 1.0),
+                "trend_up_ratio": market_metrics.get("trend_up_ratio", 0.0),
+                "trend_down_ratio": market_metrics.get("trend_down_ratio", 0.0),
+                "compression_ratio": market_metrics.get("compression_ratio", 0.0),
+                "momentum_ratio": market_metrics.get("momentum_ratio", 0.0),
+            },
+            "breadth": market_metrics.get("breadth", {}),
+            "volatility": market_metrics.get("volatility", {}),
+            "leaders": market_metrics.get("leaders", []),
+            "laggards": market_metrics.get("laggards", []),
+            "sentinel_summary": sentinel_summary,
+            "budget": budget,
+            "trade_stats": trades_summary,
+            "recent_trades": trades_trimmed,
+            "technical": technical,
+            "narrative": narrative,
+        }
+        payload = {
+            "captured_at": iso_ts,
+            "market_overview": digest["market_overview"],
+            "breadth": digest.get("breadth", {}),
+            "volatility": digest.get("volatility", {}),
+            "momentum": {
+                "leaders": digest.get("leaders", []),
+                "laggards": digest.get("laggards", []),
+                "momentum_ratio": market_metrics.get("momentum_ratio", 0.0),
+            },
+            "sentinel": sentinel_summary,
+            "budget": budget,
+            "recent_trades": trades_trimmed,
+            "trade_stats": trades_summary,
+            "technical": technical,
+            "narrative": narrative,
+            "history_window": self._recent_history(5),
+            "timestamp": now,
+        }
+        return {
+            "payload": payload,
+            "ready": ready,
+            "history_point": history_point,
+            "digest": digest,
+        }
+
+    def _recent_history(self, limit: int) -> List[Dict[str, Any]]:
+        entries: List[Dict[str, Any]] = []
+        for item in self._history[-limit:]:
+            if not isinstance(item, dict):
+                continue
+            entries.append(
+                {
+                    "ts": item.get("ts"),
+                    "avg_rsi": item.get("avg_rsi"),
+                    "trend_up_ratio": item.get("trend_up_ratio"),
+                    "avg_atr_pct": item.get("avg_atr_pct"),
+                }
+            )
+        return entries
+
+    def _normalize_technical_sample(
+        self, snapshot: Any, *, limit: int = 12
+    ) -> Dict[str, Dict[str, Any]]:
+        if not isinstance(snapshot, dict):
+            return {}
+        items: List[Tuple[float, str, Dict[str, Any]]] = []
+        for sym, payload in snapshot.items():
+            if not sym or not isinstance(payload, dict):
+                continue
+            ts = self._parse_timestamp(payload.get("ts"))
+            items.append((ts, str(sym).upper(), payload))
+        if not items:
+            return {}
+        items.sort(key=lambda entry: entry[0], reverse=True)
+        trimmed: Dict[str, Dict[str, Any]] = {}
+        for _, sym, payload in items[:limit]:
+            record: Dict[str, Any] = {}
+            for key in (
+                "price",
+                "ema_fast",
+                "ema_slow",
+                "ema_htf",
+                "rsi",
+                "stoch_rsi_k",
+                "stoch_rsi_d",
+                "bb_upper",
+                "bb_lower",
+                "bb_width",
+                "bb_pos",
+                "supertrend",
+                "supertrend_dir",
+                "atr_pct",
+                "adx",
+            ):
+                if key in payload:
+                    value = payload.get(key)
+                    record[key] = (
+                        self._coerce_float(value)
+                        if isinstance(value, (int, float, str))
+                        else value
+                    )
+            ts_value = payload.get("ts")
+            if isinstance(ts_value, (int, float, str)):
+                record["ts"] = ts_value
+            trimmed[sym] = record
+        return trimmed
+
+    def _compute_market_metrics(
+        self, technical: Dict[str, Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        if not technical:
+            return {
+                "universe": 0,
+                "avg_rsi": 50.0,
+                "avg_atr_pct": 1.0,
+                "trend_up_ratio": 0.0,
+                "trend_down_ratio": 0.0,
+                "compression_ratio": 0.0,
+                "momentum_ratio": 0.0,
+                "breadth": {},
+                "volatility": {},
+                "leaders": [],
+                "laggards": [],
+            }
+        total = len(technical)
+        rsi_values: List[float] = []
+        atr_values: List[float] = []
+        trend_up = 0
+        trend_down = 0
+        compression = 0
+        momentum_up = 0
+        entries: List[Tuple[str, Dict[str, Any]]] = list(technical.items())
+        leaders: List[Tuple[float, str, Dict[str, Any]]] = []
+        laggards: List[Tuple[float, str, Dict[str, Any]]] = []
+        for sym, payload in entries:
+            rsi = self._coerce_float(payload.get("rsi"), default=50.0)
+            atr = self._coerce_float(payload.get("atr_pct"), default=1.0)
+            supertrend_dir = self._coerce_float(payload.get("supertrend_dir"), default=0.0)
+            bb_width = self._coerce_float(payload.get("bb_width"), default=1.0)
+            ema_fast = self._coerce_float(payload.get("ema_fast"), default=0.0)
+            ema_slow = self._coerce_float(payload.get("ema_slow"), default=0.0)
+            rsi_values.append(rsi)
+            atr_values.append(max(atr, 0.0))
+            if supertrend_dir > 0:
+                trend_up += 1
+            elif supertrend_dir < 0:
+                trend_down += 1
+            if bb_width <= 0.8:
+                compression += 1
+            if ema_fast > ema_slow:
+                momentum_up += 1
+                leaders.append((ema_fast - ema_slow, sym, payload))
+            else:
+                laggards.append((ema_fast - ema_slow, sym, payload))
+        avg_rsi = sum(rsi_values) / total if rsi_values else 50.0
+        avg_atr = sum(atr_values) / total if atr_values else 1.0
+        leaders.sort(key=lambda item: item[0], reverse=True)
+        laggards.sort(key=lambda item: item[0])
+        leader_rows = [
+            {
+                "symbol": sym,
+                "momentum": round(delta, 4),
+                "rsi": self._coerce_float(payload.get("rsi"), default=50.0),
+                "atr_pct": self._coerce_float(payload.get("atr_pct"), default=1.0),
+            }
+            for delta, sym, payload in leaders[:4]
+        ]
+        laggard_rows = [
+            {
+                "symbol": sym,
+                "momentum": round(delta, 4),
+                "rsi": self._coerce_float(payload.get("rsi"), default=50.0),
+                "atr_pct": self._coerce_float(payload.get("atr_pct"), default=1.0),
+            }
+            for delta, sym, payload in laggards[:4]
+        ]
+        trend_up_ratio = trend_up / total if total else 0.0
+        trend_down_ratio = trend_down / total if total else 0.0
+        compression_ratio = compression / total if total else 0.0
+        momentum_ratio = momentum_up / total if total else 0.0
+        volatility = {
+            "avg_atr_pct": avg_atr,
+            "compression_ratio": compression_ratio,
+        }
+        breadth = {
+            "trend_up": trend_up,
+            "trend_down": trend_down,
+            "neutral": total - trend_up - trend_down,
+        }
+        return {
+            "universe": total,
+            "avg_rsi": avg_rsi,
+            "avg_atr_pct": avg_atr,
+            "trend_up_ratio": trend_up_ratio,
+            "trend_down_ratio": trend_down_ratio,
+            "compression_ratio": compression_ratio,
+            "momentum_ratio": momentum_ratio,
+            "breadth": breadth,
+            "volatility": volatility,
+            "leaders": leader_rows,
+            "laggards": laggard_rows,
+        }
+
+    def _sanitize_budget(self, payload: Any) -> Dict[str, Any]:
+        if not isinstance(payload, dict):
+            return {}
+        sanitized: Dict[str, Any] = {}
+        for key in ("limit", "spent", "remaining"):
+            if key in payload:
+                sanitized[key] = self._coerce_float(payload.get(key))
+        if "reset_ts" in payload:
+            sanitized["reset_ts"] = payload.get("reset_ts")
+        return sanitized
+
+    def _summarize_trades(
+        self, trades: Any, *, limit: int = 6
+    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+        if not isinstance(trades, list):
+            return ({"count": 0, "avg_pnl_r": 0.0, "win_rate": 0.0}, [])
+        trimmed: List[Dict[str, Any]] = []
+        pnl_values: List[float] = []
+        wins = 0
+        total = 0
+        for entry in trades[-limit:]:
+            if not isinstance(entry, dict):
+                continue
+            pnl = self._coerce_float(entry.get("pnl_r"), default=0.0)
+            pnl_values.append(pnl)
+            if pnl >= 0:
+                wins += 1
+            total += 1
+            trimmed.append(
+                {
+                    "symbol": entry.get("symbol"),
+                    "side": entry.get("side"),
+                    "pnl_r": pnl,
+                    "ts": entry.get("ts"),
+                }
+            )
+        avg_pnl = sum(pnl_values) / total if total else 0.0
+        win_rate = wins / total if total else 0.0
+        summary = {
+            "count": total,
+            "avg_pnl_r": avg_pnl,
+            "win_rate": win_rate,
+        }
+        return summary, trimmed
+
+    def _summarize_sentinel_snapshot(self, sentinel: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(sentinel, dict):
+            return {}
+        summary: Dict[str, Any] = {"entries": []}
+        labels = {"red": 0, "yellow": 0, "green": 0}
+        for sym, payload in sentinel.items():
+            if not isinstance(payload, dict):
+                continue
+            entry: Dict[str, Any] = {"symbol": sym}
+            label = self._coerce_str(payload.get("label")) or "unknown"
+            label_lc = label.lower()
+            labels[label_lc] = labels.get(label_lc, 0) + 1
+            entry["label"] = label
+            entry["event_risk"] = self._coerce_float(payload.get("event_risk"), default=0.0)
+            entry["hype_score"] = self._coerce_float(payload.get("hype_score"), default=0.0)
+            actions = payload.get("actions")
+            if isinstance(actions, dict) and "size_factor" in actions:
+                entry["size_factor"] = self._coerce_float(actions.get("size_factor"), default=1.0)
+            summary["entries"].append(entry)
+        summary["label_counts"] = labels
+        return summary
+
+    def _compose_narrative(
+        self,
+        metrics: Dict[str, Any],
+        sentinel: Dict[str, Any],
+        trades: Dict[str, Any],
+    ) -> str:
+        parts: List[str] = []
+        universe = metrics.get("universe", 0)
+        if universe:
+            trend_up = metrics.get("breadth", {}).get("trend_up", 0)
+            trend_down = metrics.get("breadth", {}).get("trend_down", 0)
+            parts.append(
+                f"Breadth: {trend_up} up vs {trend_down} down across {universe} markets"
+            )
+            avg_rsi = metrics.get("avg_rsi", 50.0)
+            parts.append(f"Average RSI {avg_rsi:.1f}")
+            avg_atr = metrics.get("avg_atr_pct", 1.0)
+            parts.append(f"Avg ATR% {avg_atr:.2f}")
+        compression_ratio = metrics.get("compression_ratio", 0.0)
+        if compression_ratio > 0:
+            parts.append(f"Compression share {compression_ratio:.0%}")
+        momentum_ratio = metrics.get("momentum_ratio", 0.0)
+        if momentum_ratio > 0:
+            parts.append(f"Momentum up in {momentum_ratio:.0%} of tracked symbols")
+        if sentinel and sentinel.get("entries"):
+            label_counts = sentinel.get("label_counts", {})
+            parts.append(
+                "Sentinel risk: "
+                + ", ".join(
+                    f"{label}={count}" for label, count in label_counts.items() if count
+                )
+            )
+        if trades.get("count", 0) > 0:
+            parts.append(
+                f"Recent trades: {trades['count']} (win rate {trades['win_rate']:.0%}, avg pnl_r {trades['avg_pnl_r']:.2f})"
+            )
+        return " | ".join(parts)
 
 
 class BudgetLearner:
