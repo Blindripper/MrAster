@@ -2239,6 +2239,12 @@ body.ai-mode .ai-mode-window {
   box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.22);
 }
 
+.ai-activity-marker--alert,
+.ai-activity-marker--error {
+  background: rgba(239, 68, 68, 0.95);
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.22);
+}
+
 .ai-activity-marker--query {
   background: rgba(251, 191, 36, 0.95);
   box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.18);
@@ -2283,6 +2289,12 @@ body.ai-mode .ai-mode-window {
 .ai-activity-kind--manual {
   color: rgba(248, 113, 113, 0.92);
   background: rgba(248, 113, 113, 0.18);
+}
+
+.ai-activity-kind--alert,
+.ai-activity-kind--error {
+  color: rgba(239, 68, 68, 0.92);
+  background: rgba(239, 68, 68, 0.18);
 }
 
 .ai-activity-kind--query {
