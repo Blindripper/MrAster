@@ -1310,13 +1310,26 @@ class AITradeAdvisor:
             parts.append(f"sentinel={int(meta['sentinel'])}")
         if "recent_trades" in meta:
             parts.append(f"trades={int(meta['recent_trades'])}")
-        if "budget_remaining" in meta or "budget_limit" in meta:
-            remaining = meta.get("budget_remaining")
+        if (
+            "budget_remaining" in meta
+            or "budget_limit" in meta
+            or "budget_spent" in meta
+        ):
             limit = meta.get("budget_limit")
-            if remaining is not None and limit is not None:
-                parts.append(f"budget {remaining:.2f}/{limit:.2f}")
-            elif remaining is not None:
-                parts.append(f"budget remaining={remaining:.2f}")
+            spent = meta.get("budget_spent")
+            remaining = meta.get("budget_remaining")
+            budget_bits: List[str] = []
+            if spent is not None and limit is not None:
+                budget_bits.append(f"spent={spent:.2f}/{limit:.2f}")
+            if remaining is not None:
+                if limit is not None and spent is None:
+                    budget_bits.append(f"remaining={remaining:.2f}/{limit:.2f}")
+                else:
+                    budget_bits.append(f"remaining={remaining:.2f}")
+            if not budget_bits and limit is not None:
+                budget_bits.append(f"limit={limit:.2f}")
+            if budget_bits:
+                parts.append("budget " + " · ".join(budget_bits))
         if not parts:
             return "Snapshot collected but empty"
         return " · ".join(parts)
