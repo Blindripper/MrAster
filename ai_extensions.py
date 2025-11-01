@@ -308,6 +308,10 @@ class PlaybookManager:
         )
         self._request_fn = request_fn
         self._refresh_interval = 8 * 60
+        self._bootstrap_pending = True
+        self._bootstrap_deadline = time.time() + 120.0
+        self._bootstrap_retry = 90.0
+        self._bootstrap_cooldown_until = 0.0
 
     def maybe_refresh(self, snapshot: Dict[str, Any]) -> None:
         active = self._state.get("active", {})
@@ -316,14 +320,44 @@ class PlaybookManager:
         last = self._parse_timestamp(last_raw)
         if isinstance(active, dict) and last == 0.0 and last_raw not in (0, 0.0, None):
             active["refreshed"] = 0.0
-        if now - last < self._refresh_interval:
+        bootstrap_triggered = False
+        if self._bootstrap_pending:
+            if now < self._bootstrap_cooldown_until:
+                return
+            if self._snapshot_ready(snapshot) or now >= self._bootstrap_deadline:
+                bootstrap_triggered = True
+            else:
+                return
+        if not bootstrap_triggered and now - last < self._refresh_interval:
             return
         suggestions = self._request_fn("playbook", snapshot)
         if not suggestions:
+            if bootstrap_triggered:
+                # retry once we either have data or hit the next deadline
+                self._bootstrap_cooldown_until = time.time() + self._bootstrap_retry
+                if self._bootstrap_deadline < self._bootstrap_cooldown_until:
+                    self._bootstrap_deadline = self._bootstrap_cooldown_until
             return
         active = self._normalize_playbook(suggestions, now)
         self._state["active"] = active
         self._root["ai_playbook"] = self._state
+        if bootstrap_triggered:
+            self._bootstrap_pending = False
+            self._bootstrap_cooldown_until = 0.0
+
+    def _snapshot_ready(self, snapshot: Dict[str, Any]) -> bool:
+        if not isinstance(snapshot, dict):
+            return False
+        if snapshot.get("technical"):
+            return True
+        if snapshot.get("sentinel"):
+            return True
+        if snapshot.get("recent_trades"):
+            return True
+        budget = snapshot.get("budget")
+        if isinstance(budget, dict) and budget:
+            return True
+        return False
 
     def active(self) -> Dict[str, Any]:
         return dict(self._state.get("active", {}))
