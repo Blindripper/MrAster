@@ -214,6 +214,221 @@ def _normalize_ai_budget(raw: Any) -> Dict[str, Any]:
     return bucket
 
 
+def _summarize_playbook_snapshot_meta(meta: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not isinstance(meta, dict) or not meta:
+        return None
+
+    parts: List[str] = []
+
+    technical = meta.get("technical")
+    if isinstance(technical, (int, float)):
+        try:
+            parts.append(f"technical={int(technical)}")
+        except Exception:
+            pass
+
+    sentinel = meta.get("sentinel")
+    if isinstance(sentinel, (int, float)):
+        try:
+            parts.append(f"sentinel={int(sentinel)}")
+        except Exception:
+            pass
+
+    trades = meta.get("recent_trades")
+    if isinstance(trades, (int, float)):
+        try:
+            parts.append(f"trades={int(trades)}")
+        except Exception:
+            pass
+
+    remaining = _safe_float(meta.get("budget_remaining"))
+    limit = _safe_float(meta.get("budget_limit"))
+    if remaining is not None and limit is not None:
+        parts.append(f"budget {remaining:.2f}/{limit:.2f}")
+    elif remaining is not None:
+        parts.append(f"budget remaining={remaining:.2f}")
+
+    if not parts:
+        return None
+    return " · ".join(parts)
+
+
+def _normalize_playbook_state(raw: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(raw, dict):
+        return None
+
+    active = raw.get("active")
+    if not isinstance(active, dict):
+        return None
+
+    mode = str(active.get("mode") or "baseline")
+    bias = str(active.get("bias") or "neutral")
+
+    size_bias_raw = active.get("size_bias")
+    size_bias: Dict[str, float] = {}
+    if isinstance(size_bias_raw, dict):
+        for side in ("BUY", "SELL"):
+            value = _safe_float(size_bias_raw.get(side))
+            if value is not None:
+                size_bias[side] = value
+
+    sl_bias = _safe_float(active.get("sl_bias"))
+    tp_bias = _safe_float(active.get("tp_bias"))
+
+    features_raw = active.get("features")
+    features: List[Dict[str, Any]] = []
+    if isinstance(features_raw, dict):
+        for key, value in features_raw.items():
+            numeric = _safe_float(value)
+            if numeric is None:
+                continue
+            features.append({"name": str(key), "value": numeric})
+        features.sort(key=lambda item: abs(item["value"]), reverse=True)
+        features = features[:5]
+
+    refreshed_raw = active.get("refreshed")
+    refreshed_dt = _parse_activity_ts(refreshed_raw)
+    refreshed_iso = refreshed_dt.isoformat() if refreshed_dt else None
+    refreshed_epoch = refreshed_dt.timestamp() if refreshed_dt else None
+
+    notes = active.get("notes") or active.get("note")
+    note_text = None
+    if isinstance(notes, str):
+        stripped = notes.strip()
+        note_text = stripped or None
+
+    result: Dict[str, Any] = {
+        "mode": mode,
+        "bias": bias,
+    }
+    if size_bias:
+        result["size_bias"] = size_bias
+    if sl_bias is not None:
+        result["sl_bias"] = sl_bias
+    if tp_bias is not None:
+        result["tp_bias"] = tp_bias
+    if features:
+        result["features"] = features
+    if refreshed_iso:
+        result["refreshed"] = refreshed_iso
+    if refreshed_epoch is not None:
+        result["refreshed_ts"] = refreshed_epoch
+    if note_text:
+        result["notes"] = note_text
+
+    return result
+
+
+def _collect_playbook_activity(ai_activity: List[Any]) -> List[Dict[str, Any]]:
+    if not isinstance(ai_activity, list):
+        return []
+
+    items: List[Dict[str, Any]] = []
+    for entry in ai_activity:
+        if not isinstance(entry, dict):
+            continue
+        data = entry.get("data")
+        headline = str(entry.get("headline") or "")
+        normalized_headline = headline.lower()
+        relevant = "playbook" in normalized_headline
+        if not relevant and isinstance(data, dict):
+            request_kind = str(data.get("request_kind") or "").strip().lower()
+            if request_kind == "playbook":
+                relevant = True
+            elif any(
+                key in data
+                for key in ("mode", "bias", "size_bias", "sl_bias", "tp_bias", "snapshot_meta", "notes", "reason")
+            ):
+                relevant = True
+        if not relevant:
+            continue
+
+        record: Dict[str, Any] = {
+            "kind": entry.get("kind"),
+            "headline": headline,
+        }
+
+        timestamp = entry.get("ts")
+        parsed_ts = _parse_activity_ts(timestamp)
+        if parsed_ts:
+            record["ts"] = parsed_ts.isoformat()
+            record["ts_epoch"] = parsed_ts.timestamp()
+        elif isinstance(timestamp, str):
+            record["ts"] = timestamp
+
+        body = entry.get("body")
+        if isinstance(body, str):
+            stripped_body = body.strip()
+            if stripped_body:
+                record["body"] = stripped_body
+
+        if isinstance(data, dict):
+            raw_request_id = data.get("request_id")
+            request_id: Optional[str] = None
+            if isinstance(raw_request_id, str):
+                request_id = raw_request_id.strip() or None
+            elif raw_request_id is not None:
+                request_id = str(raw_request_id)
+            if request_id:
+                record["request_id"] = request_id
+
+            reason = data.get("reason")
+            if isinstance(reason, str):
+                stripped_reason = reason.strip()
+                if stripped_reason:
+                    record["reason"] = stripped_reason
+
+            notes = data.get("notes")
+            if isinstance(notes, str):
+                stripped_note = notes.strip()
+                if stripped_note:
+                    record["notes"] = stripped_note
+
+            for key in ("mode", "bias"):
+                value = data.get(key)
+                if isinstance(value, str):
+                    record[key] = value.strip()
+
+            size_bias_raw = data.get("size_bias")
+            if isinstance(size_bias_raw, dict):
+                size_bias: Dict[str, float] = {}
+                for side in ("BUY", "SELL"):
+                    value = _safe_float(size_bias_raw.get(side))
+                    if value is not None:
+                        size_bias[side] = value
+                if size_bias:
+                    record["size_bias"] = size_bias
+
+            sl_bias = _safe_float(data.get("sl_bias"))
+            if sl_bias is not None:
+                record["sl_bias"] = sl_bias
+
+            tp_bias = _safe_float(data.get("tp_bias"))
+            if tp_bias is not None:
+                record["tp_bias"] = tp_bias
+
+            features_raw = data.get("features")
+            if isinstance(features_raw, dict):
+                features: List[Dict[str, Any]] = []
+                for key, value in features_raw.items():
+                    numeric = _safe_float(value)
+                    if numeric is None:
+                        continue
+                    features.append({"name": str(key), "value": numeric})
+                features.sort(key=lambda item: abs(item["value"]), reverse=True)
+                if features:
+                    record["features"] = features[:5]
+
+            snapshot_meta = data.get("snapshot_meta")
+            summary = _summarize_playbook_snapshot_meta(snapshot_meta)
+            if summary:
+                record["snapshot_summary"] = summary
+
+        items.append(record)
+
+    return items[-40:]
+
+
 def _ai_request_count(ai_budget: Dict[str, Any]) -> Optional[int]:
     if not isinstance(ai_budget, dict):
         return None
@@ -3656,6 +3871,8 @@ async def trades() -> Dict[str, Any]:
     else:
         ai_activity = []
     ai_requests = _summarize_ai_requests(ai_activity)
+    playbook_state = _normalize_playbook_state(state.get("ai_playbook"))
+    playbook_activity = _collect_playbook_activity(ai_activity)
     proposals: List[Dict[str, Any]] = []
     raw_proposals = state.get("ai_trade_proposals")
     if isinstance(raw_proposals, list):
@@ -3681,6 +3898,8 @@ async def trades() -> Dict[str, Any]:
         "ai_budget": ai_budget,
         "ai_activity": ai_activity,
         "ai_requests": ai_requests,
+        "playbook": playbook_state,
+        "playbook_activity": playbook_activity,
         "ai_trade_proposals": proposals,
     }
 
