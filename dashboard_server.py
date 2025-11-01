@@ -404,6 +404,9 @@ def _collect_playbook_activity(ai_activity: List[Any]) -> List[Dict[str, Any]]:
             if request_id:
                 record["request_id"] = request_id
 
+            if request_kind:
+                record["request_kind"] = normalized_request_kind or request_kind
+
             reason = data.get("reason")
             if isinstance(reason, str):
                 stripped_reason = reason.strip()

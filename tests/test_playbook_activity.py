@@ -24,6 +24,7 @@ class PlaybookActivityTests(unittest.TestCase):
         result = _collect_playbook_activity(payload)
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["request_id"], "req-1")
+        self.assertEqual(result[0]["request_kind"], "playbook")
 
     def test_detects_entries_with_playbook_payload(self):
         payload = [
