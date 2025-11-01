@@ -1,6 +1,7 @@
 """AI-driven learning helpers for MrAster bot."""
 from __future__ import annotations
 
+from datetime import datetime
 import time
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
@@ -311,7 +312,10 @@ class PlaybookManager:
     def maybe_refresh(self, snapshot: Dict[str, Any]) -> None:
         active = self._state.get("active", {})
         now = time.time()
-        last = float(active.get("refreshed", 0.0) or 0.0)
+        last_raw = active.get("refreshed", 0.0)
+        last = self._parse_timestamp(last_raw)
+        if isinstance(active, dict) and last == 0.0 and last_raw not in (0, 0.0, None):
+            active["refreshed"] = 0.0
         if now - last < self._refresh_interval:
             return
         suggestions = self._request_fn("playbook", snapshot)
@@ -323,6 +327,27 @@ class PlaybookManager:
 
     def active(self) -> Dict[str, Any]:
         return dict(self._state.get("active", {}))
+
+    @staticmethod
+    def _parse_timestamp(value: Any) -> float:
+        if isinstance(value, (int, float)):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return 0.0
+        if isinstance(value, str):
+            token = value.strip()
+            if not token:
+                return 0.0
+            try:
+                cleaned = token.replace("Z", "+00:00") if token.endswith("Z") else token
+                return datetime.fromisoformat(cleaned).timestamp()
+            except Exception:
+                try:
+                    return float(token)
+                except (TypeError, ValueError):
+                    return 0.0
+        return 0.0
 
     def inject_context(self, ctx: Dict[str, Any]) -> None:
         active = self.active()
