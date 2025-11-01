@@ -328,7 +328,11 @@ class PlaybookManager:
         if self._bootstrap_pending:
             if now < self._bootstrap_cooldown_until:
                 return
-            if self._snapshot_ready(snapshot) or now >= self._bootstrap_deadline:
+            ready = self._snapshot_ready(snapshot)
+            if not ready and last <= 0.0 and isinstance(snapshot, dict) and snapshot:
+                # brand-new state: accept any non-empty snapshot payload to avoid stalling
+                ready = True
+            if ready or now >= self._bootstrap_deadline:
                 bootstrap_triggered = True
             else:
                 return
