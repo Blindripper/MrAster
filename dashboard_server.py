@@ -17,7 +17,7 @@ import sys
 import textwrap
 import time
 import uuid
-from collections import deque
+from collections import OrderedDict, deque
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -459,6 +459,116 @@ def _collect_playbook_activity(ai_activity: List[Any]) -> List[Dict[str, Any]]:
         items.append(record)
 
     return items[-40:]
+
+
+def _build_playbook_process(
+    activity: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    if not isinstance(activity, list):
+        return []
+
+    def _resolve_stage(entry: Dict[str, Any]) -> str:
+        kind = str(entry.get("kind") or "").strip().lower()
+        headline = str(entry.get("headline") or "").strip().lower()
+        if kind == "query" or "refresh requested" in headline:
+            return "requested"
+        if kind in {"error", "alert"} or "failed" in headline:
+            return "failed"
+        if kind in {"playbook", "info"} and (
+            entry.get("mode")
+            or entry.get("bias")
+            or entry.get("size_bias")
+            or entry.get("sl_bias")
+            or entry.get("tp_bias")
+        ):
+            return "applied"
+        return "info"
+
+    grouped: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+    anonymous_counter = 0
+
+    for raw_entry in activity:
+        if not isinstance(raw_entry, dict):
+            continue
+        entry = dict(raw_entry)
+        request_id = entry.get("request_id")
+        if isinstance(request_id, str):
+            request_id = request_id.strip() or None
+        if not request_id:
+            anonymous_counter += 1
+            key = f"anonymous:{anonymous_counter}"
+        else:
+            key = request_id
+
+        record = grouped.setdefault(
+            key,
+            {
+                "request_id": request_id,
+                "steps": [],
+                "status": "pending",
+            },
+        )
+
+        stage = _resolve_stage(entry)
+        if stage == "failed":
+            record["status"] = "failed"
+        elif stage == "applied" and record.get("status") != "failed":
+            record["status"] = "applied"
+
+        ts_epoch = entry.get("ts_epoch")
+        ts = entry.get("ts")
+        if ts_epoch is not None:
+            try:
+                epoch = float(ts_epoch)
+            except (TypeError, ValueError):
+                epoch = None
+            if epoch is not None:
+                record.setdefault("requested_ts", epoch)
+                if stage == "applied":
+                    record["completed_ts"] = epoch
+                elif stage == "failed":
+                    record["failed_ts"] = epoch
+        elif ts and record.get("requested_ts") is None:
+            parsed = _parse_activity_ts(ts)
+            if parsed:
+                record["requested_ts"] = parsed.timestamp()
+                record["requested_ts_iso"] = parsed.isoformat()
+
+        for key_name in ("mode", "bias", "size_bias", "sl_bias", "tp_bias"):
+            value = entry.get(key_name)
+            if value is not None:
+                record[key_name] = value
+
+        snapshot_summary = entry.get("snapshot_summary")
+        if snapshot_summary:
+            record.setdefault("snapshot_summary", snapshot_summary)
+        notes = entry.get("notes")
+        if notes:
+            record.setdefault("notes", notes)
+
+        step = {
+            "stage": stage,
+            "kind": entry.get("kind"),
+            "headline": entry.get("headline"),
+            "body": entry.get("body"),
+            "snapshot_summary": entry.get("snapshot_summary"),
+            "ts": ts,
+            "ts_epoch": ts_epoch,
+        }
+        record["steps"].append(step)
+
+    process: List[Dict[str, Any]] = []
+    for key, record in grouped.items():
+        record["steps"] = record.get("steps", [])
+        process.append(record)
+
+    process.sort(
+        key=lambda item: (
+            -float(item.get("requested_ts") or 0.0),
+            item.get("request_id") or "",
+        )
+    )
+    return process[:12]
 
 
 def _ai_request_count(ai_budget: Dict[str, Any]) -> Optional[int]:
@@ -3905,6 +4015,7 @@ async def trades() -> Dict[str, Any]:
     ai_requests = _summarize_ai_requests(ai_activity)
     playbook_state = _normalize_playbook_state(state.get("ai_playbook"))
     playbook_activity = _collect_playbook_activity(ai_activity)
+    playbook_process = _build_playbook_process(playbook_activity)
     proposals: List[Dict[str, Any]] = []
     raw_proposals = state.get("ai_trade_proposals")
     if isinstance(raw_proposals, list):
@@ -3932,6 +4043,7 @@ async def trades() -> Dict[str, Any]:
         "ai_requests": ai_requests,
         "playbook": playbook_state,
         "playbook_activity": playbook_activity,
+        "playbook_process": playbook_process,
         "ai_trade_proposals": proposals,
     }
 
