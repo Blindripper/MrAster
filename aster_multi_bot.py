@@ -999,9 +999,12 @@ class AITradeAdvisor:
             self.state or {}, request_fn=self._structured_request
         )
         self.playbook_manager = PlaybookManager(
-            self.state or {}, request_fn=self._structured_request
+            self.state or {},
+            request_fn=self._structured_request,
+            event_cb=self._handle_playbook_event,
         )
         self.budget_learner = BudgetLearner(self.state or {})
+        self._playbook_request_meta: Dict[str, Dict[str, Any]] = {}
 
     def _log_budget_block(self, kind: str, estimate: Optional[float] = None) -> None:
         if not self._activity_logger:
@@ -1103,6 +1106,7 @@ class AITradeAdvisor:
         kind = str(kind or "").lower()
         if kind not in {"tuning", "playbook"}:
             return None
+        playbook_snapshot_meta: Optional[Dict[str, Any]] = None
         if kind == "tuning":
             system_prompt = (
                 "You tune risk parameters for an automated trading bot. Given the recent trade summaries, "
@@ -1126,6 +1130,9 @@ class AITradeAdvisor:
         request_id = self._new_request_id(kind, kind)
         payload_with_id = dict(user_payload)
         payload_with_id["request_id"] = request_id
+        if kind == "playbook":
+            playbook_snapshot_meta = self._summarize_playbook_snapshot(user_payload)
+            self._note_playbook_request(request_id, playbook_snapshot_meta)
         def _json_fallback(obj: Any) -> Any:
             if isinstance(obj, (datetime,)):
                 return obj.isoformat()
@@ -1153,6 +1160,8 @@ class AITradeAdvisor:
         symbol_hint = user_payload.get("symbol") if isinstance(user_payload, dict) else None
         if symbol_hint:
             meta["symbol"] = symbol_hint
+        if kind == "playbook" and playbook_snapshot_meta:
+            meta["snapshot_meta"] = playbook_snapshot_meta
         response = self._chat(
             system_prompt,
             user_prompt,
@@ -1161,11 +1170,23 @@ class AITradeAdvisor:
             request_meta=meta or None,
         )
         if not response:
+            if kind == "playbook":
+                self._note_playbook_failure(
+                    request_id,
+                    "no_response",
+                    playbook_snapshot_meta,
+                )
             return None
         parsed = self._parse_structured(response)
         if isinstance(parsed, dict):
             parsed.setdefault("request_id", request_id)
             return parsed
+        if kind == "playbook":
+            self._note_playbook_failure(
+                request_id,
+                "invalid_response",
+                playbook_snapshot_meta,
+            )
         return None
 
     def inject_context_features(self, symbol: str, ctx: Dict[str, Any]) -> None:
@@ -1206,6 +1227,222 @@ class AITradeAdvisor:
                 self.playbook_manager.maybe_refresh(snapshot)
         except Exception:
             pass
+
+    def _summarize_playbook_snapshot(
+        self, snapshot: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        meta: Dict[str, Any] = {}
+        if isinstance(snapshot, dict):
+            technical = snapshot.get("technical")
+            if isinstance(technical, dict):
+                meta["technical"] = len(technical)
+            sentinel = snapshot.get("sentinel")
+            if isinstance(sentinel, dict):
+                meta["sentinel"] = len(sentinel)
+            trades = snapshot.get("recent_trades")
+            if isinstance(trades, list):
+                meta["recent_trades"] = len(trades)
+            budget = snapshot.get("budget")
+            if isinstance(budget, dict):
+                for key in ("remaining", "limit", "spent"):
+                    value = budget.get(key)
+                    try:
+                        if value is not None:
+                            meta[f"budget_{key}"] = float(value)
+                    except (TypeError, ValueError):
+                        continue
+            timestamp = snapshot.get("timestamp")
+            if isinstance(timestamp, (int, float)):
+                meta["timestamp"] = float(timestamp)
+        return meta
+
+    @staticmethod
+    def _format_snapshot_meta(meta: Optional[Dict[str, Any]]) -> str:
+        if not meta:
+            return "No snapshot data captured yet"
+        parts: List[str] = []
+        if "technical" in meta:
+            parts.append(f"tech={int(meta['technical'])}")
+        if "sentinel" in meta:
+            parts.append(f"sentinel={int(meta['sentinel'])}")
+        if "recent_trades" in meta:
+            parts.append(f"trades={int(meta['recent_trades'])}")
+        if "budget_remaining" in meta or "budget_limit" in meta:
+            remaining = meta.get("budget_remaining")
+            limit = meta.get("budget_limit")
+            if remaining is not None and limit is not None:
+                parts.append(f"budget {remaining:.2f}/{limit:.2f}")
+            elif remaining is not None:
+                parts.append(f"budget remaining={remaining:.2f}")
+        if not parts:
+            return "Snapshot collected but empty"
+        return " · ".join(parts)
+
+    def _note_playbook_request(
+        self, request_id: str, snapshot_meta: Optional[Dict[str, Any]]
+    ) -> None:
+        summary = self._format_snapshot_meta(snapshot_meta)
+        log.info(
+            "Playbook AI request queued (request_id=%s): %s",
+            request_id,
+            summary,
+        )
+        data: Dict[str, Any] = {
+            "ai_request": True,
+            "request_id": request_id,
+        }
+        if snapshot_meta:
+            data["snapshot_meta"] = snapshot_meta
+        self._log_ai_activity(
+            "query",
+            "Playbook refresh requested",
+            body=summary,
+            data=data,
+            force=True,
+        )
+        if request_id:
+            self._playbook_request_meta[request_id] = snapshot_meta or {}
+
+    def _note_playbook_failure(
+        self,
+        request_id: str,
+        reason: str,
+        snapshot_meta: Optional[Dict[str, Any]],
+    ) -> None:
+        summary = self._format_snapshot_meta(snapshot_meta)
+        log.warning(
+            "Playbook AI request %s failed: %s",
+            request_id or "<unknown>",
+            reason,
+        )
+        body = f"Reason: {reason}"
+        if summary:
+            body = f"{body}\nSnapshot: {summary}"
+        data: Dict[str, Any] = {
+            "ai_request": True,
+            "request_id": request_id,
+            "reason": reason,
+        }
+        if snapshot_meta:
+            data["snapshot_meta"] = snapshot_meta
+        self._log_ai_activity(
+            "error",
+            "Playbook refresh failed",
+            body=body,
+            data=data,
+            force=True,
+        )
+        if request_id:
+            self._playbook_request_meta.pop(request_id, None)
+
+    def _summarize_playbook_active(
+        self, playbook: Dict[str, Any]
+    ) -> Tuple[str, Dict[str, Any]]:
+        mode = str(playbook.get("mode") or "baseline")
+        bias = str(playbook.get("bias") or "neutral")
+        size_bias_raw = playbook.get("size_bias") or {}
+        if not isinstance(size_bias_raw, dict):
+            size_bias_raw = {}
+        try:
+            size_buy = float(size_bias_raw.get("BUY", 1.0) or 1.0)
+        except (TypeError, ValueError):
+            size_buy = 1.0
+        try:
+            size_sell = float(size_bias_raw.get("SELL", 1.0) or 1.0)
+        except (TypeError, ValueError):
+            size_sell = 1.0
+        try:
+            sl_bias = float(playbook.get("sl_bias", 1.0) or 1.0)
+        except (TypeError, ValueError):
+            sl_bias = 1.0
+        try:
+            tp_bias = float(playbook.get("tp_bias", 1.0) or 1.0)
+        except (TypeError, ValueError):
+            tp_bias = 1.0
+        features_raw = playbook.get("features")
+        features: Dict[str, float] = {}
+        if isinstance(features_raw, dict):
+            for key, value in features_raw.items():
+                try:
+                    features[str(key)] = float(value)
+                except (TypeError, ValueError):
+                    continue
+        top_features = sorted(
+            features.items(), key=lambda item: abs(item[1]), reverse=True
+        )[:3]
+        focus_parts = [
+            f"{key}={value:+.2f}" for key, value in top_features if abs(value) >= 0.05
+        ]
+        summary = (
+            f"{mode} mode ({bias}) · size BUY {size_buy:.2f} / SELL {size_sell:.2f}"
+            f" · SL×{sl_bias:.2f} · TP×{tp_bias:.2f}"
+        )
+        if focus_parts:
+            summary += "\nFocus: " + ", ".join(focus_parts)
+        notes = playbook.get("notes") or playbook.get("note")
+        data: Dict[str, Any] = {
+            "ai_request": True,
+            "mode": mode,
+            "bias": bias,
+            "size_bias": {"BUY": size_buy, "SELL": size_sell},
+            "sl_bias": sl_bias,
+            "tp_bias": tp_bias,
+        }
+        if features:
+            data["features"] = {
+                key: value for key, value in top_features
+            }
+        if isinstance(notes, str) and notes.strip():
+            data["notes"] = notes.strip()
+        return summary, data
+
+    def _handle_playbook_event(
+        self,
+        event: str,
+        payload: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if event != "applied" or not isinstance(payload, dict):
+            return
+        summary, activity_data = self._summarize_playbook_active(payload)
+        request_id: Optional[str] = None
+        raw_request_id = payload.get("request_id")
+        if isinstance(raw_request_id, str):
+            request_id = raw_request_id.strip() or None
+        if not request_id and context:
+            raw = context.get("raw") if isinstance(context, dict) else None
+            if isinstance(raw, dict):
+                rid = raw.get("request_id")
+                if isinstance(rid, str):
+                    request_id = rid.strip() or None
+        if request_id:
+            activity_data["request_id"] = request_id
+        stored_meta = self._playbook_request_meta.pop(request_id, None) if request_id else None
+        snapshot_meta = stored_meta
+        if not snapshot_meta and context and isinstance(context, dict):
+            snap = context.get("snapshot")
+            if isinstance(snap, dict):
+                snapshot_meta = self._summarize_playbook_snapshot(snap)
+        if snapshot_meta:
+            activity_data["snapshot_meta"] = snapshot_meta
+        notes = payload.get("notes") or payload.get("note")
+        body = summary
+        if isinstance(notes, str) and notes.strip():
+            note_text = notes.strip()
+            body = f"{summary}\nNote: {note_text}"
+            activity_data["notes"] = note_text
+        log.info(
+            "Playbook updated%s: %s",
+            f" (request_id={request_id})" if request_id else "",
+            summary,
+        )
+        self._log_ai_activity(
+            "playbook",
+            f"Playbook updated: {payload.get('mode', 'baseline')}",
+            body=body,
+            data=activity_data,
+            force=True,
+        )
 
     def _prune_pending_queue(self) -> None:
         if not self._pending_order:
