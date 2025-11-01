@@ -968,6 +968,9 @@ class AITradeAdvisor:
         *,
         enabled: bool = True,
         wakeup_cb: Optional[Callable[[str], None]] = None,
+        activity_logger: Optional[
+            Callable[[str, str, Dict[str, Any], Optional[str]], None]
+        ] = None,
     ) -> None:
         self.api_key = (api_key or "").strip()
         self.model = (model or "gpt-4o").strip()
@@ -987,6 +990,7 @@ class AITradeAdvisor:
         self._plan_delivery_ttl = max(self._min_interval * 3.0, 90.0)
         self._executor: Optional[ThreadPoolExecutor] = None
         self._ready_callback = wakeup_cb
+        self._activity_logger = activity_logger
         if self.enabled and AI_CONCURRENCY > 0:
             self._executor = ThreadPoolExecutor(max_workers=AI_CONCURRENCY)
         self._load_persistent_state()
@@ -998,6 +1002,32 @@ class AITradeAdvisor:
             self.state or {}, request_fn=self._structured_request
         )
         self.budget_learner = BudgetLearner(self.state or {})
+
+    def _log_budget_block(self, kind: str, estimate: Optional[float] = None) -> None:
+        if not self._activity_logger:
+            return
+        if self.budget.limit <= 0:
+            return
+        remaining = self.budget.remaining()
+        if remaining is None:
+            return
+        min_required = max(0.0, float(estimate or 0.0))
+        if remaining > 0 and (min_required <= 0 or remaining > min_required):
+            return
+        payload = {
+            "ai_request": True,
+            "request_kind": kind,
+            "request_estimate": float(min_required),
+            "budget_limit": float(self.budget.limit),
+            "budget_spent": float(self.budget.spent()),
+            "budget_remaining": float(remaining or 0.0),
+            "strict": bool(self.budget.strict),
+        }
+        body = (
+            "Daily AI request budget exhausted. Increase the limit or wait for the"
+            " UTC reset."
+        )
+        self._activity_logger("alert", "AI budget exhausted", payload, body)
 
     def _new_request_id(self, kind: str, throttle_key: Optional[str] = None) -> str:
         prefix_bits: List[str] = []
@@ -1764,6 +1794,7 @@ class AITradeAdvisor:
             estimate = self._estimate_prospective_cost(system_prompt, user_prompt)
         if not self.budget.can_spend(estimate, kind=kind, model=self.model):
             log.info("AI daily budget exhausted — skipping %s request.", kind)
+            self._log_budget_block(kind, estimate)
             return None
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -2444,6 +2475,7 @@ class AITradeAdvisor:
             return plan
 
         if not self.budget.can_spend(estimate, kind="plan", model=self.model):
+            self._log_budget_block("plan", estimate)
             self._recent_plan_store(throttle_key, fallback, now)
             return fallback
 
@@ -2736,6 +2768,7 @@ class AITradeAdvisor:
             return plan
 
         if not self.budget.can_spend(estimate, kind="trend", model=self.model):
+            self._log_budget_block("trend", estimate)
             self._recent_plan_store(throttle_key, fallback, now)
             return fallback
 
@@ -4655,6 +4688,7 @@ class Bot:
                 self.state,
                 enabled=AI_MODE_ENABLED,
                 wakeup_cb=self._on_ai_future_ready,
+                activity_logger=self._emit_ai_budget_alert,
             )
 
     @property
@@ -4792,6 +4826,23 @@ class Bot:
 
     def _on_ai_future_ready(self, _throttle_key: str) -> None:
         self._ai_wakeup_event.set()
+
+    def _emit_ai_budget_alert(
+        self,
+        kind: str,
+        headline: str,
+        data: Optional[Dict[str, Any]],
+        body: Optional[str] = None,
+    ) -> None:
+        payload = data or {}
+        if body is None:
+            limit = float(payload.get("budget_limit", self.budget_tracker.limit))
+            spent = float(payload.get("budget_spent", self.budget_tracker.spent()))
+            body = (
+                f"Spent {spent:.2f} / {limit:.2f} USD of the daily AI budget. "
+                "Autonomous requests are paused until the next reset."
+            )
+        self._log_ai_activity(kind, headline, body=body, data=payload, force=True)
 
     def _enqueue_ai_priority(self, symbol: str, side: Optional[str]) -> None:
         sym = str(symbol or "").upper()
@@ -5762,9 +5813,28 @@ class Bot:
         plan_take: Optional[float] = None
 
         remaining_budget = self.budget_tracker.remaining()
+        include_budget_context = False
         if remaining_budget is not None:
+            threshold = 0.0
+            if self.budget_tracker.limit > 0:
+                threshold = 0.25 * float(self.budget_tracker.limit)
+            try:
+                avg_cost = self.budget_tracker.average_cost(
+                    kind="plan", model=AI_MODEL
+                )
+            except Exception:
+                avg_cost = None
+            if avg_cost:
+                threshold = max(threshold, float(avg_cost) * 3.0)
+            threshold = max(0.5, min(5.0, threshold))
+            if remaining_budget <= threshold:
+                include_budget_context = True
+        if include_budget_context and remaining_budget is not None:
             ctx["budget_remaining"] = float(remaining_budget)
-        ctx["budget_spent"] = float(self.budget_tracker.spent())
+            ctx["budget_spent"] = float(self.budget_tracker.spent())
+        else:
+            ctx.pop("budget_remaining", None)
+            ctx.pop("budget_spent", None)
         open_positions_ctx = {k: float(v) for k, v in pos_map.items() if abs(float(v or 0.0)) > 1e-12}
         if open_positions_ctx:
             ctx["open_positions"] = open_positions_ctx
