@@ -1125,6 +1125,41 @@ class AITradeAdvisor:
 
     def _strategy_leverage_limit(self) -> Optional[float]:
         preset_value: Optional[str] = None
+        leverage_limit: Optional[float] = None
+        leverage_defined = False
+
+        def _interpret_leverage(raw: Any) -> None:
+            nonlocal leverage_limit, leverage_defined
+            if leverage_defined:
+                return
+            if isinstance(raw, (int, float)):
+                numeric = float(raw)
+                if not math.isfinite(numeric) or numeric <= 0:
+                    leverage_limit = None
+                else:
+                    leverage_limit = float(numeric)
+                leverage_defined = True
+                return
+            if raw is None:
+                return
+            token = str(raw).strip()
+            if not token:
+                return
+            lowered = token.lower()
+            if lowered in {"max", "unlimited", "∞", "infinite", "inf"}:
+                leverage_limit = None
+                leverage_defined = True
+                return
+            try:
+                numeric = float(token)
+            except (TypeError, ValueError):
+                return
+            if not math.isfinite(numeric) or numeric <= 0:
+                leverage_limit = None
+            else:
+                leverage_limit = float(numeric)
+            leverage_defined = True
+
         state_bucket = self.state if isinstance(self.state, dict) else None
         if state_bucket:
             for key in ("preset_mode", "preset", "strategy_preset", "risk_preset"):
@@ -1132,20 +1167,31 @@ class AITradeAdvisor:
                 if isinstance(raw, str) and raw.strip():
                     preset_value = raw
                     break
-            if not preset_value:
+            _interpret_leverage(state_bucket.get("ASTER_LEVERAGE"))
+            if not leverage_defined:
                 config_bucket = state_bucket.get("config")
                 if isinstance(config_bucket, dict):
+                    _interpret_leverage(config_bucket.get("ASTER_LEVERAGE"))
                     env_cfg = config_bucket.get("env")
                     if isinstance(env_cfg, dict):
                         raw = env_cfg.get("ASTER_PRESET_MODE")
                         if isinstance(raw, str) and raw.strip():
-                            preset_value = raw
-            if not preset_value:
+                            preset_value = preset_value or raw
+                        _interpret_leverage(env_cfg.get("ASTER_LEVERAGE"))
+            if not leverage_defined:
                 env_cfg = state_bucket.get("env")
                 if isinstance(env_cfg, dict):
                     raw = env_cfg.get("ASTER_PRESET_MODE")
                     if isinstance(raw, str) and raw.strip():
-                        preset_value = raw
+                        preset_value = preset_value or raw
+                    _interpret_leverage(env_cfg.get("ASTER_LEVERAGE"))
+
+        if not leverage_defined:
+            _interpret_leverage(os.getenv("ASTER_LEVERAGE"))
+        if not leverage_defined:
+            _interpret_leverage(LEVERAGE_SOURCE)
+        if leverage_defined:
+            return leverage_limit
 
         if not preset_value:
             preset_value = os.getenv("ASTER_PRESET_MODE", PRESET_MODE)
