@@ -2876,6 +2876,8 @@ class AIChatEngine:
                 for part in content_parts:
                     if part.get("type") == "text":
                         system_chunks.append(part.get("text", ""))
+                # Do not include individual system entries directly; they will be merged
+                # into a single system block below to match the Responses API contract.
                 continue
             normalized_input.append({"role": role, "content": content_parts})
 
@@ -2894,7 +2896,13 @@ class AIChatEngine:
                 chunk.strip() for chunk in system_chunks if str(chunk).strip()
             )
             if system_text:
-                payload["system"] = system_text
+                payload["input"] = [
+                    {
+                        "role": "system",
+                        "content": [{"type": "text", "text": system_text}],
+                    },
+                    *payload["input"],
+                ]
         if traits["modalities"]:
             payload["modalities"] = traits["modalities"]
         if traits["reasoning"]:
