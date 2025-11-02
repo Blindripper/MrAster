@@ -6774,11 +6774,11 @@ function appendTradeProposalCard(proposal) {
     if (statusText === 'executed' || statusText === 'completed') {
       cardEl.classList.add('queued');
       if (statusEl) {
-        statusEl.textContent = translate('chat.proposal.statusExecuted', 'Manual trade executed by the bot.');
+        statusEl.textContent = translate('chat.proposal.statusExecuted', 'Trade placed via the Aster API.');
       }
       if (actionBtn) {
         actionBtn.disabled = true;
-        actionBtn.textContent = translate('chat.proposal.executedLabel', 'Executed');
+        actionBtn.textContent = translate('chat.proposal.executedLabel', 'Trade placed');
       }
     } else if (statusText === 'queued') {
       cardEl.classList.add('queued');
@@ -6800,11 +6800,11 @@ function appendTradeProposalCard(proposal) {
       }
     } else if (statusText === 'processing') {
       if (statusEl) {
-        statusEl.textContent = translate('chat.proposal.statusProcessing', 'Bot is executing this trade…');
+        statusEl.textContent = translate('chat.proposal.statusProcessing', 'Trade is being placed via the Aster API…');
       }
       if (actionBtn) {
         actionBtn.disabled = true;
-        actionBtn.textContent = translate('chat.proposal.executing', 'Queuing…');
+        actionBtn.textContent = translate('chat.proposal.executing', 'Placing…');
       }
     }
     registerTradeProposal(data);
@@ -6957,9 +6957,9 @@ function appendTradeProposalCard(proposal) {
   const actionBtn = document.createElement('button');
   actionBtn.type = 'button';
   actionBtn.className = 'ai-trade-proposal__action';
-  const idleLabel = translate('chat.proposal.execute', 'Execute with bot');
-  const workingLabel = translate('chat.proposal.executing', 'Queuing…');
-  const successLabel = translate('chat.proposal.queued', 'Manual trade queued');
+  const idleLabel = translate('chat.proposal.execute', 'Place via Aster');
+  const workingLabel = translate('chat.proposal.executing', 'Placing…');
+  const successLabel = translate('chat.proposal.executedLabel', 'Trade placed');
   const retryLabel = translate('chat.proposal.retry', 'Retry');
   actionBtn.textContent = idleLabel;
   actions.append(actionBtn);
@@ -6967,27 +6967,27 @@ function appendTradeProposalCard(proposal) {
 
   const statusEl = document.createElement('div');
   statusEl.className = 'ai-trade-proposal__status';
-  statusEl.textContent = translate('chat.proposal.statusPending', 'Ready to hand off to the bot.');
+  statusEl.textContent = translate('chat.proposal.statusPending', 'Ready to place via the Aster API.');
   card.append(statusEl);
 
   actionBtn.addEventListener('click', async () => {
     if (!proposal.id) return;
     actionBtn.disabled = true;
     actionBtn.textContent = workingLabel;
-    statusEl.textContent = translate('chat.proposal.statusExecuting', 'Sending proposal to the bot…');
-    setChatStatus(translate('chat.proposal.statusExecuting', 'Sending proposal to the bot…'));
+    statusEl.textContent = translate('chat.proposal.statusExecuting', 'Placing trade via the Aster API…');
+    setChatStatus(translate('chat.proposal.statusExecuting', 'Placing trade via the Aster API…'));
     try {
       const payload = await executeTradeProposal(proposal.id);
       updateCardState(card, payload);
       if (!card.classList.contains('queued')) {
         card.classList.add('queued');
         actionBtn.textContent = successLabel;
-        statusEl.textContent = translate('chat.proposal.statusQueued', 'Manual trade queued for execution.');
+        statusEl.textContent = translate('chat.proposal.statusExecuted', 'Trade placed via the Aster API.');
       }
-      setChatStatus(translate('chat.proposal.statusQueued', 'Manual trade queued for execution.'));
+      setChatStatus(translate('chat.proposal.statusExecuted', 'Trade placed via the Aster API.'));
     } catch (err) {
       const message =
-        (err?.message || '').trim() || translate('chat.proposal.statusFailed', 'Failed to queue trade proposal.');
+        (err?.message || '').trim() || translate('chat.proposal.statusFailed', 'Failed to place trade proposal.');
       statusEl.textContent = message;
       setChatStatus(message);
       actionBtn.disabled = false;
@@ -9395,7 +9395,7 @@ async function executeTradeProposal(proposalId) {
   }
   if (!res.ok) {
     const detail = data && typeof data === 'object' ? data.detail : null;
-    throw new Error(detail || translate('chat.proposal.statusFailed', 'Failed to queue trade proposal.'));
+    throw new Error(detail || translate('chat.proposal.statusFailed', 'Failed to place trade proposal.'));
   }
   const payload = data && typeof data === 'object' ? data.proposal || {} : {};
   registerTradeProposal(payload);
