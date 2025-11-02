@@ -1364,6 +1364,16 @@ button:focus-visible {
     grid-column: 1 / -1;
   }
 
+  .playbook-overview {
+    height: auto;
+    max-height: none;
+  }
+
+  body.ai-mode .playbook-overview {
+    height: auto;
+    max-height: none;
+  }
+
   .playbook-overview-body {
     height: auto;
     max-height: none;
@@ -2080,7 +2090,8 @@ body.ai-mode .status .decision-metric {
 .playbook-overview {
   gap: 1.5rem;
   min-height: 360px;
-  height: 100%;
+  height: clamp(520px, 68vh, 760px);
+  max-height: clamp(520px, 68vh, 760px);
   background: radial-gradient(circle at 15% 10%, rgba(245, 196, 107, 0.18), transparent 55%),
               radial-gradient(circle at 85% 0%, rgba(80, 75, 241, 0.16), transparent 60%),
               var(--bg-card-strong);
@@ -2089,7 +2100,8 @@ body.ai-mode .status .decision-metric {
 body.ai-mode .playbook-overview {
   padding: 2.1rem 2rem;
   align-self: stretch;
-  height: auto;
+  height: clamp(520px, 68vh, 760px);
+  max-height: clamp(520px, 68vh, 760px);
 }
 
 .playbook-overview-header {
@@ -2140,7 +2152,7 @@ body.ai-mode .playbook-overview {
 }
 
 .playbook-overview-body {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -2150,6 +2162,7 @@ body.ai-mode .playbook-overview {
   background: rgba(12, 13, 20, 0.78);
   border: 1px solid rgba(245, 196, 107, 0.12);
   box-shadow: inset 0 1px 0 rgba(245, 196, 107, 0.05);
+  overflow-y: auto;
   scrollbar-gutter: stable both-edges;
 }
 
