@@ -52,6 +52,31 @@ class PlaybookActivityTests(unittest.TestCase):
         self.assertEqual(result[0]["mode"], "momentum")
         self.assertEqual(result[0]["bias"], "bullish")
 
+    def test_detects_tuning_entries(self):
+        payload = [
+            {
+                "kind": "tuning",
+                "headline": "Risk tuning update",
+                "ts": "2024-07-01T10:06:00Z",
+                "data": {
+                    "request_kind": "tuning",
+                    "request_id": "tuning::alpha:1234",
+                    "sl_atr_mult": 1.15,
+                    "tp_atr_mult": 1.05,
+                    "size_bias": {"S": 0.55, "M": 0.63, "L": 0.63},
+                    "confidence": 0.05,
+                    "note": "Testing",
+                },
+            }
+        ]
+        result = _collect_playbook_activity(payload)
+        self.assertEqual(len(result), 1)
+        entry = result[0]
+        self.assertEqual(entry["request_id"], "tuning::alpha:1234")
+        self.assertAlmostEqual(entry["sl_bias"], 1.15)
+        self.assertAlmostEqual(entry["tp_bias"], 1.05)
+        self.assertAlmostEqual(entry["confidence"], 0.05)
+
     def test_ignores_unrelated_entries(self):
         payload = [
             {
@@ -61,6 +86,23 @@ class PlaybookActivityTests(unittest.TestCase):
                 "data": {
                     "symbol": "BTCUSDT",
                     "notes": ["some insight"],
+                },
+            }
+        ]
+        result = _collect_playbook_activity(payload)
+        self.assertEqual(result, [])
+
+    def test_ignores_entries_with_other_request_kind(self):
+        payload = [
+            {
+                "kind": "info",
+                "headline": "Strategy copilot insight",
+                "ts": "2024-07-01T10:20:00Z",
+                "data": {
+                    "request_kind": "strategy",
+                    "request_id": "strategy::insight:abcd",
+                    "size_bias": {"S": 1.1},
+                    "features": {"example": 0.5},
                 },
             }
         ]

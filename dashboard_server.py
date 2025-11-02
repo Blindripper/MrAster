@@ -492,8 +492,8 @@ def _collect_playbook_activity(ai_activity: List[Any]) -> List[Dict[str, Any]]:
         return []
 
     items: List[Dict[str, Any]] = []
-    allowed_request_kinds = {"playbook"}
-    allowed_kind_prefixes = ("playbook",)
+    allowed_request_prefixes = ("playbook", "tuning")
+    allowed_kind_prefixes = ("playbook", "tuning")
     for entry in ai_activity:
         if not isinstance(entry, dict):
             continue
@@ -510,6 +510,7 @@ def _collect_playbook_activity(ai_activity: List[Any]) -> List[Dict[str, Any]]:
 
         request_kind = None
         normalized_request_kind = ""
+        request_id_hint: Optional[str] = None
         if isinstance(data, dict):
             raw_request_kind = data.get("request_kind")
             if isinstance(raw_request_kind, str):
@@ -518,11 +519,36 @@ def _collect_playbook_activity(ai_activity: List[Any]) -> List[Dict[str, Any]]:
                 request_kind = str(raw_request_kind)
             if request_kind:
                 normalized_request_kind = request_kind.strip().lower()
-                if normalized_request_kind in allowed_request_kinds or "playbook" in normalized_request_kind:
+                if normalized_request_kind.startswith(allowed_request_prefixes):
                     relevant = True
+                else:
+                    # Explicitly tagged as a different request – skip it entirely
+                    continue
+            raw_request_id = data.get("request_id")
+            if isinstance(raw_request_id, str):
+                request_id_hint = raw_request_id.strip() or None
+            elif raw_request_id is not None:
+                request_id_hint = str(raw_request_id)
+
+        if (
+            not relevant
+            and request_id_hint
+            and request_id_hint.strip().lower().startswith(allowed_request_prefixes)
+        ):
+            relevant = True
 
         if not relevant and isinstance(data, dict):
-            playbook_keys = {"mode", "bias", "size_bias", "sl_bias", "tp_bias", "snapshot_meta", "features"}
+            playbook_keys = {
+                "mode",
+                "bias",
+                "size_bias",
+                "sl_bias",
+                "tp_bias",
+                "sl_atr_mult",
+                "tp_atr_mult",
+                "snapshot_meta",
+                "features",
+            }
             if any(key in data for key in playbook_keys):
                 relevant = True
 
