@@ -1172,7 +1172,210 @@ def _fetch_position_snapshot(env: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
 
         snapshot[symbol] = snapshot_entry
 
+    if snapshot:
+        try:
+            bracket_levels = _fetch_position_brackets(env, snapshot.keys(), recv_window)
+        except Exception as exc:
+            logger.debug("position bracket fetch failed: %s", exc)
+        else:
+            if bracket_levels:
+                for symbol_key, entry in snapshot.items():
+                    levels_for_symbol = bracket_levels.get(symbol_key)
+                    if not isinstance(levels_for_symbol, dict):
+                        continue
+                    side_key = str(entry.get("side") or "").upper()
+                    if not side_key:
+                        amt = _safe_float(entry.get("positionAmt") or entry.get("qty") or entry.get("size"))
+                        if amt is not None:
+                            if amt > 0:
+                                side_key = "BUY"
+                            elif amt < 0:
+                                side_key = "SELL"
+                    bucket = levels_for_symbol.get(side_key) or levels_for_symbol.get("ANY")
+                    if not isinstance(bucket, dict):
+                        continue
+                    take_px = bucket.get("take")
+                    stop_px = bucket.get("stop")
+                    if take_px is not None:
+                        _apply_bracket_price(entry, "take", take_px)
+                    if stop_px is not None:
+                        _apply_bracket_price(entry, "stop", stop_px)
+
     return snapshot
+
+
+def _apply_bracket_price(record: Dict[str, Any], kind: str, price: float) -> None:
+    if not isinstance(record, dict):
+        return
+    try:
+        numeric_price = float(price)
+    except (TypeError, ValueError):
+        return
+
+    if kind == "take":
+        keys = (
+            "tp",
+            "take_profit",
+            "take_profit_price",
+            "take_profit_next",
+            "takeProfit",
+            "takeProfitPrice",
+            "takeProfitNext",
+            "next_tp",
+            "target",
+            "target_price",
+            "targetPrice",
+        )
+    else:
+        keys = (
+            "sl",
+            "stop",
+            "stop_loss",
+            "stop_loss_price",
+            "stop_loss_next",
+            "stopLoss",
+            "stopLossPrice",
+            "stopLossNext",
+            "stop_price",
+            "stopPrice",
+            "next_stop",
+            "stopTarget",
+        )
+
+    for key in keys:
+        record[key] = numeric_price
+
+
+def _fetch_position_brackets(
+    env: Dict[str, Any],
+    symbols: Iterable[str],
+    recv_window: int,
+) -> Dict[str, Dict[str, Dict[str, float]]]:
+    base = (env.get("ASTER_EXCHANGE_BASE") or "https://fapi.asterdex.com").rstrip("/")
+    api_key = (env.get("ASTER_API_KEY") or "").strip()
+    api_secret = (env.get("ASTER_API_SECRET") or "").strip()
+    if not api_key or not api_secret:
+        return {}
+    if _is_truthy(env.get("ASTER_PAPER")):
+        return {}
+
+    headers = {"X-MBX-APIKEY": api_key, "Content-Type": "application/x-www-form-urlencoded"}
+    results: Dict[str, Dict[str, Dict[str, float]]] = {}
+    seen: Set[str] = set()
+
+    for raw_symbol in symbols:
+        if not raw_symbol:
+            continue
+        symbol = str(raw_symbol).upper().strip()
+        if not symbol or symbol in seen:
+            continue
+        seen.add(symbol)
+
+        params = {
+            "symbol": symbol,
+            "timestamp": int(time.time() * 1000),
+            "recvWindow": recv_window,
+        }
+        ordered = [(k, params[k]) for k in sorted(params)]
+        qs = urlencode(ordered, doseq=True)
+        signature = hmac.new(api_secret.encode(), qs.encode(), hashlib.sha256).hexdigest()
+        url = f"{base}/fapi/v1/openOrders?{qs}&signature={signature}"
+
+        try:
+            resp = requests.get(url, headers=headers, timeout=8)
+            resp.raise_for_status()
+            payload = resp.json()
+        except Exception as exc:
+            logger.debug("open orders fetch failed for %s: %s", symbol, exc)
+            continue
+
+        if isinstance(payload, list):
+            orders = payload
+        elif isinstance(payload, dict):
+            if isinstance(payload.get("orders"), list):
+                orders = payload["orders"]
+            elif isinstance(payload.get("data"), list):
+                orders = payload["data"]
+            else:
+                lists = [value for value in payload.values() if isinstance(value, list)]
+                orders = lists[0] if lists else []
+        else:
+            orders = []
+
+        if not isinstance(orders, list) or not orders:
+            continue
+
+        for order in orders:
+            if not isinstance(order, dict):
+                continue
+            order_type = str(order.get("type") or "").upper()
+            if "STOP" not in order_type and "TAKE_PROFIT" not in order_type:
+                continue
+            if not (_is_truthy(order.get("closePosition")) or _is_truthy(order.get("reduceOnly"))):
+                continue
+
+            price_candidates = (
+                order.get("stopPrice"),
+                order.get("triggerPrice"),
+                order.get("price"),
+            )
+            price_val: Optional[float] = None
+            for candidate in price_candidates:
+                price_val = _safe_float(candidate)
+                if price_val is not None:
+                    break
+            if price_val is None:
+                trigger = order.get("trigger")
+                if isinstance(trigger, dict):
+                    price_val = _safe_float(trigger.get("price"))
+            if price_val is None:
+                continue
+
+            position_side_raw = str(order.get("positionSide") or "").upper()
+            if position_side_raw in {"LONG", "BOTH"}:
+                side_key = "BUY"
+            elif position_side_raw == "SHORT":
+                side_key = "SELL"
+            else:
+                order_side = str(order.get("side") or "").upper()
+                if order_side == "SELL":
+                    side_key = "BUY"
+                elif order_side == "BUY":
+                    side_key = "SELL"
+                else:
+                    side_key = "ANY"
+
+            bucket = results.setdefault(symbol, {}).setdefault(side_key or "ANY", {})
+
+            kind = "take" if "TAKE_PROFIT" in order_type else "stop"
+            existing = bucket.get(kind)
+            if existing is not None:
+                try:
+                    existing_val = float(existing)
+                except (TypeError, ValueError):
+                    existing_val = None
+            else:
+                existing_val = None
+
+            if side_key == "BUY":
+                if kind == "stop":
+                    if existing_val is None or price_val > existing_val:
+                        bucket[kind] = price_val
+                else:
+                    if existing_val is None or price_val < existing_val:
+                        bucket[kind] = price_val
+            elif side_key == "SELL":
+                if kind == "stop":
+                    if existing_val is None or price_val < existing_val:
+                        bucket[kind] = price_val
+                else:
+                    if existing_val is None or price_val > existing_val:
+                        bucket[kind] = price_val
+            else:
+                if existing_val is None:
+                    bucket[kind] = price_val
+
+    return results
 
 
 POSITION_HINT_KEYS = {"entry", "entryPrice", "qty", "quantity", "positionAmt", "side", "tp", "sl", "mark"}
