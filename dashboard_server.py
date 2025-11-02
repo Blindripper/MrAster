@@ -2854,7 +2854,7 @@ class AIChatEngine:
             if isinstance(raw_content, str):
                 stripped = raw_content.strip()
                 if stripped:
-                    content_parts.append({"type": "input_text", "text": stripped})
+                    content_parts.append({"type": "text", "text": stripped})
             elif isinstance(raw_content, list):
                 for part in raw_content:
                     if isinstance(part, dict):
@@ -2862,11 +2862,11 @@ class AIChatEngine:
                         text = part.get("text")
                         if isinstance(text, str) and text.strip():
                             # Respect explicit types if provided by the caller, while
-                            # normalising legacy ``input_text`` segments to the modern
-                            # ``input_text`` segments expected by the Responses API.
-                            normalized_type = str(p_type or "input_text")
-                            if normalized_type in {"text", "output_text"}:
-                                normalized_type = "input_text"
+                            # normalising legacy ``input_text``/``output_text`` segments
+                            # to the ``text`` segments expected by the Responses API.
+                            normalized_type = str(p_type or "text")
+                            if normalized_type in {"input_text", "output_text"}:
+                                normalized_type = "text"
                             content_parts.append(
                                 {
                                     "type": normalized_type,
@@ -2874,7 +2874,7 @@ class AIChatEngine:
                                 }
                             )
                     elif isinstance(part, str) and part.strip():
-                        content_parts.append({"type": "input_text", "text": part.strip()})
+                        content_parts.append({"type": "text", "text": part.strip()})
             if not content_parts:
                 continue
             if role == "system":
@@ -2904,7 +2904,7 @@ class AIChatEngine:
                 payload["input"] = [
                     {
                         "role": "system",
-                        "content": [{"type": "input_text", "text": system_text}],
+                        "content": [{"type": "text", "text": system_text}],
                     },
                     *payload["input"],
                 ]
