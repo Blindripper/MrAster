@@ -1027,19 +1027,210 @@ def _summarize_ai_budget_line(ai_budget: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _fetch_position_snapshot(env: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    base = (env.get("ASTER_EXCHANGE_BASE") or "https://fapi.asterdex.com").rstrip("/")
-    api_key = (env.get("ASTER_API_KEY") or "").strip()
-    api_secret = (env.get("ASTER_API_SECRET") or "").strip()
+def _build_snapshot_entry_from_record(
+    record: Dict[str, Any], fallback_symbol: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    symbol = _resolve_symbol_from_record(record, fallback_symbol)
+    if not symbol:
+        return None
+
+    position_amt = _extract_numeric_field(record, POSITION_NUMERIC_FIELD_ALIASES["position_amt"])
+    if position_amt is None or abs(position_amt) < 1e-12:
+        return None
+
+    entry_price = _extract_numeric_field(record, POSITION_NUMERIC_FIELD_ALIASES["entry_price"])
+    mark_price = _extract_numeric_field(record, POSITION_NUMERIC_FIELD_ALIASES["mark_price"])
+    unrealized = _extract_numeric_field(record, POSITION_NUMERIC_FIELD_ALIASES["unrealized"])
+    leverage = _extract_numeric_field(record, POSITION_NUMERIC_FIELD_ALIASES["leverage"])
+    notional = _extract_numeric_field(record, POSITION_NUMERIC_FIELD_ALIASES["notional"])
+    margin_val = _extract_numeric_field(record, POSITION_NUMERIC_FIELD_ALIASES["margin"])
+    update_time = _extract_scalar_field(record, POSITION_TIME_FIELD_ALIASES)
+
+    snapshot_entry: Dict[str, Any] = {
+        k: v for k, v in record.items() if isinstance(v, (int, float, str, bool)) or v is None
+    }
+    snapshot_entry["symbol"] = symbol
+    snapshot_entry["positionAmt"] = position_amt
+
+    if entry_price is not None:
+        snapshot_entry["entryPrice"] = entry_price
+        snapshot_entry["entry"] = entry_price
+        snapshot_entry["entry_price"] = entry_price
+
+    if mark_price is not None:
+        snapshot_entry["markPrice"] = mark_price
+        snapshot_entry["mark"] = mark_price
+        snapshot_entry["mark_price"] = mark_price
+
+    if update_time is not None:
+        snapshot_entry["updateTime"] = update_time
+
+    if leverage is not None:
+        snapshot_entry["leverage"] = leverage
+
+    if notional is None:
+        price_for_notional = None
+        if mark_price is not None and mark_price > 0:
+            price_for_notional = mark_price
+        elif entry_price is not None and entry_price > 0:
+            price_for_notional = entry_price
+        if price_for_notional is not None:
+            notional = abs(position_amt) * price_for_notional
+
+    if notional is not None:
+        snapshot_entry["notional"] = notional
+        snapshot_entry["notional_usdt"] = notional
+        snapshot_entry["notionalUsd"] = notional
+        snapshot_entry["positionNotional"] = notional
+        snapshot_entry["size_usdt"] = notional
+
+    if margin_val is None and notional is not None and leverage:
+        try:
+            if leverage > 0:
+                margin_val = abs(notional) / leverage
+        except ZeroDivisionError:
+            margin_val = None
+
+    if margin_val is not None:
+        snapshot_entry["margin"] = margin_val
+        snapshot_entry["positionMargin"] = margin_val
+        snapshot_entry.setdefault("isolatedMargin", margin_val)
+        snapshot_entry.setdefault("initialMargin", margin_val)
+
+    computed_pnl: Optional[float] = None
+    if entry_price is not None and mark_price is not None:
+        try:
+            computed_pnl = (mark_price - entry_price) * position_amt
+        except Exception:
+            computed_pnl = None
+
+    if computed_pnl is not None:
+        snapshot_entry["computedPnl"] = computed_pnl
+        snapshot_entry["computed_pnl"] = computed_pnl
+
+    if unrealized is not None and "unRealizedProfit" not in snapshot_entry:
+        snapshot_entry["unRealizedProfit"] = unrealized
+
+    pnl_value = computed_pnl if computed_pnl is not None else unrealized
+    if pnl_value is not None:
+        snapshot_entry["pnl"] = pnl_value
+        snapshot_entry["pnl_usd"] = pnl_value
+        snapshot_entry["pnl_usdt"] = pnl_value
+        snapshot_entry["pnl_unrealized"] = pnl_value
+        snapshot_entry["unrealized"] = pnl_value
+        snapshot_entry["unrealizedProfit"] = pnl_value
+        snapshot_entry["unRealizedProfit"] = pnl_value
+
+    roe = None
+    pnl_for_roe = computed_pnl if computed_pnl is not None else unrealized
+    denominator = None
+    if margin_val is not None and margin_val > 0:
+        denominator = margin_val
+    elif notional is not None and notional > 0:
+        denominator = notional
+    if pnl_for_roe is not None and denominator:
+        try:
+            roe = (pnl_for_roe / denominator) * 100.0
+        except ZeroDivisionError:
+            roe = None
+    if roe is not None:
+        snapshot_entry["roe_percent"] = roe
+        snapshot_entry["roe"] = roe
+        snapshot_entry["roe_pct"] = roe
+
+    if position_amt > 0:
+        snapshot_entry.setdefault("side", "BUY")
+    elif position_amt < 0:
+        snapshot_entry.setdefault("side", "SELL")
+
+    return snapshot_entry
+
+
+def _extract_positions_from_payload(payload: Any, fallback_symbol: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
+    collected: Dict[str, Dict[str, Any]] = {}
+
+    def _collect(node: Any, current_fallback: Optional[str]) -> None:
+        if isinstance(node, dict):
+            symbol_hint = _resolve_symbol_from_record(node, current_fallback)
+            if _looks_like_position_record(node):
+                entry = _build_snapshot_entry_from_record(node, symbol_hint)
+                if entry is not None:
+                    symbol_key = entry.get("symbol")
+                    if symbol_key:
+                        existing = collected.get(symbol_key)
+                        if existing:
+                            existing.update({k: v for k, v in entry.items() if v is not None})
+                        else:
+                            collected[symbol_key] = entry
+            for value in node.values():
+                _collect(value, symbol_hint or current_fallback)
+        elif isinstance(node, list):
+            for item in node:
+                _collect(item, current_fallback)
+
+    _collect(payload, fallback_symbol)
+    return collected
+
+
+def _fetch_open_orders_snapshot_with_context(
+    base: str, api_key: str, api_secret: str, recv_window: int
+) -> Dict[str, Dict[str, Any]]:
+    if not api_key or not api_secret:
+        return {}
+
+    params = {"timestamp": int(time.time() * 1000), "recvWindow": recv_window}
+    ordered = [(k, params[k]) for k in sorted(params)]
+    qs = urlencode(ordered, doseq=True)
+    signature = hmac.new(api_secret.encode(), qs.encode(), hashlib.sha256).hexdigest()
+    url = f"{base}/fapi/v1/openOrders?{qs}&signature={signature}"
+    headers = {"X-MBX-APIKEY": api_key, "Content-Type": "application/x-www-form-urlencoded"}
+
+    try:
+        resp = requests.get(url, headers=headers, timeout=8)
+        resp.raise_for_status()
+        payload = resp.json()
+    except Exception as exc:
+        logger.debug("open orders fetch failed: %s", exc)
+        return {}
+
+    if payload is None:
+        return {}
+
+    return _extract_positions_from_payload(payload)
+
+
+def _fetch_open_orders_snapshot(env: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    base, api_key, api_secret, recv_window = _resolve_exchange_context(env)
     if not api_key or not api_secret:
         return {}
     if _is_truthy(env.get("ASTER_PAPER")):
         return {}
+    return _fetch_open_orders_snapshot_with_context(base, api_key, api_secret, recv_window)
 
-    try:
-        recv_window = int(float(env.get("ASTER_RECV_WINDOW", 10000)))
-    except (TypeError, ValueError):
-        recv_window = 10000
+
+def _merge_snapshot_maps(
+    target: Dict[str, Dict[str, Any]], source: Dict[str, Dict[str, Any]], *, prefer_existing: bool = True
+) -> None:
+    for symbol, payload in source.items():
+        if not isinstance(payload, dict):
+            continue
+        existing = target.get(symbol)
+        if existing is None:
+            target[symbol] = dict(payload)
+            continue
+        for key, value in payload.items():
+            if value is None:
+                continue
+            if prefer_existing and key in existing and existing.get(key) not in {None, ""}:
+                continue
+            existing[key] = value
+
+
+def _fetch_position_risk_snapshot_with_context(
+    base: str, api_key: str, api_secret: str, recv_window: int
+) -> Dict[str, Dict[str, Any]]:
+    if not api_key or not api_secret:
+        return {}
 
     params = {"timestamp": int(time.time() * 1000), "recvWindow": recv_window}
     ordered = [(k, params[k]) for k in sorted(params)]
@@ -1068,138 +1259,71 @@ def _fetch_position_snapshot(env: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     for item in positions_raw:
         if not isinstance(item, dict):
             continue
-        symbol_raw = item.get("symbol")
-        if not symbol_raw:
+        entry = _build_snapshot_entry_from_record(item)
+        if entry is None:
             continue
-        symbol = str(symbol_raw).upper().strip()
+        symbol = entry.get("symbol")
         if not symbol:
             continue
-        position_amt = _safe_float(item.get("positionAmt"))
-        if position_amt is None or abs(position_amt) < 1e-12:
-            continue
+        snapshot[symbol] = entry
 
-        entry_price = _safe_float(item.get("entryPrice"))
-        mark_price = _safe_float(item.get("markPrice"))
-        unrealized = _safe_float(item.get("unRealizedProfit"))
-        leverage = _safe_float(item.get("leverage"))
-        margin_candidates = (
-            _safe_float(item.get("isolatedMargin")),
-            _safe_float(item.get("positionInitialMargin")),
-            _safe_float(item.get("initialMargin")),
-            _safe_float(item.get("isolatedWallet")),
-        )
-        margin_val = next((val for val in margin_candidates if val is not None), None)
-        notional: Optional[float] = None
-        price_for_notional = None
-        if mark_price is not None and mark_price > 0:
-            price_for_notional = mark_price
-        elif entry_price is not None and entry_price > 0:
-            price_for_notional = entry_price
-        if price_for_notional is not None:
-            notional = abs(position_amt) * price_for_notional
+    return snapshot
 
-        computed_pnl: Optional[float] = None
-        if entry_price is not None and mark_price is not None:
-            try:
-                computed_pnl = (mark_price - entry_price) * position_amt
-            except Exception:  # defensive: fallback to API payload
-                computed_pnl = None
 
-        if margin_val is None and notional is not None and leverage:
-            try:
-                if leverage > 0:
-                    margin_val = abs(notional) / leverage
-            except ZeroDivisionError:
-                margin_val = None
+def _fetch_position_risk_snapshot(env: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    base, api_key, api_secret, recv_window = _resolve_exchange_context(env)
+    if not api_key or not api_secret:
+        return {}
+    if _is_truthy(env.get("ASTER_PAPER")):
+        return {}
+    return _fetch_position_risk_snapshot_with_context(base, api_key, api_secret, recv_window)
 
-        roe = None
-        pnl_for_roe = computed_pnl if computed_pnl is not None else unrealized
-        denominator = None
-        if margin_val is not None and margin_val > 0:
-            denominator = margin_val
-        elif notional is not None and notional > 0:
-            denominator = notional
-        if pnl_for_roe is not None and denominator:
-            try:
-                roe = (pnl_for_roe / denominator) * 100.0
-            except ZeroDivisionError:
-                roe = None
 
-        snapshot_entry: Dict[str, Any] = {
-            "symbol": symbol,
-            "positionAmt": position_amt,
-            "entryPrice": entry_price,
-            "markPrice": mark_price,
-            "unRealizedProfit": unrealized,
-            "leverage": leverage,
-            "roe_percent": roe,
-            "updateTime": item.get("updateTime") or item.get("update_time"),
-        }
+def _fetch_position_snapshot(env: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    base, api_key, api_secret, recv_window = _resolve_exchange_context(env)
+    if not api_key or not api_secret:
+        return {}
+    if _is_truthy(env.get("ASTER_PAPER")):
+        return {}
 
-        if notional is not None:
-            snapshot_entry["notional"] = notional
-            snapshot_entry["notional_usdt"] = notional
-            snapshot_entry["notionalUsd"] = notional
-            snapshot_entry["positionNotional"] = notional
-            snapshot_entry["size_usdt"] = notional
-
-        if computed_pnl is not None:
-            snapshot_entry["pnl"] = computed_pnl
-            snapshot_entry["pnl_usd"] = computed_pnl
-            snapshot_entry["pnl_usdt"] = computed_pnl
-            snapshot_entry["pnl_unrealized"] = computed_pnl
-            snapshot_entry["computedPnl"] = computed_pnl
-            snapshot_entry["computed_pnl"] = computed_pnl
-            snapshot_entry["unrealized"] = computed_pnl
-            snapshot_entry["unrealizedProfit"] = computed_pnl
-        elif unrealized is not None:
-            snapshot_entry["pnl"] = unrealized
-            snapshot_entry["pnl_usd"] = unrealized
-            snapshot_entry["pnl_usdt"] = unrealized
-            snapshot_entry["pnl_unrealized"] = unrealized
-            snapshot_entry["unrealized"] = unrealized
-            snapshot_entry["unrealizedProfit"] = unrealized
-
-        if margin_val is not None:
-            snapshot_entry["margin"] = margin_val
-            snapshot_entry["positionMargin"] = margin_val
-            snapshot_entry["isolatedMargin"] = margin_val
-
-        if position_amt > 0:
-            snapshot_entry.setdefault("side", "BUY")
-        elif position_amt < 0:
-            snapshot_entry.setdefault("side", "SELL")
-
-        snapshot[symbol] = snapshot_entry
-
+    snapshot = _fetch_open_orders_snapshot_with_context(base, api_key, api_secret, recv_window)
     if snapshot:
-        try:
-            bracket_levels = _fetch_position_brackets(env, snapshot.keys(), recv_window)
-        except Exception as exc:
-            logger.debug("position bracket fetch failed: %s", exc)
-        else:
-            if bracket_levels:
-                for symbol_key, entry in snapshot.items():
-                    levels_for_symbol = bracket_levels.get(symbol_key)
-                    if not isinstance(levels_for_symbol, dict):
-                        continue
-                    side_key = str(entry.get("side") or "").upper()
-                    if not side_key:
-                        amt = _safe_float(entry.get("positionAmt") or entry.get("qty") or entry.get("size"))
-                        if amt is not None:
-                            if amt > 0:
-                                side_key = "BUY"
-                            elif amt < 0:
-                                side_key = "SELL"
-                    bucket = levels_for_symbol.get(side_key) or levels_for_symbol.get("ANY")
-                    if not isinstance(bucket, dict):
-                        continue
-                    take_px = bucket.get("take")
-                    stop_px = bucket.get("stop")
-                    if take_px is not None:
-                        _apply_bracket_price(entry, "take", take_px)
-                    if stop_px is not None:
-                        _apply_bracket_price(entry, "stop", stop_px)
+        fallback = _fetch_position_risk_snapshot_with_context(base, api_key, api_secret, recv_window)
+        if fallback:
+            _merge_snapshot_maps(snapshot, fallback, prefer_existing=True)
+    else:
+        snapshot = _fetch_position_risk_snapshot_with_context(base, api_key, api_secret, recv_window)
+
+    if not snapshot:
+        return {}
+
+    try:
+        bracket_levels = _fetch_position_brackets(env, snapshot.keys(), recv_window)
+    except Exception as exc:
+        logger.debug("position bracket fetch failed: %s", exc)
+    else:
+        if bracket_levels:
+            for symbol_key, entry in snapshot.items():
+                levels_for_symbol = bracket_levels.get(symbol_key)
+                if not isinstance(levels_for_symbol, dict):
+                    continue
+                side_key = str(entry.get("side") or "").upper()
+                if not side_key:
+                    amt = _safe_float(entry.get("positionAmt") or entry.get("qty") or entry.get("size"))
+                    if amt is not None:
+                        if amt > 0:
+                            side_key = "BUY"
+                        elif amt < 0:
+                            side_key = "SELL"
+                bucket = levels_for_symbol.get(side_key) or levels_for_symbol.get("ANY")
+                if not isinstance(bucket, dict):
+                    continue
+                take_px = bucket.get("take")
+                stop_px = bucket.get("stop")
+                if take_px is not None:
+                    _apply_bracket_price(entry, "take", take_px)
+                if stop_px is not None:
+                    _apply_bracket_price(entry, "stop", stop_px)
 
     return snapshot
 
@@ -1379,6 +1503,177 @@ def _fetch_position_brackets(
 
 
 POSITION_HINT_KEYS = {"entry", "entryPrice", "qty", "quantity", "positionAmt", "side", "tp", "sl", "mark"}
+
+POSITION_NUMERIC_FIELD_ALIASES = {
+    "position_amt": (
+        "positionAmt",
+        "position_amt",
+        "position_amount",
+        "positionSize",
+        "position_size",
+        "positionQty",
+        "position_qty",
+        "qty",
+        "quantity",
+        "size",
+        "size_contracts",
+        "amount",
+        "amount_contracts",
+        "origQty",
+        "executedQty",
+        "baseQty",
+        "base_quantity",
+        "baseAmount",
+        "base_amount",
+    ),
+    "entry_price": (
+        "entryPrice",
+        "entry_price",
+        "entry",
+        "avgEntryPrice",
+        "avgPrice",
+        "avg_price",
+        "averagePrice",
+        "average_price",
+        "entryprice",
+        "entryPriceValue",
+        "entryValue",
+    ),
+    "mark_price": (
+        "markPrice",
+        "mark_price",
+        "mark",
+        "lastPrice",
+        "last_price",
+        "price",
+        "marketPrice",
+        "indexPrice",
+        "markprice",
+    ),
+    "unrealized": (
+        "unRealizedProfit",
+        "unrealizedProfit",
+        "unRealizedPnl",
+        "unrealized",
+        "pnl",
+        "pnl_unrealized",
+        "pnlUnrealized",
+        "pnl_usd",
+        "pnl_usdt",
+        "pnlUsd",
+        "pnlUsdt",
+        "computedPnl",
+        "computed_pnl",
+    ),
+    "notional": (
+        "positionNotional",
+        "position_notional",
+        "notional",
+        "notional_usdt",
+        "notionalUsd",
+        "notionalUSD",
+        "size_usdt",
+        "sizeUsd",
+        "position_value",
+        "positionValue",
+        "notionalValue",
+    ),
+    "leverage": ("leverage", "lever", "leverage_value", "leverageValue"),
+    "margin": (
+        "positionMargin",
+        "position_margin",
+        "margin",
+        "isolatedMargin",
+        "initialMargin",
+        "positionInitialMargin",
+        "margin_usd",
+        "marginUsd",
+        "margin_usdt",
+        "maintMargin",
+        "maintenanceMargin",
+    ),
+}
+
+POSITION_TIME_FIELD_ALIASES = (
+    "updateTime",
+    "update_time",
+    "timestamp",
+    "time",
+    "openTime",
+    "open_time",
+    "createdTime",
+    "created_time",
+    "createdAt",
+    "created_at",
+)
+
+
+def _extract_nested_value(candidate: Any, *, numeric: bool) -> Optional[Any]:
+    if candidate is None:
+        return None
+    if isinstance(candidate, (list, tuple, set)):
+        for item in candidate:
+            value = _extract_nested_value(item, numeric=numeric)
+            if value is not None:
+                return value
+        return None
+    if isinstance(candidate, dict):
+        for key in ("value", "amount", "qty", "quantity", "price", "notional", "num", "number"):
+            if key not in candidate:
+                continue
+            value = _extract_nested_value(candidate.get(key), numeric=numeric)
+            if value is not None:
+                return value
+        return None
+    if numeric:
+        return _safe_float(candidate)
+    return candidate
+
+
+def _extract_numeric_field(record: Dict[str, Any], aliases: Sequence[str]) -> Optional[float]:
+    for key in aliases:
+        if key not in record:
+            continue
+        value = _extract_nested_value(record.get(key), numeric=True)
+        if value is not None:
+            return value
+    return None
+
+
+def _extract_scalar_field(record: Dict[str, Any], aliases: Sequence[str]) -> Optional[Any]:
+    for key in aliases:
+        if key not in record:
+            continue
+        value = _extract_nested_value(record.get(key), numeric=False)
+        if value is not None:
+            return value
+    return None
+
+
+def _resolve_exchange_context(env: Dict[str, Any]) -> Tuple[str, str, str, int]:
+    base = (env.get("ASTER_EXCHANGE_BASE") or "https://fapi.asterdex.com").rstrip("/")
+    api_key = (env.get("ASTER_API_KEY") or "").strip()
+    api_secret = (env.get("ASTER_API_SECRET") or "").strip()
+    try:
+        recv_window = int(float(env.get("ASTER_RECV_WINDOW", 10000)))
+    except (TypeError, ValueError):
+        recv_window = 10000
+    return base, api_key, api_secret, recv_window
+
+
+def _resolve_symbol_from_record(record: Dict[str, Any], fallback: Optional[str] = None) -> Optional[str]:
+    candidates = [
+        record.get("symbol"),
+        record.get("sym"),
+        record.get("ticker"),
+        record.get("pair"),
+        fallback,
+    ]
+    for candidate in candidates:
+        text = _clean_string(candidate)
+        if text:
+            return text.upper()
+    return None
 
 
 def _fetch_realized_pnl_entries(env: Dict[str, Any], limit: int = 400) -> List[Dict[str, Any]]:
