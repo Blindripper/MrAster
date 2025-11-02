@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import ast
 import copy
 import hashlib
 import hmac
@@ -2244,23 +2245,70 @@ class AIChatEngine:
         if not text:
             return []
         proposals: List[Dict[str, Any]] = []
-        action_pattern = re.compile(r"ACTION:\s*(\{.*\})", re.IGNORECASE)
-        for raw_line in text.splitlines():
-            line = raw_line.strip().strip("`>-")
-            match = action_pattern.search(line)
-            if not match:
-                continue
-            payload_text = match.group(1).strip().rstrip("`")
+
+        def _extract_object(buffer: str, start_index: int) -> Tuple[Optional[str], int]:
+            brace_index = buffer.find("{", start_index)
+            if brace_index == -1:
+                return None, start_index
+            depth = 0
+            string_char: Optional[str] = None
+            escape = False
+            idx = brace_index
+            while idx < len(buffer):
+                ch = buffer[idx]
+                if string_char:
+                    if escape:
+                        escape = False
+                    elif ch == "\\":
+                        escape = True
+                    elif ch == string_char:
+                        string_char = None
+                else:
+                    if ch in {'"', "'"}:
+                        string_char = ch
+                    elif ch == "{":
+                        depth += 1
+                    elif ch == "}":
+                        if depth > 0:
+                            depth -= 1
+                            if depth == 0:
+                                return buffer[brace_index : idx + 1], idx + 1
+                idx += 1
+            return None, start_index
+
+        def _parse_payload(raw_payload: str) -> Optional[Dict[str, Any]]:
+            cleaned = raw_payload.strip()
+            cleaned = cleaned.rstrip(",;`").strip()
             try:
-                payload = json.loads(payload_text)
+                payload = json.loads(cleaned)
             except json.JSONDecodeError:
-                continue
+                normalized = re.sub(r"\bnull\b", "None", cleaned, flags=re.IGNORECASE)
+                normalized = re.sub(r"\btrue\b", "True", normalized, flags=re.IGNORECASE)
+                normalized = re.sub(r"\bfalse\b", "False", normalized, flags=re.IGNORECASE)
+                try:
+                    payload = ast.literal_eval(normalized)
+                except (ValueError, SyntaxError):
+                    return None
             if not isinstance(payload, dict):
-                continue
-            action_type = str(payload.get("type") or "").strip().lower()
-            if action_type not in {"propose_trade", "trade_proposal", "trade_plan"}:
-                continue
-            proposals.append(payload)
+                return None
+            return payload
+
+        search_pos = 0
+        action_pattern = re.compile(r"action\s*:", re.IGNORECASE)
+        while True:
+            match = action_pattern.search(text, search_pos)
+            if not match:
+                break
+            object_text, end_index = _extract_object(text, match.end())
+            if object_text:
+                payload = _parse_payload(object_text)
+                if payload:
+                    action_type = str(payload.get("type") or "").strip().lower()
+                    if action_type in {"propose_trade", "trade_proposal", "trade_plan"}:
+                        proposals.append(payload)
+                search_pos = max(end_index, match.end())
+            else:
+                search_pos = match.end()
 
         if proposals:
             return proposals
