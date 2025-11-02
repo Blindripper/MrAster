@@ -647,7 +647,7 @@
               type="range"
               id="leverage-slider"
               min="1"
-              max="5"
+              max="25"
               step="1"
               value="1"
               aria-label="Leverage multiplier"
@@ -656,7 +656,7 @@
             />
             <div class="risk-scale">
               <span data-i18n="quick.leverage.min">1×</span>
-              <span data-i18n="quick.leverage.max">5× max</span>
+              <span data-i18n="quick.leverage.max">25× max</span>
             </div>
           </div>
         </div>
@@ -681,6 +681,10 @@
           </p>
         </div>
         <div class="preset-meta" id="preset-meta">
+          <div class="preset-meta-block">
+            <h3 data-i18n="quick.leverage.title">Leverage</h3>
+            <p id="preset-leverage-details" data-i18n="quick.leverage.placeholder">Leverage base: –</p>
+          </div>
           <div class="preset-meta-block">
             <h3 data-i18n="quick.funding.title">Funding filters</h3>
             <p id="preset-funding-details" data-i18n="quick.funding.details">Funding controls are derived from the selected preset.</p>
