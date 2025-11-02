@@ -1804,6 +1804,95 @@ def _append_ai_activity_entry(
             time.sleep(0.05)
 
 
+def _ensure_ai_budget_bucket(state: Dict[str, Any]) -> Dict[str, Any]:
+    bucket = state.setdefault("ai_budget", {})
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if bucket.get("date") != today:
+        bucket["date"] = today
+        bucket["spent"] = 0.0
+        bucket["history"] = []
+        bucket["stats"] = {}
+        bucket["count"] = 0
+    bucket.setdefault("spent", 0.0)
+    history = bucket.get("history")
+    if not isinstance(history, list):
+        history = []
+    bucket["history"] = history
+    stats = bucket.get("stats")
+    if not isinstance(stats, dict):
+        stats = {}
+    bucket["stats"] = stats
+    count_val = bucket.get("count")
+    try:
+        count = int(count_val)
+    except (TypeError, ValueError):
+        count = len(history)
+    bucket["count"] = max(int(count or 0), len(history))
+    return bucket
+
+
+def _record_ai_budget_usage(cost: float, meta: Optional[Dict[str, Any]] = None) -> None:
+    attempts = 0
+    while attempts < 3:
+        attempts += 1
+        state = _read_state()
+        bucket = _ensure_ai_budget_bucket(state)
+        amount = max(0.0, float(cost or 0.0))
+        try:
+            meta_payload = json.loads(json.dumps(meta or {}, default=lambda o: str(o)))
+        except Exception:
+            meta_payload = meta or {}
+
+        history = bucket.get("history") or []
+        if not isinstance(history, list):
+            history = []
+        history.append({"ts": time.time(), "cost": float(amount), "meta": meta_payload})
+        if len(history) > 48:
+            history = history[-48:]
+        bucket["history"] = history
+
+        bucket["spent"] = float(bucket.get("spent", 0.0) or 0.0) + amount
+        bucket["count"] = int(bucket.get("count", 0) or 0) + 1
+
+        stats = bucket.get("stats")
+        if not isinstance(stats, dict):
+            stats = {}
+        bucket["stats"] = stats
+
+        model_key = str(meta_payload.get("model") or "default")
+        kind_key = str(meta_payload.get("kind") or "unknown")
+
+        for key in (
+            f"{model_key}::{kind_key}",
+            f"{model_key}::*",
+            f"*::{kind_key}",
+            "*::*",
+        ):
+            record = stats.setdefault(
+                key, {"avg": 0.0, "n": 0, "last": 0.0, "updated": 0.0}
+            )
+            n = int(record.get("n", 0) or 0)
+            avg = float(record.get("avg", 0.0) or 0.0)
+            new_n = n + 1
+            new_avg = ((avg * n) + amount) / max(new_n, 1)
+            record.update(
+                {
+                    "avg": float(new_avg),
+                    "n": new_n,
+                    "last": float(amount),
+                    "updated": time.time(),
+                }
+            )
+
+        state["ai_budget"] = bucket
+        try:
+            STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True))
+            return
+        except Exception as exc:
+            logger.debug("Failed to persist AI budget usage (attempt %s): %s", attempts, exc)
+            time.sleep(0.05)
+
+
 def _summarize_text(text: str, limit: int = 220) -> str:
     snippet = (text or "").strip()
     if len(snippet) <= limit:
@@ -2186,6 +2275,18 @@ def _cumulative_summary(
 
 
 class AIChatEngine:
+    MODEL_PRICING: Dict[str, Dict[str, float]] = {
+        "gpt-4o": {"input": 0.000005, "output": 0.000015},
+        "gpt-4o-mini": {"input": 0.0000006, "output": 0.0000024},
+        "o4-mini": {"input": 0.0000012, "output": 0.0000036},
+        "gpt-4.1-mini": {"input": 0.0000006, "output": 0.0000024},
+        "gpt-4.1": {"input": 0.000003, "output": 0.000009},
+        "gpt-4-turbo": {"input": 0.000006, "output": 0.000018},
+        "gpt-3.5-turbo": {"input": 0.0000005, "output": 0.0000015},
+        "gpt-5": {"input": 0.000004, "output": 0.000012},
+        "default": {"input": 0.000001, "output": 0.000003},
+    }
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self._temperature_supported = True
@@ -2292,6 +2393,59 @@ class AIChatEngine:
         trimmed = text.rstrip()
         joiner = "\n\n" if trimmed else ""
         return f"{trimmed}{joiner}{follow_up}"
+
+    def _pricing_for_model(self, model: str) -> Dict[str, float]:
+        return self.MODEL_PRICING.get(model, self.MODEL_PRICING["default"])
+
+    def _estimate_request_cost(
+        self, model: str, usage: Optional[Dict[str, Any]]
+    ) -> Optional[float]:
+        if not usage:
+            return None
+        pricing = self._pricing_for_model(model)
+
+        prompt_tokens = usage.get("prompt_tokens")
+        completion_tokens = usage.get("completion_tokens")
+        if prompt_tokens is None:
+            prompt_tokens = usage.get("input_tokens")
+        if completion_tokens is None:
+            completion_tokens = usage.get("output_tokens")
+
+        try:
+            prompt_val = float(prompt_tokens or 0.0)
+            completion_val = float(completion_tokens or 0.0)
+        except (TypeError, ValueError):
+            return None
+
+        return (
+            prompt_val * pricing.get("input", 0.0)
+            + completion_val * pricing.get("output", 0.0)
+        )
+
+    def _record_dashboard_ai_usage(
+        self,
+        kind: str,
+        model: str,
+        usage: Optional[Dict[str, Any]],
+        *,
+        key_source: Optional[str] = None,
+        note: Optional[str] = None,
+    ) -> None:
+        cost = self._estimate_request_cost(model, usage)
+        if cost is None:
+            cost = 0.0025
+        meta: Dict[str, Any] = {
+            "kind": kind,
+            "model": model,
+            "source": "dashboard",
+        }
+        if key_source:
+            meta["key_source"] = key_source
+        if usage:
+            meta["usage"] = usage
+        if note:
+            meta["note"] = note
+        _record_ai_budget_usage(cost, meta)
 
     def _extract_trade_proposals(self, text: str) -> List[Dict[str, Any]]:
         if not text:
@@ -4632,6 +4786,9 @@ class AIChatEngine:
                 log.debug("AI chat request failed using %s: %s", label, exc)
                 continue
 
+            self._record_dashboard_ai_usage(
+                "chat", model, usage, key_source=label, note="strategy_copilot"
+            )
             if not reply_text:
                 reply_text = self._format_local_reply(fallback)
             action_payload = self._extract_action(reply_text)
@@ -4864,6 +5021,9 @@ class AIChatEngine:
                 log.debug("Market analysis request failed using %s: %s", label, exc)
                 continue
 
+            self._record_dashboard_ai_usage(
+                "analysis", model, usage, key_source=label, note="strategy_copilot"
+            )
             if not reply_text:
                 reply_text = fallback
             proposals_raw = self._extract_trade_proposals(reply_text)
