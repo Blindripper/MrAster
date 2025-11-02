@@ -3547,6 +3547,8 @@ class RiskManager:
                     "minQty": float(lot.get("minQty", "0") or 0),
                     "maxQty": float(lot.get("maxQty", "0") or 0),
                     "stepSize": float(lot.get("stepSize", "0.0001") or 0.0001),
+                    "minPrice": float(price.get("minPrice", "0") or 0),
+                    "maxPrice": float(price.get("maxPrice", "0") or 0),
                     "tickSize": float(price.get("tickSize", "0.0001") or 0.0001),
                 }
             self.symbol_filters = filt
@@ -5072,6 +5074,94 @@ class Bot:
                 self.trade_mgr.save()
             except Exception as exc:
                 log.debug(f"ban persist failed {symbol}: {exc}")
+
+    def _price_filter_limits(self, symbol: str) -> Tuple[float, float]:
+        limits = self.risk.symbol_filters.get(symbol, {}) if hasattr(self, "risk") else {}
+        if not isinstance(limits, dict):
+            return 0.0, 0.0
+        try:
+            min_price = float(limits.get("minPrice", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            min_price = 0.0
+        try:
+            max_price = float(limits.get("maxPrice", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            max_price = 0.0
+        return min_price, max_price
+
+    def _clamp_to_price_band(self, symbol: str, price: float) -> float:
+        try:
+            value = float(price)
+        except (TypeError, ValueError):
+            try:
+                return float(price or 0.0)
+            except Exception:
+                return 0.0
+        if not math.isfinite(value):
+            return value
+        min_price, max_price = self._price_filter_limits(symbol)
+        if max_price > 0 and value > max_price:
+            value = max_price
+        if min_price > 0 and value < min_price:
+            value = min_price
+        return value
+
+    def _handle_price_filter_rejection(
+        self,
+        symbol: str,
+        side: str,
+        entry: float,
+        stop: float,
+        target: float,
+        *,
+        detail: Optional[str] = None,
+        manual_override: bool = False,
+        manual_req: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        fail_map = self.state.setdefault("fail_skip_until", {})
+        cooldown = time.time() + max(30, LOOP_SLEEP * 2)
+        fail_map[symbol] = cooldown
+        reason_note = (detail or "Exchange rejected the order due to price limits.").strip()
+        log.warning(
+            "Price filter rejected %s (%s): %s",
+            symbol,
+            side,
+            reason_note,
+        )
+        if self.decision_tracker:
+            try:
+                self.decision_tracker.record_rejection("price_filter", persist=False)
+            except Exception:
+                pass
+        activity_payload = {
+            "symbol": symbol,
+            "side": side,
+            "entry": float(entry),
+            "stop": float(stop),
+            "target": float(target),
+            "cooldown_until": float(cooldown),
+        }
+        self._log_ai_activity(
+            "decision",
+            f"Price filter blocked {symbol}",
+            body=reason_note,
+            data=activity_payload,
+            force=True,
+        )
+        if manual_override:
+            if manual_req:
+                self._complete_manual_request(
+                    manual_req,
+                    "failed",
+                    error="Exchange rejected price band",
+                    result={
+                        "entry": float(entry),
+                        "stop": float(stop),
+                        "target": float(target),
+                    },
+                )
+            else:
+                self._manual_state_dirty = True
 
     def _refresh_manual_requests(self):
         try:
@@ -6614,6 +6704,9 @@ class Bot:
                 if ai_meta is not None:
                     ai_meta.setdefault("warnings", []).append("Invalid AI take-profit level ignored")
 
+        sl = self._clamp_to_price_band(symbol, sl)
+        tp = self._clamp_to_price_band(symbol, tp)
+
         sl_dist = max(sl_dist, abs(px - sl))
         tp_dist = max(tp_dist, abs(tp - px))
 
@@ -6692,14 +6785,41 @@ class Bot:
                 self.exchange.post_order(order_params)
             except requests.HTTPError as exc:
                 status = getattr(exc.response, "status_code", None)
-                if status == 400:
-                    detail = ""
-                    if exc.response is not None:
+                detail = ""
+                error_code: Optional[int] = None
+                error_msg: Optional[str] = None
+                if exc.response is not None:
+                    try:
+                        payload = exc.response.json()
+                        detail = json.dumps(payload)[:160]
+                        raw_code = payload.get("code")
                         try:
-                            payload = exc.response.json()
-                            detail = json.dumps(payload)[:160]
-                        except ValueError:
-                            detail = (exc.response.text or "")[:160]
+                            error_code = int(raw_code)
+                        except (TypeError, ValueError):
+                            error_code = None
+                        msg_val = payload.get("msg")
+                        if isinstance(msg_val, str):
+                            error_msg = msg_val
+                    except ValueError:
+                        detail = (exc.response.text or "")[:160]
+                if error_code == -4002:
+                    self._handle_price_filter_rejection(
+                        symbol,
+                        sig,
+                        px,
+                        sl,
+                        tp,
+                        detail=error_msg or detail,
+                        manual_override=manual_override,
+                        manual_req=manual_req,
+                    )
+                    return
+                if status == 400:
+                    if not detail and exc.response is not None:
+                        try:
+                            detail = exc.response.text[:160]
+                        except Exception:
+                            detail = ""
                     self._ban_symbol(symbol, "order_bad_request", details=detail or None)
                 raise
             # Brackets – versuche neue Signatur (qty+entry), fallback auf alte
