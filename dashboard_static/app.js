@@ -42,6 +42,7 @@ const presetButtons = document.querySelectorAll('.preset[data-preset]');
 const presetDescription = document.getElementById('preset-description');
 const presetFundingDetails = document.getElementById('preset-funding-details');
 const presetMlDetails = document.getElementById('preset-ml-details');
+const presetLeverageDetails = document.getElementById('preset-leverage-details');
 const riskSlider = document.getElementById('risk-slider');
 const leverageSlider = document.getElementById('leverage-slider');
 const riskValue = document.getElementById('risk-value');
@@ -329,6 +330,8 @@ const TRANSLATIONS = {
     'quick.presets.high.subtitle': 'Часто · агрессивно',
     'quick.presets.att.title': 'ATT',
     'quick.presets.att.subtitle': 'Против тренда',
+    'quick.leverage.title': 'Плечо',
+    'quick.leverage.placeholder': 'Базовое плечо: –',
     'quick.description': 'Выберите профиль, чтобы загрузить рекомендованные параметры риска.',
     'quick.risk.label': 'Риск на сделку',
     'quick.risk.aria': 'Риск на сделку (%)',
@@ -337,7 +340,7 @@ const TRANSLATIONS = {
     'quick.leverage.label': 'Плечо',
     'quick.leverage.aria': 'Множитель плеча',
     'quick.leverage.min': '1×',
-    'quick.leverage.max': 'Максимум 5×',
+    'quick.leverage.max': 'Максимум 25×',
     'quick.baseline.label': 'Базовая ставка на сделку (USDT)',
     'quick.baseline.placeholder': '250',
     'quick.baseline.unit': 'USDT',
@@ -577,6 +580,8 @@ const TRANSLATIONS = {
     'quick.presets.high.subtitle': 'Hohe Frequenz · Aggressiv',
     'quick.presets.att.title': 'ATT',
     'quick.presets.att.subtitle': 'Counter-Trend-Setup',
+    'quick.leverage.title': 'Hebel',
+    'quick.leverage.placeholder': 'Basishebel: –',
     'quick.description': 'Wähle eine Konfiguration, um empfohlene Risiko-Parameter zu laden.',
     'quick.risk.label': 'Risiko pro Trade',
     'quick.risk.aria': 'Risiko pro Trade (%)',
@@ -585,7 +590,7 @@ const TRANSLATIONS = {
     'quick.leverage.label': 'Hebel',
     'quick.leverage.aria': 'Hebel-Multiplikator',
     'quick.leverage.min': '1×',
-    'quick.leverage.max': 'Bis zu 5×',
+    'quick.leverage.max': 'Bis zu 25×',
     'quick.baseline.label': 'Basis-Einsatz pro Trade (USDT)',
     'quick.baseline.placeholder': '250',
     'quick.baseline.unit': 'USDT',
@@ -828,6 +833,8 @@ const TRANSLATIONS = {
     'quick.presets.high.subtitle': '고빈도 · 공격적',
     'quick.presets.att.title': 'ATT',
     'quick.presets.att.subtitle': '역추세 세팅',
+    'quick.leverage.title': '레버리지',
+    'quick.leverage.placeholder': '기준 레버리지: –',
     'quick.description': '추천 위험 파라미터를 불러오려면 프로파일을 선택하세요.',
     'quick.risk.label': '거래당 위험',
     'quick.risk.aria': '거래당 위험 (%)',
@@ -836,7 +843,7 @@ const TRANSLATIONS = {
     'quick.leverage.label': '레버리지',
     'quick.leverage.aria': '레버리지 배수',
     'quick.leverage.min': '1×',
-    'quick.leverage.max': '최대 5×',
+    'quick.leverage.max': '최대 25×',
     'quick.baseline.label': '거래당 기본 배팅 (USDT)',
     'quick.baseline.placeholder': '250',
     'quick.baseline.unit': 'USDT',
@@ -1079,6 +1086,8 @@ const TRANSLATIONS = {
     'quick.presets.high.subtitle': 'Haute fréquence · Agressif',
     'quick.presets.att.title': 'ATT',
     'quick.presets.att.subtitle': 'Configuration contrarienne',
+    'quick.leverage.title': 'Effet de levier',
+    'quick.leverage.placeholder': 'Effet de levier de base : –',
     'quick.description': 'Choisissez une configuration pour charger les paramètres de risque recommandés.',
     'quick.risk.label': 'Risque par trade',
     'quick.risk.aria': 'Risque par trade (%)',
@@ -1087,7 +1096,7 @@ const TRANSLATIONS = {
     'quick.leverage.label': 'Effet de levier',
     'quick.leverage.aria': 'Multiplicateur de levier',
     'quick.leverage.min': '1×',
-    'quick.leverage.max': 'Jusqu’à 5×',
+    'quick.leverage.max': 'Jusqu’à 25×',
     'quick.baseline.label': 'Mise de base par trade (USDT)',
     'quick.baseline.placeholder': '250',
     'quick.baseline.unit': 'USDT',
@@ -1330,6 +1339,8 @@ const TRANSLATIONS = {
     'quick.presets.high.subtitle': 'Alta frecuencia · Agresivo',
     'quick.presets.att.title': 'ATT',
     'quick.presets.att.subtitle': 'Configuración contra tendencia',
+    'quick.leverage.title': 'Apalancamiento',
+    'quick.leverage.placeholder': 'Apalancamiento base: –',
     'quick.description': 'Elige una configuración para cargar los parámetros de riesgo recomendados.',
     'quick.risk.label': 'Riesgo por operación',
     'quick.risk.aria': 'Riesgo por operación (%)',
@@ -1338,7 +1349,7 @@ const TRANSLATIONS = {
     'quick.leverage.label': 'Apalancamiento',
     'quick.leverage.aria': 'Multiplicador de apalancamiento',
     'quick.leverage.min': '1×',
-    'quick.leverage.max': 'Hasta 5×',
+    'quick.leverage.max': 'Hasta 25×',
     'quick.baseline.label': 'Apuesta base por operación (USDT)',
     'quick.baseline.placeholder': '250',
     'quick.baseline.unit': 'USDT',
@@ -1575,6 +1586,8 @@ const TRANSLATIONS = {
     'quick.presets.high.subtitle': 'Yüksek frekans · Agresif',
     'quick.presets.att.title': 'ATT',
     'quick.presets.att.subtitle': 'Trend karşıtı kurulum',
+    'quick.leverage.title': 'Kaldıraç',
+    'quick.leverage.placeholder': 'Temel kaldıraç: –',
     'quick.description': 'Önerilen risk parametrelerini yüklemek için bir profil seçin.',
     'quick.risk.label': 'İşlem başına risk',
     'quick.risk.aria': 'İşlem başına risk (%)',
@@ -1583,7 +1596,7 @@ const TRANSLATIONS = {
     'quick.leverage.label': 'Kaldıraç',
     'quick.leverage.aria': 'Kaldıraç çarpanı',
     'quick.leverage.min': '1×',
-    'quick.leverage.max': 'En fazla 5×',
+    'quick.leverage.max': 'En fazla 25×',
     'quick.baseline.label': 'İşlem başına baz tutar (USDT)',
     'quick.baseline.placeholder': '250',
     'quick.baseline.unit': 'USDT',
@@ -1821,6 +1834,8 @@ const TRANSLATIONS = {
     'quick.presets.high.subtitle': '高频 · 进取',
     'quick.presets.att.title': 'ATT',
     'quick.presets.att.subtitle': '逆势策略',
+    'quick.leverage.title': '杠杆',
+    'quick.leverage.placeholder': '基础杠杆：–',
     'quick.description': '选择一个配置以载入推荐的风险参数。',
     'quick.risk.label': '单笔风险',
     'quick.risk.aria': '单笔风险 (%)',
@@ -1829,7 +1844,7 @@ const TRANSLATIONS = {
     'quick.leverage.label': '杠杆',
     'quick.leverage.aria': '杠杆倍数',
     'quick.leverage.min': '1×',
-    'quick.leverage.max': '最高 5×',
+    'quick.leverage.max': '最高 25×',
     'quick.baseline.label': '每笔基础下注 (USDT)',
     'quick.baseline.placeholder': '250',
     'quick.baseline.unit': 'USDT',
@@ -2750,9 +2765,9 @@ setEnvCollapsed(true);
 const PRESETS = {
   low: {
     label: 'Low',
-    summary: 'Capital preservation first: slower signal intake, narrower exposure, and conservative scaling.',
+    summary: 'Capital preservation first: slower signal intake, narrower exposure, conservative scaling, and a 4× base leverage cap.',
     risk: 0.5,
-    leverage: 1,
+    leverage: 4,
     edgeMinR: 0.08,
     slAtr: 1.1,
     tpAtr: 1.8,
@@ -2790,9 +2805,9 @@ const PRESETS = {
   },
   mid: {
     label: 'Mid',
-    summary: 'Balanced cadence with moderate risk and leverage designed for steady account growth.',
+    summary: 'Balanced cadence with moderate risk, 10× base leverage, and sizing aimed at steady account growth.',
     risk: 1.0,
-    leverage: 2,
+    leverage: 10,
     edgeMinR: 0.06,
     slAtr: 1.3,
     tpAtr: 2.0,
@@ -2831,10 +2846,10 @@ const PRESETS = {
   high: {
     label: 'High',
     summary:
-      'High-frequency execution with wider risk budgets, leverage up to the aggressive limit, and an unlimited AI spend cap.',
+      'High-frequency execution with wider risk budgets, leverage auto-set to the exchange maximum, and an unlimited AI spend cap.',
     unlimitedBudget: true,
     risk: 2.0,
-    leverage: 4,
+    leverage: 'max',
     edgeMinR: 0.04,
     slAtr: 1.7,
     tpAtr: 2.6,
@@ -2873,10 +2888,10 @@ const PRESETS = {
   att: {
     label: 'ATT',
     summary:
-      'Against-the-trend fading: contrarian plays with tighter stops, disciplined sizing, and no AI budget ceiling.',
+      'Against-the-trend fading: contrarian plays with tighter stops, disciplined sizing, exchange-max leverage, and no AI budget ceiling.',
     unlimitedBudget: true,
     risk: 0.75,
-    leverage: 2,
+    leverage: 'max',
     edgeMinR: 0.07,
     slAtr: 0.9,
     tpAtr: 1.6,
@@ -9560,6 +9575,12 @@ function toFixedString(value, digits) {
   return numeric.toFixed(digits);
 }
 
+function isUnlimitedLeverage(value) {
+  if (value === undefined || value === null) return false;
+  const token = value.toString().trim().toLowerCase();
+  return token === 'max' || token === 'unlimited' || token === '∞' || token === 'inf';
+}
+
 function numbersDiffer(a, b, tolerance = 1e-6) {
   const numA = Number(a);
   const numB = Number(b);
@@ -9572,19 +9593,29 @@ function numbersDiffer(a, b, tolerance = 1e-6) {
 
 function getPresetScaling(preset) {
   if (!preset) {
-    return { safeRisk: 1, safeLeverage: 1, ratio: 1 };
+    return { safeRisk: 1, safeLeverage: 1, ratio: 1, unlimited: false };
   }
   const riskMin = riskSlider ? Number(riskSlider.min) : 0.25;
   const riskMax = riskSlider ? Number(riskSlider.max) : 5;
   const leverageMin = leverageSlider ? Number(leverageSlider.min) : 1;
   const leverageMax = leverageSlider ? Number(leverageSlider.max) : 5;
   const rawRisk = riskSlider ? Number(riskSlider.value) : Number(preset.risk ?? 1);
-  const rawLeverage = leverageSlider ? Number(leverageSlider.value) : Number(preset.leverage ?? 1);
+  const presetUnlimited = isUnlimitedLeverage(preset.leverage);
+  const sliderUnlimited = leverageSlider ? leverageSlider.dataset.unlimited === 'true' : false;
+  const unlimited = presetUnlimited || sliderUnlimited;
+  const sliderMaxValue = leverageSlider ? Number(leverageSlider.max) : leverageMax;
+  const rawLeverage = unlimited
+    ? sliderMaxValue
+    : leverageSlider
+    ? Number(leverageSlider.value)
+    : Number(preset.leverage ?? 1);
   const safeRisk = clampValue(rawRisk, riskMin, riskMax);
-  const safeLeverage = clampValue(rawLeverage, leverageMin, leverageMax);
+  const safeLeverage = unlimited
+    ? sliderMaxValue
+    : clampValue(rawLeverage, leverageMin, leverageMax);
   const baselineRisk = Number(preset.risk ?? 1) || 1;
   const ratio = clampValue(baselineRisk > 0 ? safeRisk / baselineRisk : 1, 0.2, 4);
-  return { safeRisk, safeLeverage, ratio };
+  return { safeRisk, safeLeverage, ratio, unlimited };
 }
 
 function getEnvNumber(env, key, fallback) {
@@ -9651,7 +9682,16 @@ function renderPresetMeta(presetKey = selectedPreset) {
   if (!preset || (!presetFundingDetails && !presetMlDetails)) return;
 
   const env = currentConfig?.env ?? {};
-  const { ratio } = getPresetScaling(preset);
+  const { ratio, unlimited, safeLeverage } = getPresetScaling(preset);
+  if (presetLeverageDetails) {
+    if (unlimited || isUnlimitedLeverage(preset.leverage)) {
+      presetLeverageDetails.textContent = 'Leverage base: exchange maximum (auto-detected per symbol).';
+    } else {
+      const baseLev = Number(preset.leverage ?? safeLeverage ?? 0);
+      const display = Number.isFinite(baseLev) && baseLev > 0 ? `${Math.round(baseLev)}×` : `${Math.round(safeLeverage)}×`;
+      presetLeverageDetails.textContent = `Leverage base: ${display} (capped by symbol limits).`;
+    }
+  }
 
   const fundingTarget = {
     enabled: preset.funding?.enabled !== false,
@@ -9812,6 +9852,11 @@ function updateRiskValue() {
 
 function updateLeverageValue() {
   if (!leverageSlider || !leverageValue) return;
+  if (leverageSlider.dataset.unlimited === 'true') {
+    leverageValue.textContent = '∞';
+    setRangeBackground(leverageSlider);
+    return;
+  }
   const numeric = Number(leverageSlider.value);
   leverageValue.textContent = `${numeric.toFixed(0)}×`;
   setRangeBackground(leverageSlider);
@@ -9840,12 +9885,12 @@ function markQuickConfigDirty() {
 function buildQuickSetupPayload() {
   const presetKey = PRESETS[selectedPreset] ? selectedPreset : 'mid';
   const preset = PRESETS[presetKey];
-  const { safeRisk, safeLeverage, ratio } = getPresetScaling(preset);
+  const { safeRisk, safeLeverage, ratio, unlimited } = getPresetScaling(preset);
 
   const payload = {
     ASTER_PRESET_MODE: presetKey,
     ASTER_RISK_PER_TRADE: toFixedString(safeRisk / 100, 4),
-    ASTER_LEVERAGE: toFixedString(safeLeverage, 0),
+    ASTER_LEVERAGE: unlimited ? 'max' : toFixedString(safeLeverage, 0),
     ASTER_SL_ATR_MULT: toFixedString(preset.slAtr, 2),
     ASTER_TP_ATR_MULT: toFixedString(preset.tpAtr, 2),
     ASTER_TREND_BIAS: preset.trendBias || 'with',
@@ -9904,9 +9949,20 @@ function syncQuickSetupFromEnv(env) {
     const percent = clampValue(Number(env.ASTER_RISK_PER_TRADE) * 100, Number(riskSlider.min), Number(riskSlider.max));
     riskSlider.value = percent.toFixed(2).replace(/\.00$/, '');
   }
-  if (leverageSlider && env.ASTER_LEVERAGE) {
-    const lev = clampValue(Number(env.ASTER_LEVERAGE), Number(leverageSlider.min), Number(leverageSlider.max));
-    leverageSlider.value = lev.toString();
+  if (leverageSlider && env.ASTER_LEVERAGE !== undefined && env.ASTER_LEVERAGE !== null) {
+    const raw = env.ASTER_LEVERAGE.toString();
+    const sliderMax = leverageSlider.max || '5';
+    if (isUnlimitedLeverage(raw)) {
+      leverageSlider.dataset.unlimited = 'true';
+      leverageSlider.disabled = true;
+      leverageSlider.value = sliderMax;
+    } else {
+      leverageSlider.dataset.unlimited = 'false';
+      leverageSlider.disabled = false;
+      const lev = clampValue(Number(raw), Number(leverageSlider.min), Number(leverageSlider.max));
+      leverageSlider.value = lev.toString();
+    }
+    updateLeverageValue();
   }
   updateDefaultNotionalInputs(env?.ASTER_DEFAULT_NOTIONAL);
   updateRiskValue();
@@ -9990,7 +10046,13 @@ function applyPreset(key, options = {}) {
     riskSlider.value = preset.risk.toString();
   }
   if (leverageSlider) {
-    leverageSlider.value = preset.leverage.toString();
+    const unlimitedPreset = isUnlimitedLeverage(preset.leverage);
+    leverageSlider.dataset.unlimited = unlimitedPreset ? 'true' : 'false';
+    leverageSlider.disabled = unlimitedPreset;
+    const sliderMax = leverageSlider.max || '5';
+    leverageSlider.value = unlimitedPreset
+      ? sliderMax
+      : Number(preset.leverage ?? leverageSlider.value).toString();
   }
   updateRiskValue();
   updateLeverageValue();

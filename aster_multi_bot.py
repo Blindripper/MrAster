@@ -190,6 +190,32 @@ def _int_env(name: str, default: int) -> int:
         return max(0, int(default))
     return max(0, value)
 
+
+def _parse_leverage_env(raw_value: Optional[str], fallback: float) -> float:
+    token = str(raw_value or "").strip()
+    if not token:
+        return float(fallback)
+    lowered = token.lower()
+    if lowered in {"max", "unlimited", "∞", "infinite", "inf"}:
+        return float("inf")
+    try:
+        numeric = float(token)
+    except (TypeError, ValueError):
+        return float(fallback)
+    if numeric <= 0:
+        return float("inf")
+    return float(numeric)
+
+
+def _coerce_positive_float(value: Any) -> float:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(numeric) or numeric <= 0:
+        return 0.0
+    return float(numeric)
+
 MIN_QUOTE_VOL = float(os.getenv("ASTER_MIN_QUOTE_VOL_USDT", "150000"))
 SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.0030"))  # 0.30 %
 WICKINESS_MAX = float(os.getenv("ASTER_WICKINESS_MAX", "0.97"))
@@ -213,7 +239,18 @@ ALPHA_REWARD_MARGIN = float(os.getenv("ASTER_ALPHA_REWARD_MARGIN", "0.05"))
 
 DEFAULT_NOTIONAL = float(os.getenv("ASTER_DEFAULT_NOTIONAL", "250"))
 RISK_PER_TRADE = float(os.getenv("ASTER_RISK_PER_TRADE", "0.006"))
-LEVERAGE = float(os.getenv("ASTER_LEVERAGE", "5"))
+_PRESET_LEVERAGE_DEFAULTS = {
+    "low": "4",
+    "mid": "10",
+    "high": "max",
+    "att": "max",
+}
+_leverage_seed = os.getenv("ASTER_LEVERAGE")
+if not _leverage_seed:
+    _leverage_seed = _PRESET_LEVERAGE_DEFAULTS.get(PRESET_MODE, "10")
+LEVERAGE_SOURCE = str(_leverage_seed or "10")
+LEVERAGE = _parse_leverage_env(LEVERAGE_SOURCE, 10.0)
+LEVERAGE_IS_UNLIMITED = not math.isfinite(LEVERAGE)
 EQUITY_FRACTION = float(os.getenv("ASTER_EQUITY_FRACTION", "0.33"))
 MIN_NOTIONAL_ENV = float(os.getenv("ASTER_MIN_NOTIONAL_USDT", "5"))
 MAX_NOTIONAL_USDT = float(os.getenv("ASTER_MAX_NOTIONAL_USDT", "0"))  # 0 = kein Cap
@@ -1045,6 +1082,7 @@ class AITradeAdvisor:
         activity_logger: Optional[
             Callable[[str, str, Dict[str, Any], Optional[str]], None]
         ] = None,
+        leverage_lookup: Optional[Callable[[str], float]] = None,
     ) -> None:
         self.api_key = (api_key or "").strip()
         self.model = (model or "gpt-4o").strip()
@@ -1065,6 +1103,7 @@ class AITradeAdvisor:
         self._executor: Optional[ThreadPoolExecutor] = None
         self._ready_callback = wakeup_cb
         self._activity_logger = activity_logger
+        self._leverage_lookup = leverage_lookup
         if self.enabled and AI_CONCURRENCY > 0:
             self._executor = ThreadPoolExecutor(max_workers=AI_CONCURRENCY)
         self._load_persistent_state()
@@ -1080,6 +1119,44 @@ class AITradeAdvisor:
         )
         self.budget_learner = BudgetLearner(state_bucket)
         self._playbook_request_meta: Dict[str, Dict[str, Any]] = {}
+
+    def set_leverage_lookup(self, lookup: Optional[Callable[[str], float]]) -> None:
+        self._leverage_lookup = lookup
+
+    def _resolve_leverage_cap(self, symbol: Optional[str]) -> Optional[float]:
+        if not symbol or not self._leverage_lookup:
+            return None
+        try:
+            cap = float(self._leverage_lookup(symbol))
+        except Exception:
+            return None
+        if not math.isfinite(cap) or cap <= 0:
+            return None
+        return cap
+
+    def _clamp_leverage_value(
+        self,
+        symbol: str,
+        value: float,
+        fallback: Optional[float] = None,
+    ) -> float:
+        cap = self._resolve_leverage_cap(symbol)
+        baseline = None
+        if isinstance(fallback, (int, float)) and math.isfinite(float(fallback)):
+            baseline = max(1.0, float(fallback))
+        if cap is None and baseline is not None:
+            cap = baseline
+        numeric = max(1.0, float(value))
+        if cap is not None and cap > 0:
+            return clamp(numeric, 1.0, cap)
+        default_limit = None
+        if math.isfinite(LEVERAGE) and LEVERAGE > 0:
+            default_limit = LEVERAGE
+        elif baseline is not None:
+            default_limit = baseline
+        if default_limit is not None and default_limit > 0:
+            return clamp(numeric, 1.0, default_limit)
+        return numeric
 
     def _log_budget_block(self, kind: str, estimate: Optional[float] = None) -> None:
         if not self._activity_logger:
@@ -1357,6 +1434,9 @@ class AITradeAdvisor:
                         ctx[f"budget_{key}"] = value
         except Exception:
             pass
+        cap = self._resolve_leverage_cap(symbol)
+        if cap is not None:
+            ctx["max_leverage"] = float(cap)
 
     def maybe_refresh_playbook(self, snapshot: Dict[str, Any]) -> None:
         try:
@@ -2070,7 +2150,11 @@ class AITradeAdvisor:
                 request_payload=request_payload,
             )
         else:
-            plan_ready = self._apply_plan_overrides(fallback, parsed)
+            plan_ready = self._apply_plan_overrides(
+                fallback,
+                parsed,
+                request_payload=request_payload,
+            )
         if isinstance(plan_ready, dict) and request_id:
             plan_ready.setdefault("request_id", request_id)
         if cache_key_ready:
@@ -2551,7 +2635,17 @@ class AITradeAdvisor:
             sl_mult = 0.95
             tp_mult = 1.05
 
-        leverage = clamp(LEVERAGE * (0.5 if event_risk > 0.6 else (1.0 + hype_score * 0.25)), 1.0, max(LEVERAGE * 1.2, 1.0))
+        cap = self._resolve_leverage_cap(symbol)
+        baseline = cap
+        if baseline is None:
+            if math.isfinite(LEVERAGE) and LEVERAGE > 0:
+                baseline = LEVERAGE
+            else:
+                baseline = 10.0
+        leverage_target = float(baseline) * (
+            0.5 if event_risk > 0.6 else (1.0 + hype_score * 0.25)
+        )
+        leverage = self._clamp_leverage_value(symbol, leverage_target, fallback=baseline)
 
         fasttp_overrides: Optional[Dict[str, Any]] = None
         if event_risk > 0.55:
@@ -2577,6 +2671,7 @@ class AITradeAdvisor:
         explanation = self._ensure_bounds(explanation, explanation)
 
         return {
+            "symbol": symbol,
             "size_multiplier": size_multiplier,
             "sl_multiplier": sl_mult,
             "tp_multiplier": tp_mult,
@@ -2586,6 +2681,7 @@ class AITradeAdvisor:
             "explanation": explanation,
             "event_risk": event_risk,
             "hype_score": hype_score,
+            "max_leverage_cap": cap,
             "take": True,
             "decision": "take",
             "decision_reason": "fallback_rules",
@@ -2596,7 +2692,11 @@ class AITradeAdvisor:
         }
 
     def _apply_plan_overrides(
-        self, fallback: Dict[str, Any], parsed: Dict[str, Any]
+        self,
+        fallback: Dict[str, Any],
+        parsed: Dict[str, Any],
+        *,
+        request_payload: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         plan = {**fallback}
         plan["take"] = bool(fallback.get("take", True))
@@ -2617,6 +2717,18 @@ class AITradeAdvisor:
         decision_reason = parsed.get("decision_reason") or parsed.get("reason")
         decision_note = parsed.get("decision_note") or parsed.get("note")
         confidence = parsed.get("confidence") or parsed.get("score")
+
+        symbol_hint: Optional[str] = None
+        if isinstance(request_payload, dict):
+            raw_symbol = request_payload.get("symbol") or request_payload.get("asset")
+            if isinstance(raw_symbol, str) and raw_symbol.strip():
+                symbol_hint = raw_symbol.strip().upper()
+            elif isinstance(request_payload.get("context"), dict):
+                ctx_symbol = request_payload["context"].get("symbol")
+                if isinstance(ctx_symbol, str) and ctx_symbol.strip():
+                    symbol_hint = ctx_symbol.strip().upper()
+        if not symbol_hint and isinstance(fallback.get("symbol"), str):
+            symbol_hint = str(fallback.get("symbol")).strip().upper()
 
         take = plan["take"]
         if isinstance(take_raw, bool):
@@ -2641,7 +2753,12 @@ class AITradeAdvisor:
         if isinstance(tp_multiplier, (int, float)):
             plan["tp_multiplier"] = clamp(float(tp_multiplier), 0.5, 3.0)
         if isinstance(leverage, (int, float)):
-            plan["leverage"] = clamp(float(leverage), 1.0, max(LEVERAGE * 2.0, 1.0))
+            fallback_cap = fallback.get("max_leverage_cap")
+            plan["leverage"] = self._clamp_leverage_value(
+                symbol_hint or fallback.get("symbol", ""),
+                float(leverage),
+                fallback=fallback_cap or fallback.get("leverage"),
+            )
         if isinstance(fasttp_overrides, dict):
             fallback_fasttp = fallback.get("fasttp_overrides")
             if isinstance(fallback_fasttp, dict):
@@ -2772,6 +2889,14 @@ class AITradeAdvisor:
         explanation = parsed.get("explanation") or parsed.get("rationale")
         confidence = parsed.get("confidence") or parsed.get("score")
 
+        symbol_hint: Optional[str] = None
+        if isinstance(request_payload, dict):
+            raw_symbol = request_payload.get("symbol") or request_payload.get("asset")
+            if isinstance(raw_symbol, str) and raw_symbol.strip():
+                symbol_hint = raw_symbol.strip().upper()
+        if not symbol_hint and isinstance(fallback.get("symbol"), str):
+            symbol_hint = str(fallback.get("symbol")).strip().upper()
+
         if isinstance(size_multiplier, (int, float)):
             plan["size_multiplier"] = clamp(float(size_multiplier), 0.0, 2.0)
         if isinstance(sl_multiplier, (int, float)):
@@ -2779,7 +2904,12 @@ class AITradeAdvisor:
         if isinstance(tp_multiplier, (int, float)):
             plan["tp_multiplier"] = clamp(float(tp_multiplier), 0.5, 3.0)
         if isinstance(leverage, (int, float)):
-            plan["leverage"] = clamp(float(leverage), 1.0, max(LEVERAGE * 2.0, 1.0))
+            fallback_cap = fallback.get("max_leverage_cap")
+            plan["leverage"] = self._clamp_leverage_value(
+                symbol_hint or fallback.get("symbol", ""),
+                float(leverage),
+                fallback=fallback_cap or fallback.get("leverage"),
+            )
         if isinstance(fasttp_overrides, dict):
             plan["fasttp_overrides"] = {
                 "enabled": bool(fasttp_overrides.get("enabled", True)),
@@ -2929,9 +3059,14 @@ class AITradeAdvisor:
         )
         stats_block = self._extract_stat_block(ctx)
         sentinel_payload = self._summarize_sentinel(sentinel)
+        cap = fallback.get("max_leverage_cap")
+        if cap is None:
+            cap = self._resolve_leverage_cap(symbol)
         constraints: Dict[str, Any] = {}
         if MAX_NOTIONAL_USDT > 0:
             constraints["max_notional"] = MAX_NOTIONAL_USDT
+        if cap is not None:
+            constraints["max_leverage"] = cap
         user_payload: Dict[str, Any] = {
             "symbol": symbol,
             "side": side,
@@ -3009,7 +3144,11 @@ class AITradeAdvisor:
                 self._recent_plan_store(throttle_key, fallback, now)
                 return fallback
             parsed.setdefault("request_id", request_id)
-            plan = self._apply_plan_overrides(fallback, parsed)
+            plan = self._apply_plan_overrides(
+                fallback,
+                parsed,
+                request_payload=payload_with_id,
+            )
             plan.setdefault("request_id", request_id)
             self._cache_store(cache_key, plan)
             self._recent_plan_store(throttle_key, plan, now)
@@ -3130,7 +3269,15 @@ class AITradeAdvisor:
     ) -> Dict[str, Any]:
         symbol_key = self._normalize_symbol(symbol)
         trend_key = f"trend::{symbol_key}"
+        cap = self._resolve_leverage_cap(symbol)
+        baseline_leverage = cap
+        if baseline_leverage is None:
+            if math.isfinite(LEVERAGE) and LEVERAGE > 0:
+                baseline_leverage = LEVERAGE
+            else:
+                baseline_leverage = 10.0
         fallback = {
+            "symbol": symbol,
             "take": False,
             "decision": "skip",
             "decision_reason": "no_signal",
@@ -3138,7 +3285,11 @@ class AITradeAdvisor:
             "size_multiplier": 1.0,
             "sl_multiplier": 1.0,
             "tp_multiplier": 1.0,
-            "leverage": LEVERAGE,
+            "leverage": self._clamp_leverage_value(
+                symbol,
+                float(baseline_leverage),
+                fallback=baseline_leverage,
+            ),
             "risk_note": sentinel.get("label", "green") if sentinel else "green",
             "explanation": "",
             "fasttp_overrides": None,
@@ -3147,6 +3298,7 @@ class AITradeAdvisor:
             "side": None,
             "confidence": 0.0,
             "entry_price": float(price),
+            "max_leverage_cap": cap,
         }
         if not self.enabled:
             self._recent_plan_store(trend_key, fallback)
@@ -3223,6 +3375,8 @@ class AITradeAdvisor:
         constraints: Dict[str, Any] = {}
         if MAX_NOTIONAL_USDT > 0:
             constraints["max_notional"] = MAX_NOTIONAL_USDT
+        if cap is not None:
+            constraints["max_leverage"] = cap
         user_payload: Dict[str, Any] = {
             "symbol": symbol,
             "price": price,
@@ -3787,11 +3941,49 @@ class RiskManager:
         try:
             info = self.exchange.get_exchange_info()
             filt: Dict[str, Dict[str, Any]] = {}
+            bracket_caps: Dict[str, float] = {}
+            if getattr(self.exchange, "api_key", None) and getattr(self.exchange, "api_secret", None):
+                try:
+                    brackets = self.exchange.signed("get", "/fapi/v1/leverageBracket", {})
+                except Exception as exc:
+                    log.debug(f"leverage bracket fetch failed: {exc}")
+                else:
+                    if isinstance(brackets, list):
+                        for entry in brackets:
+                            symbol_key = str(
+                                entry.get("symbol")
+                                or entry.get("pair")
+                                or entry.get("symbolPair")
+                                or ""
+                            ).upper()
+                            if not symbol_key:
+                                continue
+                            ladder = entry.get("brackets") or entry.get("leverageBrackets")
+                            if not isinstance(ladder, list) or not ladder:
+                                continue
+                            try:
+                                top = ladder[0]
+                            except Exception:
+                                continue
+                            cap = _coerce_positive_float(
+                                top.get("initialLeverage")
+                                or top.get("maxLeverage")
+                                or top.get("leverage")
+                            )
+                            if cap > 0:
+                                bracket_caps[symbol_key] = cap
             for s in info.get("symbols", []):
                 sym = s.get("symbol", "")
                 fdict = {f.get("filterType"): f for f in s.get("filters", [])}
                 lot = fdict.get("LOT_SIZE", {})
                 price = fdict.get("PRICE_FILTER", {})
+                max_leverage = _coerce_positive_float(s.get("maxLeverage"))
+                if max_leverage <= 0:
+                    lev_filter = fdict.get("LEVERAGE") or fdict.get("LEVERAGE_FILTER")
+                    if isinstance(lev_filter, dict):
+                        max_leverage = _coerce_positive_float(lev_filter.get("maxLeverage"))
+                if max_leverage <= 0 and sym and sym in bracket_caps:
+                    max_leverage = bracket_caps.get(sym, 0.0)
                 filt[sym] = {
                     "minQty": float(lot.get("minQty", "0") or 0),
                     "maxQty": float(lot.get("maxQty", "0") or 0),
@@ -3799,7 +3991,15 @@ class RiskManager:
                     "minPrice": float(price.get("minPrice", "0") or 0),
                     "maxPrice": float(price.get("maxPrice", "0") or 0),
                     "tickSize": float(price.get("tickSize", "0.0001") or 0.0001),
+                    "maxLeverage": max_leverage,
+                    "defaultLeverage": _coerce_positive_float(s.get("defaultLeverage")),
                 }
+            if bracket_caps:
+                for sym, cap in bracket_caps.items():
+                    bucket = filt.setdefault(sym, {})
+                    stored = _coerce_positive_float(bucket.get("maxLeverage"))
+                    if cap > stored:
+                        bucket["maxLeverage"] = cap
             self.symbol_filters = filt
         except Exception as e:
             log.warning(f"load_filters failed: {e}")
@@ -3848,6 +4048,25 @@ class RiskManager:
         ratio = max(0.0, min(1.0, drawdown / max(abs(peak), 1e-9)))
         return max(0.45, 1.0 - ratio * 0.55)
 
+    def max_leverage_for(self, symbol: str) -> float:
+        filters = self.symbol_filters.get(symbol, {}) if isinstance(self.symbol_filters, dict) else {}
+        cap = _coerce_positive_float(filters.get("maxLeverage"))
+        if cap <= 0:
+            cap = _coerce_positive_float(filters.get("defaultLeverage"))
+        if cap <= 0:
+            cap = _coerce_positive_float(filters.get("initialLeverage"))
+        if cap <= 0:
+            cap = _coerce_positive_float(filters.get("leverageCap"))
+        if cap <= 0:
+            cap = _coerce_positive_float(filters.get("maxBracketLeverage"))
+        if cap <= 0 and math.isfinite(LEVERAGE) and LEVERAGE > 0:
+            cap = LEVERAGE
+        if cap <= 0:
+            cap = 20.0
+        if math.isfinite(LEVERAGE) and LEVERAGE > 0:
+            return max(1.0, min(LEVERAGE, cap))
+        return max(1.0, cap)
+
     def compute_qty(self, symbol: str, entry: float, sl: float, size_mult: float) -> float:
         step = float(self.symbol_filters.get(symbol, {}).get("stepSize", 0.0001) or 0.0001)
         # a) Basiskapital
@@ -3877,7 +4096,10 @@ class RiskManager:
         notional = max(MIN_NOTIONAL_ENV, notional)
         # c) Cap via Leverage & Equity-Fraction
         equity = self._equity_cached()
-        dyn_cap = equity * LEVERAGE * EQUITY_FRACTION if equity > 0 else float("inf")
+        leverage_cap = self.max_leverage_for(symbol)
+        dyn_cap = float("inf")
+        if equity > 0 and math.isfinite(leverage_cap) and leverage_cap > 0:
+            dyn_cap = equity * leverage_cap * EQUITY_FRACTION
         if MAX_NOTIONAL_USDT > 0:
             dyn_cap = min(dyn_cap, MAX_NOTIONAL_USDT)
         notional = min(notional, dyn_cap)
@@ -5292,6 +5514,7 @@ class Bot:
                 enabled=AI_MODE_ENABLED,
                 wakeup_cb=self._on_ai_future_ready,
                 activity_logger=self._emit_ai_budget_alert,
+                leverage_lookup=self._symbol_leverage_cap,
             )
 
     @property
@@ -5309,6 +5532,28 @@ class Bot:
                 self.universe.exclude.update(banned.keys())
         except Exception:
             pass
+
+    def _symbol_leverage_cap(self, symbol: str) -> float:
+        try:
+            cap = self.risk.max_leverage_for(symbol)
+        except Exception:
+            cap = 0.0
+        if cap <= 0:
+            if math.isfinite(LEVERAGE) and LEVERAGE > 0:
+                cap = LEVERAGE
+            else:
+                cap = 20.0
+        return max(1.0, float(cap))
+
+    def _clamp_leverage(self, symbol: str, leverage: Any) -> float:
+        try:
+            numeric = float(leverage)
+        except (TypeError, ValueError):
+            numeric = 0.0
+        if numeric <= 0:
+            numeric = 1.0
+        cap = self._symbol_leverage_cap(symbol)
+        return clamp(numeric, 1.0, cap if math.isfinite(cap) else numeric)
 
     def _banned_map(self) -> Dict[str, Dict[str, Any]]:
         banned = self.state.get("banned_symbols")
@@ -6473,6 +6718,10 @@ class Bot:
         ctx["book_bid"] = float(bid_px)
         ctx["book"] = {"ask": float(ask_px), "bid": float(bid_px), "mid": float(mid_px)}
         ctx["base_signal"] = base_signal
+        try:
+            ctx["max_leverage_cap"] = float(self._symbol_leverage_cap(symbol))
+        except Exception:
+            pass
 
         atr_hint = float(ctx.get("atr_abs") or 0.0)
         if atr_abs <= 0 and atr_hint > 0:
@@ -6811,6 +7060,10 @@ class Bot:
             sl_dist *= plan_sl_mult
             tp_dist *= plan_tp_mult
             leverage = plan.get("leverage")
+            if isinstance(leverage, (int, float)):
+                leverage = self._clamp_leverage(symbol, leverage)
+                plan["leverage"] = leverage
+                ctx["ai_leverage"] = float(leverage)
             plan_entry = plan.get("entry_price")
             plan_stop = plan.get("stop_loss")
             plan_take = plan.get("take_profit")
@@ -6901,6 +7154,9 @@ class Bot:
                 data={"symbol": symbol, "side": sig, **decision_summary},
                 force=True,
             )
+            if isinstance(leverage, (int, float)):
+                leverage = self._clamp_leverage(symbol, leverage)
+                plan["leverage"] = leverage
             if isinstance(leverage, (int, float)) and leverage > 0:
                 leverage_state = self.state.setdefault("symbol_leverage", {})
                 current = float(leverage_state.get(symbol, 0.0) or 0.0)
