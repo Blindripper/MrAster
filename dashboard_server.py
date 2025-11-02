@@ -2166,6 +2166,11 @@ class AIChatEngine:
         self.config = config
         self._temperature_supported = True
         self._market_universe_cache: Dict[str, Any] = {"symbols": [], "ts": 0.0}
+        self._symbol_filters_cache: Dict[str, Dict[str, Any]] = {}
+        self._symbol_filters_cache_ts: Dict[str, float] = {}
+
+        # Avoid leaking book ticker calls for the same symbol in quick succession.
+        self._price_cache: Dict[str, Tuple[float, float]] = {}
 
     @staticmethod
     def _split_symbols(value: Optional[str]) -> List[str]:
@@ -2867,6 +2872,278 @@ class AIChatEngine:
         if not math.isfinite(number):
             return None
         return number
+
+    @staticmethod
+    def _format_decimal(value: float) -> str:
+        text = f"{float(value):.12f}".rstrip("0").rstrip(".")
+        return text or "0"
+
+    @staticmethod
+    def _round_to_step(value: float, step: float) -> float:
+        if step <= 0:
+            return float(value)
+        steps = math.floor(value / step + 1e-12)
+        return float(steps * step)
+
+    def _symbol_filters(self, symbol: str) -> Optional[Dict[str, float]]:
+        normalized = (symbol or "").upper().strip()
+        if not normalized:
+            return None
+
+        cache_entry = self._symbol_filters_cache.get(normalized)
+        cached_ts = self._symbol_filters_cache_ts.get(normalized, 0.0)
+        if cache_entry and time.time() - cached_ts < 1800:
+            return cache_entry
+
+        env = self._env()
+        base = (env.get("ASTER_EXCHANGE_BASE") or ENV_DEFAULTS.get("ASTER_EXCHANGE_BASE") or "").rstrip("/")
+        if not base:
+            return None
+
+        try:
+            resp = requests.get(
+                f"{base}/fapi/v1/exchangeInfo",
+                params={"symbol": normalized},
+                timeout=8,
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+        except Exception as exc:
+            logger.debug("Failed to fetch symbol filters for %s: %s", normalized, exc)
+            return None
+
+        data: Optional[Dict[str, Any]] = None
+        if isinstance(payload, dict):
+            symbols_payload = payload.get("symbols")
+            if isinstance(symbols_payload, list) and symbols_payload:
+                data = next((entry for entry in symbols_payload if entry.get("symbol") == normalized), None)
+            elif payload.get("symbol") == normalized:
+                data = payload
+        if not isinstance(data, dict):
+            return None
+
+        filters = data.get("filters", [])
+        tick = None
+        step = None
+        min_qty = None
+        min_notional = None
+        for filt in filters:
+            if not isinstance(filt, dict):
+                continue
+            filter_type = str(filt.get("filterType") or "").upper()
+            if filter_type == "PRICE_FILTER":
+                tick = self._safe_float(filt.get("tickSize"))
+            elif filter_type == "LOT_SIZE":
+                step = self._safe_float(filt.get("stepSize"))
+                min_qty = self._safe_float(filt.get("minQty"))
+            elif filter_type in {"MIN_NOTIONAL", "MIN_NOTIONAL_FILTER"}:
+                min_notional = self._safe_float(filt.get("notional")) or self._safe_float(filt.get("minNotional"))
+
+        normalized_filters = {
+            "tickSize": tick or 0.0,
+            "stepSize": step or 0.0,
+            "minQty": min_qty or 0.0,
+            "minNotional": min_notional or 0.0,
+        }
+        self._symbol_filters_cache[normalized] = normalized_filters
+        self._symbol_filters_cache_ts[normalized] = time.time()
+        return normalized_filters
+
+    def _fetch_price(self, symbol: str, side: str) -> Optional[float]:
+        normalized_symbol = (symbol or "").upper().strip()
+        if not normalized_symbol:
+            return None
+
+        cache_key = f"{normalized_symbol}:{side}"
+        cached = self._price_cache.get(cache_key)
+        now = time.time()
+        if cached and now - cached[1] < 5.0:
+            return cached[0]
+
+        env = self._env()
+        base = (env.get("ASTER_EXCHANGE_BASE") or ENV_DEFAULTS.get("ASTER_EXCHANGE_BASE") or "").rstrip("/")
+        if not base:
+            return None
+
+        try:
+            resp = requests.get(
+                f"{base}/fapi/v1/ticker/bookTicker",
+                params={"symbol": normalized_symbol},
+                timeout=6,
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+        except Exception as exc:
+            logger.debug("Failed to fetch book ticker for %s: %s", normalized_symbol, exc)
+            return None
+
+        price: Optional[float] = None
+        if isinstance(payload, dict):
+            if side == "BUY":
+                price = self._safe_float(payload.get("askPrice")) or self._safe_float(payload.get("price"))
+            else:
+                price = self._safe_float(payload.get("bidPrice")) or self._safe_float(payload.get("price"))
+        if price is None:
+            price = self._safe_float(payload) if isinstance(payload, (int, float)) else None
+
+        if price is not None:
+            self._price_cache[cache_key] = (price, now)
+        return price
+
+    def _signed_request(self, method: str, path: str, params: Dict[str, Any]) -> Any:
+        env = self._env()
+        base = (env.get("ASTER_EXCHANGE_BASE") or ENV_DEFAULTS.get("ASTER_EXCHANGE_BASE") or "").rstrip("/")
+        api_key = (env.get("ASTER_API_KEY") or ENV_DEFAULTS.get("ASTER_API_KEY") or "").strip()
+        api_secret = (env.get("ASTER_API_SECRET") or ENV_DEFAULTS.get("ASTER_API_SECRET") or "").strip()
+        if not base or not api_key or not api_secret:
+            raise RuntimeError("Aster API credentials are required to place trades.")
+
+        try:
+            recv_window = int(float(env.get("ASTER_RECV_WINDOW", 10000)))
+        except (TypeError, ValueError):
+            recv_window = 10000
+
+        payload = dict(params or {})
+        payload["timestamp"] = int(time.time() * 1000)
+        payload["recvWindow"] = recv_window
+        ordered = [(k, payload[k]) for k in sorted(payload)]
+        qs = urlencode(ordered, doseq=True)
+        signature = hmac.new(api_secret.encode(), qs.encode(), hashlib.sha256).hexdigest()
+        url = f"{base}{path}?{qs}&signature={signature}"
+        headers = {"X-MBX-APIKEY": api_key, "Content-Type": "application/x-www-form-urlencoded"}
+
+        try:
+            response = requests.request(method.upper(), url, headers=headers, timeout=10)
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            detail = ""
+            if exc.response is not None:
+                try:
+                    payload = exc.response.json()
+                    detail = json.dumps(payload)
+                except ValueError:
+                    detail = exc.response.text or ""
+            message = detail or str(exc)
+            logger.debug("Aster API request failed: %s", message)
+            raise RuntimeError(detail or "Aster API rejected the trade request") from exc
+        except requests.RequestException as exc:
+            logger.debug("Aster API request error: %s", exc)
+            raise RuntimeError("Unable to reach the Aster API") from exc
+
+        try:
+            return response.json()
+        except ValueError:
+            return {}
+
+    def _place_trade_proposal(self, proposal_id: str, proposal: Dict[str, Any]) -> Dict[str, Any]:
+        env = self._env()
+        if _is_truthy(env.get("ASTER_PAPER")):
+            raise RuntimeError("Disable paper trading to place live orders via the Aster API.")
+
+        symbol = (proposal.get("symbol") or "").upper().strip()
+        direction = (proposal.get("direction") or "").upper().strip()
+        if not symbol or direction not in {"LONG", "SHORT"}:
+            raise RuntimeError("Trade proposal is missing symbol or direction")
+
+        side = "BUY" if direction == "LONG" else "SELL"
+        entry_kind = str(proposal.get("entry_kind") or "market").lower()
+        entry_price = self._safe_float(proposal.get("entry_price"))
+        stop_loss = self._safe_float(proposal.get("stop_loss"))
+        take_profit = self._safe_float(proposal.get("take_profit"))
+        notional = self._safe_float(proposal.get("notional"))
+
+        if notional is None or notional <= 0:
+            raise RuntimeError("Trade proposal is missing a notional amount")
+
+        if entry_kind == "limit":
+            if entry_price is None or entry_price <= 0:
+                raise RuntimeError("Limit entries require a valid entry price")
+            reference_price = entry_price
+        else:
+            reference_price = entry_price or self._fetch_price(symbol, side)
+            if reference_price is None or reference_price <= 0:
+                raise RuntimeError("Unable to determine a price for market execution")
+            entry_kind = "market"
+
+        filters = self._symbol_filters(symbol) or {}
+        tick_size = float(filters.get("tickSize") or 0.0)
+        step_size = float(filters.get("stepSize") or 0.0)
+        min_qty = float(filters.get("minQty") or 0.0)
+        min_notional = float(filters.get("minNotional") or 0.0)
+
+        qty = notional / max(reference_price, 1e-12)
+        qty = max(0.0, qty)
+        if step_size > 0:
+            qty = self._round_to_step(qty, step_size)
+        if qty <= 0:
+            raise RuntimeError("Calculated order quantity is too small")
+        if min_qty > 0 and qty < min_qty:
+            raise RuntimeError("Calculated order quantity falls below the minimum lot size")
+        if min_notional > 0 and qty * reference_price < min_notional:
+            raise RuntimeError("Order notional is below the exchange minimum")
+
+        order_params: Dict[str, Any] = {
+            "symbol": symbol,
+            "side": side,
+            "type": "MARKET" if entry_kind == "market" else "LIMIT",
+            "quantity": self._format_decimal(qty),
+        }
+
+        if entry_kind == "limit":
+            limit_price = reference_price
+            if tick_size > 0:
+                limit_price = self._round_to_step(limit_price, tick_size)
+            order_params["price"] = self._format_decimal(limit_price)
+            order_params["timeInForce"] = "GTC"
+            reference_price = limit_price
+
+        working_type = (env.get("ASTER_WORKING_TYPE") or ENV_DEFAULTS.get("ASTER_WORKING_TYPE") or "MARK_PRICE").upper()
+
+        def _validate_level(level: Optional[float], kind: str) -> Optional[float]:
+            if level is None or level <= 0:
+                return None
+            if tick_size > 0:
+                level = self._round_to_step(level, tick_size)
+            if kind == "stop" and direction == "LONG" and level >= reference_price:
+                raise RuntimeError("Stop-loss must be below the entry price for long positions")
+            if kind == "stop" and direction == "SHORT" and level <= reference_price:
+                raise RuntimeError("Stop-loss must be above the entry price for short positions")
+            if kind == "take" and direction == "LONG" and level <= reference_price:
+                raise RuntimeError("Take-profit must be above the entry price for long positions")
+            if kind == "take" and direction == "SHORT" and level >= reference_price:
+                raise RuntimeError("Take-profit must be below the entry price for short positions")
+            return level
+
+        stop_level = _validate_level(stop_loss, "stop")
+        take_level = _validate_level(take_profit, "take")
+
+        def _build_bracket_payload(kind: str, trigger_price: float) -> str:
+            payload = {
+                "type": "STOP_MARKET" if kind == "SL" else "TAKE_PROFIT_MARKET",
+                "trigger": {"type": working_type, "price": self._format_decimal(trigger_price)},
+                "closePosition": True,
+            }
+            return json.dumps(payload, separators=(",", ":"))
+
+        if stop_level is not None:
+            order_params["stopLoss"] = _build_bracket_payload("SL", stop_level)
+        if take_level is not None:
+            order_params["takeProfit"] = _build_bracket_payload("TP", take_level)
+
+        response = self._signed_request("POST", "/fapi/v1/order", order_params)
+
+        execution_details = {
+            "order": response,
+            "quantity": qty,
+            "entry_price": reference_price,
+            "notional": qty * reference_price,
+            "proposal_id": proposal_id,
+        }
+        if stop_level is not None:
+            execution_details["stop_loss"] = stop_level
+        if take_level is not None:
+            execution_details["take_profit"] = take_level
+        return execution_details
 
     def _recent_plan_summaries(self, raw: Any) -> List[Dict[str, Any]]:
         summaries: List[Dict[str, Any]] = []
@@ -3822,55 +4099,44 @@ class AIChatEngine:
             if normalized.get("notional") is None and normalized.get("size_multiplier") is None:
                 raise RuntimeError("proposal requires size or notional before execution")
 
-            side = "BUY" if direction == "LONG" else "SELL"
-            payload = {**normalized, "proposal_id": proposal_key, "source": "analysis_proposal"}
-            note = self._format_proposal_note(normalized)
-            action: Dict[str, Any] = {
-                "type": "open_trade",
-                "symbol": symbol,
-                "side": side,
-                "note": note or f"AI proposal {symbol} {direction}",
-                "payload": payload,
-            }
-            action["proposal_id"] = proposal_key
-            if normalized.get("size_multiplier") is not None:
-                action["size_multiplier"] = normalized["size_multiplier"]
-            if normalized.get("notional") is not None:
-                action["notional"] = normalized["notional"]
-
-            message = f"Executing trade proposal {symbol} {direction}"
-            queued = self._queue_trade_action(action, message)
-            if not queued:
+            now_ts = time.time()
+            try:
+                execution = self._place_trade_proposal(proposal_key, normalized)
+            except Exception as exc:
                 target["status"] = "failed"
+                target["error"] = str(exc)
+                target["payload"] = normalized
                 state["ai_trade_proposals"] = queue
                 try:
                     STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True))
                 except Exception:
                     pass
-                raise RuntimeError("failed to queue trade proposal")
+                raise
 
-            now_ts = time.time()
-            target["status"] = "queued"
-            target["queued_at"] = now_ts
-            target["queue_ref"] = queued
+            target["status"] = "executed"
+            target["executed_at"] = now_ts
             target["payload"] = normalized
+            target["execution"] = execution
+            target.pop("error", None)
             state["ai_trade_proposals"] = queue
             try:
                 STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True))
             except Exception as exc:
                 logger.debug("Failed to persist proposal status for %s: %s", proposal_key, exc)
 
-            public = {**normalized, "id": proposal_key, "status": "queued", "queued_at": now_ts}
+            public = {**normalized, "id": proposal_key, "status": "executed", "executed_at": now_ts}
+            if execution:
+                public["execution"] = execution
             _append_ai_activity_entry(
                 "analysis",
-                f"Trade proposal queued ({symbol} {direction})",
+                f"Trade proposal executed ({symbol} {direction})",
                 data={
                     "proposal_id": proposal_key,
-                    "queued_action": queued,
+                    "execution": execution,
                     "source": "dashboard_chat",
                 },
             )
-            return {"proposal": public, "queued_action": queued}
+            return {"proposal": public, "execution": execution}
 
         raise RuntimeError("unable to queue trade proposal")
 
