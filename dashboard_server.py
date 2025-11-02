@@ -1501,30 +1501,34 @@ def enrich_open_positions(open_payload: Any, env: Dict[str, Any]) -> Any:
         shared_group_found = False
 
         for group in identity_groups:
-            a_val: Optional[Any] = None
-            b_val: Optional[Any] = None
+            a_values: List[Any] = []
+            b_values: List[Any] = []
 
             for key in group:
-                if a_val is None:
-                    candidate = a.get(key)
-                    if candidate is not None:
-                        a_val = candidate
-                if b_val is None:
-                    candidate = b.get(key)
-                    if candidate is not None:
-                        b_val = candidate
+                a_candidate = a.get(key)
+                if a_candidate is not None:
+                    a_values.append(a_candidate)
 
-            if a_val is None or b_val is None:
+                b_candidate = b.get(key)
+                if b_candidate is not None:
+                    b_values.append(b_candidate)
+
+            if not a_values or not b_values:
                 continue
 
             shared_group_found = True
 
-            if isinstance(a_val, str) and isinstance(b_val, str):
-                if a_val.strip().lower() != b_val.strip().lower():
-                    return False
-            else:
-                if a_val != b_val:
-                    return False
+            def _values_match(a_val: Any, b_val: Any) -> bool:
+                if isinstance(a_val, str) and isinstance(b_val, str):
+                    return a_val.strip().lower() == b_val.strip().lower()
+                return a_val == b_val
+
+            group_match = any(
+                _values_match(a_val, b_val) for a_val in a_values for b_val in b_values
+            )
+
+            if not group_match:
+                return False
 
         return shared_group_found
 
