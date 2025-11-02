@@ -2832,6 +2832,7 @@ class AIChatEngine:
             traits["legacy_supported"] = False
         elif normalized.startswith("gpt-4.1"):
             traits["modalities"] = ["text"]
+            traits["reasoning"] = {"effort": "medium"}
             traits["legacy_supported"] = False
 
         return traits
