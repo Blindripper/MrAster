@@ -267,13 +267,21 @@ def _normalize_playbook_state(raw: Any) -> Optional[Dict[str, Any]]:
     size_bias_raw = active.get("size_bias")
     size_bias: Dict[str, float] = {}
     if isinstance(size_bias_raw, dict):
-        for side in ("BUY", "SELL"):
-            value = _safe_float(size_bias_raw.get(side))
-            if value is not None:
-                size_bias[side] = value
+        for key, raw_value in size_bias_raw.items():
+            label = str(key or "").strip()
+            if not label:
+                continue
+            value = _safe_float(raw_value)
+            if value is None:
+                continue
+            size_bias[label.upper()] = value
 
     sl_bias = _safe_float(active.get("sl_bias"))
+    if sl_bias is None:
+        sl_bias = _safe_float(active.get("sl_atr_mult"))
     tp_bias = _safe_float(active.get("tp_bias"))
+    if tp_bias is None:
+        tp_bias = _safe_float(active.get("tp_atr_mult"))
 
     features_raw = active.get("features")
     features: List[Dict[str, Any]] = []
@@ -311,6 +319,10 @@ def _normalize_playbook_state(raw: Any) -> Optional[Dict[str, Any]]:
         stripped = notes.strip()
         note_text = stripped or None
 
+    confidence = _safe_float(active.get("confidence"))
+    if confidence is None:
+        confidence = _safe_float(active.get("confidence_score"))
+
     result: Dict[str, Any] = {
         "mode": mode,
         "bias": bias,
@@ -329,6 +341,8 @@ def _normalize_playbook_state(raw: Any) -> Optional[Dict[str, Any]]:
         result["refreshed_ts"] = refreshed_epoch
     if note_text:
         result["notes"] = note_text
+    if confidence is not None:
+        result["confidence"] = confidence
 
     return result
 
@@ -418,6 +432,12 @@ def _collect_playbook_activity(ai_activity: List[Any]) -> List[Dict[str, Any]]:
                 stripped_note = notes.strip()
                 if stripped_note:
                     record["notes"] = stripped_note
+            if "notes" not in record:
+                note = data.get("note")
+                if isinstance(note, str):
+                    stripped_note = note.strip()
+                    if stripped_note:
+                        record["notes"] = stripped_note
 
             for key in ("mode", "bias"):
                 value = data.get(key)
@@ -427,20 +447,34 @@ def _collect_playbook_activity(ai_activity: List[Any]) -> List[Dict[str, Any]]:
             size_bias_raw = data.get("size_bias")
             if isinstance(size_bias_raw, dict):
                 size_bias: Dict[str, float] = {}
-                for side in ("BUY", "SELL"):
-                    value = _safe_float(size_bias_raw.get(side))
-                    if value is not None:
-                        size_bias[side] = value
+                for key, raw_value in size_bias_raw.items():
+                    label = str(key or "").strip()
+                    if not label:
+                        continue
+                    value = _safe_float(raw_value)
+                    if value is None:
+                        continue
+                    size_bias[label.upper()] = value
                 if size_bias:
                     record["size_bias"] = size_bias
 
             sl_bias = _safe_float(data.get("sl_bias"))
+            if sl_bias is None:
+                sl_bias = _safe_float(data.get("sl_atr_mult"))
             if sl_bias is not None:
                 record["sl_bias"] = sl_bias
 
             tp_bias = _safe_float(data.get("tp_bias"))
+            if tp_bias is None:
+                tp_bias = _safe_float(data.get("tp_atr_mult"))
             if tp_bias is not None:
                 record["tp_bias"] = tp_bias
+
+            confidence = _safe_float(data.get("confidence"))
+            if confidence is None:
+                confidence = _safe_float(data.get("confidence_score"))
+            if confidence is not None:
+                record["confidence"] = confidence
 
             features_raw = data.get("features")
             if isinstance(features_raw, dict):

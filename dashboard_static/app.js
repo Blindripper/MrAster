@@ -5604,6 +5604,8 @@ const PLAYBOOK_PROCESS_STAGE_FALLBACKS = {
   info: 'Update logged',
 };
 
+const PLAYBOOK_SIZE_BIAS_PRIORITY = ['BUY', 'SELL', 'LONG', 'SHORT', 'S', 'M', 'L'];
+
 function formatPlaybookMultiplier(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return '–';
@@ -5615,6 +5617,55 @@ function formatPlaybookSigned(value) {
   if (!Number.isFinite(numeric)) return '0.00';
   const sign = numeric >= 0 ? '+' : '';
   return `${sign}${numeric.toFixed(2)}`;
+}
+
+function formatPlaybookPercent(value, fractionDigits = 0) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '–';
+  const percentage = numeric * 100;
+  return `${percentage.toFixed(fractionDigits)}%`;
+}
+
+function formatPlaybookSizeLabel(label) {
+  const text = (label ?? '').toString().trim();
+  if (!text) return '';
+  if (text.length <= 3) return text.toUpperCase();
+  return toTitleCase(text);
+}
+
+function normalizePlaybookSizeBiasEntries(map) {
+  if (!map || typeof map !== 'object') return [];
+  const entries = [];
+  Object.entries(map).forEach(([key, rawValue]) => {
+    const numeric = Number(rawValue);
+    if (!Number.isFinite(numeric)) return;
+    const label = formatPlaybookSizeLabel(key);
+    if (!label) return;
+    entries.push({ label, value: numeric });
+  });
+  entries.sort((a, b) => {
+    const aIndex = PLAYBOOK_SIZE_BIAS_PRIORITY.indexOf(a.label.toUpperCase());
+    const bIndex = PLAYBOOK_SIZE_BIAS_PRIORITY.indexOf(b.label.toUpperCase());
+    if (aIndex !== -1 || bIndex !== -1) {
+      if (aIndex === -1) return 1;
+      if (bIndex === -1) return -1;
+      if (aIndex !== bIndex) return aIndex - bIndex;
+    }
+    return a.label.localeCompare(b.label, undefined, { sensitivity: 'base' });
+  });
+  return entries;
+}
+
+function getPlaybookActivityTimestampMs(entry) {
+  if (!entry || typeof entry !== 'object') return Number.NEGATIVE_INFINITY;
+  const epoch = Number(entry.ts_epoch);
+  if (Number.isFinite(epoch)) {
+    return epoch * 1000;
+  }
+  const ts = entry.ts;
+  if (!ts) return Number.NEGATIVE_INFINITY;
+  const parsed = Date.parse(ts);
+  return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
 }
 
 function getPlaybookProcessStatusLabel(statusKey) {
@@ -5672,13 +5723,9 @@ function buildPlaybookMeta(entry) {
     rows.push({ label: translate('playbook.meta.mode', 'Mode'), value: modeValue });
   }
   if (entry.size_bias && typeof entry.size_bias === 'object') {
-    const parts = [];
-    if (entry.size_bias.BUY !== undefined) {
-      parts.push(`BUY ${formatPlaybookMultiplier(entry.size_bias.BUY)}`);
-    }
-    if (entry.size_bias.SELL !== undefined) {
-      parts.push(`SELL ${formatPlaybookMultiplier(entry.size_bias.SELL)}`);
-    }
+    const parts = normalizePlaybookSizeBiasEntries(entry.size_bias).map(
+      (item) => `${item.label} ${formatPlaybookMultiplier(item.value)}`
+    );
     if (parts.length > 0) {
       rows.push({
         label: translate('playbook.meta.sizeBias', 'Size bias'),
@@ -5691,6 +5738,12 @@ function buildPlaybookMeta(entry) {
   }
   if (Number.isFinite(Number(entry.tp_bias))) {
     rows.push({ label: translate('playbook.meta.tp', 'TP bias'), value: formatPlaybookMultiplier(entry.tp_bias) });
+  }
+  if (Number.isFinite(Number(entry.confidence))) {
+    rows.push({
+      label: translate('playbook.meta.confidence', 'Confidence'),
+      value: formatPlaybookPercent(entry.confidence, entry.confidence < 0.1 ? 1 : 0),
+    });
   }
   if (Array.isArray(entry.features) && entry.features.length > 0) {
     const focusText = entry.features
@@ -5777,6 +5830,12 @@ function renderPlaybookSummarySection() {
   if (Number.isFinite(Number(lastPlaybookState.tp_bias))) {
     stats.push({ label: translate('playbook.tp', 'TP bias'), value: formatPlaybookMultiplier(lastPlaybookState.tp_bias) });
   }
+  if (Number.isFinite(Number(lastPlaybookState.confidence))) {
+    stats.push({
+      label: translate('playbook.confidence', 'Confidence'),
+      value: formatPlaybookPercent(lastPlaybookState.confidence, lastPlaybookState.confidence < 0.1 ? 1 : 0),
+    });
+  }
 
   if (stats.length > 0) {
     const grid = document.createElement('div');
@@ -5797,7 +5856,8 @@ function renderPlaybookSummarySection() {
   }
 
   const sizeBias = lastPlaybookState.size_bias;
-  if (sizeBias && typeof sizeBias === 'object' && (sizeBias.BUY !== undefined || sizeBias.SELL !== undefined)) {
+  const sizeEntries = normalizePlaybookSizeBiasEntries(sizeBias);
+  if (sizeEntries.length > 0) {
     const sizeSection = document.createElement('div');
     sizeSection.className = 'playbook-size-bias';
     const label = document.createElement('span');
@@ -5806,16 +5866,11 @@ function renderPlaybookSummarySection() {
     sizeSection.append(label);
     const values = document.createElement('div');
     values.className = 'playbook-size-bias-values';
-    if (sizeBias.BUY !== undefined) {
-      const buy = document.createElement('span');
-      buy.textContent = `BUY ${formatPlaybookMultiplier(sizeBias.BUY)}`;
-      values.append(buy);
-    }
-    if (sizeBias.SELL !== undefined) {
-      const sell = document.createElement('span');
-      sell.textContent = `SELL ${formatPlaybookMultiplier(sizeBias.SELL)}`;
-      values.append(sell);
-    }
+    sizeEntries.forEach((entry) => {
+      const chip = document.createElement('span');
+      chip.textContent = `${entry.label} ${formatPlaybookMultiplier(entry.value)}`;
+      values.append(chip);
+    });
     sizeSection.append(values);
     playbookSummaryContainer.append(sizeSection);
   }
@@ -6082,7 +6137,12 @@ function renderPlaybookActivitySection() {
     return;
   }
 
-  const entries = Array.isArray(lastPlaybookActivity) ? lastPlaybookActivity.slice(-30) : [];
+  const entries = Array.isArray(lastPlaybookActivity)
+    ? lastPlaybookActivity
+        .slice()
+        .sort((a, b) => getPlaybookActivityTimestampMs(b) - getPlaybookActivityTimestampMs(a))
+        .slice(0, 30)
+    : [];
   if (!entries.length) {
     const empty = document.createElement('p');
     empty.className = 'playbook-empty';
@@ -6123,28 +6183,41 @@ function createPlaybookActivityItem(entry) {
   title.textContent = entry.headline || getPlaybookKindLabel(entry.kind);
   titleWrap.append(title);
   headerRow.append(titleWrap);
-  const time = document.createElement('span');
+  const time = document.createElement('time');
   time.className = 'playbook-activity-time';
-  const timeText = formatRelativeTime(entry.ts_epoch || entry.ts);
-  if (timeText) {
-    time.textContent = timeText;
-    headerRow.append(time);
+  const timestampMs = getPlaybookActivityTimestampMs(entry);
+  if (Number.isFinite(timestampMs) && timestampMs > Number.NEGATIVE_INFINITY) {
+    const iso = new Date(timestampMs).toISOString();
+    const timestampLabel = formatTimestamp(iso);
+    if (timestampLabel && timestampLabel !== '–') {
+      time.textContent = timestampLabel;
+      time.dateTime = iso;
+      time.title = formatRelativeTime(timestampMs / 1000);
+      headerRow.append(time);
+    }
   }
   wrapper.append(headerRow);
 
   const body = document.createElement('div');
   body.className = 'playbook-activity-body';
+  const detailLines = [];
   const bodyText = typeof entry.body === 'string' ? entry.body.trim() : '';
   if (bodyText) {
-    bodyText.split(/\r?\n/)
+    bodyText
+      .split(/\r?\n/)
       .map((line) => line.trim())
       .filter((line) => line.length > 0)
-      .forEach((line) => {
-        const paragraph = document.createElement('p');
-        paragraph.textContent = line;
-        body.append(paragraph);
-      });
+      .forEach((line) => detailLines.push(line));
   }
+  const noteText = typeof entry.notes === 'string' ? entry.notes.trim() : '';
+  if (noteText && !detailLines.includes(noteText)) {
+    detailLines.push(noteText);
+  }
+  detailLines.forEach((line) => {
+    const paragraph = document.createElement('p');
+    paragraph.textContent = line;
+    body.append(paragraph);
+  });
 
   const metaItems = buildPlaybookMeta(entry);
   if (metaItems.length > 0) {
@@ -6164,7 +6237,9 @@ function createPlaybookActivityItem(entry) {
     body.append(metaList);
   }
 
-  wrapper.append(body);
+  if (body.childElementCount > 0) {
+    wrapper.append(body);
+  }
   return wrapper;
 }
 

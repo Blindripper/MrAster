@@ -4,7 +4,11 @@ import unittest
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from dashboard_server import _build_playbook_process, _collect_playbook_activity
+from dashboard_server import (
+    _build_playbook_process,
+    _collect_playbook_activity,
+    _normalize_playbook_state,
+)
 
 
 class PlaybookActivityTests(unittest.TestCase):
@@ -113,6 +117,59 @@ class PlaybookProcessTests(unittest.TestCase):
         self.assertEqual(entry["status"], "failed")
         stages = [step["stage"] for step in entry["steps"]]
         self.assertEqual(stages[-1], "failed")
+
+
+class PlaybookStateTests(unittest.TestCase):
+    def test_collects_atr_keys_and_confidence(self):
+        payload = [
+            {
+                "kind": "playbook",
+                "headline": "Playbook tuning update",
+                "ts": "2024-07-01T10:15:00Z",
+                "data": {
+                    "request_id": "req-3",
+                    "size_bias": {"S": 0.55, "M": 0.63, "L": 0.63},
+                    "sl_atr_mult": 1.15,
+                    "tp_atr_mult": 1.05,
+                    "confidence": 0.05,
+                    "note": "Testing new schema",
+                },
+            }
+        ]
+
+        result = _collect_playbook_activity(payload)
+        self.assertEqual(len(result), 1)
+        entry = result[0]
+        self.assertEqual(entry["request_id"], "req-3")
+        self.assertAlmostEqual(entry["sl_bias"], 1.15)
+        self.assertAlmostEqual(entry["tp_bias"], 1.05)
+        self.assertAlmostEqual(entry["confidence"], 0.05)
+        self.assertIn("S", entry["size_bias"])
+        self.assertIn("M", entry["size_bias"])
+        self.assertIn("L", entry["size_bias"])
+        self.assertEqual(entry["notes"], "Testing new schema")
+
+    def test_normalize_state_supports_new_schema(self):
+        raw = {
+            "active": {
+                "mode": "tuning",
+                "bias": "bearish",
+                "size_bias": {"S": 0.55, "M": 0.63},
+                "sl_atr_mult": 1.2,
+                "tp_atr_mult": 0.9,
+                "confidence": 0.12,
+                "note": "Example note",
+            }
+        }
+
+        state = _normalize_playbook_state(raw)
+        self.assertIsNotNone(state)
+        self.assertAlmostEqual(state["sl_bias"], 1.2)
+        self.assertAlmostEqual(state["tp_bias"], 0.9)
+        self.assertIn("S", state["size_bias"])
+        self.assertIn("M", state["size_bias"])
+        self.assertAlmostEqual(state["confidence"], 0.12)
+        self.assertEqual(state["notes"], "Example note")
 
 
 if __name__ == "__main__":
