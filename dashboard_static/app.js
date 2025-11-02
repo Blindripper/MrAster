@@ -2327,7 +2327,13 @@ function getPendingTradeProposals() {
   return Array.from(tradeProposalRegistry.values())
     .filter((proposal) => {
       const status = (proposal.status || '').toString().toLowerCase();
-      return !['queued', 'executed', 'completed', 'processing'].includes(status);
+      if (['queued', 'executed', 'completed', 'processing'].includes(status)) {
+        return false;
+      }
+      if (tradeProposalConflictsWithActivePosition(proposal)) {
+        return false;
+      }
+      return true;
     })
     .sort((a, b) => {
       const aTs = Number(a.ts || a.queued_at || 0);
