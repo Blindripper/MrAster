@@ -1483,46 +1483,50 @@ def enrich_open_positions(open_payload: Any, env: Dict[str, Any]) -> Any:
     payload_copy = copy.deepcopy(open_payload)
     merged_payload = _merge_position_payload(payload_copy, snapshot)
 
-    identity_keys = [
-        "positionId",
-        "position_id",
-        "accountId",
-        "account_id",
-        "account",
-        "accountName",
-        "account_name",
-        "mode",
-        "modeKey",
-        "mode_key",
-        "strategy",
-        "strategyId",
-        "strategy_id",
-        "botId",
-        "bot_id",
-        "portfolio",
-        "profile",
-        "subAccount",
-        "sub_account",
-        "subaccount",
-        "group",
-        "source",
-        "userId",
-        "user_id",
+    identity_groups: List[List[str]] = [
+        ["positionId", "position_id"],
+        ["accountId", "account_id", "account", "accountName", "account_name"],
+        ["mode", "modeKey", "mode_key"],
+        ["strategy", "strategyId", "strategy_id"],
+        ["botId", "bot_id"],
+        ["portfolio"],
+        ["profile"],
+        ["subAccount", "sub_account", "subaccount"],
+        ["group"],
+        ["source"],
+        ["userId", "user_id"],
     ]
 
     def _records_share_identity(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
-        for key in identity_keys:
-            a_val = a.get(key)
-            b_val = b.get(key)
+        shared_group_found = False
+
+        for group in identity_groups:
+            a_val: Optional[Any] = None
+            b_val: Optional[Any] = None
+
+            for key in group:
+                if a_val is None:
+                    candidate = a.get(key)
+                    if candidate is not None:
+                        a_val = candidate
+                if b_val is None:
+                    candidate = b.get(key)
+                    if candidate is not None:
+                        b_val = candidate
+
             if a_val is None or b_val is None:
                 continue
+
+            shared_group_found = True
+
             if isinstance(a_val, str) and isinstance(b_val, str):
                 if a_val.strip().lower() != b_val.strip().lower():
                     return False
             else:
                 if a_val != b_val:
                     return False
-        return True
+
+        return shared_group_found
 
     def _register(record: Dict[str, Any], source: str) -> None:
         if not isinstance(record, dict):
