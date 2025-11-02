@@ -156,6 +156,8 @@ const TRANSLATIONS = {
     'active.table.size': 'Размер',
     'active.table.entry': 'Цена входа',
     'active.table.mark': 'Маркет-прайс',
+    'active.table.leverage': 'Плечо',
+    'active.table.margin': 'Маржа',
     'active.table.pnl': 'PNL (ROE%)',
     'active.table.tpsl': 'TP/SL позиции',
     'status.title': 'Статус',
@@ -406,6 +408,8 @@ const TRANSLATIONS = {
     'active.table.size': 'Positionsgröße',
     'active.table.entry': 'Einstiegspreis',
     'active.table.mark': 'Markpreis',
+    'active.table.leverage': 'Hebel',
+    'active.table.margin': 'Margin',
     'active.table.pnl': 'PNL (ROE%)',
     'active.table.tpsl': 'TP/SL der Position',
     'status.title': 'Status',
@@ -659,6 +663,8 @@ const TRANSLATIONS = {
     'active.table.size': '포지션 규모',
     'active.table.entry': '진입가',
     'active.table.mark': '마크 가격',
+    'active.table.leverage': '레버리지',
+    'active.table.margin': '증거금',
     'active.table.pnl': 'PNL (ROE%)',
     'active.table.tpsl': '포지션 TP/SL',
     'status.title': '상태',
@@ -912,6 +918,8 @@ const TRANSLATIONS = {
     'active.table.size': 'Taille',
     'active.table.entry': 'Prix d’entrée',
     'active.table.mark': 'Prix de marché',
+    'active.table.leverage': 'Effet de levier',
+    'active.table.margin': 'Marge',
     'active.table.pnl': 'PNL (ROE %)',
     'active.table.tpsl': 'TP/SL de la position',
     'status.title': 'Statut',
@@ -1165,6 +1173,8 @@ const TRANSLATIONS = {
     'active.table.size': 'Tamaño',
     'active.table.entry': 'Precio de entrada',
     'active.table.mark': 'Precio de marca',
+    'active.table.leverage': 'Apalancamiento',
+    'active.table.margin': 'Margen',
     'active.table.pnl': 'PNL (ROE%)',
     'active.table.tpsl': 'TP/SL de la posición',
     'status.title': 'Estado',
@@ -1417,6 +1427,8 @@ const TRANSLATIONS = {
     'active.table.size': 'Büyüklük',
     'active.table.entry': 'Giriş fiyatı',
     'active.table.mark': 'Mark fiyatı',
+    'active.table.leverage': 'Kaldıraç',
+    'active.table.margin': 'Marj',
     'active.table.pnl': 'PNL (ROE%)',
     'active.table.tpsl': 'Pozisyon TP/SL',
     'status.title': 'Durum',
@@ -1663,6 +1675,8 @@ const TRANSLATIONS = {
     'active.table.size': '仓位规模',
     'active.table.entry': '开仓价',
     'active.table.mark': '标记价格',
+    'active.table.leverage': '杠杆',
+    'active.table.margin': '保证金',
     'active.table.pnl': '盈亏 (ROE%)',
     'active.table.tpsl': '仓位止盈/止损',
     'status.title': '状态',
@@ -3774,7 +3788,30 @@ const ACTIVE_POSITION_ALIASES = {
   entry: ['entry', 'entry_price', 'entryPrice'],
   mark: ['mark', 'mark_price', 'markPrice', 'lastPrice', 'price'],
   roe: ['roe', 'roe_percent', 'roe_pct', 'roePercent', 'pnl_percent', 'pnl_pct'],
-  pnl: ['pnl', 'unrealized', 'unrealized_pnl', 'pnl_unrealized', 'unrealizedProfit', 'pnl_usd'],
+  pnl: [
+    'pnl',
+    'unrealized',
+    'unrealized_pnl',
+    'pnl_unrealized',
+    'pnlUnrealized',
+    'unrealizedProfit',
+    'pnl_usd',
+    'pnlUsd',
+    'pnl_usdt',
+    'computedPnl',
+    'computed_pnl',
+  ],
+  leverage: ['leverage', 'lever', 'leverage_value', 'leverageValue'],
+  margin: [
+    'margin',
+    'positionMargin',
+    'isolatedMargin',
+    'initialMargin',
+    'positionInitialMargin',
+    'margin_usd',
+    'marginUsd',
+    'margin_usdt',
+  ],
   nextTp: ['next_tp', 'tp_next', 'nextTarget', 'next_tp_price', 'tp', 'take_profit_next'],
   stop: [
     'stop',
@@ -3798,6 +3835,8 @@ const ACTIVE_POSITION_FIELD_LABELS = {
   size: 'Size',
   entry: 'Entry price',
   mark: 'Mark price',
+  leverage: 'Leverage',
+  margin: 'Margin',
   pnl: 'PNL (ROE%)',
   brackets: 'TP/SL for position',
 };
@@ -4346,6 +4385,22 @@ function formatPositionSize(value) {
   return `${formatted} USDT`;
 }
 
+function formatLeverage(value) {
+  if (!Number.isFinite(value) || value <= 0) return '–';
+  const abs = Math.abs(value);
+  let maximumFractionDigits = 2;
+  if (abs >= 100) {
+    maximumFractionDigits = 0;
+  } else if (abs >= 10) {
+    maximumFractionDigits = 1;
+  }
+  const formatted = abs.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits,
+  });
+  return `${formatted}×`;
+}
+
 function getPositionSymbol(position) {
   const field = pickFieldValue(position, ACTIVE_POSITION_ALIASES.symbol || []);
   const symbol = field.value ?? position.symbol;
@@ -4505,6 +4560,24 @@ function updateActivePositionsView() {
     });
     applyActivePositionLabel(markCell, 'mark');
     row.append(markCell);
+
+    const leverageCell = document.createElement('td');
+    leverageCell.className = 'numeric';
+    const leverageField = pickNumericField(position, ACTIVE_POSITION_ALIASES.leverage || []);
+    leverageCell.textContent = formatLeverage(leverageField.numeric);
+    applyActivePositionLabel(leverageCell, 'leverage');
+    row.append(leverageCell);
+
+    const marginCell = document.createElement('td');
+    marginCell.className = 'numeric';
+    const marginField = pickNumericField(position, ACTIVE_POSITION_ALIASES.margin || []);
+    if (Number.isFinite(marginField.numeric)) {
+      marginCell.textContent = formatPositionSize(Math.abs(marginField.numeric));
+    } else {
+      marginCell.textContent = '–';
+    }
+    applyActivePositionLabel(marginCell, 'margin');
+    row.append(marginCell);
 
     const pnlCell = document.createElement('td');
     pnlCell.className = 'numeric';
