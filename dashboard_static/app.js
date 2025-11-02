@@ -3784,30 +3784,38 @@ function hasClosedTimestamp(position) {
 
 function sizeLooksClosed(position) {
   const sizeKeys = ACTIVE_POSITION_ALIASES.size || [];
+  let sawZeroSized = false;
+  let sawNonZero = false;
+
   for (const key of sizeKeys) {
     if (!(key in position)) continue;
-    const direct = unwrapPositionValue(position[key]);
-    const numeric = toNumeric(direct);
-    if (Number.isFinite(numeric)) {
+    const considerNumeric = (value) => {
+      const numeric = toNumeric(value);
+      if (!Number.isFinite(numeric)) return;
       if (Math.abs(numeric) < 1e-9) {
-        return true;
+        sawZeroSized = true;
+      } else {
+        sawNonZero = true;
       }
-      return false;
-    }
+    };
+
+    const direct = unwrapPositionValue(position[key]);
+    considerNumeric(direct);
+    if (sawNonZero) return false;
+
     const raw = position[key];
     if (Array.isArray(raw) && raw.length > 0) {
       for (const candidate of raw) {
-        const numericCandidate = toNumeric(unwrapPositionValue(candidate));
-        if (Number.isFinite(numericCandidate)) {
-          if (Math.abs(numericCandidate) < 1e-9) {
-            return true;
-          }
-          return false;
-        }
+        considerNumeric(unwrapPositionValue(candidate));
+        if (sawNonZero) return false;
       }
     }
   }
-  return false;
+
+  if (sawNonZero) {
+    return false;
+  }
+  return sawZeroSized;
 }
 
 function isPositionLikelyClosed(position) {
