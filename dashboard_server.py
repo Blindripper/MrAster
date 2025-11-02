@@ -470,6 +470,9 @@ def _derive_playbook_state_from_activity(
         if numeric_confidence is not None:
             result["confidence"] = numeric_confidence
 
+        result.setdefault("mode", "baseline")
+        result.setdefault("bias", "neutral")
+
         ts_epoch = entry.get("ts_epoch")
         refreshed_iso = entry.get("ts")
         if not refreshed_iso and entry.get("ts"):

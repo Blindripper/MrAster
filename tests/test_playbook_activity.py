@@ -343,6 +343,31 @@ class PlaybookStateTests(unittest.TestCase):
         self.assertEqual(resolved["bias"], "bearish")
         self.assertAlmostEqual(resolved["size_bias"]["SELL"], 1.2)
 
+    def test_tuning_entries_default_to_baseline_neutral(self):
+        raw_activity = [
+            {
+                "kind": "tuning",
+                "headline": "Parameter tuning update",
+                "ts": "2024-07-01T14:00:00Z",
+                "data": {
+                    "request_kind": "tuning",
+                    "sl_atr_mult": 1.1,
+                    "tp_atr_mult": 1.25,
+                    "size_bias": {"S": 1.2, "M": 1.05},
+                    "confidence": 0.22,
+                },
+            }
+        ]
+
+        activity = _collect_playbook_activity(raw_activity)
+        state = _derive_playbook_state_from_activity(activity)
+        self.assertIsNotNone(state)
+        self.assertEqual(state["mode"], "baseline")
+        self.assertEqual(state["bias"], "neutral")
+        self.assertAlmostEqual(state["sl_bias"], 1.1)
+        self.assertAlmostEqual(state["tp_bias"], 1.25)
+        self.assertAlmostEqual(state["size_bias"]["S"], 1.2)
+
 
 if __name__ == "__main__":
     unittest.main()
