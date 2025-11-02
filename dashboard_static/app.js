@@ -160,6 +160,7 @@ const TRANSLATIONS = {
     'active.table.margin': 'Маржа',
     'active.table.pnl': 'PNL (ROE%)',
     'active.table.tpsl': 'TP/SL позиции',
+    'active.table.distance': 'Дистанция до TP/SL',
     'status.title': 'Статус',
     'status.state': 'Состояние',
     'status.pid': 'PID',
@@ -412,6 +413,7 @@ const TRANSLATIONS = {
     'active.table.margin': 'Margin',
     'active.table.pnl': 'PNL (ROE%)',
     'active.table.tpsl': 'TP/SL der Position',
+    'active.table.distance': 'TP/SL-Distanz',
     'status.title': 'Status',
     'status.state': 'Zustand',
     'status.pid': 'PID',
@@ -667,6 +669,7 @@ const TRANSLATIONS = {
     'active.table.margin': '증거금',
     'active.table.pnl': 'PNL (ROE%)',
     'active.table.tpsl': '포지션 TP/SL',
+    'active.table.distance': 'TP/SL 거리',
     'status.title': '상태',
     'status.state': '상태',
     'status.pid': 'PID',
@@ -922,6 +925,7 @@ const TRANSLATIONS = {
     'active.table.margin': 'Marge',
     'active.table.pnl': 'PNL (ROE %)',
     'active.table.tpsl': 'TP/SL de la position',
+    'active.table.distance': 'Distance TP/SL',
     'status.title': 'Statut',
     'status.state': 'État',
     'status.pid': 'PID',
@@ -1177,6 +1181,7 @@ const TRANSLATIONS = {
     'active.table.margin': 'Margen',
     'active.table.pnl': 'PNL (ROE%)',
     'active.table.tpsl': 'TP/SL de la posición',
+    'active.table.distance': 'Distancia TP/SL',
     'status.title': 'Estado',
     'status.state': 'Estado',
     'status.pid': 'PID',
@@ -1431,6 +1436,7 @@ const TRANSLATIONS = {
     'active.table.margin': 'Marj',
     'active.table.pnl': 'PNL (ROE%)',
     'active.table.tpsl': 'Pozisyon TP/SL',
+    'active.table.distance': 'TP/SL Mesafesi',
     'status.title': 'Durum',
     'status.state': 'Durum',
     'status.pid': 'PID',
@@ -1679,6 +1685,7 @@ const TRANSLATIONS = {
     'active.table.margin': '保证金',
     'active.table.pnl': '盈亏 (ROE%)',
     'active.table.tpsl': '仓位止盈/止损',
+    'active.table.distance': 'TP/SL 距离',
     'status.title': '状态',
     'status.state': '运行状态',
     'status.pid': 'PID',
@@ -3839,6 +3846,7 @@ const ACTIVE_POSITION_FIELD_LABELS = {
   margin: 'Margin',
   pnl: 'PNL (ROE%)',
   brackets: 'TP/SL for position',
+  distance: 'TP/SL distance',
 };
 
 function applyActivePositionLabel(cell, key) {
@@ -4278,6 +4286,38 @@ function formatBracketLevel(field) {
   return '–';
 }
 
+function formatBracketDistance(bracketNumeric, markNumeric) {
+  if (!Number.isFinite(bracketNumeric) || !Number.isFinite(markNumeric)) {
+    return '–';
+  }
+
+  const difference = bracketNumeric - markNumeric;
+  const absDiff = Math.abs(difference);
+  let digits = 6;
+  if (absDiff >= 1000) digits = 0;
+  else if (absDiff >= 100) digits = 1;
+  else if (absDiff >= 10) digits = 2;
+  else if (absDiff >= 1) digits = 3;
+  else if (absDiff >= 0.1) digits = 4;
+  else if (absDiff >= 0.01) digits = 5;
+
+  const priceDisplay = formatSignedNumber(difference, digits);
+  if (!priceDisplay) {
+    return '–';
+  }
+
+  let percentDisplay = '';
+  if (markNumeric !== 0) {
+    const percent = (difference / markNumeric) * 100;
+    const formattedPercent = formatSignedNumber(percent, 2);
+    if (formattedPercent) {
+      percentDisplay = ` (${formattedPercent}%)`;
+    }
+  }
+
+  return `${priceDisplay}${percentDisplay}`;
+}
+
 function normalizeSymbolValue(symbol) {
   if (symbol === undefined || symbol === null) return '';
   return symbol.toString().trim().toUpperCase();
@@ -4608,10 +4648,12 @@ function updateActivePositionsView() {
 
     const tpSlCell = document.createElement('td');
     tpSlCell.className = 'numeric active-positions-brackets';
-    const nextTpField = pickFieldValue(position, ACTIVE_POSITION_ALIASES.nextTp || []);
-    const stopField = pickFieldValue(position, ACTIVE_POSITION_ALIASES.stop || []);
+    const nextTpField = pickNumericField(position, ACTIVE_POSITION_ALIASES.nextTp || []);
+    const stopField = pickNumericField(position, ACTIVE_POSITION_ALIASES.stop || []);
     const tpDisplay = formatBracketLevel(nextTpField);
     const slDisplay = formatBracketLevel(stopField);
+    const tpDistanceDisplay = formatBracketDistance(nextTpField.numeric, markField.numeric);
+    const slDistanceDisplay = formatBracketDistance(stopField.numeric, markField.numeric);
 
     const buildBracketRow = (labelText, valueText) => {
       const bracketRow = document.createElement('div');
@@ -4633,6 +4675,13 @@ function updateActivePositionsView() {
     tpSlCell.append(buildBracketRow('SL', slDisplay));
     applyActivePositionLabel(tpSlCell, 'brackets');
     row.append(tpSlCell);
+
+    const tpSlDistanceCell = document.createElement('td');
+    tpSlDistanceCell.className = 'numeric active-positions-brackets active-positions-distance';
+    tpSlDistanceCell.append(buildBracketRow('TP', tpDistanceDisplay));
+    tpSlDistanceCell.append(buildBracketRow('SL', slDistanceDisplay));
+    applyActivePositionLabel(tpSlDistanceCell, 'distance');
+    row.append(tpSlDistanceCell);
 
     activePositionsRows.append(row);
   });
