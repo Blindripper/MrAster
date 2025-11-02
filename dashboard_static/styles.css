@@ -999,15 +999,18 @@ body.paper-mode .hero-paper-toggle span {
 
 .active-positions-brackets {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.2rem;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 1.2rem;
+  flex-wrap: nowrap;
 }
 
 .active-positions-bracket {
   display: inline-flex;
   align-items: baseline;
   gap: 0.35rem;
+  white-space: nowrap;
 }
 
 .active-positions-bracket-label {
@@ -1117,7 +1120,9 @@ body.paper-mode .hero-paper-toggle span {
   }
 
   .active-positions-brackets {
-    align-items: flex-start;
+    align-items: baseline;
+    justify-content: flex-start;
+    gap: 0.8rem;
   }
 }
 
