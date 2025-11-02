@@ -227,6 +227,7 @@ SIZE_MULT_BASE = float(os.getenv("ASTER_SIZE_MULT", "1.00"))
 SIZE_MULT_S = float(os.getenv("ASTER_SIZE_MULT_S", str(SIZE_MULT_BASE)))
 SIZE_MULT_M = float(os.getenv("ASTER_SIZE_MULT_M", str(1.4 * SIZE_MULT_BASE)))
 SIZE_MULT_L = float(os.getenv("ASTER_SIZE_MULT_L", str(1.9 * SIZE_MULT_BASE)))
+SIZE_MULT_FLOOR = max(0.0, min(5.0, float(os.getenv("ASTER_SIZE_MULT_FLOOR", "0.0"))))
 
 ALPHA_ENABLED = os.getenv("ASTER_ALPHA_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 ALPHA_THRESHOLD = float(os.getenv("ASTER_ALPHA_THRESHOLD", "0.55"))
@@ -2721,7 +2722,7 @@ class AITradeAdvisor:
             risk_bias = 0.0
         else:
             risk_bias = 1.0 + max(0.0, hype_score - 0.55) * 0.35
-        size_multiplier = clamp(size_factor * risk_bias, 0.0, 1.8)
+        size_multiplier = clamp(size_factor * risk_bias, max(0.0, SIZE_MULT_FLOOR), 1.8)
 
         sl_mult = 1.0
         tp_mult = 1.0
@@ -6783,6 +6784,11 @@ class Bot:
             soft_mult = max(0.2, 1.0 - event_risk * 0.8)
             size_mult *= soft_mult
             ctx["sentinel_soft_multiplier"] = float(soft_mult)
+        if not manual_override:
+            size_mult = max(SIZE_MULT_FLOOR, size_mult)
+            ctx["size_multiplier_floor"] = float(SIZE_MULT_FLOOR)
+        else:
+            size_mult = max(0.0, size_mult)
         ctx["tuning_size_bucket_multiplier"] = float(tuning_bucket_factor)
         ctx["playbook_size_multiplier"] = float(playbook_size_factor)
         ctx["sentinel_factor"] = sentinel_factor
@@ -7156,6 +7162,8 @@ class Bot:
             plan_sl_mult = float(plan.get("sl_multiplier", 1.0) or 1.0)
             plan_tp_mult = float(plan.get("tp_multiplier", 1.0) or 1.0)
             size_mult *= plan_size
+            if not manual_override:
+                size_mult = max(SIZE_MULT_FLOOR, size_mult)
             sl_dist *= plan_sl_mult
             tp_dist *= plan_tp_mult
             leverage = plan.get("leverage")
@@ -7356,6 +7364,8 @@ class Bot:
                 self._complete_manual_request(manual_req, "failed", error="Invalid trade levels")
             return
 
+        if not manual_override:
+            size_mult = max(SIZE_MULT_FLOOR, size_mult)
         size_mult = clamp(size_mult, 0.0, 5.0)
         if size_mult <= 0:
             self._log_ai_activity(
