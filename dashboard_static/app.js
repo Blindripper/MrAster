@@ -7039,8 +7039,7 @@ function applyTradeProposalStatus(cardEl, data, options = {}) {
     cardEl.dataset.positionConflict = 'false';
   }
 
-  const resolvedStatuses = ['executed', 'completed', 'queued', 'processing'];
-  if (conflict && !resolvedStatuses.includes(statusText)) {
+  if (conflict) {
     if (statusEl) {
       statusEl.textContent = translate('chat.proposal.alreadyOpen', 'Already open position for symbol');
     }
