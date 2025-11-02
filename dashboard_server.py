@@ -25,6 +25,8 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlencode
 
 import requests
+
+from brackets_guard import BracketGuard
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -2193,6 +2195,8 @@ class AIChatEngine:
 
         # Avoid leaking book ticker calls for the same symbol in quick succession.
         self._price_cache: Dict[str, Tuple[float, float]] = {}
+        self._bracket_guard: Optional[BracketGuard] = None
+        self._bracket_guard_unavailable = False
 
     @staticmethod
     def _split_symbols(value: Optional[str]) -> List[str]:
@@ -3078,6 +3082,46 @@ class AIChatEngine:
         except ValueError:
             return {}
 
+    def _get_bracket_guard(self) -> Optional[BracketGuard]:
+        if self._bracket_guard_unavailable:
+            return None
+        if self._bracket_guard is not None:
+            return self._bracket_guard
+
+        env = self._env()
+        base = (env.get("ASTER_EXCHANGE_BASE") or ENV_DEFAULTS.get("ASTER_EXCHANGE_BASE") or "").rstrip("/")
+        api_key = (env.get("ASTER_API_KEY") or ENV_DEFAULTS.get("ASTER_API_KEY") or "").strip()
+        api_secret = (env.get("ASTER_API_SECRET") or ENV_DEFAULTS.get("ASTER_API_SECRET") or "").strip()
+        if not base or not api_key or not api_secret:
+            self._bracket_guard_unavailable = True
+            return None
+
+        try:
+            recv_window = int(float(env.get("ASTER_RECV_WINDOW", 10000)))
+        except (TypeError, ValueError):
+            recv_window = 10000
+
+        working_type = (
+            env.get("ASTER_WORKING_TYPE")
+            or ENV_DEFAULTS.get("ASTER_WORKING_TYPE")
+            or "MARK_PRICE"
+        ).upper()
+
+        try:
+            guard = BracketGuard(
+                working_type=working_type,
+                recv_window=recv_window,
+                base_url=base,
+                api_key=api_key,
+                api_secret=api_secret,
+            )
+        except Exception as exc:
+            logger.debug("Failed to initialize bracket guard: %s", exc)
+            return None
+
+        self._bracket_guard = guard
+        return guard
+
     def _place_trade_proposal(self, proposal_id: str, proposal: Dict[str, Any]) -> Dict[str, Any]:
         env = self._env()
         if _is_truthy(env.get("ASTER_PAPER")):
@@ -3186,6 +3230,21 @@ class AIChatEngine:
             execution_details["stop_loss"] = stop_level
         if take_level is not None:
             execution_details["take_profit"] = take_level
+
+        if stop_level is not None or take_level is not None:
+            guard = self._get_bracket_guard()
+            if guard is not None:
+                try:
+                    guard.ensure_after_entry(symbol, side, float(qty), reference_price, stop_level, take_level)
+                except TypeError:
+                    try:
+                        guard.ensure_after_entry(symbol, side, stop_level, take_level)
+                    except Exception as exc:
+                        logger.debug(
+                            "Bracket guard (legacy) ensure failed for %s: %s", symbol, exc
+                        )
+                except Exception as exc:
+                    logger.debug("Bracket guard ensure failed for %s: %s", symbol, exc)
         return execution_details
 
     def _recent_plan_summaries(self, raw: Any) -> List[Dict[str, Any]]:
