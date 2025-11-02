@@ -1279,6 +1279,17 @@ def _fetch_position_risk_snapshot(env: Dict[str, Any]) -> Dict[str, Dict[str, An
     return _fetch_position_risk_snapshot_with_context(base, api_key, api_secret, recv_window)
 
 
+def _order_implies_position(entry: Dict[str, Any]) -> bool:
+    if not isinstance(entry, dict):
+        return False
+
+    for key in ("reduceOnly", "closePosition"):
+        if _is_truthy(entry.get(key)):
+            return True
+
+    return False
+
+
 def _fetch_position_snapshot(env: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     base, api_key, api_secret, recv_window = _resolve_exchange_context(env)
     if not api_key or not api_secret:
@@ -1289,8 +1300,34 @@ def _fetch_position_snapshot(env: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     snapshot = _fetch_open_orders_snapshot_with_context(base, api_key, api_secret, recv_window)
     if snapshot:
         fallback = _fetch_position_risk_snapshot_with_context(base, api_key, api_secret, recv_window)
+
         if fallback:
-            _merge_snapshot_maps(snapshot, fallback, prefer_existing=True)
+            filtered_snapshot = {}
+            for symbol_key, entry in snapshot.items():
+                fallback_entry = fallback.get(symbol_key)
+                fallback_amt: Optional[float] = None
+                if isinstance(fallback_entry, dict):
+                    fallback_amt = _extract_numeric_field(
+                        fallback_entry, POSITION_NUMERIC_FIELD_ALIASES["position_amt"]
+                    )
+                if fallback_amt is not None and abs(fallback_amt) >= 1e-12:
+                    filtered_snapshot[symbol_key] = entry
+                    continue
+
+                if _order_implies_position(entry):
+                    filtered_snapshot[symbol_key] = entry
+
+            snapshot = filtered_snapshot
+            if snapshot:
+                _merge_snapshot_maps(snapshot, fallback, prefer_existing=True)
+            else:
+                snapshot = fallback
+        else:
+            snapshot = {
+                symbol_key: entry
+                for symbol_key, entry in snapshot.items()
+                if _order_implies_position(entry)
+            }
     else:
         snapshot = _fetch_position_risk_snapshot_with_context(base, api_key, api_secret, recv_window)
 
