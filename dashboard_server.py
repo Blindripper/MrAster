@@ -203,6 +203,9 @@ def _safe_float(value: Any) -> Optional[float]:
             return float(stripped.replace(",", ""))
         except ValueError:
             normalized = stripped.replace(",", "")
+            # Treat any whitespace as a thousands separator to avoid
+            # truncating values like "1 250 USD".
+            normalized = re.sub(r"\s+", "", normalized)
             match = re.search(r"-?\d+(?:\.\d+)?", normalized)
             if not match:
                 return None

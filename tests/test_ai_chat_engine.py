@@ -82,6 +82,7 @@ def test_responses_payload_normalises_text(monkeypatch: pytest.MonkeyPatch, engi
 def test_safe_float_extracts_numeric_fragment() -> None:
     assert _safe_float(" 120 USDT ") == pytest.approx(120.0)
     assert _safe_float("approx. 1,250.50 units") == pytest.approx(1250.5)
+    assert _safe_float("1 250 USD") == pytest.approx(1250.0)
 
 
 def test_normalize_trade_proposal_falls_back_to_default_notional(engine: AIChatEngine) -> None:
