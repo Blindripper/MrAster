@@ -189,11 +189,66 @@ def test_place_trade_proposal_rescales_thousand_style_prices(
     execution = engine._place_trade_proposal("demo", proposal)
 
     order = captured["order"]
-    assert order["price"] == "3895"
+    assert order["type"] == "MARKET"
+    assert "price" not in order
+    assert "timeInForce" not in order
     assert json.loads(order["stopLoss"])["trigger"]["price"] == "3930"
     assert json.loads(order["takeProfit"])["trigger"]["price"] == "3800"
 
-    assert execution["entry_price"] == pytest.approx(3895.0)
+    assert execution["entry_price"] == pytest.approx(3890.0)
     assert execution["stop_loss"] == pytest.approx(3930.0)
     assert execution["take_profit"] == pytest.approx(3800.0)
     assert captured["fetch_calls"] == [("ETHUSDT", "SELL")]
+
+
+def test_place_trade_proposal_keeps_limit_if_no_live_price(
+    monkeypatch: pytest.MonkeyPatch, engine: AIChatEngine
+) -> None:
+    captured: Dict[str, Any] = {}
+
+    def fake_fetch_price(self: AIChatEngine, symbol: str, side: str) -> Optional[float]:
+        captured.setdefault("fetch_calls", []).append((symbol, side))
+        return None
+
+    def fake_symbol_filters(self: AIChatEngine, symbol: str) -> Dict[str, float]:
+        return {"tickSize": 0.1, "stepSize": 0.01, "minQty": 0.0, "minNotional": 0.0}
+
+    def fake_signed_request(self: AIChatEngine, method: str, path: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        captured["order"] = params
+        return {"orderId": 2}
+
+    monkeypatch.setattr(AIChatEngine, "_fetch_price", fake_fetch_price)
+    monkeypatch.setattr(AIChatEngine, "_symbol_filters", fake_symbol_filters)
+    monkeypatch.setattr(AIChatEngine, "_signed_request", fake_signed_request)
+
+    env = engine.config.setdefault("env", {})
+    env.update(
+        {
+            "ASTER_API_KEY": "key",
+            "ASTER_API_SECRET": "secret",
+            "ASTER_EXCHANGE_BASE": "https://example.com",
+            "ASTER_PAPER": "false",
+        }
+    )
+
+    proposal = {
+        "symbol": "ZECUSDT",
+        "direction": "SHORT",
+        "entry_kind": "limit",
+        "entry_price": 412.5,
+        "stop_loss": 416.0,
+        "take_profit": 404.0,
+        "notional": 120.0,
+    }
+
+    execution = engine._place_trade_proposal("demo", proposal)
+
+    order = captured["order"]
+    assert order["type"] == "LIMIT"
+    assert order["price"] == "412.5"
+    assert order["timeInForce"] == "GTC"
+    assert execution["entry_price"] == pytest.approx(412.5)
+    assert execution["stop_loss"] == pytest.approx(416.0)
+    assert execution["take_profit"] == pytest.approx(404.0)
+    assert captured["fetch_calls"][0] == ("ZECUSDT", "SELL")
+    assert len(captured["fetch_calls"]) >= 2

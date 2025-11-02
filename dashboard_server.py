@@ -3222,7 +3222,15 @@ class AIChatEngine:
         if entry_kind == "limit":
             if entry_price is None or entry_price <= 0:
                 raise RuntimeError("Limit entries require a valid entry price")
-            reference_price = entry_price
+            live_price = price_hint
+            if live_price is None or live_price <= 0:
+                live_price = self._fetch_price(symbol, side)
+            if live_price is not None and live_price > 0:
+                reference_price = live_price
+                entry_price = live_price
+                entry_kind = "market"
+            else:
+                reference_price = entry_price
         else:
             reference_price = entry_price or price_hint or self._fetch_price(symbol, side)
             if reference_price is None or reference_price <= 0:
