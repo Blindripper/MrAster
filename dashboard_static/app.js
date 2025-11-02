@@ -6915,6 +6915,9 @@ function appendTradeProposalCard(proposal) {
   };
 
   const formatConfidence = () => {
+    if (proposal.confidence === null || proposal.confidence === undefined) {
+      return '—';
+    }
     const value = Number(proposal.confidence);
     if (!Number.isFinite(value)) return '—';
     return `${Math.round(Math.min(Math.max(value, 0), 1) * 100)}%`;

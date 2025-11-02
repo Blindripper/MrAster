@@ -2568,6 +2568,27 @@ class AIChatEngine:
                         if cleaned:
                             timeframe = cleaned
 
+            confidence_line_match = re.search(
+                r"(?:\*\*)?Confidence(?:\*\*)?:\s*([^\n]+)",
+                block,
+                re.IGNORECASE,
+            )
+            confidence: Optional[float] = None
+            if confidence_line_match:
+                raw_confidence = confidence_line_match.group(1)
+                if raw_confidence:
+                    values = self._extract_numbers(raw_confidence)
+                    if values:
+                        confidence_value = values[0]
+                        if confidence_value > 1:
+                            if confidence_value <= 100:
+                                confidence_value = confidence_value / 100.0
+                            else:
+                                confidence_value = 1.0
+                        elif confidence_value < 0:
+                            confidence_value = 0.0
+                        confidence = max(0.0, min(confidence_value, 1.0))
+
             proposal: Dict[str, Any] = {
                 "type": "propose_trade",
                 "symbol": symbol,
@@ -2579,7 +2600,7 @@ class AIChatEngine:
                 "take_profit": take_profit,
                 "notional": default_notional,
                 "timeframe": timeframe,
-                "confidence": None,
+                "confidence": confidence,
                 "note": note,
             }
             proposals.append(proposal)
