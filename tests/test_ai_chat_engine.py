@@ -24,9 +24,9 @@ def test_o1_marked_as_responses_only(engine: AIChatEngine) -> None:
     assert traits["reasoning"] == {"effort": "medium"}
 
 
-def test_gpt41_does_not_request_reasoning(engine: AIChatEngine) -> None:
+def test_gpt41_allows_legacy_fallback(engine: AIChatEngine) -> None:
     traits = engine._model_traits("gpt-4.1")
-    assert traits["legacy_supported"] is False
+    assert traits["legacy_supported"] is True
     assert traits["reasoning"] is None
 
 

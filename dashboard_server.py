@@ -2831,7 +2831,12 @@ class AIChatEngine:
             traits["reasoning"] = {"effort": "medium"}
             traits["legacy_supported"] = False
         elif normalized.startswith("gpt-4.1"):
-            traits["legacy_supported"] = False
+            # Treat the GPT-4.1 family like GPT-4o for transport selection. While the
+            # Responses API is the preferred interface, some tenants only have
+            # legacy Chat Completions access wired up; falling back keeps the
+            # dashboard behaviour aligned with the GPT-4o path when the modern
+            # endpoint rejects the request (e.g. 400 errors).
+            traits["legacy_supported"] = True
 
         return traits
 
