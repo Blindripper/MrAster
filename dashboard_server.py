@@ -188,9 +188,30 @@ def _is_truthy(value: Optional[str]) -> bool:
 
 
 def _safe_float(value: Any) -> Optional[float]:
-    try:
-        if value is None or value == "":
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
             return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            return float(stripped.replace(",", ""))
+        except ValueError:
+            normalized = stripped.replace(",", "")
+            match = re.search(r"-?\d+(?:\.\d+)?", normalized)
+            if not match:
+                return None
+            numeric = match.group(0)
+            try:
+                return float(numeric)
+            except ValueError:
+                return None
+    try:
         return float(value)
     except (TypeError, ValueError):
         return None
@@ -2615,7 +2636,11 @@ class AIChatEngine:
             size_multiplier = None
 
         if notional is None and size_multiplier is None:
-            return None
+            default_notional = self._default_proposal_notional()
+            if default_notional is not None:
+                notional = default_notional
+            else:
+                return None
 
         timeframe = None
         timeframe_candidates = (

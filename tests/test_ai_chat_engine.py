@@ -5,7 +5,7 @@ import pytest
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from dashboard_server import AIChatEngine, CONFIG
+from dashboard_server import AIChatEngine, CONFIG, _safe_float
 
 
 @pytest.fixture
@@ -77,3 +77,21 @@ def test_responses_payload_normalises_text(monkeypatch: pytest.MonkeyPatch, engi
     for entry in payload["input"][1:]:
         for chunk in entry["content"]:
             assert chunk["type"] == "text"
+
+
+def test_safe_float_extracts_numeric_fragment() -> None:
+    assert _safe_float(" 120 USDT ") == pytest.approx(120.0)
+    assert _safe_float("approx. 1,250.50 units") == pytest.approx(1250.5)
+
+
+def test_normalize_trade_proposal_falls_back_to_default_notional(engine: AIChatEngine) -> None:
+    payload = {
+        "symbol": "BTCUSDT",
+        "direction": "LONG",
+        "entry_price": 100.0,
+        "stop_loss": 95.0,
+        "take_profit": 110.0,
+    }
+    normalized = engine._normalize_trade_proposal(payload)
+    assert normalized is not None
+    assert normalized["notional"] == pytest.approx(120.0)
