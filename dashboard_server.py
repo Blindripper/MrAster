@@ -2932,6 +2932,70 @@ class AIChatEngine:
         steps = math.floor(value / step + 1e-12)
         return float(steps * step)
 
+    def _maybe_rescale_price_levels(
+        self,
+        symbol: str,
+        side: str,
+        entry_price: Optional[float],
+        stop_loss: Optional[float],
+        take_profit: Optional[float],
+        price_hint: Optional[float] = None,
+    ) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
+        """Detect and correct values parsed with locale thousand separators.
+
+        Some tenants render prices like ``3.930`` to represent ``3,930``.
+        When these values are parsed naively they become ~3.93 which is far
+        away from the real market price.  Compare the parsed value with the
+        live book ticker and, if a simple power-of-ten multiplier aligns the
+        numbers, rescale the entire bracket accordingly.
+        """
+
+        hint = price_hint
+
+        def ensure_hint() -> Optional[float]:
+            nonlocal hint
+            if hint is None:
+                hint = self._fetch_price(symbol, side)
+            return hint
+
+        def best_factor(raw_value: Optional[float]) -> float:
+            reference = ensure_hint()
+            if (
+                reference is None
+                or raw_value is None
+                or raw_value <= 0
+                or reference <= 0
+            ):
+                return 1.0
+            base_diff = abs(raw_value - reference) / max(abs(reference), 1e-9)
+            best = 1.0
+            best_diff = base_diff
+            for factor in (10.0, 100.0, 1000.0):
+                scaled = raw_value * factor
+                diff = abs(scaled - reference) / max(abs(reference), 1e-9)
+                if diff + 1e-6 < best_diff:
+                    best = factor
+                    best_diff = diff
+            if best != 1.0 and best_diff <= 0.05 and best_diff <= base_diff * 0.5:
+                return best
+            return 1.0
+
+        factor = 1.0
+        if entry_price is not None:
+            factor = best_factor(entry_price)
+        if factor == 1.0:
+            for candidate in (stop_loss, take_profit):
+                factor = best_factor(candidate)
+                if factor != 1.0:
+                    break
+
+        if factor != 1.0:
+            entry_price = entry_price * factor if entry_price is not None else None
+            stop_loss = stop_loss * factor if stop_loss is not None else None
+            take_profit = take_profit * factor if take_profit is not None else None
+
+        return entry_price, stop_loss, take_profit, hint
+
     def _symbol_filters(self, symbol: str) -> Optional[Dict[str, float]]:
         normalized = (symbol or "").upper().strip()
         if not normalized:
@@ -3142,12 +3206,25 @@ class AIChatEngine:
         if notional is None or notional <= 0:
             raise RuntimeError("Trade proposal is missing a notional amount")
 
+        price_hint: Optional[float] = None
+        if entry_kind == "limit":
+            price_hint = self._fetch_price(symbol, side)
+
+        entry_price, stop_loss, take_profit, price_hint = self._maybe_rescale_price_levels(
+            symbol,
+            side,
+            entry_price,
+            stop_loss,
+            take_profit,
+            price_hint,
+        )
+
         if entry_kind == "limit":
             if entry_price is None or entry_price <= 0:
                 raise RuntimeError("Limit entries require a valid entry price")
             reference_price = entry_price
         else:
-            reference_price = entry_price or self._fetch_price(symbol, side)
+            reference_price = entry_price or price_hint or self._fetch_price(symbol, side)
             if reference_price is None or reference_price <= 0:
                 raise RuntimeError("Unable to determine a price for market execution")
             entry_kind = "market"
