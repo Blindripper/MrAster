@@ -1332,12 +1332,19 @@ def _fetch_position_brackets(
                 continue
 
             position_side_raw = str(order.get("positionSide") or "").upper()
-            if position_side_raw in {"LONG", "BOTH"}:
+            order_side = str(order.get("side") or "").upper()
+            if position_side_raw == "LONG":
                 side_key = "BUY"
             elif position_side_raw == "SHORT":
                 side_key = "SELL"
+            elif position_side_raw == "BOTH":
+                if order_side == "SELL":
+                    side_key = "BUY"
+                elif order_side == "BUY":
+                    side_key = "SELL"
+                else:
+                    side_key = "ANY"
             else:
-                order_side = str(order.get("side") or "").upper()
                 if order_side == "SELL":
                     side_key = "BUY"
                 elif order_side == "BUY":
