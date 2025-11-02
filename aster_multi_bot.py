@@ -2849,7 +2849,9 @@ class AITradeAdvisor:
             plan["decision_note"] = decision_note.strip()
 
         if isinstance(size_multiplier, (int, float)):
-            plan["size_multiplier"] = clamp(float(size_multiplier), 0.0, 2.0)
+            size_override = clamp(float(size_multiplier), 0.0, 2.0)
+            plan["size_multiplier"] = size_override
+            plan["size_multiplier_raw"] = size_override
         if isinstance(sl_multiplier, (int, float)):
             plan["sl_multiplier"] = clamp(float(sl_multiplier), 0.5, 2.5)
         if isinstance(tp_multiplier, (int, float)):
