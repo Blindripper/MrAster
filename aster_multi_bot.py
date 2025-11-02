@@ -1278,6 +1278,11 @@ class AITradeAdvisor:
             meta["symbol"] = symbol_hint
         if kind == "playbook" and playbook_snapshot_meta:
             meta["snapshot_meta"] = playbook_snapshot_meta
+        if kind == "tuning":
+            try:
+                self._note_tuning_request(request_id, payload_with_id)
+            except Exception:
+                pass
         response = self._chat(
             system_prompt,
             user_prompt,
@@ -1296,6 +1301,11 @@ class AITradeAdvisor:
         parsed = self._parse_structured(response)
         if isinstance(parsed, dict):
             parsed.setdefault("request_id", request_id)
+            if kind == "tuning":
+                try:
+                    self._note_tuning_response(parsed)
+                except Exception:
+                    pass
             return parsed
         if kind == "playbook":
             self._note_playbook_failure(
@@ -1440,6 +1450,138 @@ class AITradeAdvisor:
         )
         if request_id:
             self._playbook_request_meta[request_id] = snapshot_meta or {}
+
+    def _summarize_tuning_overrides(
+        self, overrides: Optional[Dict[str, Any]]
+    ) -> Tuple[str, Dict[str, float]]:
+        if not isinstance(overrides, dict):
+            return "", {}
+        sl = self._coerce_float(overrides.get("sl_atr_mult"))
+        if sl is None:
+            sl = self._coerce_float(overrides.get("sl_bias"))
+        tp = self._coerce_float(overrides.get("tp_atr_mult"))
+        if tp is None:
+            tp = self._coerce_float(overrides.get("tp_bias"))
+        size_bias_raw = overrides.get("size_bias")
+        size_bias: Dict[str, float] = {}
+        if isinstance(size_bias_raw, dict):
+            for key, value in size_bias_raw.items():
+                label = str(key or "").strip().upper()
+                if not label:
+                    continue
+                numeric = self._coerce_float(value)
+                if numeric is None:
+                    continue
+                size_bias[label] = numeric
+        parts: List[str] = []
+        if sl is not None:
+            parts.append(f"SL×{sl:.2f}")
+        if tp is not None:
+            parts.append(f"TP×{tp:.2f}")
+        if size_bias:
+            priority = ("BUY", "SELL", "LONG", "SHORT", "S", "M", "L")
+            ordered: List[str] = []
+            seen: Set[str] = set()
+            for token in priority:
+                if token in size_bias and token not in seen:
+                    ordered.append(f"{token} {size_bias[token]:.2f}")
+                    seen.add(token)
+            for token in sorted(size_bias.keys()):
+                if token not in seen:
+                    ordered.append(f"{token} {size_bias[token]:.2f}")
+            if ordered:
+                parts.append("size " + " / ".join(ordered))
+        summary = " · ".join(parts)
+        return summary, size_bias
+
+    def _note_tuning_request(self, request_id: str, payload: Dict[str, Any]) -> None:
+        trades = payload.get("trades")
+        trade_count = len(trades) if isinstance(trades, list) else 0
+        overrides = payload.get("overrides")
+        if not overrides:
+            context = payload.get("context")
+            if isinstance(context, dict):
+                overrides = context.get("current_overrides")
+        summary, _ = self._summarize_tuning_overrides(overrides)
+        parts: List[str] = []
+        if trade_count:
+            parts.append(f"{trade_count} trades")
+        if summary:
+            parts.append(summary)
+        latest_note = None
+        context = payload.get("context") if isinstance(payload.get("context"), dict) else None
+        if context:
+            note_text = context.get("latest_note")
+            if isinstance(note_text, str) and note_text.strip():
+                latest_note = note_text.strip()
+        body_lines: List[str] = []
+        if parts:
+            body_lines.append(" · ".join(parts))
+        if latest_note:
+            body_lines.append(f"Recent note: {latest_note}")
+        body = "\n".join(body_lines) if body_lines else "No context provided"
+        data = {
+            "ai_request": True,
+            "request_id": request_id,
+            "request_kind": "tuning",
+        }
+        self._log_ai_activity(
+            "query",
+            "Parameter tuning requested",
+            body=body,
+            data=data,
+            force=True,
+        )
+
+    def _note_tuning_response(self, overrides: Dict[str, Any]) -> None:
+        if not isinstance(overrides, dict):
+            return
+        request_id = overrides.get("request_id")
+        if isinstance(request_id, str):
+            request_id = request_id.strip() or None
+        else:
+            request_id = str(request_id) if request_id is not None else None
+        summary, size_bias = self._summarize_tuning_overrides(overrides)
+        confidence = self._coerce_float(
+            overrides.get("confidence") or overrides.get("confidence_score")
+        )
+        note_text = overrides.get("note") or overrides.get("notes")
+        if isinstance(note_text, str):
+            note_text = note_text.strip() or None
+        else:
+            note_text = None
+        parts: List[str] = []
+        if summary:
+            parts.append(summary)
+        if confidence is not None:
+            parts.append(f"confidence {confidence:.2f}")
+        body = " · ".join(parts)
+        if note_text:
+            body = f"{body}\nNote: {note_text}" if body else f"Note: {note_text}"
+        data: Dict[str, Any] = {
+            "ai_request": True,
+            "request_kind": "tuning",
+            "size_bias": size_bias,
+        }
+        sl = self._coerce_float(overrides.get("sl_atr_mult") or overrides.get("sl_bias"))
+        tp = self._coerce_float(overrides.get("tp_atr_mult") or overrides.get("tp_bias"))
+        if sl is not None:
+            data["sl_atr_mult"] = sl
+        if tp is not None:
+            data["tp_atr_mult"] = tp
+        if confidence is not None:
+            data["confidence"] = confidence
+        if note_text:
+            data["notes"] = note_text
+        if request_id:
+            data["request_id"] = request_id
+        self._log_ai_activity(
+            "tuning",
+            "Parameter tuning update",
+            body=body or "No overrides returned",
+            data=data,
+            force=True,
+        )
 
     def _note_playbook_failure(
         self,
