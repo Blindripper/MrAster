@@ -10211,26 +10211,56 @@ if (aiChatForm && aiChatInput) {
         const detail = data && typeof data === 'object' ? data.detail : null;
         throw new Error(detail || 'Chat request failed');
       }
-      const reply = (data.reply || '').toString() || translate('chat.reply.none', 'No reply received.');
-      appendChatMessage('assistant', reply, { model: data.model, source: data.source });
-      aiChatHistory.push({ role: 'assistant', content: reply });
+      const focusSymbols = Array.isArray(data.analysis_focus) ? data.analysis_focus : [];
+      const analysisText = (data.analysis || '').toString().trim();
+      const fallbackReply = (data.reply || '').toString() || translate('chat.reply.none', 'No reply received.');
+      const assistantMessage = analysisText || fallbackReply;
+      let roleLabel = translate('chat.role.analysis', 'Market Analysis');
+      if (analysisText && focusSymbols.length === 1) {
+        roleLabel = `${focusSymbols[0]} ${translate('chat.role.analysis', 'Market Analysis')}`;
+      }
+      appendChatMessage('assistant', assistantMessage, {
+        model: data.model,
+        source: data.source,
+        roleLabel: analysisText ? roleLabel : undefined,
+      });
+      aiChatHistory.push({ role: 'assistant', content: assistantMessage });
       if (aiChatHistory.length > 12) {
         aiChatHistory = aiChatHistory.slice(-12);
       }
-      let statusMessage = '';
-      if (data.source === 'fallback') {
-        statusMessage = 'Reply (fallback)';
-      } else if (data.model) {
-        statusMessage = `Reply (${data.model})`;
+
+      const proposals = Array.isArray(data.trade_proposals) ? data.trade_proposals : [];
+      if (proposals.length > 0) {
+        proposals.forEach((proposal) => appendTradeProposalCard(proposal));
+      } else if (analysisText) {
+        loadTrades().catch(() => {});
+      }
+
+      if (analysisText) {
+        if (data.source === 'fallback') {
+          setChatStatus(translate('chat.status.fallback', 'Market analysis (fallback).'));
+        } else {
+          setChatStatus(translate('chat.status.ready', 'Market analysis ready.'));
+        }
+        setChatKeyIndicator('ready', translate('chat.key.ready', 'Dedicated chat key active'));
       } else {
-        statusMessage = 'Reply received';
+        let statusMessage = '';
+        if (data.source === 'fallback') {
+          statusMessage = 'Reply (fallback)';
+        } else if (data.model) {
+          statusMessage = `Reply (${data.model})`;
+        } else {
+          statusMessage = 'Reply received';
+        }
+        if (data.queued_action && data.queued_action.symbol && data.queued_action.side) {
+          const { symbol, side } = data.queued_action;
+          const summary = `${symbol.toUpperCase()} ${side.toUpperCase()}`;
+          statusMessage = statusMessage
+            ? `${statusMessage} · Manual trade queued (${summary})`
+            : `Manual trade queued (${summary})`;
+        }
+        setChatStatus(statusMessage);
       }
-      if (data.queued_action && data.queued_action.symbol && data.queued_action.side) {
-        const { symbol, side } = data.queued_action;
-        const summary = `${symbol.toUpperCase()} ${side.toUpperCase()}`;
-        statusMessage = statusMessage ? `${statusMessage} · Manual trade queued (${summary})` : `Manual trade queued (${summary})`;
-      }
-      setChatStatus(statusMessage);
     } catch (err) {
       appendChatMessage('assistant', err?.message || 'Chat failed.', { source: 'error' });
       setChatStatus(translate('chat.status.error', 'Chat failed.'));
