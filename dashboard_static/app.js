@@ -3778,20 +3778,21 @@ const ACTIVE_POSITION_SIGNED_SIZE_KEYS = [
   'size',
 ];
 
+const ACTIVE_POSITION_NOTIONAL_KEYS = [
+  'notional',
+  'notional_usdt',
+  'notionalUsd',
+  'notionalUSD',
+  'positionNotional',
+  'position_notional',
+  'size_usdt',
+  'sizeUSDT',
+  'sizeUsd',
+];
+
 const ACTIVE_POSITION_ALIASES = {
   symbol: ['symbol', 'sym', 'ticker', 'pair'],
-  size: [
-    'notional',
-    'notional_usdt',
-    'notionalUsd',
-    'notionalUSD',
-    'positionNotional',
-    'position_notional',
-    'size_usdt',
-    'sizeUSDT',
-    'sizeUsd',
-    ...ACTIVE_POSITION_SIGNED_SIZE_KEYS,
-  ],
+  size: [...ACTIVE_POSITION_NOTIONAL_KEYS, ...ACTIVE_POSITION_SIGNED_SIZE_KEYS],
   entry: ['entry', 'entry_price', 'entryPrice'],
   mark: ['mark', 'mark_price', 'markPrice', 'lastPrice', 'price'],
   roe: ['roe', 'roe_percent', 'roe_pct', 'roePercent', 'pnl_percent', 'pnl_pct'],
@@ -3819,7 +3820,21 @@ const ACTIVE_POSITION_ALIASES = {
     'marginUsd',
     'margin_usdt',
   ],
-  nextTp: ['next_tp', 'tp_next', 'nextTarget', 'next_tp_price', 'tp', 'take_profit_next'],
+  nextTp: [
+    'next_tp',
+    'tp_next',
+    'nextTarget',
+    'next_tp_price',
+    'tp',
+    'take_profit_next',
+    'take_profit',
+    'takeProfit',
+    'take_profit_price',
+    'takeProfitPrice',
+    'target',
+    'target_price',
+    'targetPrice',
+  ],
   stop: [
     'stop',
     'stop_loss',
@@ -4540,6 +4555,7 @@ function updateActivePositionsView() {
 
     const sizeField = pickNumericField(position, ACTIVE_POSITION_ALIASES.size || []);
     const signedQuantityField = pickNumericField(position, ACTIVE_POSITION_SIGNED_SIZE_KEYS || []);
+    const notionalField = pickNumericField(position, ACTIVE_POSITION_NOTIONAL_KEYS || []);
 
     const symbolCell = document.createElement('td');
     const symbolWrapper = document.createElement('div');
@@ -4576,7 +4592,15 @@ function updateActivePositionsView() {
 
     const sizeCell = document.createElement('td');
     sizeCell.className = 'numeric active-positions-size';
-    const sizeNumeric = Number.isFinite(sizeField.numeric) ? Math.abs(sizeField.numeric) : sizeField.numeric;
+    const notionalNumeric = Number.isFinite(notionalField.numeric) ? Math.abs(notionalField.numeric) : null;
+    const quantityNumeric = Number.isFinite(signedQuantityField.numeric)
+      ? Math.abs(signedQuantityField.numeric)
+      : null;
+    const sizeNumeric = Number.isFinite(notionalNumeric)
+      ? notionalNumeric
+      : Number.isFinite(sizeField.numeric)
+      ? Math.abs(sizeField.numeric)
+      : quantityNumeric;
     sizeCell.textContent = formatPositionSize(sizeNumeric);
     applyActivePositionLabel(sizeCell, 'size');
     row.append(sizeCell);
@@ -4604,6 +4628,7 @@ function updateActivePositionsView() {
     const leverageCell = document.createElement('td');
     leverageCell.className = 'numeric';
     const leverageField = pickNumericField(position, ACTIVE_POSITION_ALIASES.leverage || []);
+    const leverageNumeric = Number.isFinite(leverageField.numeric) ? Math.abs(leverageField.numeric) : null;
     leverageCell.textContent = formatLeverage(leverageField.numeric);
     applyActivePositionLabel(leverageCell, 'leverage');
     row.append(leverageCell);
@@ -4611,8 +4636,28 @@ function updateActivePositionsView() {
     const marginCell = document.createElement('td');
     marginCell.className = 'numeric';
     const marginField = pickNumericField(position, ACTIVE_POSITION_ALIASES.margin || []);
-    if (Number.isFinite(marginField.numeric)) {
-      marginCell.textContent = formatPositionSize(Math.abs(marginField.numeric));
+    let marginNumeric = Number.isFinite(marginField.numeric) ? Math.abs(marginField.numeric) : null;
+    if (!Number.isFinite(marginNumeric)) {
+      if (Number.isFinite(notionalNumeric) && Number.isFinite(leverageNumeric) && leverageNumeric > 0) {
+        marginNumeric = notionalNumeric / leverageNumeric;
+      } else {
+        const priceForNotional = Number.isFinite(markField.numeric)
+          ? Math.abs(markField.numeric)
+          : Number.isFinite(entryField.numeric)
+          ? Math.abs(entryField.numeric)
+          : null;
+        if (
+          Number.isFinite(quantityNumeric) &&
+          Number.isFinite(priceForNotional) &&
+          Number.isFinite(leverageNumeric) &&
+          leverageNumeric > 0
+        ) {
+          marginNumeric = (quantityNumeric * priceForNotional) / leverageNumeric;
+        }
+      }
+    }
+    if (Number.isFinite(marginNumeric)) {
+      marginCell.textContent = formatPositionSize(marginNumeric);
     } else {
       marginCell.textContent = '–';
     }
