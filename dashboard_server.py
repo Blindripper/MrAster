@@ -4035,15 +4035,19 @@ class AIChatEngine:
     ) -> Dict[str, Any]:
         overlay: Dict[str, Any] = {}
         playbook_bucket = state.get("ai_playbook") if isinstance(state, dict) else None
-        active_playbook = (
-            playbook_bucket.get("active")
-            if isinstance(playbook_bucket, dict)
-            else None
-        )
-        if isinstance(active_playbook, dict) and active_playbook:
-            mode = str(active_playbook.get("mode") or "baseline")
-            bias = str(active_playbook.get("bias") or "neutral")
-            size_bias = active_playbook.get("size_bias") or {}
+        activity_source = state.get("ai_activity") if isinstance(state, dict) else None
+        if isinstance(activity_source, list):
+            playbook_activity = _collect_playbook_activity(activity_source)
+        else:
+            playbook_activity = []
+        resolved_playbook = _resolve_playbook_state(playbook_bucket, playbook_activity)
+        if not resolved_playbook and isinstance(playbook_bucket, dict):
+            resolved_playbook = playbook_bucket.get("active")
+
+        if isinstance(resolved_playbook, dict) and resolved_playbook:
+            mode = str(resolved_playbook.get("mode") or "baseline")
+            bias = str(resolved_playbook.get("bias") or "neutral")
+            size_bias = resolved_playbook.get("size_bias") or {}
             try:
                 buy_bias = float((size_bias or {}).get("BUY", 1.0) or 1.0)
             except (TypeError, ValueError):
@@ -4053,27 +4057,37 @@ class AIChatEngine:
             except (TypeError, ValueError):
                 sell_bias = 1.0
             try:
-                sl_bias = float(active_playbook.get("sl_bias", 1.0) or 1.0)
+                sl_bias = float(resolved_playbook.get("sl_bias", 1.0) or 1.0)
             except (TypeError, ValueError):
                 sl_bias = 1.0
             try:
-                tp_bias = float(active_playbook.get("tp_bias", 1.0) or 1.0)
+                tp_bias = float(resolved_playbook.get("tp_bias", 1.0) or 1.0)
             except (TypeError, ValueError):
                 tp_bias = 1.0
-            features = active_playbook.get("features")
+            features = resolved_playbook.get("features")
             feature_blurbs: List[str] = []
             if isinstance(features, dict):
-                ranked = sorted(
-                    (
-                        (name, float(value))
-                        for name, value in features.items()
-                        if isinstance(value, (int, float))
-                    ),
-                    key=lambda pair: abs(pair[1]),
-                    reverse=True,
-                )
-                for name, value in ranked[:2]:
-                    feature_blurbs.append(f"{name} {value:+.2f}")
+                ranked_pairs = [
+                    (name, value)
+                    for name, value in features.items()
+                    if isinstance(value, (int, float))
+                ]
+            elif isinstance(features, list):
+                ranked_pairs = [
+                    (str(item.get("name")), item.get("value"))
+                    for item in features
+                    if isinstance(item, dict)
+                ]
+            else:
+                ranked_pairs = []
+            ranked_pairs = [
+                (name, float(value))
+                for name, value in ranked_pairs
+                if name and isinstance(value, (int, float))
+            ]
+            ranked_pairs.sort(key=lambda pair: abs(pair[1]), reverse=True)
+            for name, value in ranked_pairs[:2]:
+                feature_blurbs.append(f"{name} {value:+.2f}")
             snippet = (
                 f"Active playbook: {mode} ({bias}) · size BUY {buy_bias:.2f}/SELL {sell_bias:.2f} · SL×{sl_bias:.2f} · TP×{tp_bias:.2f}"
             )
