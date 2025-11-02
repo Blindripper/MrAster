@@ -1,7 +1,10 @@
+import json
 import os
 import sys
 
 import pytest
+
+from typing import Any, Dict, Optional
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
@@ -141,3 +144,56 @@ def test_structured_trade_proposals_handle_plain_text_blocks(engine: AIChatEngin
     assert sol["stop_loss"] == pytest.approx(188.0)
     assert sol["take_profit"] == pytest.approx(175.0)
     assert sol["notional"] == pytest.approx(120.0)
+
+
+def test_place_trade_proposal_rescales_thousand_style_prices(
+    monkeypatch: pytest.MonkeyPatch, engine: AIChatEngine
+) -> None:
+    captured: Dict[str, Any] = {}
+
+    def fake_fetch_price(self: AIChatEngine, symbol: str, side: str) -> Optional[float]:
+        captured.setdefault("fetch_calls", []).append((symbol, side))
+        return 3890.0
+
+    def fake_symbol_filters(self: AIChatEngine, symbol: str) -> Dict[str, float]:
+        return {"tickSize": 0.0, "stepSize": 0.0, "minQty": 0.0, "minNotional": 0.0}
+
+    def fake_signed_request(self: AIChatEngine, method: str, path: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        captured["order"] = params
+        return {"orderId": 1}
+
+    monkeypatch.setattr(AIChatEngine, "_fetch_price", fake_fetch_price)
+    monkeypatch.setattr(AIChatEngine, "_symbol_filters", fake_symbol_filters)
+    monkeypatch.setattr(AIChatEngine, "_signed_request", fake_signed_request)
+
+    env = engine.config.setdefault("env", {})
+    env.update(
+        {
+            "ASTER_API_KEY": "key",
+            "ASTER_API_SECRET": "secret",
+            "ASTER_EXCHANGE_BASE": "https://example.com",
+            "ASTER_PAPER": "false",
+        }
+    )
+
+    proposal = {
+        "symbol": "ETHUSDT",
+        "direction": "SHORT",
+        "entry_kind": "limit",
+        "entry_price": 3.895,
+        "stop_loss": 3.93,
+        "take_profit": 3.8,
+        "notional": 120.0,
+    }
+
+    execution = engine._place_trade_proposal("demo", proposal)
+
+    order = captured["order"]
+    assert order["price"] == "3895"
+    assert json.loads(order["stopLoss"])["trigger"]["price"] == "3930"
+    assert json.loads(order["takeProfit"])["trigger"]["price"] == "3800"
+
+    assert execution["entry_price"] == pytest.approx(3895.0)
+    assert execution["stop_loss"] == pytest.approx(3930.0)
+    assert execution["take_profit"] == pytest.approx(3800.0)
+    assert captured["fetch_calls"] == [("ETHUSDT", "SELL")]
