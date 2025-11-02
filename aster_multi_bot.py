@@ -2722,7 +2722,8 @@ class AITradeAdvisor:
             risk_bias = 0.0
         else:
             risk_bias = 1.0 + max(0.0, hype_score - 0.55) * 0.35
-        size_multiplier = clamp(size_factor * risk_bias, max(0.0, SIZE_MULT_FLOOR), 1.8)
+        raw_size_multiplier = clamp(size_factor * risk_bias, 0.0, 1.8)
+        size_multiplier = clamp(max(SIZE_MULT_FLOOR, raw_size_multiplier), 0.0, 1.8)
 
         sl_mult = 1.0
         tp_mult = 1.0
@@ -2772,6 +2773,7 @@ class AITradeAdvisor:
 
         return {
             "symbol": symbol,
+            "size_multiplier_raw": raw_size_multiplier,
             "size_multiplier": size_multiplier,
             "sl_multiplier": sl_mult,
             "tp_multiplier": tp_mult,
@@ -7158,7 +7160,13 @@ class Bot:
                         data={"symbol": symbol, "side": sig, **decision_summary},
                     )
 
-            plan_size = float(plan.get("size_multiplier", 1.0) or 0.0)
+            if manual_override:
+                raw_plan_mult = plan.get("size_multiplier_raw")
+                if raw_plan_mult is None:
+                    raw_plan_mult = plan.get("size_multiplier")
+                plan_size = float(raw_plan_mult if raw_plan_mult is not None else 1.0)
+            else:
+                plan_size = float(plan.get("size_multiplier", 1.0) or 0.0)
             plan_sl_mult = float(plan.get("sl_multiplier", 1.0) or 1.0)
             plan_tp_mult = float(plan.get("tp_multiplier", 1.0) or 1.0)
             size_mult *= plan_size
