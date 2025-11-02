@@ -2075,9 +2075,10 @@ body.ai-mode .status .decision-metric {
   background: rgba(245, 196, 107, 0.12);
 }
 
+
 .ai-hint {
   margin: 0;
-  padding: 0.25rem 0.4rem 0.6rem;
+  padding: 0.25rem 1.4rem 0.6rem;
   color: var(--text-muted);
   font-size: 0.9rem;
   line-height: 1.5;
@@ -2166,11 +2167,9 @@ body.ai-mode .playbook-overview {
   scrollbar-gutter: stable both-edges;
 }
 
-.playbook-overview-body .ai-hint {
-  flex: 0 0 auto;
-  background: none;
-  border: none;
-  font-size: 0.9rem;
+.trades .ai-hint {
+  padding-top: 0;
+  padding-bottom: 0.75rem;
 }
 
 .playbook-summary {
