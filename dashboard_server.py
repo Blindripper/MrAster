@@ -247,6 +247,115 @@ def _safe_float(value: Any) -> Optional[float]:
         return None
 
 
+def _clean_string(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+    else:
+        try:
+            text = str(value).strip()
+        except Exception:
+            return None
+    return text or None
+
+
+def _normalize_string_list(values: Any, *, limit: int = 6) -> List[str]:
+    normalized: List[str] = []
+    if isinstance(values, list):
+        for item in values:
+            text = _clean_string(item)
+            if text:
+                normalized.append(text)
+            if len(normalized) >= limit:
+                break
+    else:
+        text = _clean_string(values)
+        if text:
+            normalized.append(text)
+    return normalized
+
+
+def _normalize_strategy_blob(payload: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return None
+
+    strategy: Dict[str, Any] = {}
+    name = _clean_string(payload.get("name"))
+    if name:
+        strategy["name"] = name
+
+    objective = _clean_string(payload.get("objective") or payload.get("goal"))
+    if objective:
+        strategy["objective"] = objective
+
+    why_active = _clean_string(
+        payload.get("why_active")
+        or payload.get("rationale")
+        or payload.get("justification")
+    )
+    if why_active:
+        strategy["why_active"] = why_active
+
+    signals = _normalize_string_list(
+        payload.get("market_signals") or payload.get("signals")
+    )
+    if signals:
+        strategy["market_signals"] = signals[:6]
+
+    actions_raw = payload.get("actions")
+    actions: List[Dict[str, Any]] = []
+    if isinstance(actions_raw, list):
+        for idx, item in enumerate(actions_raw, start=1):
+            title = None
+            detail = None
+            trigger = None
+            if isinstance(item, dict):
+                title = _clean_string(
+                    item.get("title") or item.get("name") or item.get("step")
+                )
+                detail = _clean_string(
+                    item.get("detail")
+                    or item.get("instruction")
+                    or item.get("action")
+                )
+                trigger = _clean_string(item.get("trigger") or item.get("condition"))
+            else:
+                detail = _clean_string(item)
+            if not (title or detail):
+                continue
+            action_entry: Dict[str, Any] = {"title": title or f"Step {idx}"}
+            if detail:
+                action_entry["detail"] = detail
+            if trigger:
+                action_entry["trigger"] = trigger
+            actions.append(action_entry)
+            if len(actions) >= 6:
+                break
+    elif isinstance(actions_raw, dict):
+        for key, value in actions_raw.items():
+            detail = _clean_string(value)
+            if not detail:
+                continue
+            action_entry = {
+                "title": _clean_string(key) or f"Step {len(actions) + 1}",
+                "detail": detail,
+            }
+            actions.append(action_entry)
+            if len(actions) >= 6:
+                break
+    if actions:
+        strategy["actions"] = actions
+
+    risk_controls = _normalize_string_list(
+        payload.get("risk_controls") or payload.get("risk_management")
+    )
+    if risk_controls:
+        strategy["risk_controls"] = risk_controls[:6]
+
+    return strategy or None
+
+
 def _normalize_ai_budget(raw: Any) -> Dict[str, Any]:
     bucket: Dict[str, Any] = dict(raw) if isinstance(raw, dict) else {}
     history = bucket.get("history")
@@ -375,6 +484,12 @@ def _normalize_playbook_state(raw: Any) -> Optional[Dict[str, Any]]:
     if confidence is None:
         confidence = _safe_float(active.get("confidence_score"))
 
+    strategy = _normalize_strategy_blob(active.get("strategy"))
+
+    reason_text = _clean_string(active.get("reason"))
+    if not reason_text and strategy:
+        reason_text = strategy.get("why_active")
+
     result: Dict[str, Any] = {
         "mode": mode,
         "bias": bias,
@@ -395,6 +510,10 @@ def _normalize_playbook_state(raw: Any) -> Optional[Dict[str, Any]]:
         result["notes"] = note_text
     if confidence is not None:
         result["confidence"] = confidence
+    if reason_text:
+        result["reason"] = reason_text
+    if strategy:
+        result["strategy"] = strategy
 
     return result
 
@@ -417,6 +536,8 @@ def _derive_playbook_state_from_activity(
         features = entry.get("features")
         notes = entry.get("notes")
         confidence = entry.get("confidence")
+        reason = entry.get("reason")
+        strategy_raw = entry.get("strategy")
 
         has_details = any(
             value
@@ -429,6 +550,8 @@ def _derive_playbook_state_from_activity(
                 features,
                 notes,
                 confidence,
+                reason,
+                strategy_raw,
             )
         )
         if not has_details:
@@ -465,6 +588,16 @@ def _derive_playbook_state_from_activity(
 
         if isinstance(notes, str) and notes.strip():
             result["notes"] = notes.strip()
+
+        normalized_strategy = _normalize_strategy_blob(strategy_raw)
+        if normalized_strategy:
+            result["strategy"] = normalized_strategy
+
+        reason_text = _clean_string(reason)
+        if not reason_text and normalized_strategy:
+            reason_text = normalized_strategy.get("why_active")
+        if reason_text:
+            result["reason"] = reason_text
 
         numeric_confidence = _safe_float(confidence)
         if numeric_confidence is not None:
@@ -730,6 +863,12 @@ def _collect_playbook_activity(ai_activity: List[Any]) -> List[Dict[str, Any]]:
                 features.sort(key=lambda item: abs(item["value"]), reverse=True)
                 if features:
                     record["features"] = features[:5]
+
+            strategy_blob = _normalize_strategy_blob(data.get("strategy"))
+            if strategy_blob:
+                record["strategy"] = strategy_blob
+                if "reason" not in record and strategy_blob.get("why_active"):
+                    record["reason"] = strategy_blob.get("why_active")
 
             snapshot_meta = data.get("snapshot_meta")
             summary = _summarize_playbook_snapshot_meta(snapshot_meta)

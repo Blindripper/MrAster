@@ -1239,9 +1239,12 @@ class AITradeAdvisor:
             estimate = 0.0012
         else:
             system_prompt = (
-                "You generate background playbooks for a trading bot. Analyse the snapshot and respond with JSON including "
-                "mode, bias, size_bias (BUY/SELL multipliers), sl_bias, tp_bias, features (object of numeric feature weights) "
-                "and optional notes."
+                "You act as the autonomous playbook strategist for an automated trading bot. Analyse the telemetry snapshot "
+                "and respond with JSON describing the updated playbook. Return the fields: request_id (echo the provided value), "
+                "mode, bias, confidence (0-1), size_bias (BUY/SELL multipliers between 0.4 and 2.5), sl_bias (0.4-2.5), tp_bias "
+                "(0.6-3.0), features (object mapping focus keywords to numeric weights between -1 and 1), strategy (object with "
+                "name, objective, why_active, market_signals array, actions array of objects with title/detail and optional "
+                "trigger, and risk_controls array), plus optional notes. Respond with valid JSON only."
             )
             estimate = 0.0018
         try:
@@ -4074,6 +4077,25 @@ class Strategy:
             "budget": budget_snapshot,
             "recent_trades": recent_trades,
         }
+        if self.playbook_manager:
+            try:
+                active_playbook = self.playbook_manager.active()
+            except Exception:
+                active_playbook = {}
+            if isinstance(active_playbook, dict) and active_playbook:
+                playbook_summary: Dict[str, Any] = {
+                    "mode": active_playbook.get("mode"),
+                    "bias": active_playbook.get("bias"),
+                    "sl_bias": active_playbook.get("sl_bias"),
+                    "tp_bias": active_playbook.get("tp_bias"),
+                    "size_bias": active_playbook.get("size_bias"),
+                    "reason": active_playbook.get("reason"),
+                    "confidence": active_playbook.get("confidence"),
+                }
+                strategy_blob = active_playbook.get("strategy")
+                if isinstance(strategy_blob, dict) and strategy_blob:
+                    playbook_summary["strategy"] = strategy_blob
+                snapshot["playbook"] = playbook_summary
         return snapshot
 
     def _klines_cached(self, symbol: str, interval: str, limit: int) -> Sequence[Sequence[float]]:
