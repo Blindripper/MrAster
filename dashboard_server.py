@@ -516,6 +516,7 @@ def _collect_playbook_activity(ai_activity: List[Any]) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
     allowed_request_prefixes = ("playbook", "tuning")
     allowed_kind_prefixes = ("playbook", "tuning")
+    disallowed_mode_prefixes = ("analysis", "strategy")
     for entry in ai_activity:
         if not isinstance(entry, dict):
             continue
@@ -533,6 +534,9 @@ def _collect_playbook_activity(ai_activity: List[Any]) -> List[Dict[str, Any]]:
         request_kind = None
         normalized_request_kind = ""
         request_id_hint: Optional[str] = None
+        disallowed_mode = False
+        normalized_mode = ""
+
         if isinstance(data, dict):
             raw_request_kind = data.get("request_kind")
             if isinstance(raw_request_kind, str):
@@ -552,12 +556,25 @@ def _collect_playbook_activity(ai_activity: List[Any]) -> List[Dict[str, Any]]:
             elif raw_request_id is not None:
                 request_id_hint = str(raw_request_id)
 
+            raw_mode = data.get("mode")
+            if isinstance(raw_mode, str):
+                normalized_mode = raw_mode.strip().lower()
+                if normalized_mode.startswith(disallowed_mode_prefixes):
+                    disallowed_mode = True
+
         if (
             not relevant
             and request_id_hint
             and request_id_hint.strip().lower().startswith(allowed_request_prefixes)
         ):
             relevant = True
+
+        if request_id_hint:
+            normalized_request_id = request_id_hint.strip().lower()
+            if "::" in normalized_request_id:
+                prefix = normalized_request_id.split("::", 1)[0]
+                if prefix and prefix not in allowed_request_prefixes:
+                    continue
 
         if not relevant and isinstance(data, dict):
             playbook_keys = {
@@ -571,11 +588,16 @@ def _collect_playbook_activity(ai_activity: List[Any]) -> List[Dict[str, Any]]:
                 "snapshot_meta",
                 "features",
             }
-            if any(key in data for key in playbook_keys):
+            if any(key in data for key in playbook_keys) and not disallowed_mode:
                 relevant = True
 
         if not relevant:
             continue
+
+        if disallowed_mode and not normalized_request_kind.startswith(allowed_request_prefixes):
+            if not (request_id_hint and request_id_hint.strip().lower().startswith(allowed_request_prefixes)):
+                if "playbook" not in normalized_headline and "playbook" not in kind_normalized:
+                    continue
 
         record: Dict[str, Any] = {
             "kind": entry.get("kind"),

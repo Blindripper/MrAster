@@ -109,6 +109,40 @@ class PlaybookActivityTests(unittest.TestCase):
         result = _collect_playbook_activity(payload)
         self.assertEqual(result, [])
 
+    def test_ignores_entries_with_analysis_mode(self):
+        payload = [
+            {
+                "kind": "info",
+                "headline": "Manual market analysis requested",
+                "ts": "2024-07-01T10:25:00Z",
+                "data": {
+                    "mode": "analysis",
+                    "bias": "neutral",
+                    "size_bias": {"BUY": 1.0, "SELL": 1.0},
+                },
+            }
+        ]
+
+        result = _collect_playbook_activity(payload)
+        self.assertEqual(result, [])
+
+    def test_ignores_entries_with_analysis_request_id(self):
+        payload = [
+            {
+                "kind": "info",
+                "headline": "Analysis refresh pipeline",
+                "ts": "2024-07-01T10:26:00Z",
+                "data": {
+                    "request_id": "analysis::analysis:5163801eddb4",
+                    "size_bias": {"S": 0.9},
+                    "tp_atr_mult": 1.05,
+                },
+            }
+        ]
+
+        result = _collect_playbook_activity(payload)
+        self.assertEqual(result, [])
+
 
 class PlaybookProcessTests(unittest.TestCase):
     def test_process_groups_successful_flow(self):
