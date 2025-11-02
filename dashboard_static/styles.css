@@ -3684,6 +3684,16 @@ body.pro-mode .log-stream {
   color: #1e1b4b;
 }
 
+.log-line.log-reason-themed {
+  background: var(--log-reason-bg, rgba(45, 212, 191, 0.18));
+  border-color: var(--log-reason-border, rgba(45, 212, 191, 0.35));
+}
+
+.log-line.log-reason-themed .log-level {
+  background: var(--log-reason-badge-bg, rgba(45, 212, 191, 0.32));
+  color: var(--log-reason-badge-text, #022c22);
+}
+
 .toggle {
   display: flex;
   align-items: center;
