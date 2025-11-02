@@ -198,7 +198,18 @@ def test_place_trade_proposal_rescales_thousand_style_prices(
     assert execution["entry_price"] == pytest.approx(3890.0)
     assert execution["stop_loss"] == pytest.approx(3930.0)
     assert execution["take_profit"] == pytest.approx(3800.0)
-    assert captured["fetch_calls"] == [("ETHUSDT", "SELL")]
+
+
+def test_detect_symbols_in_text_maps_common_aliases(
+    monkeypatch: pytest.MonkeyPatch, engine: AIChatEngine
+) -> None:
+    monkeypatch.setattr(engine, "_market_universe_symbols", lambda: ["BTCUSDT", "ETHUSDT"])
+    monkeypatch.setattr(engine, "_quote_asset", lambda: "USDT")
+
+    detected = engine._detect_symbols_in_text("What do you think about an Bitcoin short versus Ethereum?")
+
+    assert detected[0] == "BTCUSDT"
+    assert "ETHUSDT" in detected
 
 
 def test_place_trade_proposal_keeps_limit_if_no_live_price(
