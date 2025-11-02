@@ -2975,6 +2975,60 @@ const DECISION_REASON_LABELS = {
   trend_timeout: 'Trend scan timeout',
   ai_trend_skip: 'AI declined trend setup',
   ai_trend_invalid: 'AI returned invalid trend setup',
+  quote_volume: 'Quote volume guard',
+  quote_volume_cooldown: 'Quote volume cooldown',
+  position_cap_symbol: 'Per-symbol position cap',
+  position_cap_global: 'Global position cap',
+  base_strategy_skip: 'Base strategy veto',
+};
+
+const LOG_REASON_CATEGORY_MAP = {
+  quote_volume: 'volume',
+  quote_volume_cooldown: 'volume',
+  qv_score: 'volume',
+  spread: 'spread',
+  oracle_gap: 'oracle',
+  oracle_gap_clamped: 'oracle',
+  sentinel_veto: 'sentinel',
+  sentinel_block: 'sentinel',
+  sentinel_factor: 'sentinel',
+  sentinel_event_risk: 'sentinel',
+  sentinel_hype: 'sentinel',
+  funding_long: 'funding',
+  funding_short: 'funding',
+  funding: 'funding',
+  policy_filter: 'ai',
+  filtered: 'ai',
+  fallback_rules: 'ai',
+  ai_trend_skip: 'ai',
+  ai_trend_invalid: 'ai',
+  plan_pending: 'ai',
+  plan_timeout: 'ai',
+  trend_pending: 'ai',
+  trend_timeout: 'ai',
+  ai_risk_zero: 'ai',
+  base_strategy_skip: 'ai',
+  order_failed: 'orders',
+  position_size: 'orders',
+  position_cap_symbol: 'orders',
+  position_cap_global: 'orders',
+  few_klines: 'data',
+  klines_err: 'data',
+  wicky: 'volatility',
+  edge_r: 'edge',
+};
+
+const LOG_LABEL_CATEGORY_MAP = {
+  'ai feed': 'ai',
+  'ai request': 'ai',
+  'bot status': 'system',
+  'scan complete': 'scan',
+  scan: 'scan',
+  settings: 'system',
+  'trade placed': 'trade',
+  'trade win': 'trade',
+  'trade loss': 'trade',
+  'fast tp': 'trade',
 };
 
 const FRIENDLY_LEVEL_LABELS = {
@@ -4573,6 +4627,24 @@ function formatExtraDetails(raw) {
     .join(' • ');
 }
 
+function resolveLogCategory(friendly) {
+  if (!friendly || typeof friendly !== 'object') return '';
+  const reasonKey = friendly.reason ? friendly.reason.toString().toLowerCase() : '';
+  if (reasonKey && LOG_REASON_CATEGORY_MAP[reasonKey]) {
+    return LOG_REASON_CATEGORY_MAP[reasonKey];
+  }
+  const labelKey = friendly.label ? friendly.label.toString().toLowerCase() : '';
+  if (labelKey && LOG_LABEL_CATEGORY_MAP[labelKey]) {
+    return LOG_LABEL_CATEGORY_MAP[labelKey];
+  }
+  return '';
+}
+
+function getLogCategoryClass(friendly) {
+  const category = resolveLogCategory(friendly);
+  return category ? `category-${category}` : '';
+}
+
 function humanizeLogLine(line, fallbackLevel = 'info') {
   const parsed = parseStructuredLog(line, fallbackLevel);
   const baseLevel = (parsed.level || fallbackLevel || 'info').toLowerCase();
@@ -4660,11 +4732,124 @@ function humanizeLogLine(line, fallbackLevel = 'info') {
     return { text, label, severity, relevant, parsed, refreshTrades: true };
   }
 
+  const quoteVolumeBelowMatch = parsed.message?.match(
+    /^Skip\s+(\S+)\s+[—–-]\s+quote volume\s+([\d.]+)\s+below minimum\s+([\d.]+)/i,
+  );
+  if (quoteVolumeBelowMatch) {
+    const [, symbol, current, threshold] = quoteVolumeBelowMatch;
+    const currentText = formatNumber(current, 2);
+    const thresholdText = formatNumber(threshold, 2);
+    const detail = `Quote volume ${currentText} • Min ${thresholdText}`;
+    text = `Skipped ${symbol} — Quote volume ${currentText} below minimum ${thresholdText}.`;
+    label = 'Skipped trade';
+    severity = 'warning';
+    relevant = true;
+    return {
+      text,
+      label,
+      severity,
+      relevant,
+      parsed,
+      reason: 'quote_volume',
+      symbol: symbol ? symbol.toString().toUpperCase() : undefined,
+      detail,
+    };
+  }
+
+  const quoteVolumeCooldownMatch = parsed.message?.match(
+    /^Skip\s+(\S+)\s+[—–-]\s+quote volume cooldown active for\s+([\d.]+)\s+more cycles?\.?/i,
+  );
+  if (quoteVolumeCooldownMatch) {
+    const [, symbol, remaining] = quoteVolumeCooldownMatch;
+    const count = Number(remaining);
+    const cycles = Number.isFinite(count) ? `${count} more ${count === 1 ? 'cycle' : 'cycles'}` : `${remaining} more cycles`;
+    text = `Skipped ${symbol} — Quote volume cooldown active (${cycles}).`;
+    label = 'Skipped trade';
+    severity = 'warning';
+    relevant = true;
+    return {
+      text,
+      label,
+      severity,
+      relevant,
+      parsed,
+      reason: 'quote_volume_cooldown',
+      symbol: symbol ? symbol.toString().toUpperCase() : undefined,
+    };
+  }
+
+  const positionCapSymbolMatch = parsed.message?.match(
+    /^Skip\s+(\S+)\s+[—–-]\s+per-symbol position cap reached\s*\((\d+)\)\.?/i,
+  );
+  if (positionCapSymbolMatch) {
+    const [, symbol, cap] = positionCapSymbolMatch;
+    const capNum = Number(cap);
+    const capText = Number.isFinite(capNum) ? capNum.toString() : cap;
+    text = `Skipped ${symbol} — Per-symbol position cap reached (${capText}).`;
+    label = 'Skipped trade';
+    severity = 'warning';
+    relevant = true;
+    return {
+      text,
+      label,
+      severity,
+      relevant,
+      parsed,
+      reason: 'position_cap_symbol',
+      symbol: symbol ? symbol.toString().toUpperCase() : undefined,
+      detail: `Cap ${capText}`,
+    };
+  }
+
+  const positionCapGlobalMatch = parsed.message?.match(
+    /^Skip\s+(\S+)\s+[—–-]\s+global position cap reached\s*\((\d+)\/(\d+)\)\.?/i,
+  );
+  if (positionCapGlobalMatch) {
+    const [, symbol, current, limit] = positionCapGlobalMatch;
+    text = `Skipped ${symbol} — Global position cap reached (${current}/${limit}).`;
+    label = 'Skipped trade';
+    severity = 'warning';
+    relevant = true;
+    return {
+      text,
+      label,
+      severity,
+      relevant,
+      parsed,
+      reason: 'position_cap_global',
+      symbol: symbol ? symbol.toString().toUpperCase() : undefined,
+      detail: `Open ${current} / Limit ${limit}`,
+    };
+  }
+
+  const baseStrategySkipMatch = parsed.message?.match(
+    /^Skip\s+(\S+)\s+[—–-]\s+base strategy reported\s+([^;]+);\s+avoiding AI trend scan\.?/i,
+  );
+  if (baseStrategySkipMatch) {
+    const [, symbol, reasonText] = baseStrategySkipMatch;
+    const cleaned = reasonText ? reasonText.trim() : '';
+    text = `Skipped ${symbol} — Base strategy veto (${cleaned || 'no detail'}).`;
+    label = 'Skipped trade';
+    severity = 'warning';
+    relevant = true;
+    return {
+      text,
+      label,
+      severity,
+      relevant,
+      parsed,
+      reason: 'base_strategy_skip',
+      symbol: symbol ? symbol.toString().toUpperCase() : undefined,
+      detail: cleaned,
+    };
+  }
+
   const skipMatch = parsed.message?.match(/^SKIP (\S+): ([\w_]+)(.*)$/);
   if (skipMatch) {
     const [, symbol, reason, extraRaw] = skipMatch;
+    const reasonKey = reason ? reason.toString().toLowerCase() : '';
     const detail = formatExtraDetails(extraRaw);
-    const reasonLabel = friendlyReason(reason);
+    const reasonLabel = friendlyReason(reasonKey || reason);
     text = `Skipped ${symbol} — ${reasonLabel}${detail ? ` (${detail})` : ''}.`;
     label = 'Skipped trade';
     severity = 'warning';
@@ -4675,7 +4860,7 @@ function humanizeLogLine(line, fallbackLevel = 'info') {
       severity,
       relevant,
       parsed,
-      reason,
+      reason: reasonKey || reason,
       symbol: symbol ? symbol.toString().toUpperCase() : undefined,
       detail,
     };
@@ -8691,6 +8876,10 @@ function appendCompactLog({ line, level, ts }) {
   const severity = (friendly.severity || level || 'info').toLowerCase();
   const el = document.createElement('div');
   el.className = `log-line ${severity}`.trim();
+  const categoryClass = getLogCategoryClass(friendly);
+  if (categoryClass) {
+    el.classList.add(categoryClass);
+  }
 
   const meta = document.createElement('div');
   meta.className = 'log-meta';
