@@ -207,7 +207,7 @@ All variables can be edited via environment overrides or through the dashboard (
 | `ASTER_MIN_EDGE_R` | `0.30` | Minimum edge (in R) required to approve a trade. |
 | `ASTER_DEFAULT_NOTIONAL` | `250` | Fallback notional when sizing fails. |
 | `ASTER_RISK_PER_TRADE` | `0.007`* | Share of equity per trade. |
-| `ASTER_EQUITY_FRACTION` | `0.33` | Maximum equity utilization across open positions. |
+| `ASTER_EQUITY_FRACTION` | `0.66` | Maximum equity utilization across open positions (33% / 66% / 100% via Low / Mid / High & ATT presets). |
 | `ASTER_LEVERAGE` | `10` | Default leverage for orders. Dashboard presets apply 4× (Low), 10× (Mid), or the per-symbol exchange maximum (High / ATT). |
 | `ASTER_MAX_OPEN_GLOBAL` | `0` | Global cap on concurrent positions (0 = unlimited, rely on equity guard). |
 | `ASTER_MAX_OPEN_PER_SYMBOL` | `1` | Per-symbol position limit (0 = unlimited, netting on exchange). |

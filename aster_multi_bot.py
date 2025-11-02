@@ -251,7 +251,7 @@ if not _leverage_seed:
 LEVERAGE_SOURCE = str(_leverage_seed or "10")
 LEVERAGE = _parse_leverage_env(LEVERAGE_SOURCE, 10.0)
 LEVERAGE_IS_UNLIMITED = not math.isfinite(LEVERAGE)
-EQUITY_FRACTION = float(os.getenv("ASTER_EQUITY_FRACTION", "0.33"))
+EQUITY_FRACTION = float(os.getenv("ASTER_EQUITY_FRACTION", "0.66"))
 MIN_NOTIONAL_ENV = float(os.getenv("ASTER_MIN_NOTIONAL_USDT", "5"))
 MAX_NOTIONAL_USDT = float(os.getenv("ASTER_MAX_NOTIONAL_USDT", "0"))  # 0 = kein Cap
 
