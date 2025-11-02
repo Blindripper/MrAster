@@ -9468,15 +9468,16 @@ async function loadTrades() {
 }
 
 async function handleTakeTradeProposals() {
-  if (!btnTakeTradeProposals) return;
   const pending = getPendingTradeProposals();
   if (pending.length === 0) {
     setChatStatus(getTakeProposalsEmptyLabel());
     updateTakeProposalsButtonState();
     return;
   }
-  btnTakeTradeProposals.dataset.state = 'working';
-  updateTakeProposalsButtonState();
+  if (btnTakeTradeProposals) {
+    btnTakeTradeProposals.dataset.state = 'working';
+    updateTakeProposalsButtonState();
+  }
   setChatStatus(getTakeProposalsWorkingLabel());
   const errors = [];
   for (const proposal of pending) {
@@ -9488,13 +9489,22 @@ async function handleTakeTradeProposals() {
       break;
     }
   }
-  btnTakeTradeProposals.dataset.state = 'idle';
-  updateTakeProposalsButtonState();
+  if (btnTakeTradeProposals) {
+    btnTakeTradeProposals.dataset.state = 'idle';
+    updateTakeProposalsButtonState();
+  } else {
+    updateTakeProposalsButtonState();
+  }
   if (errors.length > 0) {
     const firstError = errors[0];
     const message = (firstError?.message || '').trim() || getTakeProposalsHintLabel();
     setChatStatus(message);
     return;
+  }
+  try {
+    await loadTrades();
+  } catch (err) {
+    console.warn('Failed to refresh trades after executing proposals', err);
   }
   setChatStatus(getTakeProposalsSuccessLabel());
 }
