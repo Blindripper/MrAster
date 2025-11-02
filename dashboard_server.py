@@ -2372,7 +2372,9 @@ class AIChatEngine:
 
     def _extract_structured_trade_proposals(self, text: str) -> List[Dict[str, Any]]:
         try:
-            thesis_matches = list(re.finditer(r"\*\*Thesis\*\*:\s*", text, flags=re.IGNORECASE))
+            thesis_matches = list(
+                re.finditer(r"(?:\*\*)?Thesis(?:\*\*)?:\s*", text, flags=re.IGNORECASE)
+            )
         except re.error:
             return []
         if not thesis_matches:
@@ -2384,13 +2386,23 @@ class AIChatEngine:
 
         trade_input_hints: Dict[str, str] = {}
         try:
-            for sym, side in re.findall(r"\*\*([A-Z0-9]{3,})\s+(Long|Short)\*\*", text, flags=re.IGNORECASE):
+            for sym, side in re.findall(
+                r"(?:\*\*)?([A-Z0-9]{3,})\s+(Long|Short)(?:\*\*)?",
+                text,
+                flags=re.IGNORECASE,
+            ):
                 trade_input_hints[sym.upper()] = side.upper()
         except re.error:
             trade_input_hints = {}
 
         try:
-            idea_headers = list(re.finditer(r"\*\*(Long|Short)\s+Idea\*\*", text, flags=re.IGNORECASE))
+            idea_headers = list(
+                re.finditer(
+                    r"(?:\*\*)?(Long|Short)\s+Idea(?:\*\*)?",
+                    text,
+                    flags=re.IGNORECASE,
+                )
+            )
         except re.error:
             idea_headers = []
 
@@ -2409,7 +2421,9 @@ class AIChatEngine:
             start = match.start()
             end = thesis_matches[idx + 1].start() if idx + 1 < len(thesis_matches) else len(text)
             block = text[start:end]
-            thesis_line_match = re.search(r"\*\*Thesis\*\*:\s*(.+)", block, re.IGNORECASE)
+            thesis_line_match = re.search(
+                r"(?:\*\*)?Thesis(?:\*\*)?:\s*(.+)", block, re.IGNORECASE
+            )
             if not thesis_line_match:
                 continue
             thesis_line = thesis_line_match.group(1).strip()
@@ -2417,7 +2431,11 @@ class AIChatEngine:
                 continue
 
             symbol: Optional[str] = None
-            symbol_line_match = re.search(r"\*\*Symbol\*\*:\s*([A-Z0-9:_\-/]+)", block, re.IGNORECASE)
+            symbol_line_match = re.search(
+                r"(?:\*\*)?Symbol(?:\*\*)?:\s*([A-Z0-9:_\-/]+)",
+                block,
+                re.IGNORECASE,
+            )
             if symbol_line_match:
                 raw_symbol = symbol_line_match.group(1).strip()
                 if raw_symbol:
@@ -2451,13 +2469,19 @@ class AIChatEngine:
                     entry_price = entry_numbers[0]
             entry_kind = "limit" if entry_price is not None else "market"
 
-            invalidation_match = re.search(r"Invalidation\*\*:\s*([^\n]+)", block, re.IGNORECASE)
+            invalidation_match = re.search(
+                r"(?:\*\*)?Invalidation(?:\*\*)?:\s*([^\n]+)",
+                block,
+                re.IGNORECASE,
+            )
             invalidation_numbers = (
                 self._extract_numbers(invalidation_match.group(1)) if invalidation_match else []
             )
             stop_loss = invalidation_numbers[0] if invalidation_numbers else None
 
-            target_match = re.search(r"Target\*\*:\s*([^\n]+)", block, re.IGNORECASE)
+            target_match = re.search(
+                r"(?:\*\*)?Target(?:\*\*)?:\s*([^\n]+)", block, re.IGNORECASE
+            )
             target_numbers = self._extract_numbers(target_match.group(1)) if target_match else []
             take_profit = target_numbers[0] if target_numbers else None
 
@@ -2492,12 +2516,20 @@ class AIChatEngine:
                 continue
 
             note_parts = [thesis_line]
-            catalysts_match = re.search(r"Catalysts\*\*:\s*([^\n]+)", block, re.IGNORECASE)
+            catalysts_match = re.search(
+                r"(?:\*\*)?Catalysts?(?:\*\*)?:\s*([^\n]+)",
+                block,
+                re.IGNORECASE,
+            )
             if catalysts_match:
                 catalysts = catalysts_match.group(1).strip()
                 if catalysts:
                     note_parts.append(f"Catalysts: {catalysts}")
-            caveats_match = re.search(r"Data Caveats\*\*:\s*([^\n]+)", block, re.IGNORECASE)
+            caveats_match = re.search(
+                r"(?:\*\*)?(?:Data\s+)?Caveats?(?:\*\*)?:\s*([^\n]+)",
+                block,
+                re.IGNORECASE,
+            )
             if caveats_match:
                 caveats = caveats_match.group(1).strip()
                 if caveats:
@@ -2507,7 +2539,11 @@ class AIChatEngine:
                 note = note[:317] + "…"
 
             timeframe: Optional[str] = None
-            timeframe_match = re.search(r"Time\s*-?\s*frame\*\*:\s*([^\n]+)", block, re.IGNORECASE)
+            timeframe_match = re.search(
+                r"(?:\*\*)?Time\s*-?\s*frame(?:\*\*)?:\s*([^\n]+)",
+                block,
+                re.IGNORECASE,
+            )
             if timeframe_match:
                 raw_timeframe = timeframe_match.group(1)
                 if isinstance(raw_timeframe, str):
@@ -2515,7 +2551,11 @@ class AIChatEngine:
                     if cleaned:
                         timeframe = cleaned
             else:
-                horizon_match = re.search(r"(Time|Holding)\s*Horizon\*\*:\s*([^\n]+)", block, re.IGNORECASE)
+                horizon_match = re.search(
+                    r"(?:\*\*)?(Time|Holding)\s*Horizon(?:\*\*)?:\s*([^\n]+)",
+                    block,
+                    re.IGNORECASE,
+                )
                 if horizon_match:
                     raw_timeframe = horizon_match.group(2)
                     if isinstance(raw_timeframe, str):
