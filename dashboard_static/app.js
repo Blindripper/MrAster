@@ -2301,14 +2301,46 @@ async function processAutomatedTradeExecution() {
   }
 }
 
+function extractTradeProposalIdForPruning(item) {
+  if (!item || typeof item !== 'object') {
+    return null;
+  }
+  const idCandidates = [
+    item.id,
+    item.proposal_id,
+    item.proposalId,
+    item.uuid,
+    item.uid,
+    item.external_id,
+    item.trade_id,
+  ]
+    .map((value) => {
+      if (value === null || value === undefined) {
+        return '';
+      }
+      return value.toString().trim();
+    })
+    .filter(Boolean);
+  if (idCandidates.length > 0) {
+    return idCandidates[0];
+  }
+
+  const fingerprint = buildProposalFingerprint(item);
+  if (fingerprint && fallbackProposalKeys.has(fingerprint)) {
+    return fallbackProposalKeys.get(fingerprint);
+  }
+  return null;
+}
+
 function pruneTradeProposalRegistry(validList) {
   if (!Array.isArray(validList)) {
     return;
   }
   const validIds = new Set();
   validList.forEach((item) => {
-    if (item && item.id) {
-      validIds.add(item.id);
+    const normalizedId = extractTradeProposalIdForPruning(item);
+    if (normalizedId) {
+      validIds.add(normalizedId);
     }
   });
   Array.from(tradeProposalRegistry.entries()).forEach(([key, value]) => {
