@@ -4266,42 +4266,137 @@ function pickNumericField(position, candidates) {
   return { ...result, numeric: null };
 }
 
+function collectFieldCandidates(field) {
+  if (field === undefined || field === null) return [];
+  if (typeof field === 'number') return [field];
+  if (typeof field === 'string') {
+    const trimmed = field.trim();
+    return trimmed ? [trimmed] : [];
+  }
+  if (typeof field !== 'object') return [];
+
+  const candidates = [];
+  const seen = new Set();
+
+  const visit = (candidate) => {
+    if (candidate === undefined || candidate === null) return;
+    if (typeof candidate === 'number') {
+      candidates.push(candidate);
+      return;
+    }
+    if (typeof candidate === 'string') {
+      const trimmed = candidate.trim();
+      if (trimmed) {
+        candidates.push(trimmed);
+      }
+      return;
+    }
+    if (Array.isArray(candidate)) {
+      candidate.forEach((item) => visit(unwrapPositionValue(item)));
+      return;
+    }
+    if (typeof candidate === 'object') {
+      if (seen.has(candidate)) return;
+      seen.add(candidate);
+      const prioritizedKeys = [
+        'value',
+        'price',
+        'amount',
+        'qty',
+        'trigger',
+        'level',
+        'target',
+        'tp',
+        'sl',
+        'take_profit',
+        'takeProfit',
+        'stop_loss',
+        'stopLoss',
+        'next',
+        'next_price',
+        'nextPrice',
+        'price_next',
+      ];
+      prioritizedKeys.forEach((key) => {
+        if (key in candidate) {
+          visit(unwrapPositionValue(candidate[key]));
+        }
+      });
+      Object.values(candidate).forEach((value) => visit(unwrapPositionValue(value)));
+    }
+  };
+
+  if (Number.isFinite(field.numeric)) {
+    visit(field.numeric);
+  }
+  if ('value' in field) {
+    visit(field.value);
+  }
+  if ('raw' in field) {
+    visit(field.raw);
+  }
+
+  return candidates;
+}
+
+function resolveNumericFromCandidates(candidates) {
+  for (const candidate of candidates) {
+    const numeric = toNumeric(candidate);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+  }
+  return null;
+}
+
+function resolveFieldNumeric(field) {
+  if (!field) return null;
+  if (typeof field === 'number' || typeof field === 'string') {
+    const numeric = toNumeric(field);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  const candidates = collectFieldCandidates(field);
+  return resolveNumericFromCandidates(candidates);
+}
+
 function formatBracketLevel(field) {
   if (!field) return '–';
 
-  const valueCandidates = [];
-
-  if (field.value !== undefined && field.value !== null && field.value !== '') {
-    valueCandidates.push(field.value);
+  const candidates = collectFieldCandidates(field);
+  if (candidates.length === 0) {
+    return '–';
   }
 
-  if (Array.isArray(field.raw) && field.raw.length > 0) {
-    valueCandidates.push(unwrapPositionValue(field.raw[0]));
+  const numeric = resolveNumericFromCandidates(candidates);
+  if (Number.isFinite(numeric)) {
+    const formatted = formatPriceDisplay(numeric, {
+      minimumFractionDigits: 7,
+      maximumFractionDigits: 7,
+    });
+    if (formatted && formatted !== '–') {
+      return formatted;
+    }
+    return Number(numeric).toLocaleString(undefined, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 7,
+    });
   }
 
-  for (const candidate of valueCandidates) {
-    if (candidate === undefined || candidate === null || candidate === '') {
-      continue;
-    }
-    const numeric = toNumeric(candidate);
-    if (Number.isFinite(numeric)) {
-      const formatted = formatPriceDisplay(numeric, {
-        minimumFractionDigits: 7,
-        maximumFractionDigits: 7,
-      });
-      if (formatted !== '–') {
-        return formatted;
-      }
-    }
+  for (const candidate of candidates) {
     if (typeof candidate === 'string' || typeof candidate === 'number') {
-      return candidate.toString();
+      const text = candidate.toString().trim();
+      if (text) {
+        return text;
+      }
     }
   }
 
   return '–';
 }
 
-function formatBracketDistance(bracketNumeric, markNumeric) {
+function formatBracketDistance(bracketField, markField) {
+  const bracketNumeric = resolveFieldNumeric(bracketField);
+  const markNumeric = resolveFieldNumeric(markField);
   if (!Number.isFinite(bracketNumeric) || !Number.isFinite(markNumeric)) {
     return '–';
   }
@@ -4697,8 +4792,8 @@ function updateActivePositionsView() {
     const stopField = pickNumericField(position, ACTIVE_POSITION_ALIASES.stop || []);
     const tpDisplay = formatBracketLevel(nextTpField);
     const slDisplay = formatBracketLevel(stopField);
-    const tpDistanceDisplay = formatBracketDistance(nextTpField.numeric, markField.numeric);
-    const slDistanceDisplay = formatBracketDistance(stopField.numeric, markField.numeric);
+    const tpDistanceDisplay = formatBracketDistance(nextTpField, markField);
+    const slDistanceDisplay = formatBracketDistance(stopField, markField);
 
     const buildBracketRow = (labelText, valueText) => {
       const bracketRow = document.createElement('div');
