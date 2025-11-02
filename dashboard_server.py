@@ -347,6 +347,146 @@ def _normalize_playbook_state(raw: Any) -> Optional[Dict[str, Any]]:
     return result
 
 
+def _derive_playbook_state_from_activity(
+    activity: List[Dict[str, Any]]
+) -> Optional[Dict[str, Any]]:
+    if not isinstance(activity, list):
+        return None
+
+    for entry in reversed(activity):
+        if not isinstance(entry, dict):
+            continue
+
+        mode_raw = entry.get("mode")
+        bias_raw = entry.get("bias")
+        size_bias_raw = entry.get("size_bias")
+        sl_bias = entry.get("sl_bias")
+        tp_bias = entry.get("tp_bias")
+        features = entry.get("features")
+        notes = entry.get("notes")
+        confidence = entry.get("confidence")
+
+        has_details = any(
+            value
+            for value in (
+                mode_raw,
+                bias_raw,
+                size_bias_raw,
+                sl_bias,
+                tp_bias,
+                features,
+                notes,
+                confidence,
+            )
+        )
+        if not has_details:
+            continue
+
+        result: Dict[str, Any] = {}
+        if isinstance(mode_raw, str) and mode_raw.strip():
+            result["mode"] = mode_raw.strip()
+        if isinstance(bias_raw, str) and bias_raw.strip():
+            result["bias"] = bias_raw.strip()
+
+        if isinstance(size_bias_raw, dict):
+            normalized_size: Dict[str, float] = {}
+            for key, raw_value in size_bias_raw.items():
+                label = str(key or "").strip()
+                if not label:
+                    continue
+                value = _safe_float(raw_value)
+                if value is None:
+                    continue
+                normalized_size[label.upper()] = value
+            if normalized_size:
+                result["size_bias"] = normalized_size
+
+        for key, value in (("sl_bias", sl_bias), ("tp_bias", tp_bias)):
+            numeric = _safe_float(value)
+            if numeric is not None:
+                result[key] = numeric
+
+        if isinstance(features, list):
+            filtered = [item for item in features if isinstance(item, dict)]
+            if filtered:
+                result["features"] = filtered
+
+        if isinstance(notes, str) and notes.strip():
+            result["notes"] = notes.strip()
+
+        numeric_confidence = _safe_float(confidence)
+        if numeric_confidence is not None:
+            result["confidence"] = numeric_confidence
+
+        ts_epoch = entry.get("ts_epoch")
+        refreshed_iso = entry.get("ts")
+        if not refreshed_iso and entry.get("ts"):
+            try:
+                refreshed_iso = str(entry.get("ts"))
+            except Exception:
+                refreshed_iso = None
+        if ts_epoch is None and refreshed_iso:
+            parsed = _parse_activity_ts(refreshed_iso)
+            if parsed:
+                ts_epoch = parsed.timestamp()
+                refreshed_iso = parsed.isoformat()
+        if ts_epoch is not None:
+            result["refreshed_ts"] = float(ts_epoch)
+        if refreshed_iso:
+            result["refreshed"] = refreshed_iso
+
+        if result:
+            return result
+
+    return None
+
+
+def _is_placeholder_playbook(state: Optional[Dict[str, Any]]) -> bool:
+    if not state:
+        return True
+
+    if state.get("refreshed_ts") or state.get("refreshed"):
+        return False
+
+    mode = str(state.get("mode") or "").strip().lower()
+    bias = str(state.get("bias") or "").strip().lower()
+
+    if mode and mode not in {"baseline"}:
+        return False
+    if bias and bias not in {"neutral"}:
+        return False
+
+    size_bias = state.get("size_bias")
+    if isinstance(size_bias, dict):
+        for value in size_bias.values():
+            numeric = _safe_float(value)
+            if numeric is None:
+                continue
+            if abs(numeric - 1.0) > 1e-6:
+                return False
+
+    if state.get("features") or state.get("notes") or state.get("confidence"):
+        return False
+
+    return True
+
+
+def _resolve_playbook_state(
+    raw_state: Any, activity: List[Dict[str, Any]]
+) -> Optional[Dict[str, Any]]:
+    normalized = _normalize_playbook_state(raw_state)
+    if not _is_placeholder_playbook(normalized):
+        return normalized
+
+    fallback = _derive_playbook_state_from_activity(activity)
+    if not fallback:
+        return normalized
+
+    merged: Dict[str, Any] = dict(normalized) if isinstance(normalized, dict) else {}
+    merged.update(fallback)
+    return merged if merged else fallback
+
+
 def _collect_playbook_activity(ai_activity: List[Any]) -> List[Dict[str, Any]]:
     if not isinstance(ai_activity, list):
         return []
@@ -4050,8 +4190,8 @@ async def trades() -> Dict[str, Any]:
     else:
         ai_activity = []
     ai_requests = _summarize_ai_requests(ai_activity)
-    playbook_state = _normalize_playbook_state(state.get("ai_playbook"))
     playbook_activity = _collect_playbook_activity(ai_activity)
+    playbook_state = _resolve_playbook_state(state.get("ai_playbook"), playbook_activity)
     playbook_process = _build_playbook_process(playbook_activity)
     proposals: List[Dict[str, Any]] = []
     raw_proposals = state.get("ai_trade_proposals")

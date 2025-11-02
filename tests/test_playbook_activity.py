@@ -1,13 +1,16 @@
 import os
 import sys
 import unittest
+from datetime import datetime, timezone
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from dashboard_server import (
     _build_playbook_process,
     _collect_playbook_activity,
+    _derive_playbook_state_from_activity,
     _normalize_playbook_state,
+    _resolve_playbook_state,
 )
 
 
@@ -170,6 +173,99 @@ class PlaybookStateTests(unittest.TestCase):
         self.assertIn("M", state["size_bias"])
         self.assertAlmostEqual(state["confidence"], 0.12)
         self.assertEqual(state["notes"], "Example note")
+
+    def test_derive_state_from_activity(self):
+        raw_activity = [
+            {
+                "kind": "playbook",
+                "headline": "Playbook updated: momentum",
+                "ts": "2024-07-01T10:05:00Z",
+                "data": {
+                    "mode": "momentum squeeze",
+                    "bias": "bullish",
+                    "size_bias": {"BUY": 1.2, "SELL": 0.8},
+                    "sl_bias": 1.15,
+                    "tp_bias": 0.95,
+                    "confidence": 0.33,
+                    "notes": "Rotation favouring majors",
+                },
+            }
+        ]
+
+        activity = _collect_playbook_activity(raw_activity)
+        state = _derive_playbook_state_from_activity(activity)
+        self.assertIsNotNone(state)
+        self.assertEqual(state["mode"], "momentum squeeze")
+        self.assertEqual(state["bias"], "bullish")
+        self.assertAlmostEqual(state["size_bias"]["BUY"], 1.2)
+        self.assertAlmostEqual(state["sl_bias"], 1.15)
+        self.assertAlmostEqual(state["confidence"], 0.33)
+        self.assertIn("refreshed", state)
+
+    def test_resolve_state_prefers_activity_when_placeholder(self):
+        placeholder = {
+            "active": {
+                "mode": "baseline",
+                "bias": "neutral",
+                "size_bias": {"BUY": 1.0, "SELL": 1.0},
+                "sl_bias": 1.0,
+                "tp_bias": 1.0,
+                "features": {},
+                "refreshed": 0,
+            }
+        }
+
+        raw_activity = [
+            {
+                "kind": "playbook",
+                "headline": "Playbook updated: breakout",
+                "ts": "2024-07-01T11:00:00Z",
+                "data": {
+                    "mode": "breakout",
+                    "bias": "bullish",
+                    "size_bias": {"BUY": 1.3, "SELL": 0.7},
+                    "sl_bias": 1.25,
+                },
+            }
+        ]
+
+        activity = _collect_playbook_activity(raw_activity)
+        resolved = _resolve_playbook_state(placeholder, activity)
+        self.assertIsNotNone(resolved)
+        self.assertEqual(resolved["mode"], "breakout")
+        self.assertAlmostEqual(resolved["size_bias"]["BUY"], 1.3)
+        self.assertIn("refreshed_ts", resolved)
+
+    def test_resolve_state_keeps_existing_when_fresh(self):
+        raw_state = {
+            "active": {
+                "mode": "range",
+                "bias": "bearish",
+                "size_bias": {"BUY": 0.8, "SELL": 1.2},
+                "sl_bias": 1.05,
+                "tp_bias": 1.4,
+                "features": {"breadth": -0.4},
+                "refreshed": datetime(2024, 7, 1, 12, 0, 0, tzinfo=timezone.utc).timestamp(),
+            }
+        }
+
+        raw_activity = [
+            {
+                "kind": "playbook",
+                "headline": "Playbook updated: breakout",
+                "ts": "2024-07-01T13:00:00Z",
+                "data": {
+                    "mode": "breakout",
+                    "bias": "bullish",
+                },
+            }
+        ]
+
+        activity = _collect_playbook_activity(raw_activity)
+        resolved = _resolve_playbook_state(raw_state, activity)
+        self.assertEqual(resolved["mode"], "range")
+        self.assertEqual(resolved["bias"], "bearish")
+        self.assertAlmostEqual(resolved["size_bias"]["SELL"], 1.2)
 
 
 if __name__ == "__main__":
