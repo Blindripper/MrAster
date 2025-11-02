@@ -2765,7 +2765,8 @@ setEnvCollapsed(true);
 const PRESETS = {
   low: {
     label: 'Low',
-    summary: 'Capital preservation first: slower signal intake, narrower exposure, conservative scaling, and a 4× base leverage cap.',
+    summary:
+      'Capital preservation first: slower signal intake, narrower exposure, conservative scaling, a 4× base leverage cap, and a 33% equity utilisation guard.',
     risk: 0.5,
     leverage: 4,
     edgeMinR: 0.08,
@@ -2798,14 +2799,15 @@ const PRESETS = {
     alphaWarmup: 55,
     banditEnabled: true,
     alphaEnabled: true,
-    equityFraction: 0.22,
+    equityFraction: 0.33,
     maxOpenGlobal: 0,
     maxOpenPerSymbol: 1,
     trendBias: 'with',
   },
   mid: {
     label: 'Mid',
-    summary: 'Balanced cadence with moderate risk, 10× base leverage, and sizing aimed at steady account growth.',
+    summary:
+      'Balanced cadence with moderate risk, 10× base leverage, and a 66% equity utilisation ceiling geared toward steady account growth.',
     risk: 1.0,
     leverage: 10,
     edgeMinR: 0.06,
@@ -2838,7 +2840,7 @@ const PRESETS = {
     alphaWarmup: 40,
     banditEnabled: true,
     alphaEnabled: true,
-    equityFraction: 0.28,
+    equityFraction: 0.66,
     maxOpenGlobal: 0,
     maxOpenPerSymbol: 1,
     trendBias: 'with',
@@ -2846,7 +2848,7 @@ const PRESETS = {
   high: {
     label: 'High',
     summary:
-      'High-frequency execution with wider risk budgets, leverage auto-set to the exchange maximum, and an unlimited AI spend cap.',
+      'High-frequency execution with wider risk budgets, leverage auto-set to the exchange maximum, an unlimited AI spend cap, and full (100%) equity deployment when signals align.',
     unlimitedBudget: true,
     risk: 2.0,
     leverage: 'max',
@@ -2880,7 +2882,7 @@ const PRESETS = {
     alphaWarmup: 32,
     banditEnabled: true,
     alphaEnabled: true,
-    equityFraction: 0.34,
+    equityFraction: 1.0,
     maxOpenGlobal: 0,
     maxOpenPerSymbol: 1,
     trendBias: 'with',
@@ -2922,7 +2924,7 @@ const PRESETS = {
     alphaWarmup: 45,
     banditEnabled: true,
     alphaEnabled: true,
-    equityFraction: 0.24,
+    equityFraction: 1.0,
     maxOpenGlobal: 0,
     maxOpenPerSymbol: 1,
     trendBias: 'against',
