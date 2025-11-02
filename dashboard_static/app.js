@@ -6436,6 +6436,142 @@ function renderPlaybookSummarySection() {
     playbookSummaryContainer.append(featuresSection);
   }
 
+  const strategy = lastPlaybookState.strategy && typeof lastPlaybookState.strategy === 'object' ? lastPlaybookState.strategy : null;
+  if (strategy) {
+    const strategySection = document.createElement('div');
+    strategySection.className = 'playbook-strategy';
+
+    const strategyTitle = document.createElement('h3');
+    strategyTitle.className = 'playbook-strategy-title';
+    strategyTitle.textContent = translate('playbook.strategy.title', 'Strategy in play');
+    strategySection.append(strategyTitle);
+
+    const strategyName = document.createElement('div');
+    strategyName.className = 'playbook-strategy-name';
+    strategyName.textContent = strategy.name || translate('playbook.strategy.untitled', 'Unnamed strategy');
+    strategySection.append(strategyName);
+
+    const metaContainer = document.createElement('div');
+    metaContainer.className = 'playbook-strategy-meta';
+    const addMetaRow = (labelText, valueText) => {
+      if (!valueText || typeof valueText !== 'string' || !valueText.trim()) return;
+      const row = document.createElement('div');
+      row.className = 'playbook-strategy-meta-row';
+      const labelEl = document.createElement('span');
+      labelEl.className = 'label';
+      labelEl.textContent = labelText;
+      const valueEl = document.createElement('span');
+      valueEl.className = 'value';
+      valueEl.textContent = valueText.trim();
+      row.append(labelEl, valueEl);
+      metaContainer.append(row);
+    };
+
+    addMetaRow(
+      translate('playbook.strategy.objective', 'Objective'),
+      typeof strategy.objective === 'string' ? strategy.objective : null
+    );
+    const reasonText =
+      (typeof lastPlaybookState.reason === 'string' && lastPlaybookState.reason.trim())
+        ? lastPlaybookState.reason
+        : typeof strategy.why_active === 'string'
+        ? strategy.why_active
+        : null;
+    addMetaRow(translate('playbook.strategy.reason', 'Why it is active'), reasonText);
+    if (metaContainer.childElementCount > 0) {
+      strategySection.append(metaContainer);
+    }
+
+    const normalizedSignals = Array.isArray(strategy.market_signals)
+      ? strategy.market_signals.filter((item) => typeof item === 'string' && item.trim())
+      : [];
+    if (normalizedSignals.length > 0) {
+      const signalsSection = document.createElement('div');
+      signalsSection.className = 'playbook-strategy-section';
+      const sectionTitle = document.createElement('div');
+      sectionTitle.className = 'playbook-strategy-section-title';
+      sectionTitle.textContent = translate('playbook.strategy.signals', 'Key market signals');
+      signalsSection.append(sectionTitle);
+      const list = document.createElement('ul');
+      list.className = 'playbook-strategy-list';
+      normalizedSignals.forEach((signal) => {
+        const item = document.createElement('li');
+        item.textContent = signal.trim();
+        list.append(item);
+      });
+      signalsSection.append(list);
+      strategySection.append(signalsSection);
+    }
+
+    const normalizedActions = Array.isArray(strategy.actions)
+      ? strategy.actions.filter(
+          (action) =>
+            action &&
+            typeof action === 'object' &&
+            ((typeof action.title === 'string' && action.title.trim()) ||
+              (typeof action.detail === 'string' && action.detail.trim()))
+        )
+      : [];
+    if (normalizedActions.length > 0) {
+      const actionsSection = document.createElement('div');
+      actionsSection.className = 'playbook-strategy-section';
+      const sectionTitle = document.createElement('div');
+      sectionTitle.className = 'playbook-strategy-section-title';
+      sectionTitle.textContent = translate('playbook.strategy.actions', 'Execution steps');
+      actionsSection.append(sectionTitle);
+      const list = document.createElement('ol');
+      list.className = 'playbook-strategy-actions';
+      normalizedActions.forEach((action) => {
+        const item = document.createElement('li');
+        item.className = 'playbook-strategy-action';
+        if (typeof action.title === 'string' && action.title.trim()) {
+          const titleEl = document.createElement('span');
+          titleEl.className = 'playbook-strategy-action-title';
+          titleEl.textContent = action.title.trim();
+          item.append(titleEl);
+        }
+        if (typeof action.detail === 'string' && action.detail.trim()) {
+          const detailEl = document.createElement('p');
+          detailEl.className = 'playbook-strategy-action-detail';
+          detailEl.textContent = action.detail.trim();
+          item.append(detailEl);
+        }
+        if (typeof action.trigger === 'string' && action.trigger.trim()) {
+          const triggerEl = document.createElement('div');
+          triggerEl.className = 'playbook-strategy-action-trigger';
+          triggerEl.textContent = `${translate('playbook.strategy.trigger', 'Trigger')}: ${action.trigger.trim()}`;
+          item.append(triggerEl);
+        }
+        list.append(item);
+      });
+      actionsSection.append(list);
+      strategySection.append(actionsSection);
+    }
+
+    const normalizedRisk = Array.isArray(strategy.risk_controls)
+      ? strategy.risk_controls.filter((item) => typeof item === 'string' && item.trim())
+      : [];
+    if (normalizedRisk.length > 0) {
+      const riskSection = document.createElement('div');
+      riskSection.className = 'playbook-strategy-section';
+      const sectionTitle = document.createElement('div');
+      sectionTitle.className = 'playbook-strategy-section-title';
+      sectionTitle.textContent = translate('playbook.strategy.risk', 'Risk controls');
+      riskSection.append(sectionTitle);
+      const list = document.createElement('ul');
+      list.className = 'playbook-strategy-list';
+      normalizedRisk.forEach((itemText) => {
+        const item = document.createElement('li');
+        item.textContent = itemText.trim();
+        list.append(item);
+      });
+      riskSection.append(list);
+      strategySection.append(riskSection);
+    }
+
+    playbookSummaryContainer.append(strategySection);
+  }
+
   if (lastPlaybookState.notes) {
     const notes = document.createElement('p');
     notes.className = 'playbook-notes';

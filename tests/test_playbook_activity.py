@@ -52,6 +52,36 @@ class PlaybookActivityTests(unittest.TestCase):
         self.assertEqual(result[0]["mode"], "momentum")
         self.assertEqual(result[0]["bias"], "bullish")
 
+    def test_collects_strategy_payload(self):
+        payload = [
+            {
+                "kind": "playbook",
+                "headline": "Playbook updated",
+                "ts": "2024-07-01T10:07:00Z",
+                "data": {
+                    "request_id": "req-strategy",
+                    "strategy": {
+                        "name": "Range Fade",
+                        "why_active": "Range-bound session with capped volatility",
+                        "actions": [
+                            {
+                                "title": "Fade extremes",
+                                "detail": "Sell near resistance and buy near support when volume stays muted.",
+                            }
+                        ],
+                    },
+                },
+            }
+        ]
+
+        result = _collect_playbook_activity(payload)
+        self.assertEqual(len(result), 1)
+        entry = result[0]
+        self.assertEqual(entry["request_id"], "req-strategy")
+        self.assertIn("strategy", entry)
+        self.assertEqual(entry["strategy"]["name"], "Range Fade")
+        self.assertEqual(entry["reason"], "Range-bound session with capped volatility")
+
     def test_detects_tuning_entries(self):
         payload = [
             {
@@ -249,6 +279,37 @@ class PlaybookStateTests(unittest.TestCase):
         self.assertIn("M", state["size_bias"])
         self.assertAlmostEqual(state["confidence"], 0.12)
         self.assertEqual(state["notes"], "Example note")
+
+    def test_normalize_state_includes_strategy(self):
+        raw = {
+            "active": {
+                "mode": "breakout",
+                "bias": "bullish",
+                "strategy": {
+                    "name": "Breakout Momentum",
+                    "objective": "Capitalize on strong breakout moves",
+                    "why_active": "Trend and breadth both show sustained expansion",
+                    "market_signals": ["ADX rising", "Volume acceleration"],
+                    "actions": [
+                        {
+                            "title": "Confirm breakout",
+                            "detail": "Wait for candle close above resistance with volume > 1.5× baseline.",
+                            "trigger": "Price closes above resistance",
+                        }
+                    ],
+                    "risk_controls": ["Cut exposure if sentinel turns yellow", "Disable leverage on event spikes"],
+                },
+            }
+        }
+
+        state = _normalize_playbook_state(raw)
+        self.assertIsNotNone(state)
+        self.assertIn("strategy", state)
+        strategy = state["strategy"]
+        self.assertEqual(strategy["name"], "Breakout Momentum")
+        self.assertIn("market_signals", strategy)
+        self.assertIn("actions", strategy)
+        self.assertEqual(state["reason"], "Trend and breadth both show sustained expansion")
 
     def test_derive_state_from_activity(self):
         raw_activity = [

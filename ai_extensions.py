@@ -425,6 +425,121 @@ class PlaybookManager:
         self._bootstrap_cooldown_until = 0.0
         self._event_cb = event_cb
 
+    @staticmethod
+    def _clean_string(value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            text = value.strip()
+        else:
+            try:
+                text = str(value).strip()
+            except Exception:
+                return None
+        return text or None
+
+    @classmethod
+    def _normalize_string_list(
+        cls, raw: Any, *, limit: int = 6
+    ) -> List[str]:
+        values: List[str] = []
+        if isinstance(raw, list):
+            for item in raw:
+                text = cls._clean_string(item)
+                if text:
+                    values.append(text)
+                if len(values) >= limit:
+                    break
+        else:
+            text = cls._clean_string(raw)
+            if text:
+                values.append(text)
+        return values
+
+    @classmethod
+    def _normalize_strategy(cls, payload: Any) -> Optional[Dict[str, Any]]:
+        if not isinstance(payload, dict):
+            return None
+
+        strategy: Dict[str, Any] = {}
+        name = cls._clean_string(payload.get("name"))
+        if name:
+            strategy["name"] = name
+
+        objective = cls._clean_string(payload.get("objective") or payload.get("goal"))
+        if objective:
+            strategy["objective"] = objective
+
+        why_active = cls._clean_string(
+            payload.get("why_active")
+            or payload.get("rationale")
+            or payload.get("justification")
+        )
+        if why_active:
+            strategy["why_active"] = why_active
+
+        signals = cls._normalize_string_list(
+            payload.get("market_signals") or payload.get("signals")
+        )
+        if signals:
+            strategy["market_signals"] = signals[:6]
+
+        actions_raw = payload.get("actions")
+        actions: List[Dict[str, Any]] = []
+        if isinstance(actions_raw, list):
+            for idx, item in enumerate(actions_raw, start=1):
+                title = None
+                detail = None
+                trigger = None
+                if isinstance(item, dict):
+                    title = cls._clean_string(
+                        item.get("title")
+                        or item.get("name")
+                        or item.get("step")
+                    )
+                    detail = cls._clean_string(
+                        item.get("detail")
+                        or item.get("instruction")
+                        or item.get("action")
+                    )
+                    trigger = cls._clean_string(
+                        item.get("trigger") or item.get("condition")
+                    )
+                else:
+                    detail = cls._clean_string(item)
+                if not (title or detail):
+                    continue
+                action_entry: Dict[str, Any] = {"title": title or f"Step {idx}"}
+                if detail:
+                    action_entry["detail"] = detail
+                if trigger:
+                    action_entry["trigger"] = trigger
+                actions.append(action_entry)
+                if len(actions) >= 6:
+                    break
+        elif isinstance(actions_raw, dict):
+            for key, value in actions_raw.items():
+                detail = cls._clean_string(value)
+                if not detail:
+                    continue
+                action_entry = {
+                    "title": cls._clean_string(key) or f"Step {len(actions) + 1}",
+                    "detail": detail,
+                }
+                actions.append(action_entry)
+                if len(actions) >= 6:
+                    break
+        if actions:
+            strategy["actions"] = actions
+
+        risk_controls = cls._normalize_string_list(
+            payload.get("risk_controls") or payload.get("risk_management")
+        )
+        if risk_controls:
+            strategy["risk_controls"] = risk_controls[:6]
+
+        return strategy or None
+
     def maybe_refresh(self, snapshot: Dict[str, Any]) -> None:
         active = self._state.get("active", {})
         now = time.time()
@@ -516,6 +631,43 @@ class PlaybookManager:
         ctx["playbook_size_bias"] = float(
             (active.get("size_bias", {}) or {}).get(str(ctx.get("side") or "").upper(), 1.0)
         )
+        confidence = active.get("confidence")
+        try:
+            if confidence is not None:
+                ctx["playbook_confidence"] = float(confidence)
+        except (TypeError, ValueError):
+            pass
+        strategy = active.get("strategy")
+        if isinstance(strategy, dict):
+            name = strategy.get("name")
+            objective = strategy.get("objective")
+            reason = strategy.get("why_active")
+            if name:
+                ctx["playbook_strategy_name"] = str(name)
+            if objective:
+                ctx["playbook_strategy_objective"] = str(objective)
+            if reason:
+                ctx["playbook_strategy_reason"] = str(reason)
+            signals = strategy.get("market_signals")
+            if isinstance(signals, list):
+                for idx, signal in enumerate(signals[:3], start=1):
+                    if isinstance(signal, str) and signal.strip():
+                        ctx[f"playbook_signal_{idx}"] = signal
+            actions = strategy.get("actions")
+            if isinstance(actions, list):
+                for idx, action in enumerate(actions[:3], start=1):
+                    if not isinstance(action, dict):
+                        continue
+                    title = action.get("title")
+                    detail = action.get("detail")
+                    trigger = action.get("trigger")
+                    base_key = f"playbook_action_{idx}"
+                    if isinstance(title, str) and title.strip():
+                        ctx[f"{base_key}_title"] = title
+                    if isinstance(detail, str) and detail.strip():
+                        ctx[f"{base_key}_detail"] = detail
+                    if isinstance(trigger, str) and trigger.strip():
+                        ctx[f"{base_key}_trigger"] = trigger
 
     def _normalize_playbook(self, payload: Dict[str, Any], now: float) -> Dict[str, Any]:
         mode = str(payload.get("mode") or payload.get("regime") or "baseline")
@@ -538,6 +690,18 @@ class PlaybookManager:
         notes = payload.get("note") or payload.get("notes")
         if isinstance(notes, list):
             notes = "; ".join(str(n) for n in notes)
+        confidence = None
+        try:
+            if payload.get("confidence") is not None:
+                confidence = max(0.0, min(1.0, float(payload.get("confidence"))))
+        except (TypeError, ValueError):
+            confidence = None
+
+        strategy = self._normalize_strategy(payload.get("strategy"))
+        reason_text = self._clean_string(
+            payload.get("reason") or payload.get("rationale")
+        )
+
         active = {
             "mode": mode,
             "bias": bias,
@@ -548,6 +712,14 @@ class PlaybookManager:
             "notes": notes if isinstance(notes, str) else "",
             "refreshed": now,
         }
+        if confidence is not None:
+            active["confidence"] = confidence
+        if reason_text:
+            active["reason"] = reason_text
+        if strategy:
+            active["strategy"] = strategy
+            if "reason" not in active and strategy.get("why_active"):
+                active["reason"] = strategy["why_active"]
         request_id = payload.get("request_id")
         if isinstance(request_id, str):
             token = request_id.strip()
