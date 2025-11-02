@@ -245,7 +245,7 @@ All variables can be edited via environment overrides or through the dashboard (
 | `ASTER_AI_STRICT_BUDGET` | `true` | Stops AI calls after hitting the budget. |
 | `ASTER_AI_MIN_INTERVAL_SECONDS` | `8` | Cooldown before the AI re-evaluates the same symbol. |
 | `ASTER_AI_SENTINEL_ENABLED` | `true` | Activates the News Sentinel. |
-| `ASTER_AI_SENTINEL_DECAY_MINUTES` | `90` | Lifetime of a news warning. |
+| `ASTER_AI_SENTINEL_DECAY_MINUTES` | `60` | Lifetime of a news warning. |
 | `ASTER_AI_NEWS_ENDPOINT` | empty | External source for breaking news. |
 | `ASTER_AI_NEWS_API_KEY` | empty | API token for the sentinel. |
 | `ASTER_BRACKETS_QUEUE_FILE` | `brackets_queue.json` | Queue file for guard repairs. |
