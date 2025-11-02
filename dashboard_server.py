@@ -1082,6 +1082,13 @@ def _fetch_position_snapshot(env: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         mark_price = _safe_float(item.get("markPrice"))
         unrealized = _safe_float(item.get("unRealizedProfit"))
         leverage = _safe_float(item.get("leverage"))
+        margin_candidates = (
+            _safe_float(item.get("isolatedMargin")),
+            _safe_float(item.get("positionInitialMargin")),
+            _safe_float(item.get("initialMargin")),
+            _safe_float(item.get("isolatedWallet")),
+        )
+        margin_val = next((val for val in margin_candidates if val is not None), None)
         notional: Optional[float] = None
         price_for_notional = None
         if mark_price is not None and mark_price > 0:
@@ -1091,10 +1098,30 @@ def _fetch_position_snapshot(env: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         if price_for_notional is not None:
             notional = abs(position_amt) * price_for_notional
 
-        roe = None
-        if unrealized is not None and notional and notional > 0:
+        computed_pnl: Optional[float] = None
+        if entry_price is not None and mark_price is not None:
             try:
-                roe = (unrealized / notional) * 100.0
+                computed_pnl = (mark_price - entry_price) * position_amt
+            except Exception:  # defensive: fallback to API payload
+                computed_pnl = None
+
+        if margin_val is None and notional is not None and leverage:
+            try:
+                if leverage > 0:
+                    margin_val = abs(notional) / leverage
+            except ZeroDivisionError:
+                margin_val = None
+
+        roe = None
+        pnl_for_roe = computed_pnl if computed_pnl is not None else unrealized
+        denominator = None
+        if margin_val is not None and margin_val > 0:
+            denominator = margin_val
+        elif notional is not None and notional > 0:
+            denominator = notional
+        if pnl_for_roe is not None and denominator:
+            try:
+                roe = (pnl_for_roe / denominator) * 100.0
             except ZeroDivisionError:
                 roe = None
 
@@ -1115,6 +1142,33 @@ def _fetch_position_snapshot(env: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
             snapshot_entry["notionalUsd"] = notional
             snapshot_entry["positionNotional"] = notional
             snapshot_entry["size_usdt"] = notional
+
+        if computed_pnl is not None:
+            snapshot_entry["pnl"] = computed_pnl
+            snapshot_entry["pnl_usd"] = computed_pnl
+            snapshot_entry["pnl_usdt"] = computed_pnl
+            snapshot_entry["pnl_unrealized"] = computed_pnl
+            snapshot_entry["computedPnl"] = computed_pnl
+            snapshot_entry["computed_pnl"] = computed_pnl
+            snapshot_entry["unrealized"] = computed_pnl
+            snapshot_entry["unrealizedProfit"] = computed_pnl
+        elif unrealized is not None:
+            snapshot_entry["pnl"] = unrealized
+            snapshot_entry["pnl_usd"] = unrealized
+            snapshot_entry["pnl_usdt"] = unrealized
+            snapshot_entry["pnl_unrealized"] = unrealized
+            snapshot_entry["unrealized"] = unrealized
+            snapshot_entry["unrealizedProfit"] = unrealized
+
+        if margin_val is not None:
+            snapshot_entry["margin"] = margin_val
+            snapshot_entry["positionMargin"] = margin_val
+            snapshot_entry["isolatedMargin"] = margin_val
+
+        if position_amt > 0:
+            snapshot_entry.setdefault("side", "BUY")
+        elif position_amt < 0:
+            snapshot_entry.setdefault("side", "SELL")
 
         snapshot[symbol] = snapshot_entry
 
@@ -1356,11 +1410,23 @@ def _merge_position_record(
         merged.setdefault("size", position_amt)
         merged["positionAmt"] = position_amt
 
+    computed_pnl = extra.get("computedPnl")
+    if computed_pnl is None:
+        computed_pnl = extra.get("computed_pnl")
     unrealized = extra.get("unRealizedProfit")
+    pnl_value = computed_pnl if computed_pnl is not None else unrealized
+    if pnl_value is not None:
+        merged["pnl"] = pnl_value
+        merged["unrealized"] = pnl_value
+        merged["unrealizedProfit"] = pnl_value
+        merged["pnl_unrealized"] = pnl_value
+        merged["pnl_usd"] = pnl_value
+        merged["pnl_usdt"] = pnl_value
+    if computed_pnl is not None:
+        merged["computedPnl"] = computed_pnl
+        merged["computed_pnl"] = computed_pnl
     if unrealized is not None:
-        merged["pnl"] = unrealized
-        merged["unrealized"] = unrealized
-        merged["unrealizedProfit"] = unrealized
+        merged.setdefault("unRealizedProfit", unrealized)
 
     roe = extra.get("roe_percent")
     if roe is not None:
@@ -1372,6 +1438,19 @@ def _merge_position_record(
     leverage = extra.get("leverage")
     if leverage is not None:
         merged.setdefault("leverage", leverage)
+
+    margin_candidates = [
+        extra.get("margin"),
+        extra.get("positionMargin"),
+        extra.get("isolatedMargin"),
+    ]
+    for margin_val in margin_candidates:
+        if margin_val is None:
+            continue
+        merged["margin"] = margin_val
+        merged["positionMargin"] = margin_val
+        merged.setdefault("isolatedMargin", margin_val)
+        break
 
     update_time = extra.get("updateTime")
     if update_time is not None:
@@ -1394,15 +1473,63 @@ def _merge_position_payload(payload: Any, snapshot: Dict[str, Dict[str, Any]], f
 
 
 def enrich_open_positions(open_payload: Any, env: Dict[str, Any]) -> Any:
-    if not open_payload:
-        return open_payload
-
     snapshot = _fetch_position_snapshot(env)
     if not snapshot:
         return open_payload
 
+    if not open_payload:
+        return list(snapshot.values())
+
     payload_copy = copy.deepcopy(open_payload)
-    return _merge_position_payload(payload_copy, snapshot)
+    merged_payload = _merge_position_payload(payload_copy, snapshot)
+
+    def _register(record: Dict[str, Any]) -> None:
+        if not isinstance(record, dict):
+            return
+        symbol_raw = record.get("symbol") or record.get("sym") or record.get("ticker") or record.get("pair")
+        if not symbol_raw:
+            return
+        symbol_key = str(symbol_raw).upper().strip()
+        if not symbol_key:
+            return
+        side_raw = record.get("side") or record.get("positionSide") or record.get("direction")
+        if isinstance(side_raw, str):
+            side_key = side_raw.strip().upper()
+        else:
+            side_key = None
+        if not side_key:
+            amount_val = _safe_float(record.get("positionAmt") or record.get("qty") or record.get("size"))
+            if amount_val is not None:
+                if amount_val > 0:
+                    side_key = "BUY"
+                elif amount_val < 0:
+                    side_key = "SELL"
+        composite_key = f"{symbol_key}:{side_key}" if side_key else symbol_key
+        entry = combined.setdefault(composite_key, {})
+        entry.update(record)
+        entry.setdefault("symbol", symbol_key)
+        if side_key:
+            entry.setdefault("side", side_key)
+
+    def _collect(payload: Any) -> None:
+        if isinstance(payload, dict):
+            if _looks_like_position_record(payload):
+                _register(payload)
+            else:
+                for value in payload.values():
+                    _collect(value)
+        elif isinstance(payload, list):
+            for item in payload:
+                _collect(item)
+
+    combined: Dict[str, Dict[str, Any]] = {}
+    for extra in snapshot.values():
+        _register(extra)
+    _collect(merged_payload)
+
+    if combined:
+        return list(combined.values())
+    return merged_payload
 
 BINANCE_24H_URL = "https://api.binance.com/api/v3/ticker/24hr"
 BINANCE_KLINES_URL = "https://api.binance.com/api/v3/klines"
