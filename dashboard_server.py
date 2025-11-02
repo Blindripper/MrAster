@@ -4103,6 +4103,153 @@ class AIChatEngine:
             "status": stored["status"],
         }
 
+    def _record_copilot_position(
+        self,
+        state: Dict[str, Any],
+        proposal_id: str,
+        normalized: Dict[str, Any],
+        execution: Dict[str, Any],
+        opened_ts: float,
+    ) -> None:
+        symbol = str(normalized.get("symbol") or "").upper().strip()
+        direction = str(normalized.get("direction") or "").upper().strip()
+        if not symbol or direction not in {"LONG", "SHORT"}:
+            return
+
+        side = "BUY" if direction == "LONG" else "SELL"
+        entry_price = self._safe_float(
+            execution.get("entry_price") if isinstance(execution, dict) else None
+        )
+        if entry_price is None:
+            entry_price = self._safe_float(normalized.get("entry_price"))
+
+        notional = self._safe_float(normalized.get("notional"))
+        if notional is None and isinstance(execution, dict):
+            notional = self._safe_float(execution.get("notional"))
+
+        quantity = None
+        if isinstance(execution, dict):
+            quantity = self._safe_float(execution.get("quantity"))
+        if quantity is None and notional is not None and entry_price not in {None, 0.0}:
+            try:
+                quantity = notional / float(entry_price)
+            except (TypeError, ValueError, ZeroDivisionError):
+                quantity = None
+        quantity = self._safe_float(quantity)
+
+        stop_loss = self._safe_float(normalized.get("stop_loss"))
+        take_profit = self._safe_float(normalized.get("take_profit"))
+
+        record: Dict[str, Any] = {
+            "symbol": symbol,
+            "side": side,
+            "direction": direction,
+            "entry_kind": normalized.get("entry_kind") or "market",
+            "bucket": "copilot",
+            "status": "open",
+        }
+
+        if entry_price is not None:
+            record["entry"] = entry_price
+            record["entry_price"] = entry_price
+            record.setdefault("ctx", {})
+            record["ctx"]["mid_price"] = entry_price
+        if notional is not None:
+            try:
+                notional_val = float(notional)
+            except (TypeError, ValueError):
+                notional_val = None
+            else:
+                record["notional"] = notional_val
+                record["notional_usdt"] = notional_val
+                record["positionNotional"] = notional_val
+        if quantity is not None:
+            try:
+                qty_abs = abs(float(quantity))
+            except (TypeError, ValueError):
+                qty_abs = None
+            else:
+                record["qty"] = qty_abs
+                record["size"] = qty_abs
+                signed_qty = qty_abs if side == "BUY" else -qty_abs
+                record["positionAmt"] = signed_qty
+        if stop_loss is not None:
+            record["sl"] = stop_loss
+            record["stop_loss"] = stop_loss
+        if take_profit is not None:
+            record["tp"] = take_profit
+            record["take_profit"] = take_profit
+
+        if isinstance(opened_ts, (int, float)) and math.isfinite(opened_ts):
+            record["opened_at"] = opened_ts
+            try:
+                record["opened_at_iso"] = datetime.fromtimestamp(opened_ts, tz=timezone.utc).isoformat()
+            except Exception:
+                pass
+
+        ctx_block = record.setdefault("ctx", {})
+        ctx_block.setdefault("source", "copilot_proposal")
+        ctx_block.setdefault("mode", "dashboard")
+
+        if isinstance(execution, dict) and execution:
+            try:
+                record["execution"] = json.loads(json.dumps(execution))
+            except Exception:
+                record["execution"] = execution
+
+        ai_meta: Dict[str, Any] = {
+            "source": "copilot_proposal",
+            "proposal_id": proposal_id,
+        }
+        for key in ("timeframe", "note"):
+            value = normalized.get(key)
+            if isinstance(value, str):
+                trimmed = value.strip()
+                if trimmed:
+                    ai_meta[key] = trimmed
+        for numeric_key in ("confidence", "risk_reward", "size_multiplier"):
+            numeric_value = self._safe_float(normalized.get(numeric_key))
+            if numeric_value is not None:
+                ai_meta[numeric_key] = numeric_value
+        if ai_meta:
+            record["ai"] = ai_meta
+
+        live_trades = state.get("live_trades")
+        if not isinstance(live_trades, dict):
+            live_trades = {}
+
+        existing = live_trades.get(symbol)
+        if isinstance(existing, dict):
+            merged_record = {**existing, **record}
+            existing_ctx = existing.get("ctx") if isinstance(existing.get("ctx"), dict) else None
+            record_ctx = record.get("ctx") if isinstance(record.get("ctx"), dict) else None
+            if existing_ctx or record_ctx:
+                merged_ctx: Dict[str, Any] = {}
+                if existing_ctx:
+                    merged_ctx.update(existing_ctx)
+                if record_ctx:
+                    merged_ctx.update(record_ctx)
+                merged_record["ctx"] = merged_ctx
+            existing_ai = existing.get("ai") if isinstance(existing.get("ai"), dict) else None
+            record_ai = record.get("ai") if isinstance(record.get("ai"), dict) else None
+            if existing_ai or record_ai:
+                merged_ai: Dict[str, Any] = {}
+                if existing_ai:
+                    merged_ai.update(existing_ai)
+                if record_ai:
+                    merged_ai.update(record_ai)
+                merged_record["ai"] = merged_ai
+        else:
+            merged_record = record
+
+        try:
+            sanitized = json.loads(json.dumps(merged_record, default=lambda o: str(o)))
+        except Exception:
+            sanitized = merged_record
+
+        live_trades[symbol] = sanitized
+        state["live_trades"] = live_trades
+
     def execute_trade_proposal(self, proposal_id: str) -> Dict[str, Any]:
         proposal_key = str(proposal_id or "").strip()
         if not proposal_key:
@@ -4162,6 +4309,7 @@ class AIChatEngine:
             target["execution"] = execution
             target.pop("error", None)
             state["ai_trade_proposals"] = queue
+            self._record_copilot_position(state, proposal_key, normalized, execution, now_ts)
             try:
                 STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True))
             except Exception as exc:
