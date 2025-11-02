@@ -2839,6 +2839,7 @@ class AIChatEngine:
         temperature: Optional[float],
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
         normalized_input: List[Dict[str, Any]] = []
+        system_chunks: List[str] = []
         for item in messages:
             if not isinstance(item, dict):
                 continue
@@ -2871,7 +2872,15 @@ class AIChatEngine:
                         content_parts.append({"type": "text", "text": part.strip()})
             if not content_parts:
                 continue
+            if role == "system":
+                for part in content_parts:
+                    if part.get("type") == "text":
+                        system_chunks.append(part.get("text", ""))
+                continue
             normalized_input.append({"role": role, "content": content_parts})
+
+        if not normalized_input:
+            raise ValueError("No valid messages to send to Responses API")
 
         traits = self._model_traits(model)
 
@@ -2880,6 +2889,12 @@ class AIChatEngine:
             "input": normalized_input,
             "max_output_tokens": 400,
         }
+        if system_chunks:
+            system_text = "\n\n".join(
+                chunk.strip() for chunk in system_chunks if str(chunk).strip()
+            )
+            if system_text:
+                payload["system"] = system_text
         if traits["modalities"]:
             payload["modalities"] = traits["modalities"]
         if traits["reasoning"]:
