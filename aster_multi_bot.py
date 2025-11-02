@@ -1189,23 +1189,32 @@ class AITradeAdvisor:
         if not leverage_defined:
             _interpret_leverage(os.getenv("ASTER_LEVERAGE"))
         if not leverage_defined:
+            def _resolve_preset_limit(candidate: Optional[str]) -> Tuple[bool, Optional[float]]:
+                if not candidate:
+                    return False, None
+                preset = str(candidate).strip().lower()
+                if not preset:
+                    return False, None
+                if preset == "low":
+                    return True, 4.0
+                if preset == "mid":
+                    return True, 10.0
+                if preset in {"high", "att"}:
+                    return True, None
+                return False, None
+
+            preset_found, preset_limit = _resolve_preset_limit(preset_value)
+            if not preset_found:
+                fallback_preset = os.getenv("ASTER_PRESET_MODE", PRESET_MODE)
+                preset_found, preset_limit = _resolve_preset_limit(fallback_preset)
+
+            if preset_found:
+                return preset_limit
+
             _interpret_leverage(LEVERAGE_SOURCE)
         if leverage_defined:
             return leverage_limit
 
-        if not preset_value:
-            preset_value = os.getenv("ASTER_PRESET_MODE", PRESET_MODE)
-
-        if not preset_value:
-            return None
-
-        preset = str(preset_value).strip().lower()
-        if preset == "low":
-            return 4.0
-        if preset == "mid":
-            return 10.0
-        if preset in {"high", "att"}:
-            return None
         return None
 
     def _resolve_leverage_cap(self, symbol: Optional[str]) -> Optional[float]:
