@@ -1929,6 +1929,11 @@ let lastPlaybookState = null;
 let lastPlaybookActivity = [];
 let lastPlaybookProcess = [];
 const tradeProposalRegistry = new Map();
+const fallbackProposalKeys = new Map();
+let fallbackProposalCounter = 0;
+let automatedExecutionTimer = null;
+let automatedExecutionInFlight = false;
+let automationCycleInProgress = false;
 let heroMetricsSnapshot = {
   totalTrades: 0,
   totalPnl: 0,
@@ -2114,13 +2119,186 @@ function getTakeProposalsEmptyLabel() {
   );
 }
 
+function parseProposalTimestamp(candidate) {
+  if (candidate === null || candidate === undefined) {
+    return null;
+  }
+  if (typeof candidate === 'number') {
+    return Number.isFinite(candidate) ? candidate : null;
+  }
+  if (typeof candidate === 'string') {
+    const trimmed = candidate.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+    const parsedDate = Date.parse(trimmed);
+    if (!Number.isNaN(parsedDate)) {
+      return parsedDate;
+    }
+  }
+  return null;
+}
+
+function buildProposalFingerprint(raw) {
+  if (!raw || typeof raw !== 'object') {
+    return null;
+  }
+  try {
+    const omitKeys = new Set([
+      'id',
+      'proposal_id',
+      'proposalId',
+      'uuid',
+      'uid',
+      'external_id',
+      'trade_id',
+    ]);
+    const payload = {};
+    Object.keys(raw)
+      .filter((key) => !omitKeys.has(key))
+      .sort()
+      .forEach((key) => {
+        payload[key] = raw[key];
+      });
+    return JSON.stringify(payload);
+  } catch (err) {
+    console.warn('Unable to build proposal fingerprint', err);
+    return null;
+  }
+}
+
+function normalizeTradeProposal(data) {
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+  const normalized = { ...data };
+  const idCandidates = [
+    normalized.id,
+    normalized.proposal_id,
+    normalized.proposalId,
+    normalized.uuid,
+    normalized.uid,
+    normalized.external_id,
+    normalized.trade_id,
+  ]
+    .map((value) => {
+      if (value === null || value === undefined) {
+        return '';
+      }
+      return value.toString().trim();
+    })
+    .filter(Boolean);
+  if (idCandidates.length > 0) {
+    normalized.id = idCandidates[0];
+    return normalized;
+  }
+
+  const fingerprint = buildProposalFingerprint(normalized);
+  if (fingerprint && fallbackProposalKeys.has(fingerprint)) {
+    normalized.id = fallbackProposalKeys.get(fingerprint);
+    return normalized;
+  }
+
+  const symbol = (normalized.symbol || '').toString().trim().toUpperCase();
+  const direction = (normalized.direction || '').toString().trim().toUpperCase();
+  const entryKind = (normalized.entry_kind || '').toString().trim().toLowerCase();
+  const tsCandidates = [
+    normalized.ts,
+    normalized.timestamp,
+    normalized.generated_at,
+    normalized.generatedAt,
+    normalized.created_at,
+    normalized.createdAt,
+    normalized.updated_at,
+    normalized.updatedAt,
+  ];
+  let ts = null;
+  for (const candidate of tsCandidates) {
+    const parsed = parseProposalTimestamp(candidate);
+    if (parsed !== null) {
+      ts = parsed;
+      break;
+    }
+  }
+  if (ts === null) {
+    ts = Date.now();
+  }
+  fallbackProposalCounter += 1;
+  const suffix = `${ts}-${fallbackProposalCounter}`;
+  const parts = ['auto'];
+  parts.push(symbol || 'trade');
+  parts.push(direction || 'idea');
+  if (entryKind) {
+    parts.push(entryKind);
+  }
+  normalized.id = `${parts.join('-')}-${suffix}`;
+  if (fingerprint) {
+    fallbackProposalKeys.set(fingerprint, normalized.id);
+  }
+  return normalized;
+}
+
 function registerTradeProposal(data) {
-  if (!data || !data.id) return;
-  const key = data.id;
+  const normalized = normalizeTradeProposal(data);
+  if (!normalized || !normalized.id) return null;
+  const key = normalized.id;
   const existing = tradeProposalRegistry.get(key) || {};
-  const merged = { ...existing, ...data };
+  const merged = { ...existing, ...normalized };
   tradeProposalRegistry.set(key, merged);
+  const fingerprint = buildProposalFingerprint(merged);
+  if (fingerprint) {
+    fallbackProposalKeys.set(fingerprint, merged.id);
+  }
   updateTakeProposalsButtonState();
+  return merged;
+}
+
+function shouldAutoExecuteTradeProposals() {
+  return automationActive && hasDashboardChatKey();
+}
+
+function requestAutomatedTradeExecution() {
+  if (!shouldAutoExecuteTradeProposals() || automationCycleInProgress) {
+    return;
+  }
+  if (getPendingTradeProposals().length === 0) {
+    return;
+  }
+  if (automatedExecutionTimer) {
+    clearTimeout(automatedExecutionTimer);
+  }
+  automatedExecutionTimer = setTimeout(processAutomatedTradeExecution, 150);
+}
+
+async function processAutomatedTradeExecution() {
+  if (automatedExecutionTimer) {
+    clearTimeout(automatedExecutionTimer);
+    automatedExecutionTimer = null;
+  }
+  if (!shouldAutoExecuteTradeProposals() || automationCycleInProgress) {
+    return;
+  }
+  if (automatedExecutionInFlight) {
+    return;
+  }
+  if (getPendingTradeProposals().length === 0) {
+    return;
+  }
+  automatedExecutionInFlight = true;
+  try {
+    await handleTakeTradeProposals();
+  } catch (err) {
+    console.warn('Automated trade proposal execution failed', err);
+  } finally {
+    automatedExecutionInFlight = false;
+    if (shouldAutoExecuteTradeProposals() && !automationCycleInProgress && getPendingTradeProposals().length > 0) {
+      requestAutomatedTradeExecution();
+    }
+  }
 }
 
 function pruneTradeProposalRegistry(validList) {
@@ -2133,9 +2311,13 @@ function pruneTradeProposalRegistry(validList) {
       validIds.add(item.id);
     }
   });
-  Array.from(tradeProposalRegistry.keys()).forEach((key) => {
+  Array.from(tradeProposalRegistry.entries()).forEach(([key, value]) => {
     if (!validIds.has(key)) {
       tradeProposalRegistry.delete(key);
+      const fingerprint = buildProposalFingerprint(value);
+      if (fingerprint) {
+        fallbackProposalKeys.delete(fingerprint);
+      }
     }
   });
   updateTakeProposalsButtonState();
@@ -2256,6 +2438,12 @@ function updateAutomationCountdownDisplay() {
 function stopAutomation(options = {}) {
   const { message } = options;
   automationActive = false;
+  automationCycleInProgress = false;
+  if (automatedExecutionTimer) {
+    clearTimeout(automatedExecutionTimer);
+    automatedExecutionTimer = null;
+  }
+  automatedExecutionInFlight = false;
   clearAutomationTimers();
   automationTargetTimestamp = null;
   if (automationToggle) {
@@ -2287,23 +2475,28 @@ function scheduleAutomationCycle() {
 }
 
 async function runAutomationCycle() {
-  if (!automationActive) {
+  if (!automationActive || automationCycleInProgress) {
     return;
   }
-  updateAutomationCountdownDisplay();
-  const analysisSuccessful = await runMarketAnalysis({ automated: true });
-  if (!automationActive) {
-    return;
-  }
-  if (analysisSuccessful) {
-    try {
-      await handleTakeTradeProposals();
-    } catch (err) {
-      console.warn('Automated trade proposal execution failed', err);
+  automationCycleInProgress = true;
+  try {
+    updateAutomationCountdownDisplay();
+    const analysisSuccessful = await runMarketAnalysis({ automated: true });
+    if (!automationActive) {
+      return;
     }
-  }
-  if (automationActive) {
-    scheduleAutomationCycle();
+    if (analysisSuccessful) {
+      try {
+        await handleTakeTradeProposals();
+      } catch (err) {
+        console.warn('Automated trade proposal execution failed', err);
+      }
+    }
+  } finally {
+    automationCycleInProgress = false;
+    if (automationActive) {
+      scheduleAutomationCycle();
+    }
   }
 }
 
@@ -2319,6 +2512,7 @@ function startAutomation() {
     return;
   }
   automationActive = true;
+  requestAutomatedTradeExecution();
   scheduleAutomationCycle();
   const summary = translate('chat.automation.scheduled', 'Automated cycle scheduled for {{minutes}} minute(s).', {
     minutes,
@@ -6762,14 +6956,17 @@ function appendChatMessage(role, message, meta = {}) {
 }
 
 function appendTradeProposalCard(proposal) {
-  if (!aiChatMessages || !proposal || !proposal.id) return;
-  registerTradeProposal(proposal);
+  if (!aiChatMessages) return;
+  const normalizedProposal = registerTradeProposal(proposal);
+  if (!normalizedProposal) return;
   const updateCardState = (cardEl, data) => {
-    if (!cardEl || !data) return;
-    const statusText = (data.status || '').toString().toLowerCase();
+    if (!cardEl) return;
+    const normalizedUpdate = registerTradeProposal(data) || normalizeTradeProposal(data);
+    if (!normalizedUpdate) return;
+    const statusText = (normalizedUpdate.status || '').toString().toLowerCase();
     const statusEl = cardEl.querySelector('.ai-trade-proposal__status');
     const actionBtn = cardEl.querySelector('.ai-trade-proposal__action');
-    const errorMessage = (data.error || '').toString().trim();
+    const errorMessage = (normalizedUpdate.error || '').toString().trim();
     cardEl.classList.remove('queued', 'failed');
     if (statusText === 'executed' || statusText === 'completed') {
       cardEl.classList.add('queued');
@@ -6807,13 +7004,13 @@ function appendTradeProposalCard(proposal) {
         actionBtn.textContent = translate('chat.proposal.executing', 'Placing…');
       }
     }
-    registerTradeProposal(data);
   };
   const existing = aiChatMessages.querySelector(
-    `.ai-trade-proposal[data-proposal-id="${proposal.id}"]`
+    `.ai-trade-proposal[data-proposal-id="${normalizedProposal.id}"]`
   );
   if (existing) {
-    updateCardState(existing, proposal);
+    updateCardState(existing, normalizedProposal);
+    requestAutomatedTradeExecution();
     return;
   }
   const empty = aiChatMessages.querySelector('.ai-chat-empty');
@@ -6822,10 +7019,10 @@ function appendTradeProposalCard(proposal) {
 
   const card = document.createElement('div');
   card.className = 'ai-trade-proposal';
-  card.dataset.proposalId = proposal.id;
+  card.dataset.proposalId = normalizedProposal.id;
 
-  const symbol = (proposal.symbol || '').toString().toUpperCase();
-  const direction = (proposal.direction || '').toString().toUpperCase();
+  const symbol = (normalizedProposal.symbol || '').toString().toUpperCase();
+  const direction = (normalizedProposal.direction || '').toString().toUpperCase();
   if (direction === 'LONG') {
     card.classList.add('long');
   } else if (direction === 'SHORT') {
@@ -6882,9 +7079,9 @@ function appendTradeProposalCard(proposal) {
   };
 
   const formatEntry = () => {
-    const entryKind = (proposal.entry_kind || '').toString().toLowerCase();
-    const entryLabel = (proposal.entry_label || '').toString();
-    const entryPrice = Number(proposal.entry_price);
+    const entryKind = (normalizedProposal.entry_kind || '').toString().toLowerCase();
+    const entryLabel = (normalizedProposal.entry_label || '').toString();
+    const entryPrice = Number(normalizedProposal.entry_price);
     let base = '';
     if (entryKind === 'limit' && Number.isFinite(entryPrice)) {
       base = `${translate('chat.proposal.entry.limit', 'Limit')} ${formatNumber(entryPrice)}`;
@@ -6903,11 +7100,11 @@ function appendTradeProposalCard(proposal) {
   };
 
   const formatSizing = () => {
-    const notional = Number(proposal.notional);
+    const notional = Number(normalizedProposal.notional);
     if (Number.isFinite(notional) && notional > 0) {
       return `${formatNumber(notional, { maximumFractionDigits: 2 })} USDT`;
     }
-    const mult = Number(proposal.size_multiplier);
+    const mult = Number(normalizedProposal.size_multiplier);
     if (Number.isFinite(mult) && mult > 0) {
       return `${formatNumber(mult, { maximumFractionDigits: 2 })}×`;
     }
@@ -6915,10 +7112,10 @@ function appendTradeProposalCard(proposal) {
   };
 
   const formatConfidence = () => {
-    if (proposal.confidence === null || proposal.confidence === undefined) {
+    if (normalizedProposal.confidence === null || normalizedProposal.confidence === undefined) {
       return '—';
     }
-    const value = Number(proposal.confidence);
+    const value = Number(normalizedProposal.confidence);
     if (!Number.isFinite(value)) return '—';
     return `${Math.round(Math.min(Math.max(value, 0), 1) * 100)}%`;
   };
@@ -6930,14 +7127,14 @@ function appendTradeProposalCard(proposal) {
   };
 
   addCell(translate('chat.proposal.entry', 'Entry'), formatEntry());
-  addCell(translate('chat.proposal.stop', 'Stop-Loss'), formatPrice(proposal.stop_loss));
-  addCell(translate('chat.proposal.take', 'Take-Profit'), formatPrice(proposal.take_profit));
+  addCell(translate('chat.proposal.stop', 'Stop-Loss'), formatPrice(normalizedProposal.stop_loss));
+  addCell(translate('chat.proposal.take', 'Take-Profit'), formatPrice(normalizedProposal.take_profit));
   addCell(translate('chat.proposal.size', 'Position Size'), formatSizing());
   addCell(translate('chat.proposal.confidence', 'Confidence'), formatConfidence());
-  addCell(translate('chat.proposal.timeframe', 'Timeframe'), formatString(proposal.timeframe));
+  addCell(translate('chat.proposal.timeframe', 'Timeframe'), formatString(normalizedProposal.timeframe));
 
-  if (proposal.risk_reward !== undefined) {
-    const rr = Number(proposal.risk_reward);
+  if (normalizedProposal.risk_reward !== undefined) {
+    const rr = Number(normalizedProposal.risk_reward);
     if (Number.isFinite(rr) && rr > 0) {
       addCell(translate('chat.proposal.riskReward', 'R/R'), formatNumber(rr, { maximumFractionDigits: 2 }));
     }
@@ -6945,8 +7142,8 @@ function appendTradeProposalCard(proposal) {
 
   card.append(grid);
 
-  if (proposal.note) {
-    const note = proposal.note.toString().trim();
+  if (normalizedProposal.note) {
+    const note = normalizedProposal.note.toString().trim();
     if (note) {
       const noteEl = document.createElement('div');
       noteEl.className = 'ai-trade-proposal__note';
@@ -6974,13 +7171,13 @@ function appendTradeProposalCard(proposal) {
   card.append(statusEl);
 
   actionBtn.addEventListener('click', async () => {
-    if (!proposal.id) return;
+    if (!normalizedProposal.id) return;
     actionBtn.disabled = true;
     actionBtn.textContent = workingLabel;
     statusEl.textContent = translate('chat.proposal.statusExecuting', 'Placing trade via the Aster API…');
     setChatStatus(translate('chat.proposal.statusExecuting', 'Placing trade via the Aster API…'));
     try {
-      const payload = await executeTradeProposal(proposal.id);
+      const payload = await executeTradeProposal(normalizedProposal.id);
       updateCardState(card, payload);
       if (!card.classList.contains('queued')) {
         card.classList.add('queued');
@@ -6999,11 +7196,12 @@ function appendTradeProposalCard(proposal) {
   });
 
   aiChatMessages.append(card);
-  updateCardState(card, proposal);
+  updateCardState(card, normalizedProposal);
   if (shouldAutoScroll) {
     const behavior = aiChatMessages.scrollHeight > aiChatMessages.clientHeight ? 'smooth' : 'auto';
     scrollToBottom(aiChatMessages, behavior);
   }
+  requestAutomatedTradeExecution();
 }
 
 function setChatStatus(message) {
