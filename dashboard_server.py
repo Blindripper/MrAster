@@ -1483,7 +1483,48 @@ def enrich_open_positions(open_payload: Any, env: Dict[str, Any]) -> Any:
     payload_copy = copy.deepcopy(open_payload)
     merged_payload = _merge_position_payload(payload_copy, snapshot)
 
-    def _register(record: Dict[str, Any]) -> None:
+    identity_keys = [
+        "positionId",
+        "position_id",
+        "accountId",
+        "account_id",
+        "account",
+        "accountName",
+        "account_name",
+        "mode",
+        "modeKey",
+        "mode_key",
+        "strategy",
+        "strategyId",
+        "strategy_id",
+        "botId",
+        "bot_id",
+        "portfolio",
+        "profile",
+        "subAccount",
+        "sub_account",
+        "subaccount",
+        "group",
+        "source",
+        "userId",
+        "user_id",
+    ]
+
+    def _records_share_identity(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
+        for key in identity_keys:
+            a_val = a.get(key)
+            b_val = b.get(key)
+            if a_val is None or b_val is None:
+                continue
+            if isinstance(a_val, str) and isinstance(b_val, str):
+                if a_val.strip().lower() != b_val.strip().lower():
+                    return False
+            else:
+                if a_val != b_val:
+                    return False
+        return True
+
+    def _register(record: Dict[str, Any], source: str) -> None:
         if not isinstance(record, dict):
             return
         symbol_raw = record.get("symbol") or record.get("sym") or record.get("ticker") or record.get("pair")
@@ -1504,9 +1545,25 @@ def enrich_open_positions(open_payload: Any, env: Dict[str, Any]) -> Any:
                     side_key = "BUY"
                 elif amount_val < 0:
                     side_key = "SELL"
-        composite_key = f"{symbol_key}:{side_key}" if side_key else symbol_key
-        entry = combined.setdefault(composite_key, {})
-        entry.update(record)
+        composite_key = (symbol_key, side_key)
+        entry: Optional[Dict[str, Any]] = None
+        for candidate in combined:
+            if candidate.get("_symbol_key") != composite_key[0]:
+                continue
+            if candidate.get("_side_key") != composite_key[1]:
+                continue
+            if _records_share_identity(candidate, record):
+                entry = candidate
+                break
+
+        if entry is None:
+            entry = dict(record) if source == "snapshot" else record
+            entry["_symbol_key"] = symbol_key
+            entry["_side_key"] = side_key
+            combined.append(entry)
+        else:
+            entry.update(record)
+
         entry.setdefault("symbol", symbol_key)
         if side_key:
             entry.setdefault("side", side_key)
@@ -1514,7 +1571,7 @@ def enrich_open_positions(open_payload: Any, env: Dict[str, Any]) -> Any:
     def _collect(payload: Any) -> None:
         if isinstance(payload, dict):
             if _looks_like_position_record(payload):
-                _register(payload)
+                _register(payload, "payload")
             else:
                 for value in payload.values():
                     _collect(value)
@@ -1522,13 +1579,19 @@ def enrich_open_positions(open_payload: Any, env: Dict[str, Any]) -> Any:
             for item in payload:
                 _collect(item)
 
-    combined: Dict[str, Dict[str, Any]] = {}
+    combined: List[Dict[str, Any]] = []
     for extra in snapshot.values():
-        _register(extra)
+        _register(extra, "snapshot")
     _collect(merged_payload)
 
     if combined:
-        return list(combined.values())
+        cleaned: List[Dict[str, Any]] = []
+        for entry in combined:
+            if isinstance(entry, dict):
+                entry.pop("_symbol_key", None)
+                entry.pop("_side_key", None)
+                cleaned.append(entry)
+        return cleaned
     return merged_payload
 
 BINANCE_24H_URL = "https://api.binance.com/api/v3/ticker/24hr"
