@@ -2387,9 +2387,9 @@ class AIChatEngine:
         trade_input_hints: Dict[str, str] = {}
         try:
             for sym, side in re.findall(
-                r"(?:\*\*)?([A-Z0-9]{3,})\s+(Long|Short)(?:\*\*)?",
+                r"^(?:\*\*)?(?:#+\s*)?([A-Z0-9]{3,})\s+(Long|Short)(?:\s+Idea)?(?:\*\*)?\s*$",
                 text,
-                flags=re.IGNORECASE,
+                flags=re.IGNORECASE | re.MULTILINE,
             ):
                 trade_input_hints[sym.upper()] = side.upper()
         except re.error:
