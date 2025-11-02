@@ -118,6 +118,34 @@ ENV_DEFAULTS: Dict[str, str] = {
     "ASTER_CHAT_OPENAI_API_KEY": "",
 }
 
+# Mapping of well-known asset names to their corresponding base tickers to
+# improve natural-language symbol detection inside strategy copilot requests.
+# The keys are base tickers (without the quote asset suffix) while the values
+# enumerate common aliases that operators might use in chat instead of the
+# official ticker symbol.
+SYMBOL_SYNONYMS: Dict[str, Tuple[str, ...]] = {
+    "BTC": ("BITCOIN", "XBT"),
+    "ETH": ("ETHEREUM", "ETHER"),
+    "SOL": ("SOLANA",),
+    "XRP": ("RIPPLE",),
+    "ADA": ("CARDANO",),
+    "DOGE": ("DOGECOIN", "DOGE"),
+    "BNB": ("BINANCE", "BINANCECOIN"),
+    "DOT": ("POLKADOT",),
+    "AVAX": ("AVALANCHE",),
+    "MATIC": ("POLYGON",),
+    "LTC": ("LITECOIN",),
+    "LINK": ("CHAINLINK",),
+    "ATOM": ("COSMOS",),
+    "ETC": ("ETHEREUMCLASSIC", "ETHEREUM_CLASSIC"),
+    "XMR": ("MONERO",),
+    "NEAR": ("NEARPROTOCOL", "NEAR_PROTOCOL"),
+    "APT": ("APTOS",),
+    "ARB": ("ARBITRUM",),
+    "FIL": ("FILECOIN",),
+    "SUI": ("SUINETWORK", "SUI_NETWORK"),
+}
+
 ALLOWED_ENV_KEYS = set(ENV_DEFAULTS.keys())
 
 
@@ -2425,6 +2453,10 @@ class AIChatEngine:
                     base = symbol[:-quote_len]
                     if base:
                         base_map.setdefault(base, symbol)
+                        for alias in SYMBOL_SYNONYMS.get(base, ()): 
+                            alias_token = (alias or "").strip().upper()
+                            if alias_token:
+                                base_map.setdefault(alias_token, symbol)
             try:
                 word_pattern = re.compile(r"\b([A-Za-z]{3,})\b")
             except re.error:
