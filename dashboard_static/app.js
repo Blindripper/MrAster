@@ -7218,18 +7218,28 @@ function appendTradeProposalCard(proposal) {
   };
 
   const formatConfidence = () => {
-    if (normalizedProposal.confidence === null || normalizedProposal.confidence === undefined) {
-      return '—';
-    }
     const value = Number(normalizedProposal.confidence);
-    if (!Number.isFinite(value)) return '—';
-    return `${Math.round(Math.min(Math.max(value, 0), 1) * 100)}%`;
+    if (Number.isFinite(value)) {
+      const clamped = Math.min(Math.max(value, 0), 1);
+      return `${Math.round(clamped * 100)}%`;
+    }
+    const label = (normalizedProposal.confidence_label ?? '').toString().trim();
+    if (label) return label;
+    return translate('chat.proposal.confidence.na', 'N/A');
   };
 
-  const formatString = (raw) => {
-    if (!raw) return '—';
+  const formatString = (raw, fallback = '—') => {
+    if (raw === null || raw === undefined) return fallback;
     const text = raw.toString().trim();
-    return text || '—';
+    return text || fallback;
+  };
+
+  const formatTimeframe = () => {
+    const primary = (normalizedProposal.timeframe ?? '').toString().trim();
+    if (primary) return primary;
+    const secondary = (normalizedProposal.timeframe_label ?? '').toString().trim();
+    if (secondary) return secondary;
+    return translate('chat.proposal.timeframe.na', 'N/A');
   };
 
   addCell(translate('chat.proposal.entry', 'Entry'), formatEntry());
@@ -7237,7 +7247,7 @@ function appendTradeProposalCard(proposal) {
   addCell(translate('chat.proposal.take', 'Take-Profit'), formatPrice(normalizedProposal.take_profit));
   addCell(translate('chat.proposal.size', 'Position Size'), formatSizing());
   addCell(translate('chat.proposal.confidence', 'Confidence'), formatConfidence());
-  addCell(translate('chat.proposal.timeframe', 'Timeframe'), formatString(normalizedProposal.timeframe));
+  addCell(translate('chat.proposal.timeframe', 'Timeframe'), formatTimeframe());
 
   if (normalizedProposal.risk_reward !== undefined) {
     const rr = Number(normalizedProposal.risk_reward);
