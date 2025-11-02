@@ -2801,6 +2801,7 @@ class AIChatEngine:
             ("gpt-4.1", "gpt-4.1"),
             ("o4", "o4"),
             ("o3", "o3"),
+            ("o1", "reasoning"),
         )
         for prefix, header_value in beta_requirements:
             if normalized.startswith(prefix):
@@ -2822,6 +2823,10 @@ class AIChatEngine:
             traits["reasoning"] = {"effort": "medium"}
             traits["legacy_supported"] = False
         elif normalized.startswith("o3"):
+            traits["modalities"] = ["text"]
+            traits["reasoning"] = {"effort": "medium"}
+            traits["legacy_supported"] = False
+        elif normalized.startswith("o1"):
             traits["modalities"] = ["text"]
             traits["reasoning"] = {"effort": "medium"}
             traits["legacy_supported"] = False
