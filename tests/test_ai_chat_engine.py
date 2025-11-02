@@ -95,3 +95,49 @@ def test_normalize_trade_proposal_falls_back_to_default_notional(engine: AIChatE
     normalized = engine._normalize_trade_proposal(payload)
     assert normalized is not None
     assert normalized["notional"] == pytest.approx(120.0)
+
+
+def test_structured_trade_proposals_handle_plain_text_blocks(engine: AIChatEngine) -> None:
+    sample = (
+        "Market Analysis\n"
+        "LONG Idea\n"
+        "Symbol: ETHUSDT\n"
+        "Timeframe: 4H\n"
+        "Thesis: ETHUSDT is consolidating near support at 3,850 USDT with stable volume.\n"
+        "Entry Zone: 3,850–3,870 USDT\n"
+        "Invalidation: Close below 3,800 USDT\n"
+        "Target: 4,050 USDT\n"
+        "Catalysts: BTC stabilization, ETH-specific news, or broader risk-on sentiment.\n"
+        "Caveats: If BTC breaks down, invalidation may trigger quickly.\n\n"
+        "SHORT Idea\n"
+        "Symbol: SOLUSDT\n"
+        "Timeframe: 4H\n"
+        "Thesis: SOLUSDT is showing mild downward momentum at 184.94 USDT with solid volume.\n"
+        "Entry Zone: 184–185 USDT\n"
+        "Invalidation: Close above 188 USDT\n"
+        "Target: 175 USDT\n"
+        "Catalysts: Continued bearish sentiment and lack of recovery signals.\n"
+        "Data Caveats: Confidence limited if liquidity fades.\n"
+    )
+
+    proposals = engine._extract_trade_proposals(sample)
+    assert len(proposals) >= 2
+
+    by_symbol = {item["symbol"]: item for item in proposals}
+    assert {"ETHUSDT", "SOLUSDT"}.issubset(by_symbol.keys())
+
+    eth = by_symbol["ETHUSDT"]
+    assert eth["direction"] == "LONG"
+    assert eth["entry_kind"] == "limit"
+    assert eth["entry_price"] == pytest.approx(3860.0)
+    assert eth["stop_loss"] == pytest.approx(3800.0)
+    assert eth["take_profit"] == pytest.approx(4050.0)
+    assert eth["notional"] == pytest.approx(120.0)
+
+    sol = by_symbol["SOLUSDT"]
+    assert sol["direction"] == "SHORT"
+    assert sol["entry_kind"] == "limit"
+    assert sol["entry_price"] == pytest.approx(184.5)
+    assert sol["stop_loss"] == pytest.approx(188.0)
+    assert sol["take_profit"] == pytest.approx(175.0)
+    assert sol["notional"] == pytest.approx(120.0)
