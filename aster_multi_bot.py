@@ -1123,14 +1123,67 @@ class AITradeAdvisor:
     def set_leverage_lookup(self, lookup: Optional[Callable[[str], float]]) -> None:
         self._leverage_lookup = lookup
 
+    def _strategy_leverage_limit(self) -> Optional[float]:
+        preset_value: Optional[str] = None
+        state_bucket = self.state if isinstance(self.state, dict) else None
+        if state_bucket:
+            for key in ("preset_mode", "preset", "strategy_preset", "risk_preset"):
+                raw = state_bucket.get(key)
+                if isinstance(raw, str) and raw.strip():
+                    preset_value = raw
+                    break
+            if not preset_value:
+                config_bucket = state_bucket.get("config")
+                if isinstance(config_bucket, dict):
+                    env_cfg = config_bucket.get("env")
+                    if isinstance(env_cfg, dict):
+                        raw = env_cfg.get("ASTER_PRESET_MODE")
+                        if isinstance(raw, str) and raw.strip():
+                            preset_value = raw
+            if not preset_value:
+                env_cfg = state_bucket.get("env")
+                if isinstance(env_cfg, dict):
+                    raw = env_cfg.get("ASTER_PRESET_MODE")
+                    if isinstance(raw, str) and raw.strip():
+                        preset_value = raw
+
+        if not preset_value:
+            preset_value = os.getenv("ASTER_PRESET_MODE", PRESET_MODE)
+
+        if not preset_value:
+            return None
+
+        preset = str(preset_value).strip().lower()
+        if preset == "low":
+            return 4.0
+        if preset == "mid":
+            return 10.0
+        if preset in {"high", "att"}:
+            return None
+        return None
+
     def _resolve_leverage_cap(self, symbol: Optional[str]) -> Optional[float]:
+        strategy_limit = self._strategy_leverage_limit()
         if not symbol or not self._leverage_lookup:
-            return None
+            return strategy_limit
+
         try:
-            cap = float(self._leverage_lookup(symbol))
+            resolved = float(self._leverage_lookup(symbol))
         except Exception:
-            return None
-        if not math.isfinite(cap) or cap <= 0:
+            resolved = float("nan")
+
+        cap: Optional[float]
+        if math.isfinite(resolved) and resolved > 0:
+            cap = resolved
+        else:
+            cap = None
+
+        if strategy_limit is not None and strategy_limit > 0:
+            if cap is None:
+                return float(strategy_limit)
+            cap = min(cap, float(strategy_limit))
+
+        if cap is None or cap <= 0:
             return None
         return cap
 
