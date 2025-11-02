@@ -118,9 +118,9 @@ class ParameterTuner:
             },
         )
         self._request_fn = request_fn
-        self._min_trades = 6
-        self._ai_interval = 8 * 60
-        self._history_cap = 200
+        self._min_trades = 4
+        self._ai_interval = 5 * 60
+        self._history_cap = 220
 
     def observe(self, trade: Dict[str, Any], features: Dict[str, float]) -> None:
         record = {
@@ -169,7 +169,7 @@ class ParameterTuner:
         bucket_perf: Dict[str, List[float]] = {"S": [], "M": [], "L": []}
         wins: List[float] = []
         losses: List[float] = []
-        recent_history = history[-120:]
+        recent_history = history[-90:]
         for item in recent_history:
             pnl_r = float(item.get("pnl_r", 0.0) or 0.0)
             bucket = str(item.get("bucket") or "S").upper()
@@ -189,17 +189,17 @@ class ParameterTuner:
         risk_throttle = 1.0
         if recent_history:
             if recent_avg < 0:
-                risk_throttle = max(0.45, min(1.0, 1.0 + recent_avg * 0.65))
+                risk_throttle = max(0.35, min(0.95, 1.0 + recent_avg * 0.9))
             else:
-                gain = min(recent_avg, 0.8)
-                risk_throttle = min(1.15, 1.0 + gain * 0.35)
+                gain = min(recent_avg, 1.0)
+                risk_throttle = min(1.2, 1.0 + gain * 0.4)
         if losses and wins:
             if loss_mag > 0 and avg_win > 0:
                 ratio = avg_win / loss_mag
                 if ratio < 1.0:
-                    risk_throttle = min(risk_throttle, max(0.5, 0.85 + ratio * 0.1))
+                    risk_throttle = min(risk_throttle, max(0.45, 0.82 + ratio * 0.08))
         elif losses and not wins:
-            risk_throttle = min(risk_throttle, 0.6)
+            risk_throttle = min(risk_throttle, 0.5)
         for bucket, values in bucket_perf.items():
             avg = _avg(values)
             base = float(max(0.6, min(1.8, 1.0 + avg * 0.15)))
@@ -226,7 +226,7 @@ class ParameterTuner:
                 0.4,
                 min(1.5, overrides["size_bias_global"] * risk_throttle),
             )
-        overrides.setdefault("confidence", min(1.0, len(history) / 60.0))
+        overrides.setdefault("confidence", min(1.0, len(history) / 40.0))
         self._state["overrides"] = overrides
         self._root["tuning_overrides"] = overrides
 
@@ -458,20 +458,21 @@ class BudgetLearner:
             {"symbols": {}, "usage": []},
         )
         self._cost_window = 40
-        self._min_samples = 3
-        self._skip_half_life = 2 * 3600  # roughly 2 hours
+        self._min_samples = 2
+        self._skip_half_life = 90 * 60  # decay faster after roughly 90 minutes
         self._skip_penalty_cap = 5.0
         self._skip_reason_cap = 6
-        self._skip_penalty_factor = 0.28
+        self._skip_penalty_factor = 0.22
         self._skip_penalty_increment = {
-            "plan": 0.7,
-            "trend": 0.55,
-            "postmortem": 0.25,
+            "plan": 0.55,
+            "trend": 0.45,
+            "postmortem": 0.2,
         }
-        self._skip_limit_plan = 1.4
-        self._skip_limit_trend = 1.0
-        self._skip_limit_any = 2.1
-        self._skip_limit_soft = 0.5
+        self._skip_limit_plan = 1.65
+        self._skip_limit_trend = 1.1
+        self._skip_limit_any = 2.35
+        self._skip_limit_soft = 0.45
+        self._reward_window = 60
 
     def record_cost(self, kind: str, cost: float, meta: Optional[Dict[str, Any]] = None) -> None:
         symbol = None
@@ -503,14 +504,21 @@ class BudgetLearner:
                 "skip_updated": 0.0,
                 "skip_reasons": {},
                 "skip_meta": [],
+                "recent_pnl": [],
             },
         )
         sym_state["count"] = int(sym_state.get("count", 0)) + 1
         sym_state["reward"] = float(sym_state.get("reward", 0.0) or 0.0) + pnl_r
+        recent = sym_state.setdefault("recent_pnl", [])
+        if isinstance(recent, list):
+            recent.append(pnl_r)
+            if len(recent) > self._reward_window:
+                del recent[: len(recent) - self._reward_window]
+            sym_state["recent_pnl"] = recent
         skip_penalty = self._decayed_skip_penalty(sym_state, update=True)
         if pnl_r > 0 and skip_penalty > 0:
             # Successful trades reduce the severity of prior AI skips.
-            reduced = max(0.0, skip_penalty * 0.6)
+            reduced = max(0.0, skip_penalty * 0.5)
             if reduced <= 1e-4:
                 sym_state["skip_weight"] = 0.0
                 sym_state["skip_updated"] = 0.0
@@ -582,6 +590,7 @@ class BudgetLearner:
                 "skip_updated": 0.0,
                 "skip_reasons": {},
                 "skip_meta": [],
+                "recent_pnl": [],
             },
         )
         now = time.time()
@@ -623,9 +632,15 @@ class BudgetLearner:
         reward = float(sym_state.get("reward", 0.0) or 0.0)
         count = max(1, int(sym_state.get("count", 0) or 0))
         avg = reward / count
+        recent = sym_state.get("recent_pnl")
+        if isinstance(recent, list) and recent:
+            window = recent[-min(len(recent), 20) :]
+            if window:
+                recent_avg = sum(window) / len(window)
+                avg = (recent_avg * 0.7) + (avg * 0.3)
         skip_penalty = self._decayed_skip_penalty(sym_state, now=now, update=True)
-        bias = 1.0 + avg * 0.35 - skip_penalty * self._skip_penalty_factor
-        return max(0.1, min(1.7, bias))
+        bias = 1.0 + avg * 0.4 - skip_penalty * self._skip_penalty_factor
+        return max(0.15, min(1.8, bias))
 
     def _decayed_skip_penalty(
         self,

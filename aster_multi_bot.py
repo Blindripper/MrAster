@@ -85,14 +85,18 @@ if PRESET_MODE in {"high", "att"}:
     AI_DAILY_BUDGET = 0.0
 AI_STRICT_BUDGET = os.getenv("ASTER_AI_STRICT_BUDGET", "true").lower() in ("1", "true", "yes", "on")
 SENTINEL_ENABLED = os.getenv("ASTER_AI_SENTINEL_ENABLED", "true").lower() in ("1", "true", "yes", "on")
-SENTINEL_DECAY_MINUTES = float(os.getenv("ASTER_AI_SENTINEL_DECAY_MINUTES", "90") or 90)
+SENTINEL_DECAY_MINUTES = float(os.getenv("ASTER_AI_SENTINEL_DECAY_MINUTES", "60") or 60)
 SENTINEL_NEWS_ENDPOINT = os.getenv("ASTER_AI_NEWS_ENDPOINT", "").strip()
 SENTINEL_NEWS_TOKEN = os.getenv("ASTER_AI_NEWS_API_KEY", "").strip()
 AI_MIN_INTERVAL_SECONDS = float(os.getenv("ASTER_AI_MIN_INTERVAL_SECONDS", "8") or 0.0)
 AI_CONCURRENCY = max(1, int(os.getenv("ASTER_AI_CONCURRENCY", "3") or 1))
 AI_GLOBAL_COOLDOWN = max(0.0, float(os.getenv("ASTER_AI_GLOBAL_COOLDOWN_SECONDS", "2.0") or 0.0))
 AI_PLAN_TIMEOUT = max(10.0, float(os.getenv("ASTER_AI_PLAN_TIMEOUT_SECONDS", "45") or 0.0))
-AI_PENDING_LIMIT = max(AI_CONCURRENCY, int(os.getenv("ASTER_AI_PENDING_LIMIT", str(AI_CONCURRENCY * 2)) or AI_CONCURRENCY))
+_default_pending_limit = max(4, AI_CONCURRENCY * 3)
+AI_PENDING_LIMIT = max(
+    AI_CONCURRENCY,
+    int(os.getenv("ASTER_AI_PENDING_LIMIT", str(_default_pending_limit)) or _default_pending_limit),
+)
 
 if AI_MODE_ENABLED and not OPENAI_API_KEY:
     log.warning(
@@ -825,28 +829,28 @@ class NewsTrendSentinel:
         trend_factor = clamp(abs(price_change) / 18.0, 0.0, 1.0)
         bias_factor = clamp(abs(buy_ratio - 0.5) * 1.8, 0.0, 1.0)
 
-        event_risk = clamp(volatility * 1.4 + trend_factor * 0.6, 0.0, 1.0)
+        event_risk = clamp(volatility * 1.2 + trend_factor * 0.5, 0.0, 1.0)
         if price_change < -9.0:
-            event_risk = max(event_risk, 0.75)
-        hype_score = clamp((volume_factor * 0.6) + (trend_factor * 0.6) + (bias_factor * 0.3), 0.0, 1.0)
+            event_risk = max(event_risk, 0.78)
+        hype_score = clamp((volume_factor * 0.55) + (trend_factor * 0.55) + (bias_factor * 0.3), 0.0, 1.0)
 
         label = "green"
         hard_block = False
-        if event_risk >= 0.75:
+        if event_risk >= 0.82:
             label = "red"
             hard_block = True
-        elif event_risk >= 0.45:
+        elif event_risk >= 0.55:
             label = "yellow"
-        elif hype_score >= 0.65 and price_change >= 4.0:
+        elif hype_score >= 0.7 and price_change >= 4.0:
             label = "yellow"
 
         size_factor = 1.0
         if label == "yellow":
-            size_factor = 0.5
+            size_factor = 0.6
         if label == "red":
             size_factor = 0.0
         if label == "green" and hype_score > 0.7 and price_change > 0:
-            size_factor = clamp(1.0 + (hype_score - 0.6), 1.0, 1.45)
+            size_factor = clamp(1.0 + (hype_score - 0.6), 1.0, 1.35)
 
         events: List[Dict[str, Any]] = []
         if price_change >= 8.0:
