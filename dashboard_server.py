@@ -2401,6 +2401,67 @@ class AIChatEngine:
                 continue
         return numbers
 
+    def _parse_confidence(self, *values: Any) -> Tuple[Optional[float], Optional[str]]:
+        numeric: Optional[float] = None
+        label: Optional[str] = None
+
+        keyword_levels: List[Tuple[Tuple[str, ...], float]] = [
+            (("very high", "strong", "excellent", "very bullish", "high conviction"), 0.85),
+            (("high", "bullish", "positive", "favorable"), 0.7),
+            (("medium", "moderate", "balanced", "neutral"), 0.5),
+            (("very low", "poor", "negative", "very bearish"), 0.15),
+            (("low", "cautious", "bearish", "weak"), 0.3),
+        ]
+
+        for raw in values:
+            if raw is None:
+                continue
+            if isinstance(raw, (int, float)):
+                numeric = float(raw)
+                if label is None:
+                    label = format(float(raw), ".2f")
+                break
+            if not isinstance(raw, str):
+                continue
+            cleaned = raw.strip()
+            if not cleaned:
+                continue
+            if label is None:
+                label = cleaned
+            numbers = self._extract_numbers(cleaned)
+            if numbers:
+                numeric = numbers[0]
+                break
+            lowered = cleaned.lower()
+            if lowered in {"n/a", "na", "none", "unknown"}:
+                label = "N/A"
+                continue
+            for keywords, level in keyword_levels:
+                if any(keyword in lowered for keyword in keywords):
+                    numeric = level
+                    break
+            if numeric is not None:
+                break
+
+        if numeric is not None:
+            if numeric < 0:
+                numeric = 0.0
+            elif numeric > 1:
+                if numeric <= 100:
+                    numeric = numeric / 100.0
+                else:
+                    numeric = 1.0
+            numeric = max(0.0, min(numeric, 1.0))
+            if label is None:
+                label = f"{numeric:.0%}"
+
+        if isinstance(label, str):
+            label = label.strip()
+            if not label:
+                label = None
+
+        return numeric, label
+
     def _extract_structured_trade_proposals(self, text: str) -> List[Dict[str, Any]]:
         try:
             thesis_matches = list(
@@ -2571,7 +2632,7 @@ class AIChatEngine:
 
             timeframe: Optional[str] = None
             timeframe_match = re.search(
-                r"(?:\*\*)?Time\s*-?\s*frame(?:\*\*)?:\s*([^\n]+)",
+                r"(?:\*\*)?Time\s*[-–—]?\s*frame(?:\*\*)?\s*(?::|[-–—])\s*([^\n]+)",
                 block,
                 re.IGNORECASE,
             )
@@ -2595,25 +2656,15 @@ class AIChatEngine:
                             timeframe = cleaned
 
             confidence_line_match = re.search(
-                r"(?:\*\*)?Confidence(?:\*\*)?:\s*([^\n]+)",
+                r"(?:\*\*)?Confidence(?:\s+Score)?(?:\*\*)?\s*(?::|[-–—])\s*([^\n]+)",
                 block,
                 re.IGNORECASE,
             )
             confidence: Optional[float] = None
+            confidence_label: Optional[str] = None
             if confidence_line_match:
                 raw_confidence = confidence_line_match.group(1)
-                if raw_confidence:
-                    values = self._extract_numbers(raw_confidence)
-                    if values:
-                        confidence_value = values[0]
-                        if confidence_value > 1:
-                            if confidence_value <= 100:
-                                confidence_value = confidence_value / 100.0
-                            else:
-                                confidence_value = 1.0
-                        elif confidence_value < 0:
-                            confidence_value = 0.0
-                        confidence = max(0.0, min(confidence_value, 1.0))
+                confidence, confidence_label = self._parse_confidence(raw_confidence)
 
             proposal: Dict[str, Any] = {
                 "type": "propose_trade",
@@ -2627,6 +2678,7 @@ class AIChatEngine:
                 "notional": default_notional,
                 "timeframe": timeframe,
                 "confidence": confidence,
+                "confidence_label": confidence_label,
                 "note": note,
             }
             proposals.append(proposal)
@@ -2761,16 +2813,13 @@ class AIChatEngine:
         else:
             note = None
 
-        confidence = self._safe_float(raw.get("confidence") or raw.get("conviction") or raw.get("probability"))
-        if confidence is not None:
-            if confidence < 0:
-                confidence = 0.0
-            elif confidence > 1:
-                if confidence <= 100:
-                    confidence = confidence / 100.0
-                else:
-                    confidence = 1.0
-            confidence = max(0.0, min(confidence, 1.0))
+        confidence, confidence_label = self._parse_confidence(
+            raw.get("confidence"),
+            raw.get("conviction"),
+            raw.get("probability"),
+            raw.get("confidence_label"),
+            raw.get("confidence_text"),
+        )
 
         risk_reward = self._safe_float(
             raw.get("risk_reward") or raw.get("rr") or raw.get("reward_risk") or raw.get("rrr")
@@ -2788,6 +2837,7 @@ class AIChatEngine:
             "size_multiplier": size_multiplier,
             "timeframe": timeframe or None,
             "confidence": confidence,
+            "confidence_label": confidence_label,
             "risk_reward": risk_reward,
             "note": note,
         }
@@ -2878,6 +2928,10 @@ class AIChatEngine:
         confidence = proposal.get("confidence")
         if isinstance(confidence, (int, float)):
             parts.append(f"Conf {confidence:.2f}")
+        else:
+            label = proposal.get("confidence_label")
+            if isinstance(label, str) and label.strip():
+                parts.append(f"Conf {label.strip()}")
 
         def _fmt_price(value: Optional[float]) -> Optional[str]:
             if value is None:
