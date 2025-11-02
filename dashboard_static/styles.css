@@ -3584,6 +3584,106 @@ body.pro-mode .log-stream {
   color: #042f1a;
 }
 
+.log-line.category-volume {
+  background: rgba(13, 148, 136, 0.18);
+  border-color: rgba(45, 212, 191, 0.35);
+}
+
+.log-line.category-volume .log-level {
+  background: rgba(45, 212, 191, 0.32);
+  color: #022c22;
+}
+
+.log-line.category-spread {
+  background: rgba(168, 85, 247, 0.18);
+  border-color: rgba(168, 85, 247, 0.35);
+}
+
+.log-line.category-spread .log-level {
+  background: rgba(192, 132, 252, 0.32);
+  color: #2e1065;
+}
+
+.log-line.category-oracle {
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(59, 130, 246, 0.35);
+}
+
+.log-line.category-oracle .log-level {
+  background: rgba(96, 165, 250, 0.32);
+  color: #0b1d4d;
+}
+
+.log-line.category-sentinel {
+  background: rgba(236, 72, 153, 0.18);
+  border-color: rgba(236, 72, 153, 0.32);
+}
+
+.log-line.category-sentinel .log-level {
+  background: rgba(244, 114, 182, 0.32);
+  color: #4b0b2f;
+}
+
+.log-line.category-ai {
+  background: rgba(6, 182, 212, 0.18);
+  border-color: rgba(6, 182, 212, 0.35);
+}
+
+.log-line.category-ai .log-level {
+  background: rgba(34, 211, 238, 0.32);
+  color: #042f3a;
+}
+
+.log-line.category-funding {
+  background: rgba(217, 119, 6, 0.18);
+  border-color: rgba(217, 119, 6, 0.35);
+}
+
+.log-line.category-funding .log-level {
+  background: rgba(251, 191, 36, 0.32);
+  color: #231805;
+}
+
+.log-line.category-orders {
+  background: rgba(248, 113, 113, 0.18);
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
+.log-line.category-orders .log-level {
+  background: rgba(248, 113, 113, 0.32);
+  color: #450a0a;
+}
+
+.log-line.category-data {
+  background: rgba(148, 163, 184, 0.18);
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+.log-line.category-data .log-level {
+  background: rgba(226, 232, 240, 0.32);
+  color: #111827;
+}
+
+.log-line.category-volatility {
+  background: rgba(249, 115, 22, 0.18);
+  border-color: rgba(249, 115, 22, 0.35);
+}
+
+.log-line.category-volatility .log-level {
+  background: rgba(251, 146, 60, 0.32);
+  color: #431407;
+}
+
+.log-line.category-edge {
+  background: rgba(99, 102, 241, 0.18);
+  border-color: rgba(99, 102, 241, 0.35);
+}
+
+.log-line.category-edge .log-level {
+  background: rgba(129, 140, 248, 0.32);
+  color: #1e1b4b;
+}
+
 .toggle {
   display: flex;
   align-items: center;
