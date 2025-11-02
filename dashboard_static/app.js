@@ -4131,6 +4131,45 @@ function formatBracketLevel(field) {
   return '–';
 }
 
+function normalizeSymbolValue(symbol) {
+  if (symbol === undefined || symbol === null) return '';
+  return symbol.toString().trim().toUpperCase();
+}
+
+function getNormalizedActivePositionSymbol(position) {
+  if (!position || typeof position !== 'object') return '';
+  const aliasField = pickFieldValue(position, ACTIVE_POSITION_ALIASES.symbol || []);
+  const aliasSymbol = normalizeSymbolValue(aliasField.value);
+  if (aliasSymbol) return aliasSymbol;
+  return normalizeSymbolValue(position.symbol);
+}
+
+function hasActivePositionForSymbol(symbol) {
+  const target = normalizeSymbolValue(symbol);
+  if (!target) return false;
+  return activePositions.some((position) => getNormalizedActivePositionSymbol(position) === target);
+}
+
+function extractProposalSymbol(proposal) {
+  if (!proposal || typeof proposal !== 'object') return '';
+  const candidates = [proposal.symbol, proposal.sym, proposal.ticker, proposal.pair, proposal.asset];
+  for (let index = 0; index < candidates.length; index += 1) {
+    const normalized = normalizeSymbolValue(candidates[index]);
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return '';
+}
+
+function tradeProposalConflictsWithActivePosition(proposal) {
+  const normalizedSymbol = extractProposalSymbol(proposal);
+  if (!normalizedSymbol) {
+    return false;
+  }
+  return hasActivePositionForSymbol(normalizedSymbol);
+}
+
 function formatSignedNumber(value, digits = 2) {
   if (!Number.isFinite(value)) return null;
   const abs = Math.abs(value).toFixed(digits);
@@ -4421,6 +4460,17 @@ function updateActivePositionsView() {
 function renderActivePositions(openPositions) {
   activePositions = normaliseActivePositions(openPositions);
   updateActivePositionsView();
+  refreshTradeProposalPlacementAvailability();
+}
+
+function refreshTradeProposalPlacementAvailability() {
+  if (!aiChatMessages) return;
+  tradeProposalRegistry.forEach((proposal, key) => {
+    if (!proposal || !key) return;
+    const card = aiChatMessages.querySelector(`.ai-trade-proposal[data-proposal-id="${key}"]`);
+    if (!card) return;
+    applyTradeProposalStatus(card, proposal, { skipRegistry: true });
+  });
 }
 
 function friendlyReason(reason) {
@@ -6955,61 +7005,117 @@ function appendChatMessage(role, message, meta = {}) {
   }
 }
 
+function applyTradeProposalStatus(cardEl, data, options = {}) {
+  if (!cardEl) return;
+  const { skipRegistry = false } = options;
+  let normalizedUpdate = null;
+  if (skipRegistry) {
+    normalizedUpdate = normalizeTradeProposal(data);
+  } else {
+    normalizedUpdate = registerTradeProposal(data);
+    if (!normalizedUpdate) {
+      normalizedUpdate = normalizeTradeProposal(data);
+    }
+  }
+  if (!normalizedUpdate) return;
+
+  const statusText = (normalizedUpdate.status || '').toString().toLowerCase();
+  const statusEl = cardEl.querySelector('.ai-trade-proposal__status');
+  const actionBtn = cardEl.querySelector('.ai-trade-proposal__action');
+  const errorMessage = (normalizedUpdate.error || '').toString().trim();
+  const idleLabel = translate('chat.proposal.execute', 'Place via Aster');
+  const conflict = tradeProposalConflictsWithActivePosition(normalizedUpdate);
+  const symbol = extractProposalSymbol(normalizedUpdate);
+
+  cardEl.classList.remove('queued', 'failed');
+  if (symbol) {
+    cardEl.dataset.symbol = symbol;
+  } else {
+    delete cardEl.dataset.symbol;
+  }
+  if (conflict) {
+    cardEl.dataset.positionConflict = 'true';
+  } else {
+    cardEl.dataset.positionConflict = 'false';
+  }
+
+  const resolvedStatuses = ['executed', 'completed', 'queued', 'processing'];
+  if (conflict && !resolvedStatuses.includes(statusText)) {
+    if (statusEl) {
+      statusEl.textContent = translate('chat.proposal.alreadyOpen', 'Already open position for symbol');
+    }
+    if (actionBtn) {
+      actionBtn.disabled = true;
+      actionBtn.textContent = idleLabel;
+    }
+    return;
+  }
+
+  if (statusText === 'executed' || statusText === 'completed') {
+    cardEl.classList.add('queued');
+    if (statusEl) {
+      statusEl.textContent = translate('chat.proposal.statusExecuted', 'Trade placed via the Aster API.');
+    }
+    if (actionBtn) {
+      actionBtn.disabled = true;
+      actionBtn.textContent = translate('chat.proposal.executedLabel', 'Trade placed');
+    }
+    return;
+  }
+
+  if (statusText === 'queued') {
+    cardEl.classList.add('queued');
+    if (statusEl) {
+      statusEl.textContent = translate('chat.proposal.statusQueued', 'Manual trade queued for execution.');
+    }
+    if (actionBtn) {
+      actionBtn.disabled = true;
+      actionBtn.textContent = translate('chat.proposal.queued', 'Manual trade queued');
+    }
+    return;
+  }
+
+  if (statusText === 'failed') {
+    cardEl.classList.add('failed');
+    if (statusEl) {
+      statusEl.textContent = errorMessage || translate('chat.proposal.statusFailedDetailed', 'The bot could not execute this trade.');
+    }
+    if (actionBtn) {
+      actionBtn.disabled = false;
+      actionBtn.textContent = translate('chat.proposal.retry', 'Retry');
+    }
+    return;
+  }
+
+  if (statusText === 'processing') {
+    if (statusEl) {
+      statusEl.textContent = translate('chat.proposal.statusProcessing', 'Trade is being placed via the Aster API…');
+    }
+    if (actionBtn) {
+      actionBtn.disabled = true;
+      actionBtn.textContent = translate('chat.proposal.executing', 'Placing…');
+    }
+    return;
+  }
+
+  if (statusEl) {
+    statusEl.textContent = translate('chat.proposal.statusPending', 'Ready to place via the Aster API.');
+  }
+  if (actionBtn) {
+    actionBtn.disabled = false;
+    actionBtn.textContent = idleLabel;
+  }
+}
+
 function appendTradeProposalCard(proposal) {
   if (!aiChatMessages) return;
   const normalizedProposal = registerTradeProposal(proposal);
   if (!normalizedProposal) return;
-  const updateCardState = (cardEl, data) => {
-    if (!cardEl) return;
-    const normalizedUpdate = registerTradeProposal(data) || normalizeTradeProposal(data);
-    if (!normalizedUpdate) return;
-    const statusText = (normalizedUpdate.status || '').toString().toLowerCase();
-    const statusEl = cardEl.querySelector('.ai-trade-proposal__status');
-    const actionBtn = cardEl.querySelector('.ai-trade-proposal__action');
-    const errorMessage = (normalizedUpdate.error || '').toString().trim();
-    cardEl.classList.remove('queued', 'failed');
-    if (statusText === 'executed' || statusText === 'completed') {
-      cardEl.classList.add('queued');
-      if (statusEl) {
-        statusEl.textContent = translate('chat.proposal.statusExecuted', 'Trade placed via the Aster API.');
-      }
-      if (actionBtn) {
-        actionBtn.disabled = true;
-        actionBtn.textContent = translate('chat.proposal.executedLabel', 'Trade placed');
-      }
-    } else if (statusText === 'queued') {
-      cardEl.classList.add('queued');
-      if (statusEl) {
-        statusEl.textContent = translate('chat.proposal.statusQueued', 'Manual trade queued for execution.');
-      }
-      if (actionBtn) {
-        actionBtn.disabled = true;
-        actionBtn.textContent = translate('chat.proposal.queued', 'Manual trade queued');
-      }
-    } else if (statusText === 'failed') {
-      cardEl.classList.add('failed');
-      if (statusEl) {
-        statusEl.textContent = errorMessage || translate('chat.proposal.statusFailedDetailed', 'The bot could not execute this trade.');
-      }
-      if (actionBtn) {
-        actionBtn.disabled = false;
-        actionBtn.textContent = translate('chat.proposal.retry', 'Retry');
-      }
-    } else if (statusText === 'processing') {
-      if (statusEl) {
-        statusEl.textContent = translate('chat.proposal.statusProcessing', 'Trade is being placed via the Aster API…');
-      }
-      if (actionBtn) {
-        actionBtn.disabled = true;
-        actionBtn.textContent = translate('chat.proposal.executing', 'Placing…');
-      }
-    }
-  };
   const existing = aiChatMessages.querySelector(
     `.ai-trade-proposal[data-proposal-id="${normalizedProposal.id}"]`
   );
   if (existing) {
-    updateCardState(existing, normalizedProposal);
+    applyTradeProposalStatus(existing, normalizedProposal, { skipRegistry: true });
     requestAutomatedTradeExecution();
     return;
   }
@@ -7178,7 +7284,7 @@ function appendTradeProposalCard(proposal) {
     setChatStatus(translate('chat.proposal.statusExecuting', 'Placing trade via the Aster API…'));
     try {
       const payload = await executeTradeProposal(normalizedProposal.id);
-      updateCardState(card, payload);
+      applyTradeProposalStatus(card, payload);
       if (!card.classList.contains('queued')) {
         card.classList.add('queued');
         actionBtn.textContent = successLabel;
@@ -7196,7 +7302,7 @@ function appendTradeProposalCard(proposal) {
   });
 
   aiChatMessages.append(card);
-  updateCardState(card, normalizedProposal);
+  applyTradeProposalStatus(card, normalizedProposal, { skipRegistry: true });
   if (shouldAutoScroll) {
     const behavior = aiChatMessages.scrollHeight > aiChatMessages.clientHeight ? 'smooth' : 'auto';
     scrollToBottom(aiChatMessages, behavior);
