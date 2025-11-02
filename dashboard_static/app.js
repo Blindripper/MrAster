@@ -3018,6 +3018,43 @@ const LOG_REASON_CATEGORY_MAP = {
   edge_r: 'edge',
 };
 
+const LOG_REASON_COLOR_MAP = {
+  ai_risk_zero: { base: '#EA580C', accent: '#FB923C', text: '#4a1a05' },
+  ai_trend_invalid: { base: '#1E293B', accent: '#475569', text: '#E2E8F0' },
+  ai_trend_skip: { base: '#3B82F6', accent: '#60A5FA', text: '#0b2f58' },
+  base_strategy_skip: { base: '#312E81', accent: '#4338CA', text: '#EEF2FF' },
+  edge_r: { base: '#6366F1', accent: '#818CF8', text: '#1e1b4b' },
+  fallback_rules: { base: '#22D3EE', accent: '#67E8F9', text: '#03414b' },
+  filtered: { base: '#2563EB', accent: '#60A5FA', text: '#0b2b5c' },
+  funding: { base: '#B45309', accent: '#F97316', text: '#3b1300' },
+  funding_long: { base: '#F59E0B', accent: '#FBBF24', text: '#43290b' },
+  funding_short: { base: '#D97706', accent: '#F59E0B', text: '#421504' },
+  few_klines: { base: '#38BDF8', accent: '#7DD3FC', text: '#0b3d5c' },
+  klines_err: { base: '#94A3B8', accent: '#E2E8F0', text: '#111827' },
+  no_cross: { base: '#0EA5E9', accent: '#38BDF8', text: '#06374a' },
+  oracle_gap: { base: '#0891B2', accent: '#22D3EE', text: '#012d36' },
+  oracle_gap_clamped: { base: '#155E75', accent: '#38BDF8', text: '#ECFEFF' },
+  order_failed: { base: '#EF4444', accent: '#F87171', text: '#600b0b' },
+  plan_pending: { base: '#A855F7', accent: '#C084FC', text: '#3a0a58' },
+  plan_timeout: { base: '#F43F5E', accent: '#FB7185', text: '#5e0617' },
+  policy_filter: { base: '#0F766E', accent: '#2DD4BF', text: '#022c22' },
+  position_cap_global: { base: '#4338CA', accent: '#6366F1', text: '#E0E7FF' },
+  position_cap_symbol: { base: '#5B21B6', accent: '#7C3AED', text: '#EDE9FE' },
+  position_size: { base: '#22C55E', accent: '#4ADE80', text: '#06472b' },
+  qv_score: { base: '#047857', accent: '#34D399', text: '#01211a' },
+  quote_volume: { base: '#10B981', accent: '#34D399', text: '#034032' },
+  quote_volume_cooldown: { base: '#0D9488', accent: '#2DD4BF', text: '#023532' },
+  sentinel_block: { base: '#DB2777', accent: '#FB7185', text: '#4f0c2c' },
+  sentinel_event_risk: { base: '#F97316', accent: '#FDBA74', text: '#4a1a05' },
+  sentinel_factor: { base: '#E879F9', accent: '#F0ABFC', text: '#521054' },
+  sentinel_hype: { base: '#FACC15', accent: '#FDE68A', text: '#3b2600' },
+  sentinel_veto: { base: '#EC4899', accent: '#F472B6', text: '#4f0c2c' },
+  spread: { base: '#8B5CF6', accent: '#A78BFA', text: '#2e1065' },
+  trend_pending: { base: '#1D4ED8', accent: '#3B82F6', text: '#0a1f4f' },
+  trend_timeout: { base: '#B91C1C', accent: '#F87171', text: '#5f0505' },
+  wicky: { base: '#FB7185', accent: '#F9A8D4', text: '#4c0519' },
+};
+
 const LOG_LABEL_CATEGORY_MAP = {
   'ai feed': 'ai',
   'ai request': 'ai',
@@ -4640,9 +4677,75 @@ function resolveLogCategory(friendly) {
   return '';
 }
 
-function getLogCategoryClass(friendly) {
+function normaliseLogReasonKey(reason) {
+  return (reason || '')
+    .toString()
+    .trim()
+    .toLowerCase();
+}
+
+function getLogReasonClass(reason) {
+  const key = normaliseLogReasonKey(reason);
+  if (!key) return '';
+  const token = key.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return token ? `reason-${token}` : '';
+}
+
+function getLogClassList(friendly) {
+  const classes = [];
   const category = resolveLogCategory(friendly);
-  return category ? `category-${category}` : '';
+  if (category) {
+    classes.push(`category-${category}`);
+  }
+  const reasonClass = getLogReasonClass(friendly?.reason);
+  if (reasonClass) {
+    classes.push(reasonClass);
+  }
+  return classes;
+}
+
+function hexToRgba(hex, alpha = 1) {
+  if (!hex) return '';
+  const raw = hex.toString().trim().replace(/^#/, '');
+  if (!raw) return '';
+  const normalized = raw.length === 3 ? raw.split('').map((char) => char + char).join('') : raw;
+  if (normalized.length !== 6) return '';
+  const r = parseInt(normalized.slice(0, 2), 16);
+  const g = parseInt(normalized.slice(2, 4), 16);
+  const b = parseInt(normalized.slice(4, 6), 16);
+  if ([r, g, b].some((component) => Number.isNaN(component))) return '';
+  const clampedAlpha = Math.max(0, Math.min(1, Number(alpha)));
+  return `rgba(${r}, ${g}, ${b}, ${clampedAlpha})`;
+}
+
+function applyLogReasonStyles(element, reason) {
+  if (!element) return;
+  const key = normaliseLogReasonKey(reason);
+  if (!key) return;
+  const palette = LOG_REASON_COLOR_MAP[key];
+  if (!palette) return;
+  const base = palette.base || null;
+  const accent = palette.accent || base;
+  const background =
+    palette.background || (base ? hexToRgba(base, palette.backgroundAlpha ?? 0.18) : '');
+  const border = palette.border || (base ? hexToRgba(base, palette.borderAlpha ?? 0.36) : '');
+  const badge = palette.badge || (accent ? hexToRgba(accent, palette.badgeAlpha ?? 0.32) : '');
+  const badgeText = palette.badgeText || palette.text || '';
+
+  if (background) {
+    element.style.setProperty('--log-reason-bg', background);
+  }
+  if (border) {
+    element.style.setProperty('--log-reason-border', border);
+  }
+  if (badge) {
+    element.style.setProperty('--log-reason-badge-bg', badge);
+  }
+  if (badgeText) {
+    element.style.setProperty('--log-reason-badge-text', badgeText);
+  }
+
+  element.classList.add('log-reason-themed');
 }
 
 function humanizeLogLine(line, fallbackLevel = 'info') {
@@ -8876,10 +8979,11 @@ function appendCompactLog({ line, level, ts }) {
   const severity = (friendly.severity || level || 'info').toLowerCase();
   const el = document.createElement('div');
   el.className = `log-line ${severity}`.trim();
-  const categoryClass = getLogCategoryClass(friendly);
-  if (categoryClass) {
-    el.classList.add(categoryClass);
+  const classificationClasses = getLogClassList(friendly);
+  if (classificationClasses.length > 0) {
+    el.classList.add(...classificationClasses);
   }
+  applyLogReasonStyles(el, friendly.reason);
 
   const meta = document.createElement('div');
   meta.className = 'log-meta';
