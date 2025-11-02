@@ -3821,6 +3821,7 @@ class AIChatEngine:
         Dict[str, Any],
         List[Dict[str, Any]],
         Dict[str, Any],
+        Dict[str, Any],
     ]:
         state = _read_state()
         history = state.get("trade_history", [])
@@ -3833,6 +3834,7 @@ class AIChatEngine:
         technical_snapshot = state.get("technical_snapshot", {})
         if not isinstance(technical_snapshot, dict):
             technical_snapshot = {}
+        overlays = self._copilot_context_overlay(state, ai_budget)
         return (
             stats,
             history,
@@ -3842,7 +3844,190 @@ class AIChatEngine:
             decision_stats,
             recent_plans,
             technical_snapshot,
+            overlays,
         )
+
+    def _copilot_context_overlay(
+        self,
+        state: Dict[str, Any],
+        ai_budget: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        overlay: Dict[str, Any] = {}
+        playbook_bucket = state.get("ai_playbook") if isinstance(state, dict) else None
+        active_playbook = (
+            playbook_bucket.get("active")
+            if isinstance(playbook_bucket, dict)
+            else None
+        )
+        if isinstance(active_playbook, dict) and active_playbook:
+            mode = str(active_playbook.get("mode") or "baseline")
+            bias = str(active_playbook.get("bias") or "neutral")
+            size_bias = active_playbook.get("size_bias") or {}
+            try:
+                buy_bias = float((size_bias or {}).get("BUY", 1.0) or 1.0)
+            except (TypeError, ValueError):
+                buy_bias = 1.0
+            try:
+                sell_bias = float((size_bias or {}).get("SELL", 1.0) or 1.0)
+            except (TypeError, ValueError):
+                sell_bias = 1.0
+            try:
+                sl_bias = float(active_playbook.get("sl_bias", 1.0) or 1.0)
+            except (TypeError, ValueError):
+                sl_bias = 1.0
+            try:
+                tp_bias = float(active_playbook.get("tp_bias", 1.0) or 1.0)
+            except (TypeError, ValueError):
+                tp_bias = 1.0
+            features = active_playbook.get("features")
+            feature_blurbs: List[str] = []
+            if isinstance(features, dict):
+                ranked = sorted(
+                    (
+                        (name, float(value))
+                        for name, value in features.items()
+                        if isinstance(value, (int, float))
+                    ),
+                    key=lambda pair: abs(pair[1]),
+                    reverse=True,
+                )
+                for name, value in ranked[:2]:
+                    feature_blurbs.append(f"{name} {value:+.2f}")
+            snippet = (
+                f"Active playbook: {mode} ({bias}) · size BUY {buy_bias:.2f}/SELL {sell_bias:.2f} · SL×{sl_bias:.2f} · TP×{tp_bias:.2f}"
+            )
+            if feature_blurbs:
+                snippet += " · " + ", ".join(feature_blurbs)
+            overlay["playbook_line"] = snippet
+        sentinel_state = state.get("sentinel") if isinstance(state, dict) else None
+        if isinstance(sentinel_state, dict) and sentinel_state:
+            counts: Dict[str, int] = {}
+            peak_risk = 0.0
+            peak_symbol: Optional[str] = None
+            avg_hype = 0.0
+            hype_samples = 0
+            for symbol, payload in sentinel_state.items():
+                if not isinstance(payload, dict):
+                    continue
+                label = str(payload.get("label", "")).lower()
+                counts[label] = counts.get(label, 0) + 1
+                try:
+                    event_risk = float(payload.get("event_risk", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    event_risk = 0.0
+                if event_risk > peak_risk:
+                    peak_risk = event_risk
+                    peak_symbol = symbol
+                try:
+                    hype_score = float(payload.get("hype_score", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    hype_score = None
+                if hype_score is not None:
+                    avg_hype += hype_score
+                    hype_samples += 1
+            pieces: List[str] = []
+            if counts.get("red"):
+                pieces.append(f"red={counts['red']}")
+            if counts.get("yellow"):
+                pieces.append(f"yellow={counts['yellow']}")
+            if counts.get("green"):
+                pieces.append(f"green={counts['green']}")
+            if peak_symbol:
+                pieces.append(f"peak {peak_symbol} risk={peak_risk:.2f}")
+            if hype_samples:
+                pieces.append(f"avg hype={avg_hype / max(hype_samples, 1):.2f}")
+            if pieces:
+                overlay["sentinel_line"] = "Sentinel risk: " + " · ".join(pieces)
+        history = ai_budget.get("history") if isinstance(ai_budget, dict) else None
+        spent_val = _safe_float(ai_budget.get("spent")) if isinstance(ai_budget, dict) else None
+        limit_val = _safe_float(ai_budget.get("limit")) if isinstance(ai_budget, dict) else None
+        count_val = _ai_request_count(ai_budget) if isinstance(ai_budget, dict) else None
+        if isinstance(history, list) and history:
+            costs: List[float] = []
+            first_ts: Optional[float] = None
+            last_ts: Optional[float] = None
+            for item in history[-12:]:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    costs.append(float(item.get("cost", 0.0) or 0.0))
+                except (TypeError, ValueError):
+                    continue
+                try:
+                    ts_val = float(item.get("ts", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    ts_val = None
+                if ts_val is not None:
+                    if first_ts is None:
+                        first_ts = ts_val
+                    last_ts = ts_val
+            if costs:
+                avg_cost = sum(costs) / len(costs)
+                pace: Optional[float] = None
+                if first_ts is not None and last_ts is not None and last_ts > first_ts:
+                    hours = max((last_ts - first_ts) / 3600.0, 1e-3)
+                    pace = len(costs) / hours
+                parts = [f"avg cost {avg_cost:.4f} USD"]
+                if pace is not None:
+                    parts.append(f"~{pace:.1f} req/hr")
+                if spent_val is not None and limit_val is not None:
+                    parts.insert(0, f"spent {spent_val:.2f}/{limit_val:.2f} USD")
+                elif spent_val is not None:
+                    parts.insert(0, f"spent {spent_val:.2f} USD")
+                if count_val is not None:
+                    parts.append(f"count {count_val}")
+                overlay["budget_trend_line"] = "AI budget trend: " + " · ".join(parts)
+        tuning_overrides = state.get("tuning_overrides")
+        if not isinstance(tuning_overrides, dict):
+            tuning_state = state.get("param_tuning") if isinstance(state, dict) else None
+            if isinstance(tuning_state, dict):
+                tuning_overrides = tuning_state.get("overrides")
+        if isinstance(tuning_overrides, dict) and tuning_overrides:
+            size_bias = tuning_overrides.get("size_bias") or {}
+            size_bits: List[str] = []
+            if isinstance(size_bias, dict):
+                for bucket in ("S", "M", "L"):
+                    try:
+                        size_bits.append(f"{bucket}:{float(size_bias.get(bucket, 1.0)):.2f}")
+                    except (TypeError, ValueError):
+                        continue
+            line_parts: List[str] = []
+            if size_bits:
+                line_parts.append("size " + "/".join(size_bits))
+            for key, label in (("sl_atr_mult", "SL"), ("tp_atr_mult", "TP")):
+                try:
+                    value = float(tuning_overrides.get(key, 1.0) or 1.0)
+                except (TypeError, ValueError):
+                    value = None
+                if value is not None:
+                    line_parts.append(f"{label}×{value:.2f}")
+            try:
+                confidence = float(tuning_overrides.get("confidence", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                confidence = None
+            if confidence is not None:
+                line_parts.append(f"confidence {confidence:.2f}")
+            if line_parts:
+                overlay["tuning_line"] = "Parameter tuner overrides: " + " · ".join(line_parts)
+        budget_learning = state.get("ai_budget_learning") if isinstance(state, dict) else None
+        if isinstance(budget_learning, dict):
+            symbols = budget_learning.get("symbols")
+            if isinstance(symbols, dict) and symbols:
+                ranked = sorted(
+                    (
+                        (sym, float((payload or {}).get("bias", 1.0) or 1.0), float((payload or {}).get("skip_weight", 0.0) or 0.0))
+                        for sym, payload in symbols.items()
+                        if isinstance(payload, dict)
+                    ),
+                    key=lambda item: (item[1], -item[2]),
+                )
+                for sym, bias, skip_weight in ranked:
+                    if bias < 0.95 or skip_weight > 0.5:
+                        overlay["budget_learner_line"] = (
+                            f"Budget learner: {sym} bias {bias:.2f} · skip_weight {skip_weight:.2f}"
+                        )
+                        break
+        return overlay
 
     def _build_context_text(
         self,
@@ -3854,6 +4039,7 @@ class AIChatEngine:
         decision_stats: Dict[str, Any],
         recent_plans: List[Dict[str, Any]],
         technical_snapshot: Dict[str, Any],
+        extra_context: Dict[str, Any],
     ) -> str:
         lines = [
             "You are the AI co-pilot for the MrAster autonomous strategy cockpit.",
@@ -3866,6 +4052,17 @@ class AIChatEngine:
                 f"total R {stats.total_r:.2f} · win rate {(stats.win_rate * 100.0):.1f}%"
             ),
         ]
+        if extra_context:
+            for key in (
+                "playbook_line",
+                "sentinel_line",
+                "budget_trend_line",
+                "tuning_line",
+                "budget_learner_line",
+            ):
+                value = extra_context.get(key)
+                if isinstance(value, str) and value.strip():
+                    lines.append(value)
         if stats.ai_hint:
             lines.append(f"AI hint: {stats.ai_hint}")
         if stats.best_trade:
@@ -4693,6 +4890,7 @@ class AIChatEngine:
             decision_stats,
             recent_plans,
             technical_snapshot,
+            copilot_overlay,
         ) = self._current_state()
         fallback = self._fallback_reply(
             message, stats, history, ai_activity, open_trades, ai_budget
@@ -4727,6 +4925,7 @@ class AIChatEngine:
             decision_stats,
             recent_plans,
             technical_snapshot,
+            copilot_overlay,
         )
         messages: List[Dict[str, str]] = [{"role": "system", "content": context_text}]
         for item in history_payload[-6:]:
@@ -4875,6 +5074,7 @@ class AIChatEngine:
             decision_stats,
             recent_plans,
             technical_snapshot,
+            copilot_overlay,
         ) = self._current_state()
         now = time.time()
         cached_payload = MOST_TRADED_CACHE.get("payload")
@@ -4931,6 +5131,7 @@ class AIChatEngine:
             decision_stats,
             recent_plans,
             technical_snapshot,
+            copilot_overlay,
         )
         universe_symbols = self._market_universe_symbols()
         if universe_symbols:

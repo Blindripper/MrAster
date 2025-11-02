@@ -13,6 +13,11 @@ POSTMORTEM_FEATURE_MAP: Dict[str, str] = {
     "sentiment_conflict": "pm_sentiment_conflict",
     "macro_event": "pm_macro_event",
 }
+POSTMORTEM_EXTRA_FEATURES = (
+    "pm_volatility_bias",
+    "pm_execution_quality",
+    "pm_liquidity_profile",
+)
 POSTMORTEM_DEFAULT_WEIGHT = 0.15
 POSTMORTEM_DECAY = 0.92
 
@@ -29,7 +34,10 @@ class PostmortemLearning:
 
     @property
     def feature_keys(self) -> Iterable[str]:
-        return POSTMORTEM_FEATURE_MAP.values()
+        for key in POSTMORTEM_FEATURE_MAP.values():
+            yield key
+        for extra in POSTMORTEM_EXTRA_FEATURES:
+            yield extra
 
     def register(
         self,
@@ -90,6 +98,14 @@ class PostmortemLearning:
             value = float(scores.get(mapped_key, scores.get(raw_key, 0.0)) or 0.0)
             value = max(min(value, 1.0), -1.0)
             result[mapped_key] = value
+        for extra_key in POSTMORTEM_EXTRA_FEATURES:
+            if extra_key not in scores:
+                continue
+            try:
+                value = float(scores.get(extra_key, 0.0) or 0.0)
+            except (TypeError, ValueError):
+                continue
+            result[extra_key] = max(min(value, 1.0), -1.0)
         # fallback weighting if all zeros
         if all(abs(v) < 1e-6 for v in result.values()):
             fallback = max(min(pnl_r, 2.5), -2.5) / 2.5
@@ -237,6 +253,7 @@ class ParameterTuner:
         now = time.time()
         if now - float(self._state.get("last_ai", 0.0) or 0.0) < self._ai_interval:
             return
+        context = self._build_context_snapshot()
         payload = {
             "trades": [
                 {
@@ -252,6 +269,8 @@ class ParameterTuner:
             ],
             "overrides": self._state.get("overrides", {}),
         }
+        if context:
+            payload["context"] = context
         suggestions = self._request_fn("tuning", payload)
         if not suggestions:
             return
@@ -280,6 +299,95 @@ class ParameterTuner:
         note = suggestions.get("note") if isinstance(suggestions, dict) else None
         if isinstance(note, str):
             self._state["ai_notes"] = note.strip()
+
+    def _build_context_snapshot(self) -> Dict[str, Any]:
+        snapshot: Dict[str, Any] = {}
+        root_playbook = (
+            self._root.get("ai_playbook", {}) if isinstance(self._root, dict) else {}
+        )
+        active_playbook = (
+            root_playbook.get("active")
+            if isinstance(root_playbook, dict)
+            else None
+        )
+        if isinstance(active_playbook, dict) and active_playbook:
+            snapshot["playbook_mode"] = active_playbook.get("mode")
+            snapshot["playbook_bias"] = active_playbook.get("bias")
+            try:
+                snapshot["playbook_sl_bias"] = float(
+                    active_playbook.get("sl_bias", 1.0) or 1.0
+                )
+            except (TypeError, ValueError):
+                pass
+            try:
+                snapshot["playbook_tp_bias"] = float(
+                    active_playbook.get("tp_bias", 1.0) or 1.0
+                )
+            except (TypeError, ValueError):
+                pass
+            size_bias = active_playbook.get("size_bias")
+            if isinstance(size_bias, dict):
+                for key, value in size_bias.items():
+                    try:
+                        snapshot[f"playbook_size_{str(key).lower()}"] = float(value)
+                    except (TypeError, ValueError):
+                        continue
+        sentinel_state = (
+            self._root.get("sentinel") if isinstance(self._root, dict) else None
+        )
+        if isinstance(sentinel_state, dict) and sentinel_state:
+            counts: Dict[str, int] = {}
+            max_event: float = 0.0
+            max_symbol: Optional[str] = None
+            avg_hype_total = 0.0
+            hype_count = 0
+            for symbol, payload in sentinel_state.items():
+                if not isinstance(payload, dict):
+                    continue
+                label = str(payload.get("label", "")).lower()
+                counts[label] = counts.get(label, 0) + 1
+                try:
+                    event_risk = float(payload.get("event_risk", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    event_risk = 0.0
+                if event_risk > max_event:
+                    max_event = event_risk
+                    max_symbol = symbol
+                try:
+                    hype = float(payload.get("hype_score", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    hype = None
+                if hype is not None:
+                    avg_hype_total += hype
+                    hype_count += 1
+            for label, count in counts.items():
+                snapshot[f"sentinel_{label}_count"] = count
+            if max_symbol:
+                snapshot["sentinel_peak_symbol"] = max_symbol
+                snapshot["sentinel_peak_event_risk"] = round(max_event, 3)
+            if hype_count:
+                snapshot["sentinel_avg_hype"] = round(avg_hype_total / hype_count, 3)
+        budget_info = (
+            self._root.get("ai_budget") if isinstance(self._root, dict) else None
+        )
+        if isinstance(budget_info, dict) and budget_info:
+            for key in ("spent", "limit", "remaining"):
+                try:
+                    value = float(budget_info.get(key, 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    continue
+                snapshot[f"budget_{key}"] = value
+            try:
+                snapshot["budget_count"] = int(budget_info.get("count", 0) or 0)
+            except (TypeError, ValueError):
+                pass
+        recent_notes = self._state.get("ai_notes")
+        if isinstance(recent_notes, str) and recent_notes.strip():
+            snapshot["latest_note"] = recent_notes.strip()
+        overrides = self._state.get("overrides")
+        if isinstance(overrides, dict) and overrides:
+            snapshot["current_overrides"] = overrides
+        return snapshot
 
 
 class PlaybookManager:
@@ -569,6 +677,53 @@ class BudgetLearner:
         bias = self._compute_bias(sym_state)
         sym_state["bias"] = bias
         return float(bias or 1.0)
+
+    def context_snapshot(self, symbol: str) -> Dict[str, Any]:
+        sym_key = symbol if symbol in (self._state.get("symbols", {}) or {}) else symbol or "*"
+        sym_state = self._state.get("symbols", {}).get(sym_key)
+        if not isinstance(sym_state, dict):
+            sym_state = self._state.get("symbols", {}).get("*")
+        snapshot: Dict[str, Any] = {}
+        if not isinstance(sym_state, dict):
+            return snapshot
+        bias = self._compute_bias(sym_state)
+        sym_state["bias"] = bias
+        snapshot["bias"] = float(bias)
+        skip_penalty = self._decayed_skip_penalty(sym_state, update=False)
+        snapshot["skip_weight"] = float(skip_penalty)
+        recent = sym_state.get("recent_pnl")
+        if isinstance(recent, list) and recent:
+            tail = recent[-min(len(recent), 12) :]
+            if tail:
+                avg = sum(tail) / len(tail)
+                snapshot["recent_avg_pnl"] = float(avg)
+                snapshot["recent_last_pnl"] = float(tail[-1])
+        skip_reasons = sym_state.get("skip_reasons")
+        if isinstance(skip_reasons, dict) and skip_reasons:
+            ranked = sorted(
+                (
+                    (str(reason), int((meta or {}).get("count", 0)))
+                    for reason, meta in skip_reasons.items()
+                ),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+            if ranked:
+                snapshot["skip_top_reason"] = ranked[0][0]
+                snapshot["skip_top_reason_count"] = float(ranked[0][1])
+        skip_meta = sym_state.get("skip_meta")
+        if isinstance(skip_meta, list) and skip_meta:
+            last_entry = skip_meta[-1]
+            if isinstance(last_entry, dict):
+                reason = last_entry.get("reason")
+                if isinstance(reason, str) and reason.strip():
+                    snapshot.setdefault("skip_latest_reason", reason.strip())
+                ts = last_entry.get("ts")
+                try:
+                    snapshot["skip_latest_ts"] = float(ts)
+                except (TypeError, ValueError):
+                    pass
+        return snapshot
 
     def record_skip(
         self,

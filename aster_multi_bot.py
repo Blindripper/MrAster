@@ -939,6 +939,65 @@ class NewsTrendSentinel:
         if store_only:
             return payload
         return payload
+POSTMORTEM_VOLATILITY_SCORES: Dict[str, float] = {
+    "spike": 0.85,
+    "shock": 0.9,
+    "expansion": 0.6,
+    "impulse": 0.55,
+    "grind": 0.2,
+    "balanced": 0.1,
+    "range": -0.2,
+    "compression": -0.55,
+    "squeeze": -0.5,
+    "whipsaw": -0.65,
+    "chop": -0.6,
+    "calm": -0.25,
+}
+
+POSTMORTEM_EXECUTION_SCORES: Dict[str, float] = {
+    "ideal": 0.8,
+    "precise": 0.75,
+    "fast": 0.55,
+    "front_run": 0.35,
+    "partial": -0.25,
+    "slow": -0.5,
+    "late": -0.7,
+    "slipped": -0.6,
+    "chased": -0.55,
+    "staggered": -0.2,
+}
+
+POSTMORTEM_LIQUIDITY_SCORES: Dict[str, float] = {
+    "thick": 0.35,
+    "deep": 0.4,
+    "maker_friendly": 0.3,
+    "stable": 0.2,
+    "neutral": 0.0,
+    "thin": -0.45,
+    "fragile": -0.55,
+    "one_sided": -0.4,
+    "toxic": -0.65,
+}
+
+
+def _score_category(label: Any, table: Dict[str, float]) -> Optional[float]:
+    if label is None:
+        return None
+    if isinstance(label, (int, float)):
+        try:
+            return max(min(float(label), 1.0), -1.0)
+        except (TypeError, ValueError):
+            return None
+    token = str(label).strip().lower()
+    if not token:
+        return None
+    normalized = re.sub(r"[^a-z0-9]+", "_", token)
+    if normalized in table:
+        return table[normalized]
+    for key, value in table.items():
+        if key in normalized:
+            return value
+    return None
 
 
 class AITradeAdvisor:
@@ -1274,7 +1333,15 @@ class AITradeAdvisor:
             pass
         try:
             if self.budget_learner:
-                ctx["budget_bias"] = float(self.budget_learner.context_bias(symbol or "*"))
+                ctx["budget_bias"] = float(
+                    self.budget_learner.context_bias(symbol or "*")
+                )
+                snapshot = self.budget_learner.context_snapshot(symbol or "*")
+                for key, value in snapshot.items():
+                    if isinstance(value, (int, float)):
+                        ctx[f"budget_{key}"] = float(value)
+                    elif isinstance(value, str):
+                        ctx[f"budget_{key}"] = value
         except Exception:
             pass
 
@@ -3221,8 +3288,10 @@ class AITradeAdvisor:
             return fallback
 
         system_prompt = (
-            "You are a trading coach. Analyse the trade JSON and respond with a 40-70 word paragraph summarising what went right, "
-            "what could improve, and one actionable tweak."
+            "You are a trading coach. Analyse the trade JSON and respond strictly with compact JSON containing request_id, "
+            "analysis (40-70 words), feature_scores (floats between -1 and 1), optional labels, volatility descriptor, "
+            "execution descriptor, liquidity descriptor, and optional note. Use short descriptors like spike, compression, "
+            "thin_liquidity and prefer numeric feature weights for consistent tuning."
         )
         request_id = self._new_request_id("postmortem", str(symbol or ""))
         payload_with_id = dict(trade)
@@ -3252,6 +3321,41 @@ class AITradeAdvisor:
                         for k, v in feats.items()
                         if isinstance(v, (int, float))
                     }
+                def _first_descriptor(*keys: str) -> Optional[str]:
+                    for key in keys:
+                        value = structured.get(key)
+                        if isinstance(value, str) and value.strip():
+                            return value.strip()
+                        if isinstance(value, (list, tuple)):
+                            for item in value:
+                                if isinstance(item, str) and item.strip():
+                                    return item.strip()
+                    return None
+
+                volatility_label = _first_descriptor(
+                    "volatility", "volatility_type", "volatility_descriptor"
+                )
+                execution_label = _first_descriptor(
+                    "execution", "execution_type", "execution_descriptor", "execution_quality"
+                )
+                liquidity_label = _first_descriptor(
+                    "liquidity", "liquidity_type", "liquidity_descriptor"
+                )
+                if volatility_label:
+                    score = _score_category(volatility_label, POSTMORTEM_VOLATILITY_SCORES)
+                    if score is not None:
+                        feature_scores["pm_volatility_bias"] = score
+                    fallback["volatility"] = volatility_label
+                if execution_label:
+                    score = _score_category(execution_label, POSTMORTEM_EXECUTION_SCORES)
+                    if score is not None:
+                        feature_scores["pm_execution_quality"] = score
+                    fallback["execution"] = execution_label
+                if liquidity_label:
+                    score = _score_category(liquidity_label, POSTMORTEM_LIQUIDITY_SCORES)
+                    if score is not None:
+                        feature_scores["pm_liquidity_profile"] = score
+                    fallback["liquidity"] = liquidity_label
                 labels_raw = structured.get("labels") or structured.get("tags")
                 if isinstance(labels_raw, list):
                     labels = [str(item) for item in labels_raw if isinstance(item, (str, int, float))]
