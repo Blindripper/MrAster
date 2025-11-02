@@ -6561,7 +6561,7 @@ function collectAiRequestDetailData(item) {
   };
 
   const confidenceVal = parseNumeric(safe.confidence);
-  if (confidenceVal !== null) {
+  if (confidenceVal !== null && confidenceVal > 0) {
     metricsParts.push(`Confidence ${confidenceVal.toFixed(2)}`);
   }
   const sizeMult = parseNumeric(safe.size_multiplier);
@@ -7218,13 +7218,13 @@ function appendTradeProposalCard(proposal) {
 
   const formatConfidence = () => {
     const value = Number(normalizedProposal.confidence);
-    if (Number.isFinite(value)) {
+    if (Number.isFinite(value) && value > 0) {
       const clamped = Math.min(Math.max(value, 0), 1);
       return `${Math.round(clamped * 100)}%`;
     }
     const label = (normalizedProposal.confidence_label ?? '').toString().trim();
     if (label) return label;
-    return translate('chat.proposal.confidence.na', 'N/A');
+    return '';
   };
 
   const formatString = (raw, fallback = '—') => {
@@ -7245,7 +7245,10 @@ function appendTradeProposalCard(proposal) {
   addCell(translate('chat.proposal.stop', 'Stop-Loss'), formatPrice(normalizedProposal.stop_loss));
   addCell(translate('chat.proposal.take', 'Take-Profit'), formatPrice(normalizedProposal.take_profit));
   addCell(translate('chat.proposal.size', 'Position Size'), formatSizing());
-  addCell(translate('chat.proposal.confidence', 'Confidence'), formatConfidence());
+  const confidenceText = formatConfidence();
+  if (confidenceText) {
+    addCell(translate('chat.proposal.confidence', 'Confidence'), confidenceText);
+  }
   addCell(translate('chat.proposal.timeframe', 'Timeframe'), formatTimeframe());
 
   if (normalizedProposal.risk_reward !== undefined) {
