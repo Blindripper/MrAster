@@ -228,6 +228,24 @@ SIZE_MULT_S = float(os.getenv("ASTER_SIZE_MULT_S", str(SIZE_MULT_BASE)))
 SIZE_MULT_M = float(os.getenv("ASTER_SIZE_MULT_M", str(1.4 * SIZE_MULT_BASE)))
 SIZE_MULT_L = float(os.getenv("ASTER_SIZE_MULT_L", str(1.9 * SIZE_MULT_BASE)))
 SIZE_MULT_FLOOR = max(0.0, min(5.0, float(os.getenv("ASTER_SIZE_MULT_FLOOR", "0.0"))))
+SIZE_MULT_CAP = max(0.1, float(os.getenv("ASTER_SIZE_MULT_CAP", "3.0")))
+
+CONFIDENCE_SIZING_ENABLED = os.getenv("ASTER_CONFIDENCE_SIZING", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+CONFIDENCE_SIZING_MIN = max(0.0, float(os.getenv("ASTER_CONFIDENCE_SIZE_MIN", "0.6")))
+CONFIDENCE_SIZING_MAX = max(
+    CONFIDENCE_SIZING_MIN,
+    float(os.getenv("ASTER_CONFIDENCE_SIZE_MAX", "3.0")),
+)
+CONFIDENCE_SIZING_BLEND = min(
+    1.0,
+    max(0.0, float(os.getenv("ASTER_CONFIDENCE_SIZE_BLEND", "0.65"))),
+)
+CONFIDENCE_SIZING_EXP = max(0.2, float(os.getenv("ASTER_CONFIDENCE_SIZE_EXP", "1.0")))
 
 ALPHA_ENABLED = os.getenv("ASTER_ALPHA_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 ALPHA_THRESHOLD = float(os.getenv("ASTER_ALPHA_THRESHOLD", "0.55"))
@@ -607,6 +625,15 @@ def clamp(value: float, lower: float, upper: float) -> float:
     if lower > upper:
         lower, upper = upper, lower
     return max(lower, min(upper, value))
+
+
+def _confidence_size_target(confidence: float) -> float:
+    conf = max(0.0, min(1.0, float(confidence)))
+    span = max(0.0, CONFIDENCE_SIZING_MAX - CONFIDENCE_SIZING_MIN)
+    if span <= 0:
+        return max(0.0, CONFIDENCE_SIZING_MIN)
+    scaled = CONFIDENCE_SIZING_MIN + (conf ** CONFIDENCE_SIZING_EXP) * span
+    return max(0.0, scaled)
 
 
 class DailyBudgetTracker:
@@ -2722,7 +2749,12 @@ class AITradeAdvisor:
             risk_bias = 0.0
         else:
             risk_bias = 1.0 + max(0.0, hype_score - 0.55) * 0.35
-        size_multiplier = clamp(size_factor * risk_bias, max(0.0, SIZE_MULT_FLOOR), 1.8)
+        cap_mult = SIZE_MULT_CAP if SIZE_MULT_CAP > 0 else 1.8
+        size_multiplier = clamp(
+            size_factor * risk_bias,
+            max(0.0, SIZE_MULT_FLOOR),
+            cap_mult,
+        )
 
         sl_mult = 1.0
         tp_mult = 1.0
@@ -2817,6 +2849,7 @@ class AITradeAdvisor:
         decision_reason = parsed.get("decision_reason") or parsed.get("reason")
         decision_note = parsed.get("decision_note") or parsed.get("note")
         confidence = parsed.get("confidence") or parsed.get("score")
+        confidence_value: Optional[float] = None
 
         symbol_hint: Optional[str] = None
         if isinstance(request_payload, dict):
@@ -2847,7 +2880,11 @@ class AITradeAdvisor:
             plan["decision_note"] = decision_note.strip()
 
         if isinstance(size_multiplier, (int, float)):
-            plan["size_multiplier"] = clamp(float(size_multiplier), 0.0, 2.0)
+            plan["size_multiplier"] = clamp(
+                float(size_multiplier),
+                0.0,
+                SIZE_MULT_CAP,
+            )
         if isinstance(sl_multiplier, (int, float)):
             plan["sl_multiplier"] = clamp(float(sl_multiplier), 0.5, 2.5)
         if isinstance(tp_multiplier, (int, float)):
@@ -2883,7 +2920,8 @@ class AITradeAdvisor:
         else:
             plan["explanation"] = fallback.get("explanation")
         if isinstance(confidence, (int, float)):
-            plan["confidence"] = clamp(float(confidence), 0.0, 1.0)
+            confidence_value = clamp(float(confidence), 0.0, 1.0)
+            plan["confidence"] = confidence_value
         elif isinstance(confidence, str):
             token = confidence.strip()
             if token:
@@ -2895,7 +2933,25 @@ class AITradeAdvisor:
                 except (TypeError, ValueError):
                     numeric = None
                 else:
-                    plan["confidence"] = clamp(float(numeric), 0.0, 1.0)
+                    confidence_value = clamp(float(numeric), 0.0, 1.0)
+                    plan["confidence"] = confidence_value
+
+        if CONFIDENCE_SIZING_ENABLED and confidence_value is not None:
+            target_mult = _confidence_size_target(confidence_value)
+            current_mult = plan.get("size_multiplier")
+            if isinstance(current_mult, (int, float)) and current_mult > 0:
+                base_mult = float(current_mult)
+            else:
+                base_mult = float(fallback.get("size_multiplier", target_mult) or target_mult)
+            base_mult = max(0.0, base_mult)
+            blended = (base_mult * (1.0 - CONFIDENCE_SIZING_BLEND)) + (
+                target_mult * CONFIDENCE_SIZING_BLEND
+            )
+            plan["size_multiplier"] = clamp(
+                blended,
+                max(0.0, SIZE_MULT_FLOOR),
+                SIZE_MULT_CAP,
+            )
 
         entry_px = (
             parsed.get("entry_price")
@@ -7366,7 +7422,8 @@ class Bot:
 
         if not manual_override:
             size_mult = max(SIZE_MULT_FLOOR, size_mult)
-        size_mult = clamp(size_mult, 0.0, 5.0)
+        mult_cap = SIZE_MULT_CAP if SIZE_MULT_CAP > 0 else 5.0
+        size_mult = clamp(size_mult, 0.0, mult_cap)
         if size_mult <= 0:
             self._log_ai_activity(
                 "decision",
