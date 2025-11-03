@@ -26,6 +26,13 @@ from urllib.parse import urlencode
 
 import requests
 
+from openai_client import (
+    OpenAIClient,
+    OpenAIError,
+    beta_header_for_model,
+    model_traits,
+)
+
 from brackets_guard import BracketGuard
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -3268,6 +3275,7 @@ class AIChatEngine:
         self._price_cache: Dict[str, Tuple[float, float]] = {}
         self._bracket_guard: Optional[BracketGuard] = None
         self._bracket_guard_unavailable = False
+        self._openai_clients: Dict[str, OpenAIClient] = {}
 
     @staticmethod
     def _split_symbols(value: Optional[str]) -> List[str]:
@@ -4697,238 +4705,66 @@ class AIChatEngine:
         return summaries
 
     def _beta_header_for_model(self, model: str) -> Optional[str]:
-        normalized = (model or "").strip().lower()
-        if not normalized:
-            return None
-
-        beta_requirements = (
-            ("gpt-5", "gpt-5"),
-            ("gpt-4.1", "gpt-4.1"),
-            ("o4", "o4"),
-            ("o3", "o3"),
-            ("o1", "reasoning"),
-        )
-        for prefix, header_value in beta_requirements:
-            if normalized.startswith(prefix):
-                return header_value
-        return None
+        return beta_header_for_model(model)
 
     def _model_traits(self, model: str) -> Dict[str, Any]:
-        normalized = (model or "").strip().lower()
-        traits = {
-            "modalities": None,
-            "reasoning": None,
-            "legacy_supported": True,
+        traits = model_traits(model)
+        return {
+            "modalities": list(traits.modalities) if traits.modalities else None,
+            "reasoning": traits.reasoning,
+            "legacy_supported": traits.legacy_supported,
         }
-        if not normalized:
-            return traits
 
-        if normalized.startswith("gpt-5") or normalized.startswith("o4"):
-            traits["modalities"] = ["text"]
-            traits["reasoning"] = {"effort": "medium"}
-            traits["legacy_supported"] = False
-        elif normalized.startswith("o3"):
-            traits["modalities"] = ["text"]
-            traits["reasoning"] = {"effort": "medium"}
-            traits["legacy_supported"] = False
-        elif normalized.startswith("o1"):
-            traits["modalities"] = ["text"]
-            traits["reasoning"] = {"effort": "medium"}
-            traits["legacy_supported"] = False
-        elif normalized.startswith("gpt-4.1"):
-            # Treat the GPT-4.1 family like GPT-4o for transport selection. While the
-            # Responses API is the preferred interface, some tenants only have
-            # legacy Chat Completions access wired up; falling back keeps the
-            # dashboard behaviour aligned with the GPT-4o path when the modern
-            # endpoint rejects the request (e.g. 400 errors).
-            traits["legacy_supported"] = True
+    def _openai_client_for(self, api_key: str, model: str) -> Optional[OpenAIClient]:
+        key = (api_key or "").strip()
+        if not key:
+            return None
+        client = self._openai_clients.get(key)
+        if client is None:
+            client = OpenAIClient(key, default_model=model, max_connections=6)
+            self._openai_clients[key] = client
+        return client
 
-        return traits
-
-    def _call_openai_responses(
+    def _invoke_openai(
         self,
-        headers: Dict[str, str],
+        client: OpenAIClient,
         model: str,
-        messages: List[Dict[str, str]],
+        messages: List[Dict[str, Any]],
         temperature: Optional[float],
+        *,
+        metadata: Optional[Dict[str, Any]] = None,
+        max_output_tokens: int = 400,
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
-        normalized_input: List[Dict[str, Any]] = []
-        system_chunks: List[str] = []
-        for item in messages:
-            if not isinstance(item, dict):
-                continue
-            role = str(item.get("role") or "").strip() or "user"
-            raw_content = item.get("content")
-            content_parts: List[Dict[str, str]] = []
-            if isinstance(raw_content, str):
-                stripped = raw_content.strip()
-                if stripped:
-                    content_parts.append({"type": "text", "text": stripped})
-            elif isinstance(raw_content, list):
-                for part in raw_content:
-                    if isinstance(part, dict):
-                        p_type = part.get("type")
-                        text = part.get("text")
-                        if isinstance(text, str) and text.strip():
-                            # Respect explicit types if provided by the caller, while
-                            # normalising legacy ``input_text``/``output_text`` segments
-                            # to the ``text`` segments expected by the Responses API.
-                            normalized_type = str(p_type or "text")
-                            if normalized_type in {"input_text", "output_text"}:
-                                normalized_type = "text"
-                            content_parts.append(
-                                {
-                                    "type": normalized_type,
-                                    "text": text.strip(),
-                                }
-                            )
-                    elif isinstance(part, str) and part.strip():
-                        content_parts.append({"type": "text", "text": part.strip()})
-            if not content_parts:
-                continue
-            if role == "system":
-                for part in content_parts:
-                    if part.get("type") in {"text", "input_text"}:
-                        system_chunks.append(part.get("text", ""))
-                # Do not include individual system entries directly; they will be merged
-                # into a single system block below to match the Responses API contract.
-                continue
-            normalized_input.append({"role": role, "content": content_parts})
-
-        if not normalized_input:
-            raise ValueError("No valid messages to send to Responses API")
-
-        traits = self._model_traits(model)
-
-        payload: Dict[str, Any] = {
-            "model": model,
-            "input": normalized_input,
-            "max_output_tokens": 400,
-        }
-        if system_chunks:
-            system_text = "\n\n".join(
-                chunk.strip() for chunk in system_chunks if str(chunk).strip()
-            )
-            if system_text:
-                payload["input"] = [
-                    {
-                        "role": "system",
-                        "content": [{"type": "text", "text": system_text}],
-                    },
-                    *payload["input"],
-                ]
-        if traits["modalities"]:
-            payload["modalities"] = traits["modalities"]
-        if traits["reasoning"]:
-            payload["reasoning"] = traits["reasoning"]
-        if temperature is not None:
-            payload["temperature"] = temperature
-
-        resp = requests.post(
-            "https://api.openai.com/v1/responses",
-            headers=headers,
-            json=payload,
-            timeout=30,
-        )
-        if resp.status_code >= 400:
-            resp.raise_for_status()
-
-        data = resp.json()
-        text_chunks: List[str] = []
-        for item in data.get("output", []):
-            if not isinstance(item, dict):
-                continue
-            if item.get("type") != "message":
-                continue
-            contents = item.get("content") or []
-            for piece in contents:
-                if not isinstance(piece, dict):
-                    continue
-                piece_type = piece.get("type")
-                if piece_type in {"output_text", "text"}:
-                    text_chunks.append(piece.get("text", ""))
-        if not text_chunks:
-            output_text = data.get("output_text")
-            if isinstance(output_text, list):
-                text_chunks.extend(str(part) for part in output_text if part)
-            elif isinstance(output_text, str):
-                text_chunks.append(output_text)
-        reply_text = "\n".join(chunk.strip() for chunk in text_chunks if str(chunk).strip())
-        return reply_text.strip(), data.get("usage")
-
-    def _call_openai_legacy_chat(
-        self,
-        headers: Dict[str, str],
-        model: str,
-        messages: List[Dict[str, str]],
-        temperature: Optional[float],
-        prior_exc: Optional[Exception] = None,
-    ) -> Tuple[str, Optional[Dict[str, Any]]]:
-        payload: Dict[str, Any] = {
-            "model": model,
-            "messages": messages,
-            "max_tokens": 400,
-        }
-        if temperature is not None and self._temperature_supported:
-            payload["temperature"] = temperature
-
+        attempt_temperature = temperature if self._temperature_supported else None
         attempt = 0
         while True:
-            resp = requests.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=30,
+            future = client.submit(
+                messages=messages,
+                model=model,
+                temperature=attempt_temperature,
+                response_format={"type": "text"},
+                metadata=metadata,
+                max_output_tokens=max_output_tokens,
             )
-            if resp.status_code < 400:
-                data = resp.json()
-                choices = data.get("choices") or []
-                reply = choices[0]["message"].get("content") if choices else ""
-                return (reply or "").strip(), data.get("usage")
-
-            body_snippet = (resp.text or "")[:160]
-            lower_body = body_snippet.lower()
-            if (
-                self._temperature_supported
-                and temperature is not None
-                and "temperature" in payload
-                and "temperature" in lower_body
-                and "default" in lower_body
-                and attempt == 0
-            ):
-                payload.pop("temperature", None)
-                attempt += 1
-                self._temperature_supported = False
-                log.debug("Dashboard AI model rejected temperature override; retrying without it.")
-                continue
-
             try:
-                resp.raise_for_status()
-            except Exception as exc:
-                if prior_exc:
-                    raise exc from prior_exc
+                reply_text, usage, _ = future.result()
+            except OpenAIError as exc:
+                if (
+                    self._temperature_supported
+                    and attempt_temperature is not None
+                    and exc.should_retry_without_temperature
+                    and attempt == 0
+                ):
+                    attempt_temperature = None
+                    self._temperature_supported = False
+                    attempt += 1
+                    log.debug("Dashboard AI model rejected temperature override; retrying without it.")
+                    continue
                 raise
-
-    def _call_openai_chat(
-        self,
-        headers: Dict[str, str],
-        model: str,
-        messages: List[Dict[str, str]],
-        temperature: Optional[float],
-    ) -> Tuple[str, Optional[Dict[str, Any]]]:
-        last_exc: Optional[Exception] = None
-        traits = self._model_traits(model)
-        try:
-            return self._call_openai_responses(headers, model, messages, temperature)
-        except Exception as exc:
-            last_exc = exc
-
-        if not traits.get("legacy_supported", True):
-            if last_exc:
-                raise last_exc
-            raise
-
-        return self._call_openai_legacy_chat(headers, model, messages, temperature, prior_exc=last_exc)
+            except Exception:
+                raise
+            reply_text = (reply_text or "").strip()
+            return reply_text, usage
 
     def _current_state(
         self,
@@ -6032,7 +5868,6 @@ class AIChatEngine:
             {"role": "user", "content": prompt},
         ]
 
-        beta_header = self._beta_header_for_model(model)
         temperature_override: Optional[float] = None
         if self._temperature_supported:
             dash_temp = os.getenv("ASTER_DASHBOARD_AI_TEMPERATURE")
@@ -6052,16 +5887,13 @@ class AIChatEngine:
         last_exc: Optional[Exception] = None
 
         for label, api_key in key_candidates:
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            }
-            if beta_header:
-                headers["OpenAI-Beta"] = beta_header
+            client = self._openai_client_for(api_key, model)
+            if not client:
+                continue
             attempted_keys.append(label)
             try:
-                reply_text, usage = self._call_openai_chat(
-                    headers,
+                reply_text, usage = self._invoke_openai(
+                    client,
                     model,
                     messages,
                     temperature_override,
