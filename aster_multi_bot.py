@@ -257,7 +257,7 @@ ALPHA_PROMOTE_DELTA = float(os.getenv("ASTER_ALPHA_PROMOTE_DELTA", "0.15"))
 ALPHA_REWARD_MARGIN = float(os.getenv("ASTER_ALPHA_REWARD_MARGIN", "0.05"))
 
 DEFAULT_NOTIONAL = float(os.getenv("ASTER_DEFAULT_NOTIONAL", "250"))
-RISK_PER_TRADE = float(os.getenv("ASTER_RISK_PER_TRADE", "0.006"))
+RISK_PER_TRADE = float(os.getenv("ASTER_RISK_PER_TRADE", "0.5"))
 _PRESET_LEVERAGE_DEFAULTS = {
     "low": "4",
     "mid": "10",

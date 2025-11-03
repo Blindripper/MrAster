@@ -70,7 +70,7 @@ ENV_DEFAULTS: Dict[str, str] = {
     "ASTER_WICKINESS_MAX": "0.985",
     "ASTER_MIN_EDGE_R": "0.06",
     "ASTER_DEFAULT_NOTIONAL": "120",
-    "ASTER_RISK_PER_TRADE": "0.007",
+    "ASTER_RISK_PER_TRADE": "0.5",
     "ASTER_LEVERAGE": "10",
     "ASTER_PRESET_MODE": "mid",
     "ASTER_TREND_BIAS": "with",

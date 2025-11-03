@@ -212,7 +212,7 @@ All variables can be edited via environment overrides or through the dashboard (
 | `ASTER_CONFIDENCE_SIZING` | `false` | Enables confidence-weighted sizing. When `true`, AI confidence blends between the configured multiplier bounds. |
 | `ASTER_CONFIDENCE_SIZE_MIN` / `ASTER_CONFIDENCE_SIZE_MAX` | `0.6` / `3.0` | Lower and upper multiplier targets when confidence-based sizing is active. |
 | `ASTER_CONFIDENCE_SIZE_BLEND` / `ASTER_CONFIDENCE_SIZE_EXP` | `0.65` / `1.0` | Blend weight between baseline and confidence target, plus the exponent shaping the curve (values >1 favour high confidence). |
-| `ASTER_RISK_PER_TRADE` | `0.007`* | Share of equity per trade. |
+| `ASTER_RISK_PER_TRADE` | `0.5`* | Share of equity per trade. |
 | `ASTER_EQUITY_FRACTION` | `0.66` | Maximum equity utilization across open positions (33% / 66% / 100% via Low / Mid / High & ATT presets). |
 | `ASTER_LEVERAGE` | `10` | Default leverage for orders. Dashboard presets apply 4× (Low), 10× (Mid), or the per-symbol exchange maximum (High / ATT). |
 | `ASTER_MAX_OPEN_GLOBAL` | `0` | Global cap on concurrent positions (0 = unlimited, rely on equity guard). |
