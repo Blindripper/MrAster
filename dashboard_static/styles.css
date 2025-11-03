@@ -912,7 +912,7 @@ body.paper-mode .hero-paper-toggle span {
 
 .active-positions-table {
   width: 100%;
-  min-width: 700px;
+  min-width: 840px;
   border-collapse: collapse;
   font-size: 0.9rem;
 }
@@ -963,6 +963,11 @@ body.paper-mode .hero-paper-toggle span {
   padding-right: 0.4rem;
 }
 
+.active-positions-table thead th:nth-child(8),
+.active-positions-table tbody td:nth-child(8) {
+  min-width: clamp(17rem, 26vw, 24rem);
+}
+
 .active-positions-symbol-wrapper {
   display: inline-flex;
   align-items: center;
@@ -1007,7 +1012,7 @@ body.paper-mode .hero-paper-toggle span {
   flex-direction: column;
   align-items: stretch;
   justify-content: flex-end;
-  gap: 0.45rem;
+  gap: 0.65rem;
 }
 
 .active-positions-brackets.active-positions-brackets-empty {
@@ -1018,10 +1023,10 @@ body.paper-mode .hero-paper-toggle span {
 }
 
 .active-positions-bracket {
-  display: flex;
+  display: grid;
+  grid-template-columns: min-content minmax(0, 1fr);
   align-items: flex-start;
-  justify-content: flex-end;
-  gap: 0.5rem;
+  gap: 0.35rem 0.85rem;
 }
 
 .active-positions-bracket-label {
@@ -1038,7 +1043,7 @@ body.paper-mode .hero-paper-toggle span {
   align-items: stretch;
   gap: 0.3rem;
   text-align: right;
-  width: min(13rem, 100%);
+  width: 100%;
 }
 
 .active-positions-bracket-value {
@@ -1052,7 +1057,7 @@ body.paper-mode .hero-paper-toggle span {
 }
 
 .active-positions-progress {
-  min-width: min(13rem, 100%);
+  min-width: 100%;
 }
 
 .active-positions-meter {
@@ -1150,7 +1155,7 @@ body.paper-mode .hero-paper-toggle span {
 
 @media (max-width: 900px) {
   .active-positions-table {
-    min-width: 660px;
+    min-width: 760px;
   }
 }
 
@@ -1217,6 +1222,11 @@ body.paper-mode .hero-paper-toggle span {
   .active-positions-table tbody td:nth-child(8),
   .active-positions-table tbody td:nth-child(9) {
     grid-column: 1 / -1;
+  }
+
+  .active-positions-table thead th:nth-child(8),
+  .active-positions-table tbody td:nth-child(8) {
+    min-width: 0;
   }
 
   .active-positions-brackets {
