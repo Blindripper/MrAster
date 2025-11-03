@@ -3822,7 +3822,7 @@ const ACTIVE_POSITION_ALIASES = {
   size: [...ACTIVE_POSITION_NOTIONAL_KEYS, ...ACTIVE_POSITION_SIGNED_SIZE_KEYS],
   entry: ['entry', 'entry_price', 'entryPrice'],
   mark: ['mark', 'mark_price', 'markPrice', 'lastPrice', 'price'],
-  roe: ['roe', 'roe_percent', 'roe_pct', 'roePercent', 'pnl_percent', 'pnl_pct'],
+  roe: ['roe_percent', 'roe_pct', 'roePercent', 'pnl_percent', 'pnl_pct', 'roe'],
   pnl: [
     'pnl',
     'unrealized',
