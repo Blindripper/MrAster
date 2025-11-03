@@ -19,6 +19,7 @@ Beibehaltener Funktionsumfang + robuste Optimierungen:
 import os
 import time
 import math
+import statistics
 import json
 import uuid
 import hmac
@@ -181,6 +182,11 @@ EXCLUDE = set(_split_env_symbols(os.getenv("ASTER_EXCLUDE_SYMBOLS", "")))
 # Standardmäßig alle Symbole scannen; via ENV begrenzen
 UNIVERSE_MAX = int(os.getenv("ASTER_UNIVERSE_MAX", "0"))
 UNIVERSE_ROTATE = os.getenv("ASTER_UNIVERSE_ROTATE", "true").lower() in ("1", "true", "yes", "on")
+
+ORDERBOOK_DEPTH_LIMIT = max(5, min(1000, int(os.getenv("ASTER_ORDERBOOK_DEPTH_LIMIT", "60") or 60)))
+ORDERBOOK_PREFETCH = max(0, int(os.getenv("ASTER_ORDERBOOK_PREFETCH", "14") or 14))
+ORDERBOOK_TTL = max(0.5, float(os.getenv("ASTER_ORDERBOOK_TTL", "2.5") or 2.5))
+ORDERBOOK_ON_DEMAND = max(0, int(os.getenv("ASTER_ORDERBOOK_ON_DEMAND", "6") or 6))
 
 
 def _int_env(name: str, default: int) -> int:
@@ -1080,6 +1086,13 @@ class AITradeAdvisor:
         "regime_slope",
         "rsi",
         "spread_bps",
+        "lob_imbalance_5",
+        "lob_imbalance_10",
+        "lob_depth_ratio",
+        "lob_gap_score",
+        "lob_wall_score",
+        "orderbook_bias",
+        "orderbook_levels",
         "trend",
         "wickiness",
     }
@@ -3936,6 +3949,12 @@ class Exchange:
             return self.get("/fapi/v1/ticker/bookTicker", params)
         return self.get("/fapi/v1/ticker/bookTicker")
 
+    def get_order_book(self, symbol: str, *, limit: Optional[int] = None) -> Any:
+        payload = {"symbol": symbol}
+        if limit:
+            payload["limit"] = max(5, min(int(limit), 1000))
+        return self.get("/fapi/v1/depth", payload)
+
     def get_premium_index(self, symbol: Optional[str] = None) -> Any:
         params = {"symbol": symbol} if symbol else None
         if params:
@@ -4299,6 +4318,11 @@ class Strategy:
         self._kl_cache_hits = 0
         self._kl_cache_miss = 0
         self._symbol_score_cache: Dict[str, Dict[str, float]] = {}
+        self.orderbook_limit = ORDERBOOK_DEPTH_LIMIT
+        self._orderbook_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+        self._orderbook_budget_max = ORDERBOOK_ON_DEMAND
+        self._orderbook_budget = 0
+        self._orderbook_ttl = ORDERBOOK_TTL
         if self.state:
             scores = self.state.get("universe_scores")
             if isinstance(scores, dict):
@@ -4604,6 +4628,279 @@ class Strategy:
         score = min(2.5, qvol / max(self.min_quote_vol, 1e-9)) if qvol > 0 else 0.0
         return score, rec, float(qvol)
 
+    def reset_orderbook_budget(self, on_demand: Optional[int] = None) -> None:
+        budget = self._orderbook_budget_max if on_demand is None else int(on_demand)
+        self._orderbook_budget = max(0, budget)
+
+    def plan_orderbook_prefetch(
+        self,
+        symbols: Sequence[str],
+        book_ticker_map: Dict[str, Dict[str, Any]],
+        *,
+        manual_symbols: Optional[Sequence[str]] = None,
+        priority_symbols: Optional[Sequence[str]] = None,
+    ) -> List[str]:
+        if ORDERBOOK_PREFETCH <= 0 and not manual_symbols and not priority_symbols:
+            return []
+        ranked: List[Tuple[float, str]] = []
+        forced_order: List[str] = []
+
+        def _normalize_set(items: Optional[Sequence[str]]) -> Set[str]:
+            result: Set[str] = set()
+            if not items:
+                return result
+            for token in items:
+                if not token:
+                    continue
+                result.add(str(token).strip().upper())
+            return result
+
+        manual_set = _normalize_set(manual_symbols)
+        priority_set = _normalize_set(priority_symbols)
+
+        def _maybe_force(sym: str) -> None:
+            if sym and sym not in forced_order:
+                forced_order.append(sym)
+
+        for sym in symbols:
+            token = str(sym or "").strip().upper()
+            if not token:
+                continue
+            if token in manual_set or token in priority_set:
+                _maybe_force(token)
+            bt = book_ticker_map.get(token)
+            if not isinstance(bt, dict):
+                continue
+            try:
+                ask = float(bt.get("askPrice", 0.0) or 0.0)
+                bid = float(bt.get("bidPrice", 0.0) or 0.0)
+                ask_qty = float(bt.get("askQty", 0.0) or 0.0)
+                bid_qty = float(bt.get("bidQty", 0.0) or 0.0)
+            except Exception:
+                continue
+            if ask <= 0 or bid <= 0:
+                continue
+            mid = (ask + bid) / 2.0
+            spread = (ask - bid) / max(mid, 1e-9)
+            total_qty = max(ask_qty + bid_qty, 1e-9)
+            imbalance = (bid_qty - ask_qty) / total_qty
+            liquidity_penalty = 0.0
+            if min(ask_qty, bid_qty) > 0:
+                liquidity_penalty = clamp(1.0 / math.sqrt(max(min(ask_qty, bid_qty), 1e-9)), 0.0, 2.5)
+            score = abs(imbalance) * 2.2 + clamp(spread * 220.0, 0.0, 3.0) + liquidity_penalty
+            ranked.append((score, token))
+
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        plan: List[str] = []
+        for token in forced_order:
+            if token not in plan:
+                plan.append(token)
+        if ORDERBOOK_PREFETCH > 0:
+            for score, token in ranked:
+                if token in plan:
+                    continue
+                if score <= 0 and len(plan) >= len(forced_order):
+                    continue
+                plan.append(token)
+                if len(plan) >= ORDERBOOK_PREFETCH:
+                    break
+        return plan
+
+    def _normalize_order_book(self, payload: Any) -> Optional[Dict[str, Any]]:
+        if not isinstance(payload, dict):
+            return None
+        bids_raw = payload.get("bids", [])
+        asks_raw = payload.get("asks", [])
+        bids: List[Tuple[float, float]] = []
+        asks: List[Tuple[float, float]] = []
+        for entry in bids_raw:
+            if not entry:
+                continue
+            try:
+                price = float(entry[0])
+                qty = float(entry[1])
+            except Exception:
+                continue
+            if price <= 0 or qty <= 0:
+                continue
+            bids.append((price, qty))
+            if len(bids) >= self.orderbook_limit:
+                break
+        for entry in asks_raw:
+            if not entry:
+                continue
+            try:
+                price = float(entry[0])
+                qty = float(entry[1])
+            except Exception:
+                continue
+            if price <= 0 or qty <= 0:
+                continue
+            asks.append((price, qty))
+            if len(asks) >= self.orderbook_limit:
+                break
+        if not bids or not asks:
+            return None
+        bids.sort(key=lambda item: item[0], reverse=True)
+        asks.sort(key=lambda item: item[0])
+        normalized: Dict[str, Any] = {
+            "bids": tuple(bids),
+            "asks": tuple(asks),
+            "lastUpdateId": payload.get("lastUpdateId"),
+        }
+        return normalized
+
+    def prefetch_order_books(self, symbols: Sequence[str]) -> Dict[str, Dict[str, Any]]:
+        fetched: Dict[str, Dict[str, Any]] = {}
+        if not symbols:
+            return fetched
+        now = time.time()
+        for sym in symbols:
+            token = str(sym or "").strip().upper()
+            if not token:
+                continue
+            cached = self._orderbook_cache.get(token)
+            if cached and (now - cached[0]) <= self._orderbook_ttl:
+                fetched[token] = cached[1]
+                continue
+            try:
+                raw = self.exchange.get_order_book(token, limit=self.orderbook_limit)
+            except Exception as exc:
+                log.debug(f"orderbook fetch failed for {token}: {exc}")
+                continue
+            normalized = self._normalize_order_book(raw)
+            if not normalized:
+                continue
+            snapshot = dict(normalized)
+            snapshot["captured_at"] = time.time()
+            self._orderbook_cache[token] = (snapshot["captured_at"], snapshot)
+            fetched[token] = snapshot
+        return fetched
+
+    def get_cached_order_book(self, symbol: str, *, stale_ok: bool = False) -> Optional[Dict[str, Any]]:
+        token = str(symbol or "").strip().upper()
+        if not token:
+            return None
+        cached = self._orderbook_cache.get(token)
+        if not cached:
+            return None
+        ts, snapshot = cached
+        if (time.time() - ts) <= self._orderbook_ttl:
+            return snapshot
+        if stale_ok:
+            return snapshot
+        return None
+
+    def ensure_order_book(self, symbol: str) -> Optional[Dict[str, Any]]:
+        snapshot = self.get_cached_order_book(symbol)
+        if snapshot:
+            return snapshot
+        if self._orderbook_budget <= 0:
+            return None
+        self._orderbook_budget -= 1
+        fetched = self.prefetch_order_books([symbol])
+        return fetched.get(str(symbol or "").strip().upper())
+
+    def _order_book_features(
+        self,
+        symbol: str,
+        book_ticker: Optional[Dict[str, Any]] = None,
+        order_book: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, float]:
+        snapshot = order_book or self.ensure_order_book(symbol)
+        if not snapshot:
+            return {}
+        bids: Sequence[Tuple[float, float]] = snapshot.get("bids", ())  # type: ignore[assignment]
+        asks: Sequence[Tuple[float, float]] = snapshot.get("asks", ())  # type: ignore[assignment]
+        if not bids or not asks:
+            return {}
+
+        def _sum_qty(levels: Sequence[Tuple[float, float]], depth: int) -> float:
+            return sum(level[1] for level in levels[: depth if depth > 0 else len(levels)])
+
+        def _sum_notional(levels: Sequence[Tuple[float, float]], depth: int) -> float:
+            return sum(level[0] * level[1] for level in levels[: depth if depth > 0 else len(levels)])
+
+        def _gap_score(levels: Sequence[Tuple[float, float]], side: str) -> float:
+            if len(levels) < 3:
+                return 0.0
+            diffs: List[float] = []
+            limit = min(len(levels), 12)
+            for idx in range(1, limit):
+                prev_price = levels[idx - 1][0]
+                curr_price = levels[idx][0]
+                gap = prev_price - curr_price if side == "bid" else curr_price - prev_price
+                if gap > 0:
+                    diffs.append(gap)
+            if not diffs:
+                return 0.0
+            avg = sum(diffs) / len(diffs)
+            if avg <= 0:
+                return 0.0
+            return clamp(max(diffs) / avg - 1.0, 0.0, 5.0)
+
+        def _wall_score(levels: Sequence[Tuple[float, float]]) -> float:
+            qtys = [level[1] for level in levels[:10] if level[1] > 0]
+            if len(qtys) < 3:
+                return 0.0
+            qtys_sorted = sorted(qtys)
+            try:
+                median_val = statistics.median(qtys_sorted)
+            except statistics.StatisticsError:
+                median_val = 0.0
+            if median_val <= 0:
+                return 0.0
+            return clamp(max(qtys_sorted) / median_val - 1.0, 0.0, 5.0)
+
+        bid_qty_5 = _sum_qty(bids, 5)
+        ask_qty_5 = _sum_qty(asks, 5)
+        total_5 = max(bid_qty_5 + ask_qty_5, 1e-9)
+        bid_qty_10 = _sum_qty(bids, 10)
+        ask_qty_10 = _sum_qty(asks, 10)
+        total_10 = max(bid_qty_10 + ask_qty_10, 1e-9)
+        bid_notional_10 = _sum_notional(bids, 10)
+        ask_notional_10 = _sum_notional(asks, 10)
+        ratio = bid_notional_10 / max(ask_notional_10, 1e-9)
+        gap_bid = _gap_score(bids, "bid")
+        gap_ask = _gap_score(asks, "ask")
+        wall_bid = _wall_score(bids)
+        wall_ask = _wall_score(asks)
+
+        features: Dict[str, float] = {
+            "lob_imbalance_5": clamp((bid_qty_5 - ask_qty_5) / total_5, -1.0, 1.0),
+            "lob_imbalance_10": clamp((bid_qty_10 - ask_qty_10) / total_10, -1.0, 1.0),
+            "lob_depth_ratio": clamp(ratio, 0.0, 5.0),
+            "lob_gap_score": max(gap_bid, gap_ask),
+            "lob_gap_bid": gap_bid,
+            "lob_gap_ask": gap_ask,
+            "lob_wall_score": max(wall_bid, wall_ask),
+            "lob_wall_bid": wall_bid,
+            "lob_wall_ask": wall_ask,
+            "lob_bid_notional_10": float(bid_notional_10),
+            "lob_ask_notional_10": float(ask_notional_10),
+            "lob_levels": float(min(len(bids), len(asks))),
+        }
+        features["lob_bias"] = features["lob_imbalance_10"]
+        captured_at = snapshot.get("captured_at")
+        if captured_at:
+            try:
+                age = max(0.0, time.time() - float(captured_at))
+            except Exception:
+                age = 0.0
+            features["lob_snapshot_age"] = float(age)
+        if isinstance(book_ticker, dict):
+            try:
+                ask_px = float(book_ticker.get("askPrice", 0.0) or 0.0)
+                bid_px = float(book_ticker.get("bidPrice", 0.0) or 0.0)
+                if ask_px > 0 and bid_px > 0:
+                    mid_px = (ask_px + bid_px) / 2.0
+                    if mid_px > 0:
+                        features["lob_bid_support"] = float(bid_notional_10 / max(mid_px, 1e-9))
+                        features["lob_ask_pressure"] = float(ask_notional_10 / max(mid_px, 1e-9))
+            except Exception:
+                pass
+        return features
+
     def _skip(
         self,
         reason: str,
@@ -4637,7 +4934,10 @@ class Strategy:
         )
 
     def compute_signal(
-        self, symbol: str, book_ticker: Optional[Dict[str, Any]] = None
+        self,
+        symbol: str,
+        book_ticker: Optional[Dict[str, Any]] = None,
+        order_book: Optional[Dict[str, Any]] = None,
     ) -> Tuple[str, float, Dict[str, float], float]:
         try:
             kl = self._klines_cached(symbol, INTERVAL, KLINES)
@@ -4714,6 +5014,16 @@ class Strategy:
             )
         ctx_base["atr_abs"] = float(atr)
         ctx_base["atr_pct"] = float(atrp)
+
+        order_features = self._order_book_features(symbol, book_ticker=bt, order_book=order_book)
+        if order_features:
+            ctx_base.update(order_features)
+            lob_bias = order_features.get("lob_bias")
+            if isinstance(lob_bias, (int, float)):
+                ctx_base["orderbook_bias"] = float(lob_bias)
+            ctx_base["orderbook_levels"] = float(order_features.get("lob_levels", 0.0) or 0.0)
+        else:
+            ctx_base["orderbook_levels"] = 0.0
 
         # Wickiness
         try:
@@ -4834,6 +5144,23 @@ class Strategy:
         ctx_base.update({"slope_htf": float(slope_htf), "expected_r": float(expected_R)})
 
         filtered_signal = sig
+
+        lob_bias = ctx_base.get("orderbook_bias")
+        if isinstance(lob_bias, (int, float)):
+            if sig == "BUY" and lob_bias < -0.35:
+                ctx_base["lob_conflict"] = float(lob_bias)
+                sig = "NONE"
+            elif sig == "SELL" and lob_bias > 0.35:
+                ctx_base["lob_conflict"] = float(lob_bias)
+                sig = "NONE"
+        lob_gap_score = ctx_base.get("lob_gap_score")
+        if isinstance(lob_gap_score, (int, float)) and lob_gap_score > 3.0:
+            ctx_base["lob_gap_alert"] = float(lob_gap_score)
+            sig = "NONE"
+        lob_levels = ctx_base.get("orderbook_levels")
+        if isinstance(lob_levels, (int, float)) and lob_levels < 3:
+            ctx_base["lob_depth_issue"] = float(lob_levels)
+            sig = "NONE"
 
         if sig == "BUY":
             if supertrend_gate_enabled and supertrend_dir_last < 0.0:
@@ -5600,6 +5927,7 @@ class Bot:
         self._ai_priority_hint: Dict[str, Optional[str]] = {}
         self._ai_feed_pending_requests: Set[str] = set()
         self._symbol_score_cache: Dict[str, Dict[str, float]] = {}
+        self._orderbook_activity_signature: Tuple[str, ...] = tuple()
         self.policy: Optional[BanditPolicy] = None
         if BANDIT_ENABLED:
             pol_state = self.state.get("policy") if isinstance(self.state, dict) else None
@@ -6444,7 +6772,11 @@ class Bot:
         return {"S": SIZE_MULT_S, "M": SIZE_MULT_M, "L": SIZE_MULT_L}.get(bucket, SIZE_MULT_S)
 
     def handle_symbol(
-        self, symbol: str, pos_map: Dict[str, float], book_ticker: Optional[Dict[str, Any]] = None
+        self,
+        symbol: str,
+        pos_map: Dict[str, float],
+        book_ticker: Optional[Dict[str, Any]] = None,
+        order_book: Optional[Dict[str, Any]] = None,
     ):
         banned_map = self._banned_map()
         if symbol in banned_map:
@@ -6552,7 +6884,9 @@ class Bot:
             )
             return
 
-        sig, atr_abs, ctx, price = self.strategy.compute_signal(symbol, book_ticker=book_ticker)
+        sig, atr_abs, ctx, price = self.strategy.compute_signal(
+            symbol, book_ticker=book_ticker, order_book=order_book
+        )
         score_info: Dict[str, Any] = {}
         cache = getattr(self, "_symbol_score_cache", None)
         if isinstance(cache, dict):
@@ -7795,6 +8129,43 @@ class Bot:
             book_ticker_map[str(book_payload.get("symbol"))] = dict(book_payload)
         bulk_book_available = bool(book_ticker_map)
 
+        self.strategy.reset_orderbook_budget(ORDERBOOK_ON_DEMAND)
+
+        priority_tokens = [
+            str(sym or "").strip().upper()
+            for sym, _ in priority_pairs
+            if sym and str(sym).strip()
+        ]
+        manual_for_prefetch = sorted(pending_manual) if pending_manual else None
+        orderbook_plan = self.strategy.plan_orderbook_prefetch(
+            syms,
+            book_ticker_map,
+            manual_symbols=manual_for_prefetch,
+            priority_symbols=priority_tokens,
+        )
+        prefetched_order_books = self.strategy.prefetch_order_books(orderbook_plan)
+        plan_signature = tuple(orderbook_plan[:8])
+        if plan_signature and plan_signature != self._orderbook_activity_signature:
+            self._orderbook_activity_signature = plan_signature
+            preview_plan = orderbook_plan[:6]
+            body = f"Prefetching depth for {', '.join(preview_plan)}"
+            if len(orderbook_plan) > len(preview_plan):
+                body += " …"
+            activity_payload = {
+                "prefetch": preview_plan,
+                "prefetch_count": len(orderbook_plan),
+                "on_demand_budget": ORDERBOOK_ON_DEMAND,
+                "depth_limit": self.strategy.orderbook_limit,
+            }
+            self._log_ai_activity(
+                "info",
+                "Order book scan updated",
+                body=body,
+                data=activity_payload,
+            )
+        elif not plan_signature:
+            self._orderbook_activity_signature = tuple()
+
         last_ai_drain = time.time()
         ai_flush_interval = 2.5
 
@@ -7855,7 +8226,24 @@ class Bot:
                 continue
 
             try:
-                self.handle_symbol(sym, pos_map, book_ticker=book_ticker_map.get(sym))
+                order_book_snapshot = (
+                    prefetched_order_books.get(sym)
+                    or prefetched_order_books.get(sym.upper())
+                    or self.strategy.get_cached_order_book(sym)
+                    or self.strategy.get_cached_order_book(sym.upper())
+                )
+                if not order_book_snapshot:
+                    order_book_snapshot = self.strategy.ensure_order_book(sym)
+                    if not order_book_snapshot and sym.upper() != sym:
+                        order_book_snapshot = self.strategy.ensure_order_book(sym.upper())
+                    if order_book_snapshot:
+                        prefetched_order_books[sym.upper()] = order_book_snapshot
+                self.handle_symbol(
+                    sym,
+                    pos_map,
+                    book_ticker=book_ticker_map.get(sym),
+                    order_book=order_book_snapshot,
+                )
             except Exception as e:
                 log.debug(f"signal handling fail {sym}: {e}")
             # dynamisches Throttling: nur bremsen, falls keine Bulk-Daten vorhanden waren
