@@ -99,6 +99,9 @@ const heroTotalWinRate = document.getElementById('hero-total-win-rate');
 const shareFeedback = document.getElementById('share-feedback');
 const btnEnableXNews = document.getElementById('btn-enable-x-news');
 const xNewsStatus = document.getElementById('x-news-status');
+const xNewsLogContainer = document.getElementById('x-news-log');
+const xNewsLogList = document.getElementById('x-news-log-list');
+const xNewsLogEmpty = document.getElementById('x-news-log-empty');
 const MEME_COMPOSER_WINDOW_NAME = 'mraster-meme-composer';
 const MEME_COMPOSER_WINDOW_FEATURES =
   'width=920,height=1080,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes';
@@ -117,6 +120,7 @@ const DEFAULT_BOT_STATUS = { running: false, pid: null, started_at: null, uptime
 const DEFAULT_LANGUAGE = 'en';
 const SUPPORTED_LANGUAGES = ['en', 'ru', 'zh', 'ko', 'de', 'fr', 'es', 'tr'];
 const COMPACT_SKIP_AGGREGATION_WINDOW = 600; // seconds
+const X_NEWS_LOG_LIMIT = 80;
 
 const TRANSLATIONS = {
   ru: {
@@ -3446,6 +3450,110 @@ function renderCredentials(env) {
   syncAiChatAvailability();
 }
 
+function setXNewsLogEmpty(key, fallback) {
+  if (!xNewsLogEmpty) return;
+  const message = translate(key, fallback);
+  xNewsLogEmpty.textContent = message;
+  xNewsLogEmpty.hidden = false;
+}
+
+function resetXNewsLog(messageKey, fallback) {
+  if (xNewsLogList) {
+    xNewsLogList.innerHTML = '';
+  }
+  if (messageKey) {
+    setXNewsLogEmpty(messageKey, fallback);
+  } else if (xNewsLogEmpty) {
+    xNewsLogEmpty.hidden = true;
+  }
+}
+
+function setXNewsLogState(enabled) {
+  if (!xNewsLogContainer) return;
+  xNewsLogContainer.dataset.state = enabled ? 'active' : 'disabled';
+  const hasEntries = Boolean(xNewsLogList && xNewsLogList.children.length > 0);
+  if (enabled) {
+    if (!hasEntries) {
+      setXNewsLogEmpty('xNews.log.emptyWaiting', 'Waiting for the next scrape…');
+    } else if (xNewsLogEmpty) {
+      xNewsLogEmpty.hidden = true;
+    }
+  } else if (!hasEntries) {
+    resetXNewsLog('xNews.log.emptyDisabled', 'Enable X News to start capturing activity logs.');
+  } else if (xNewsLogEmpty) {
+    xNewsLogEmpty.hidden = true;
+  }
+}
+
+function maybeAppendXNewsLogEntry({ parsed, rawLine, level, ts }) {
+  if (!xNewsLogList) return;
+  const loggerName = (parsed?.logger || '').toString();
+  const message = (parsed?.message || parsed?.raw || rawLine || '').toString();
+  const normalizedLogger = loggerName.toLowerCase();
+  const normalizedMessage = message.toLowerCase();
+  const combined = `${normalizedLogger} ${normalizedMessage}`.trim();
+  if (!combined) return;
+  const keywordMatches = [
+    'x news',
+    'x_news',
+    'sentinel x news',
+    'news scraper',
+    'newsscraper',
+    'news fetch',
+    'playwright',
+    'tweet',
+    'twitter',
+  ];
+  const hasKeyword = keywordMatches.some((keyword) => combined.includes(keyword));
+  const matchesLogger = normalizedLogger.includes('news');
+  if (!matchesLogger && !hasKeyword) {
+    return;
+  }
+
+  if (xNewsLogEmpty) {
+    xNewsLogEmpty.hidden = true;
+  }
+
+  const entry = document.createElement('div');
+  const effectiveLevel = level || 'info';
+  entry.className = 'x-news-log__entry';
+  entry.dataset.level = effectiveLevel;
+
+  const timeEl = document.createElement('span');
+  timeEl.className = 'x-news-log__time';
+  timeEl.textContent = ts ? new Date(ts * 1000).toLocaleTimeString() : '—';
+
+  const body = document.createElement('div');
+  body.className = 'x-news-log__body';
+
+  const meta = document.createElement('div');
+  meta.className = 'x-news-log__meta';
+  const levelBadge = document.createElement('span');
+  levelBadge.className = 'x-news-log__level';
+  levelBadge.textContent = effectiveLevel.toUpperCase();
+  meta.append(levelBadge);
+  if (loggerName) {
+    const source = document.createElement('span');
+    source.className = 'x-news-log__source';
+    source.textContent = loggerName;
+    meta.append(source);
+  }
+
+  const text = document.createElement('div');
+  text.className = 'x-news-log__text';
+  text.textContent = message || rawLine || '';
+
+  body.append(meta, text);
+  entry.append(timeEl, body);
+  xNewsLogList.append(entry);
+
+  while (xNewsLogList.children.length > X_NEWS_LOG_LIMIT) {
+    xNewsLogList.removeChild(xNewsLogList.firstChild);
+  }
+
+  xNewsLogList.scrollTop = xNewsLogList.scrollHeight;
+}
+
 function updateXNewsUi() {
   if (!btnEnableXNews) return;
   const env = currentConfig?.env || {};
@@ -3464,6 +3572,7 @@ function updateXNewsUi() {
       : `Place your <code>${safeFile}</code> cookie export next to the bot directory before enabling.`;
     xNewsStatus.innerHTML = translate(hintKey, hintFallback, { file: safeFile });
   }
+  setXNewsLogState(enabled);
 }
 
 async function loadConfig() {
@@ -6099,6 +6208,7 @@ function appendLogLine({ line, level, ts }) {
   }
 
   appendCompactLog({ line: parsed.raw ?? line, level: derivedLevel, ts });
+  maybeAppendXNewsLogEntry({ parsed, rawLine: line, level: derivedLevel, ts });
 }
 
 function connectLogs() {

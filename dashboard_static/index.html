@@ -724,6 +724,15 @@
         <p class="card-hint" id="x-news-status" data-i18n="xNews.hint">
           Place your <code>xAuth.json</code> cookie export next to the bot directory before enabling.
         </p>
+        <div class="x-news-log" id="x-news-log" data-state="disabled">
+          <div class="x-news-log__header">
+            <h3 class="x-news-log__title" data-i18n="xNews.log.title">Scraper activity</h3>
+          </div>
+          <div class="x-news-log__empty" id="x-news-log-empty" data-i18n="xNews.log.emptyDisabled">
+            Enable X News to start capturing activity logs.
+          </div>
+          <div class="x-news-log__list" id="x-news-log-list" role="log" aria-live="polite"></div>
+        </div>
       </section>
 
       <section id="env-config-panel" class="card mode-panel config" data-pro-only>
