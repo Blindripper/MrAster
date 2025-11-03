@@ -16,6 +16,7 @@ Beibehaltener Funktionsumfang + robuste Optimierungen:
   * Optionaler Trend-Align-Fallback (ASTER_ALLOW_TREND_ALIGN + ASTER_ALIGN_RSI_PAD)
 """
 
+import asyncio
 import os
 import time
 import math
@@ -36,9 +37,11 @@ from urllib.parse import urlencode
 from typing import Dict, List, Tuple, Optional, Any, Callable, Sequence, Set
 
 from collections import OrderedDict, deque
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future
 
 import requests
+
+from openai_client import OpenAIClient, OpenAIError
 
 try:  # optional dependency, used for real-time user-data streams
     import websocket  # type: ignore
@@ -94,6 +97,8 @@ SENTINEL_ENABLED = os.getenv("ASTER_AI_SENTINEL_ENABLED", "true").lower() in ("1
 SENTINEL_DECAY_MINUTES = float(os.getenv("ASTER_AI_SENTINEL_DECAY_MINUTES", "60") or 60)
 SENTINEL_NEWS_ENDPOINT = os.getenv("ASTER_AI_NEWS_ENDPOINT", "").strip()
 SENTINEL_NEWS_TOKEN = os.getenv("ASTER_AI_NEWS_API_KEY", "").strip()
+SENTINEL_MODEL = os.getenv("ASTER_AI_SENTINEL_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+SENTINEL_AI_TTL = max(120.0, float(os.getenv("ASTER_AI_SENTINEL_AI_TTL_SECONDS", "600") or 600))
 AI_MIN_INTERVAL_SECONDS = float(os.getenv("ASTER_AI_MIN_INTERVAL_SECONDS", "8") or 0.0)
 AI_CONCURRENCY = max(1, int(os.getenv("ASTER_AI_CONCURRENCY", "3") or 1))
 AI_GLOBAL_COOLDOWN = max(0.0, float(os.getenv("ASTER_AI_GLOBAL_COOLDOWN_SECONDS", "2.0") or 0.0))
@@ -103,6 +108,46 @@ AI_PENDING_LIMIT = max(
     AI_CONCURRENCY,
     int(os.getenv("ASTER_AI_PENDING_LIMIT", str(_default_pending_limit)) or _default_pending_limit),
 )
+
+_OPENAI_CLIENT: Optional[OpenAIClient] = None
+
+
+def _shared_openai_client() -> Optional[OpenAIClient]:
+    global _OPENAI_CLIENT
+    if not OPENAI_API_KEY:
+        return None
+    if _OPENAI_CLIENT is None:
+        max_conn = max(4, AI_CONCURRENCY * 2)
+        _OPENAI_CLIENT = OpenAIClient(
+            OPENAI_API_KEY,
+            default_model=AI_MODEL,
+            max_connections=max_conn,
+        )
+    return _OPENAI_CLIENT
+
+
+SENTINEL_RESPONSE_SCHEMA: Dict[str, Any] = {
+    "name": "sentinel_enrichment",
+    "schema": {
+        "type": "object",
+        "properties": {
+            "event_risk": {"type": "number"},
+            "hype_score": {"type": "number"},
+            "label": {
+                "type": "string",
+                "enum": ["green", "yellow", "red"],
+            },
+            "size_factor": {"type": "number"},
+            "rationale": {"type": "string"},
+            "highlights": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+        },
+        "required": ["event_risk", "hype_score", "label"],
+        "additionalProperties": False,
+    },
+}
 
 if AI_MODE_ENABLED and not OPENAI_API_KEY:
     log.warning(
@@ -811,6 +856,7 @@ class NewsTrendSentinel:
         state: Dict[str, Any],
         enabled: bool = True,
         decay_minutes: float = SENTINEL_DECAY_MINUTES,
+        ai_client: Optional[OpenAIClient] = None,
     ):
         self.exchange = exchange
         self.state = state
@@ -818,6 +864,155 @@ class NewsTrendSentinel:
         self._ticker_cache: Dict[str, Dict[str, Any]] = {}
         self._last_payload: Dict[str, Dict[str, Any]] = {}
         self._decay = max(60.0, float(decay_minutes or 0) * 60.0)
+        self._ai_client: Optional[OpenAIClient] = ai_client or _shared_openai_client()
+        self._pending_ai: Dict[str, Dict[str, Any]] = {}
+        self._ai_cache: Dict[str, Dict[str, Any]] = {}
+
+    def set_ai_client(self, client: Optional[OpenAIClient]) -> None:
+        if client is not None:
+            self._ai_client = client
+
+    def _consume_ai_enrichment(self, symbol: str) -> None:
+        slot = self._pending_ai.get(symbol)
+        if not slot:
+            return
+        future = slot.get("future")
+        if not isinstance(future, Future):
+            self._pending_ai.pop(symbol, None)
+            return
+        if not future.done():
+            age = time.time() - float(slot.get("ts", 0.0))
+            if age > 45.0:
+                try:
+                    future.cancel()
+                except Exception:
+                    pass
+                self._pending_ai.pop(symbol, None)
+            return
+        self._pending_ai.pop(symbol, None)
+        try:
+            text, _usage, _raw = future.result()
+        except Exception as exc:
+            log.debug(f"sentinel ai enrichment failed {symbol}: {exc}")
+            return
+        if not text:
+            return
+        try:
+            payload = json.loads(text)
+        except Exception as exc:
+            log.debug(f"sentinel ai enrichment parse failed {symbol}: {exc}")
+            return
+        payload["ts"] = time.time()
+        self._ai_cache[symbol] = payload
+
+    def _schedule_ai_enrichment(self, symbol: str, payload: Dict[str, Any], ctx: Optional[Dict[str, Any]]) -> None:
+        if not self._ai_client or not self.enabled:
+            return
+        now = time.time()
+        cached = self._ai_cache.get(symbol)
+        if cached and now - float(cached.get("ts", 0.0)) < SENTINEL_AI_TTL:
+            return
+        if symbol in self._pending_ai:
+            return
+        events = payload.get("events") or []
+        base_risk = float(payload.get("event_risk", 0.0) or 0.0)
+        if not events and base_risk < 0.45:
+            return
+        request_payload: Dict[str, Any] = {
+            "symbol": symbol,
+            "events": events,
+            "metrics": {
+                "event_risk": base_risk,
+                "hype_score": float(payload.get("hype_score", 0.0) or 0.0),
+                "label": payload.get("label", "green"),
+            },
+        }
+        meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+        if isinstance(meta, dict):
+            request_payload["metrics"].update(
+                {
+                    "price_change_pct": meta.get("price_change_pct"),
+                    "quote_volume": meta.get("quote_volume"),
+                    "buy_ratio": meta.get("buy_ratio"),
+                    "volatility": meta.get("volatility"),
+                }
+            )
+        if isinstance(ctx, dict):
+            context_map = {}
+            for key in ("htf_trend_up", "htf_trend_down", "sentinel_soft_block", "trend"):
+                if key in ctx:
+                    context_map[key] = ctx.get(key)
+            if context_map:
+                request_payload["context"] = context_map
+        system_prompt = (
+            "You enrich market sentinel telemetry for an automated crypto futures bot. "
+            "Return strict JSON with event_risk (0-1), hype_score (0-1), label (green/yellow/red), "
+            "size_factor (0-3 range), a concise rationale (<=80 words), and bullet highlights array."
+        )
+        try:
+            user_payload = json.dumps(request_payload, sort_keys=True)
+        except Exception as exc:
+            log.debug(f"sentinel enrichment serialization failed {symbol}: {exc}")
+            return
+        try:
+            future = self._ai_client.submit(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_payload},
+                ],
+                model=SENTINEL_MODEL,
+                response_format={"type": "json_schema", "json_schema": SENTINEL_RESPONSE_SCHEMA},
+                metadata={"component": "sentinel", "symbol": symbol},
+                temperature=0.0,
+                max_output_tokens=360,
+            )
+        except Exception as exc:
+            log.debug(f"sentinel enrichment dispatch failed {symbol}: {exc}")
+            return
+        self._pending_ai[symbol] = {"future": future, "ts": now}
+
+    def _apply_ai_enrichment(self, symbol: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        enriched = self._ai_cache.get(symbol)
+        if not isinstance(enriched, dict):
+            return payload
+        ts = float(enriched.get("ts", 0.0))
+        if time.time() - ts > SENTINEL_AI_TTL:
+            return payload
+        def _num(val: Any, default: float = 0.0) -> float:
+            try:
+                return float(val)
+            except Exception:
+                return default
+
+        base_risk = float(payload.get("event_risk", 0.0) or 0.0)
+        llm_risk = clamp(_num(enriched.get("event_risk"), base_risk), 0.0, 1.0)
+        payload["event_risk"] = clamp((base_risk * 2.0 + llm_risk) / 3.0, 0.0, 1.0)
+
+        base_hype = float(payload.get("hype_score", 0.0) or 0.0)
+        llm_hype = clamp(_num(enriched.get("hype_score"), base_hype), 0.0, 1.0)
+        payload["hype_score"] = clamp((base_hype * 2.0 + llm_hype) / 3.0, 0.0, 1.0)
+
+        base_label = str(payload.get("label", "green")).lower()
+        llm_label = str(enriched.get("label", base_label)).lower()
+        severity = {"green": 0, "yellow": 1, "red": 2}
+        if severity.get(llm_label, 0) > severity.get(base_label, 0):
+            payload["label"] = llm_label
+
+        size_factor = _num(payload.get("actions", {}).get("size_factor", 1.0), 1.0)
+        llm_size = clamp(_num(enriched.get("size_factor"), size_factor), 0.0, 3.0)
+        blended = clamp((size_factor + llm_size) / 2.0, 0.0, 3.0)
+        payload.setdefault("actions", {})["size_factor"] = blended
+
+        rationale = enriched.get("rationale")
+        ai_meta = payload.setdefault("ai_meta", {})
+        if isinstance(rationale, str) and rationale.strip():
+            ai_meta["rationale"] = rationale.strip()
+        highlights = enriched.get("highlights")
+        if isinstance(highlights, list):
+            cleaned = [str(item).strip() for item in highlights if str(item).strip()]
+            if cleaned:
+                ai_meta["highlights"] = cleaned
+        return payload
 
     def prime_ticker_cache(self, payload: Dict[str, Dict[str, Any]]) -> None:
         if not payload:
@@ -1042,6 +1237,10 @@ class NewsTrendSentinel:
             }
             self._last_payload[symbol] = {"ts": now, "payload": payload}
 
+        self._consume_ai_enrichment(symbol)
+        self._schedule_ai_enrichment(symbol, payload, ctx)
+        payload = self._apply_ai_enrichment(symbol, payload)
+
         sentinel_state = self.state.setdefault("sentinel", {})
         sentinel_state[symbol] = {
             **payload,
@@ -1185,12 +1384,10 @@ class AITradeAdvisor:
         self._plan_timeout = AI_PLAN_TIMEOUT
         self._pending_limit = AI_PENDING_LIMIT
         self._plan_delivery_ttl = max(self._min_interval * 3.0, 90.0)
-        self._executor: Optional[ThreadPoolExecutor] = None
         self._ready_callback = wakeup_cb
         self._activity_logger = activity_logger
         self._leverage_lookup = leverage_lookup
-        if self.enabled and AI_CONCURRENCY > 0:
-            self._executor = ThreadPoolExecutor(max_workers=AI_CONCURRENCY)
+        self._client = _shared_openai_client() if self.enabled else None
         self._load_persistent_state()
         state_bucket = self.state if self.state is not None else {}
         self.postmortem_learning = PostmortemLearning(state_bucket)
@@ -2128,10 +2325,7 @@ class AITradeAdvisor:
         budget_estimate: float,
         request_meta: Optional[Dict[str, Any]] = None,
     ) -> Optional[Future]:
-        if not self._executor:
-            return None
-        return self._executor.submit(
-            self._chat,
+        return self._submit_chat_request(
             system_prompt,
             user_prompt,
             kind=kind,
@@ -2175,7 +2369,7 @@ class AITradeAdvisor:
         note = info.get("note") or "Waiting for AI plan response"
         future = info.get("future")
         if future is None:
-            if not self.enabled or not self._executor:
+            if not self.enabled or not self._client:
                 self._remove_pending_entry(throttle_key)
                 disabled_plan = self._pending_stub(
                     fallback,
@@ -2189,7 +2383,7 @@ class AITradeAdvisor:
                 disabled_plan["decision"] = "take" if disabled_plan["take"] else "skip"
                 return "fallback", disabled_plan
             ready_after = float(info.get("ready_after", now) or now)
-            if ready_after <= now and self._executor:
+            if ready_after <= now and self._client:
                 cooldown_ok = AI_GLOBAL_COOLDOWN <= 0 or (now - self._last_global_request) >= AI_GLOBAL_COOLDOWN
                 concurrency_ok = self._active_pending() < AI_CONCURRENCY
                 if cooldown_ok and concurrency_ok:
@@ -2587,16 +2781,65 @@ class AITradeAdvisor:
             text += "."
         return text
 
-    def _chat(
+    async def _async_chat_request(
+        self,
+        messages: List[Dict[str, Any]],
+        *,
+        kind: str,
+        request_meta: Optional[Dict[str, Any]],
+        metadata: Optional[Dict[str, Any]],
+    ) -> Optional[str]:
+        if not self.enabled or not self._client:
+            return None
+        temperature = self._temperature_override if self._temperature_supported else None
+        attempt = 0
+        while True:
+            try:
+                text, usage, _raw = await self._client._acreate_with_fallback(
+                    messages=messages,
+                    model=self.model,
+                    temperature=temperature,
+                    response_format={"type": "text"},
+                    metadata=metadata,
+                    max_output_tokens=700,
+                )
+            except OpenAIError as exc:
+                if (
+                    self._temperature_supported
+                    and temperature is not None
+                    and exc.should_retry_without_temperature
+                    and attempt == 0
+                ):
+                    temperature = None
+                    self._temperature_supported = False
+                    attempt += 1
+                    log.debug("AI model rejected temperature override; retrying without it.")
+                    continue
+                raise
+            text = (text or "").strip()
+            usage_payload = usage if isinstance(usage, dict) else None
+            cost = self._estimate_cost(usage_payload)
+            if cost is None:
+                cost = 0.0025
+            meta_payload = {"kind": kind, "model": self.model, "usage": usage_payload}
+            self.budget.record(cost, meta_payload)
+            try:
+                if hasattr(self, "budget_learner") and self.budget_learner:
+                    self.budget_learner.record_cost(kind, cost, request_meta)
+            except Exception:
+                pass
+            return text or None
+
+    def _submit_chat_request(
         self,
         system_prompt: str,
         user_prompt: str,
         *,
         kind: str,
-        budget_estimate: float = 0.0,
-        request_meta: Optional[Dict[str, Any]] = None,
-    ) -> Optional[str]:
-        if not self.enabled:
+        budget_estimate: float,
+        request_meta: Optional[Dict[str, Any]],
+    ) -> Optional[Future]:
+        if not self.enabled or not self._client:
             return None
         estimate = max(0.0, float(budget_estimate or 0.0))
         if estimate <= 0:
@@ -2605,18 +2848,11 @@ class AITradeAdvisor:
             log.info("AI daily budget exhausted — skipping %s request.", kind)
             self._log_budget_block(kind, estimate)
             return None
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": self.model,
-            "response_format": {"type": "text"},
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-        }
+
+        messages: List[Dict[str, Any]] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
 
         request_id_value: Optional[str] = None
         if isinstance(request_meta, dict):
@@ -2626,7 +2862,7 @@ class AITradeAdvisor:
             elif raw_id is not None:
                 request_id_value = str(raw_id)
         if request_id_value:
-            payload["messages"].insert(
+            messages.insert(
                 1,
                 {
                     "role": "system",
@@ -2636,65 +2872,45 @@ class AITradeAdvisor:
                     ),
                 },
             )
-            payload.setdefault("metadata", {})["request_id"] = request_id_value
 
-        def _send_chat(p: Dict[str, Any]) -> requests.Response:
-            return requests.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers=headers,
-                json=p,
-                timeout=30,
-            )
+        metadata = {"component": "trade_advisor", "kind": kind}
+        if request_id_value:
+            metadata["request_id"] = request_id_value
+        if isinstance(request_meta, dict):
+            symbol_hint = request_meta.get("symbol")
+            if symbol_hint:
+                metadata["symbol"] = str(symbol_hint)
 
-        if self._temperature_supported and self._temperature_override is not None:
-            payload["temperature"] = self._temperature_override
+        coroutine = self._async_chat_request(
+            messages,
+            kind=kind,
+            request_meta=request_meta,
+            metadata=metadata,
+        )
+        return asyncio.run_coroutine_threadsafe(coroutine, self._client.loop)
 
+    def _chat(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        kind: str,
+        budget_estimate: float = 0.0,
+        request_meta: Optional[Dict[str, Any]] = None,
+    ) -> Optional[str]:
+        future = self._submit_chat_request(
+            system_prompt,
+            user_prompt,
+            kind=kind,
+            budget_estimate=budget_estimate,
+            request_meta=request_meta,
+        )
+        if not isinstance(future, Future):
+            return None
         try:
-            attempt = 0
-            while True:
-                resp = _send_chat(payload)
-                if resp.status_code < 400:
-                    data = resp.json()
-                    break
-                text_preview = (resp.text or "")[:160]
-                lower_preview = text_preview.lower()
-                if (
-                    self._temperature_supported
-                    and "temperature" in payload
-                    and "temperature" in lower_preview
-                    and "default" in lower_preview
-                    and attempt == 0
-                ):
-                    # Retry without temperature for models that only allow the default value.
-                    payload.pop("temperature", None)
-                    attempt += 1
-                    self._temperature_supported = False
-                    log.debug("AI model rejected temperature override; retrying without it.")
-                    continue
-                raise RuntimeError(f"HTTP {resp.status_code}: {text_preview}")
+            return future.result()
         except Exception as exc:
             log.debug(f"AI request failed ({kind}): {exc}")
-            return None
-
-        usage = data.get("usage")
-        cost = self._estimate_cost(usage)
-        if cost is None:
-            cost = 0.0025
-        meta_payload = {"kind": kind, "model": self.model, "usage": usage}
-        self.budget.record(cost, meta_payload)
-        try:
-            if hasattr(self, "budget_learner") and self.budget_learner:
-                self.budget_learner.record_cost(kind, cost, request_meta)
-        except Exception:
-            pass
-
-        try:
-            choices = data.get("choices") or []
-            if not choices:
-                return None
-            content = self._extract_choice_content(choices[0])
-            return content.strip() if content else None
-        except Exception:
             return None
 
     @staticmethod
@@ -3331,7 +3547,7 @@ class AITradeAdvisor:
             self._recent_plan_store(throttle_key, cached_plan, now)
             return cached_plan
         estimate = self._estimate_prospective_cost(system_prompt, base_prompt)
-        if not async_mode or not self._executor:
+        if not async_mode or not self._client:
             request_id = self._new_request_id("plan", throttle_key)
             payload_with_id = dict(user_payload)
             payload_with_id["request_id"] = request_id
@@ -3639,7 +3855,7 @@ class AITradeAdvisor:
             self._recent_plan_store(throttle_key, cached_plan, now)
             return cached_plan
         estimate = self._estimate_prospective_cost(system_prompt, base_prompt)
-        if not async_mode or not self._executor:
+        if not async_mode or not self._client:
             request_id = self._new_request_id("trend", throttle_key)
             payload_with_id = dict(user_payload)
             payload_with_id["request_id"] = request_id
@@ -7149,7 +7365,12 @@ class Bot:
                 self.budget_tracker.limit,
             )
         sentinel_active = SENTINEL_ENABLED or AI_MODE_ENABLED
-        self.sentinel = NewsTrendSentinel(self.exchange, self.state, enabled=sentinel_active)
+        self.sentinel = NewsTrendSentinel(
+            self.exchange,
+            self.state,
+            enabled=sentinel_active,
+            ai_client=_shared_openai_client(),
+        )
         self.ai_advisor: Optional[AITradeAdvisor] = None
         if AI_MODE_ENABLED:
             self.ai_advisor = AITradeAdvisor(
@@ -7162,6 +7383,11 @@ class Bot:
                 activity_logger=self._emit_ai_budget_alert,
                 leverage_lookup=self._symbol_leverage_cap,
             )
+            if self.sentinel and getattr(self.ai_advisor, "_client", None):
+                try:
+                    self.sentinel.set_ai_client(self.ai_advisor._client)
+                except Exception:
+                    pass
 
     @property
     def strategy(self) -> Strategy:

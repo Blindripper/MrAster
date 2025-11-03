@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from dashboard_server import AIChatEngine, CONFIG, _safe_float
+from openai_client import build_responses_input
 
 
 @pytest.fixture
@@ -33,32 +34,7 @@ def test_gpt41_allows_legacy_fallback(engine: AIChatEngine) -> None:
     assert traits["reasoning"] is None
 
 
-def test_responses_payload_normalises_text(monkeypatch: pytest.MonkeyPatch, engine: AIChatEngine) -> None:
-    captured: dict = {}
-
-    class DummyResponse:
-        status_code = 200
-
-        @staticmethod
-        def json() -> dict:
-            return {
-                "output": [
-                    {
-                        "type": "message",
-                        "content": [
-                            {"type": "output_text", "text": "ok"},
-                        ],
-                    }
-                ]
-            }
-
-    def fake_post(url: str, headers: dict, json: dict, timeout: int) -> DummyResponse:
-        captured["url"] = url
-        captured["payload"] = json
-        return DummyResponse()
-
-    monkeypatch.setattr("dashboard_server.requests.post", fake_post)
-
+def test_responses_payload_normalises_text() -> None:
     messages = [
         {"role": "system", "content": " system "},
         {"role": "user", "content": [{"type": "input_text", "text": " hello "}]},
@@ -66,18 +42,12 @@ def test_responses_payload_normalises_text(monkeypatch: pytest.MonkeyPatch, engi
         {"role": "user", "content": [" next "]},
     ]
 
-    reply, usage = engine._call_openai_responses({}, "gpt-4.1-mini", messages, temperature=0.2)
+    normalized, system_prompt = build_responses_input(messages)
 
-    assert reply == "ok"
-    assert usage is None
-    assert captured["url"].endswith("/responses")
-    payload = captured["payload"]
-    assert payload["model"] == "gpt-4.1-mini"
-    system_entry = payload["input"][0]
-    assert system_entry["role"] == "system"
-    assert system_entry["content"][0]["type"] == "text"
-    # Ensure all user/assistant entries normalise to "text" segments
-    for entry in payload["input"][1:]:
+    assert system_prompt.strip() == "system"
+    assert normalized[0]["role"] == "system"
+    assert normalized[0]["content"][0]["type"] == "text"
+    for entry in normalized[1:]:
         for chunk in entry["content"]:
             assert chunk["type"] == "text"
 
