@@ -234,7 +234,82 @@ async def _extract_post(article) -> Optional[ScrapedPost]:
     )
 
 
-async def scrape_query(context, query: str, feed: str, limit: int, delay: float, attempts: int) -> List[ScrapedPost]:
+QUOTE_SUFFIXES: Tuple[str, ...] = (
+    "USDT",
+    "USDC",
+    "BUSD",
+    "TUSD",
+    "USD",
+    "EUR",
+    "GBP",
+    "BTC",
+    "ETH",
+    "BNB",
+    "TRY",
+    "BRL",
+    "BIDR",
+    "AUD",
+    "UAH",
+    "RUB",
+    "NGN",
+    "ZAR",
+    "JPY",
+    "KRW",
+    "IDRT",
+    "DAI",
+    "UST",
+    "PAX",
+    "USDP",
+    "FDUSD",
+    "ARS",
+    "MXN",
+    "CNY",
+    "CAD",
+    "SGD",
+    "CHF",
+    "SEK",
+    "NOK",
+    "DKK",
+    "PLN",
+    "CZK",
+    "HUF",
+    "ILS",
+    "SAR",
+    "AED",
+    "KWD",
+    "QAR",
+    "CLP",
+    "COP",
+    "PEN",
+    "VES",
+)
+
+
+def _prepare_search_query(symbol: str) -> str:
+    """Return a search friendly query for ``symbol``.
+
+    Trading pairs typically end with the quote asset (``BTCUSDT`` → ``USDT``).
+    Searching for the base asset (``BTC``) tends to produce better results on X.
+    If no known suffix matches the symbol the original string is returned.
+    """
+
+    normalized = symbol.strip().upper()
+    for suffix in QUOTE_SUFFIXES:
+        if normalized.endswith(suffix) and len(normalized) > len(suffix):
+            return normalized[: -len(suffix)]
+    return normalized
+
+
+async def scrape_query(
+    context,
+    query: str,
+    feed: str,
+    limit: int,
+    delay: float,
+    attempts: int,
+    *,
+    result_query: Optional[str] = None,
+) -> List[ScrapedPost]:
     page = await context.new_page()
     base = f"https://twitter.com/search?q={quote_plus(query)}&src=typed_query"
     url = base if feed == "top" else base + "&f=live"
@@ -262,7 +337,7 @@ async def scrape_query(context, query: str, feed: str, limit: int, delay: float,
             if key in seen:
                 continue
             seen.add(key)
-            collected.append(replace(post, query=query))
+            collected.append(replace(post, query=result_query or query))
             if len(collected) >= limit:
                 break
         scrolls += 1
@@ -302,7 +377,16 @@ async def scrape_queries_async(
 
         results: Dict[str, List[Dict[str, Optional[Any]]]] = {}
         for query in normalized:
-            posts = await scrape_query(context, query, feed, tweet_limit, scroll_delay, scroll_attempts)
+            search_query = _prepare_search_query(query)
+            posts = await scrape_query(
+                context,
+                search_query,
+                feed,
+                tweet_limit,
+                scroll_delay,
+                scroll_attempts,
+                result_query=query,
+            )
             results[query] = [post.to_dict() for post in posts]
 
         if html_dump:
