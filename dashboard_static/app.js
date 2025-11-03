@@ -158,15 +158,6 @@ const TRANSLATIONS = {
     'active.table.mark': 'Маркет-прайс',
     'active.table.leverage': 'Плечо',
     'active.table.margin': 'Маржа',
-    'active.table.tpsl': 'TP/SL',
-    'active.table.tp': 'TP',
-    'active.table.sl': 'SL',
-    'active.table.tpsl.workingType.mark': 'Mark',
-    'active.table.tpsl.workingType.last': 'Last',
-    'active.table.tpsl.workingType.index': 'Index',
-    'active.table.tpsl.workingType.contract': 'Contract',
-    'active.table.tpsl.order.market': 'Market',
-    'active.table.tpsl.order.limit': 'Limit',
     'active.table.pnl': 'PNL (ROE%)',
     'status.title': 'Статус',
     'status.state': 'Состояние',
@@ -418,15 +409,6 @@ const TRANSLATIONS = {
     'active.table.mark': 'Markpreis',
     'active.table.leverage': 'Hebel',
     'active.table.margin': 'Margin',
-    'active.table.tpsl': 'TP/SL',
-    'active.table.tp': 'TP',
-    'active.table.sl': 'SL',
-    'active.table.tpsl.workingType.mark': 'Mark',
-    'active.table.tpsl.workingType.last': 'Last',
-    'active.table.tpsl.workingType.index': 'Index',
-    'active.table.tpsl.workingType.contract': 'Contract',
-    'active.table.tpsl.order.market': 'Market',
-    'active.table.tpsl.order.limit': 'Limit',
     'active.table.pnl': 'PNL (ROE%)',
     'status.title': 'Status',
     'status.state': 'Zustand',
@@ -681,15 +663,6 @@ const TRANSLATIONS = {
     'active.table.mark': '마크 가격',
     'active.table.leverage': '레버리지',
     'active.table.margin': '증거금',
-    'active.table.tpsl': 'TP/SL',
-    'active.table.tp': 'TP',
-    'active.table.sl': 'SL',
-    'active.table.tpsl.workingType.mark': 'Mark',
-    'active.table.tpsl.workingType.last': 'Last',
-    'active.table.tpsl.workingType.index': 'Index',
-    'active.table.tpsl.workingType.contract': 'Contract',
-    'active.table.tpsl.order.market': 'Market',
-    'active.table.tpsl.order.limit': 'Limit',
     'active.table.pnl': 'PNL (ROE%)',
     'status.title': '상태',
     'status.state': '상태',
@@ -944,15 +917,6 @@ const TRANSLATIONS = {
     'active.table.mark': 'Prix de marché',
     'active.table.leverage': 'Effet de levier',
     'active.table.margin': 'Marge',
-    'active.table.tpsl': 'TP/SL',
-    'active.table.tp': 'TP',
-    'active.table.sl': 'SL',
-    'active.table.tpsl.workingType.mark': 'Mark',
-    'active.table.tpsl.workingType.last': 'Last',
-    'active.table.tpsl.workingType.index': 'Index',
-    'active.table.tpsl.workingType.contract': 'Contract',
-    'active.table.tpsl.order.market': 'Market',
-    'active.table.tpsl.order.limit': 'Limit',
     'active.table.pnl': 'PNL (ROE %)',
     'status.title': 'Statut',
     'status.state': 'État',
@@ -1207,15 +1171,6 @@ const TRANSLATIONS = {
     'active.table.mark': 'Precio de marca',
     'active.table.leverage': 'Apalancamiento',
     'active.table.margin': 'Margen',
-    'active.table.tpsl': 'TP/SL',
-    'active.table.tp': 'TP',
-    'active.table.sl': 'SL',
-    'active.table.tpsl.workingType.mark': 'Mark',
-    'active.table.tpsl.workingType.last': 'Last',
-    'active.table.tpsl.workingType.index': 'Index',
-    'active.table.tpsl.workingType.contract': 'Contract',
-    'active.table.tpsl.order.market': 'Market',
-    'active.table.tpsl.order.limit': 'Limit',
     'active.table.pnl': 'PNL (ROE%)',
     'status.title': 'Estado',
     'status.state': 'Estado',
@@ -1469,15 +1424,6 @@ const TRANSLATIONS = {
     'active.table.mark': 'Mark fiyatı',
     'active.table.leverage': 'Kaldıraç',
     'active.table.margin': 'Marj',
-    'active.table.tpsl': 'TP/SL',
-    'active.table.tp': 'TP',
-    'active.table.sl': 'SL',
-    'active.table.tpsl.workingType.mark': 'Mark',
-    'active.table.tpsl.workingType.last': 'Last',
-    'active.table.tpsl.workingType.index': 'Index',
-    'active.table.tpsl.workingType.contract': 'Contract',
-    'active.table.tpsl.order.market': 'Market',
-    'active.table.tpsl.order.limit': 'Limit',
     'active.table.pnl': 'PNL (ROE%)',
     'status.title': 'Durum',
     'status.state': 'Durum',
@@ -1725,15 +1671,6 @@ const TRANSLATIONS = {
     'active.table.mark': '标记价格',
     'active.table.leverage': '杠杆',
     'active.table.margin': '保证金',
-    'active.table.tpsl': 'TP/SL',
-    'active.table.tp': 'TP',
-    'active.table.sl': 'SL',
-    'active.table.tpsl.workingType.mark': 'Mark',
-    'active.table.tpsl.workingType.last': 'Last',
-    'active.table.tpsl.workingType.index': 'Index',
-    'active.table.tpsl.workingType.contract': 'Contract',
-    'active.table.tpsl.order.market': 'Market',
-    'active.table.tpsl.order.limit': 'Limit',
     'active.table.pnl': '盈亏 (ROE%)',
     'status.title': '状态',
     'status.state': '运行状态',
@@ -3920,7 +3857,6 @@ const ACTIVE_POSITION_FIELD_LABELS = {
   mark: 'Mark price',
   leverage: 'Leverage',
   margin: 'Margin',
-  tp_sl: 'TP/SL',
   pnl: 'PNL (ROE%)',
 };
 
@@ -4892,74 +4828,48 @@ function extractTpSlEntry(position, kind) {
   return { price: Number.isFinite(price) ? price : null, meta };
 }
 
-function describeWorkingTypeLabel(value) {
-  if (!value) return '';
-  const normalized = value.toString().toUpperCase();
-  if (normalized === 'MARK' || normalized === 'MARK_PRICE') {
-    return translate('active.table.tpsl.workingType.mark', 'Mark');
+function computePositionProgressValue(takeEntry, stopEntry, markPrice) {
+  const takePrice = Number.isFinite(takeEntry?.price) ? takeEntry.price : null;
+  const stopPrice = Number.isFinite(stopEntry?.price) ? stopEntry.price : null;
+  const mark = Number.isFinite(markPrice) ? markPrice : null;
+
+  if (!Number.isFinite(takePrice) || !Number.isFinite(stopPrice) || !Number.isFinite(mark)) {
+    return null;
   }
-  if (normalized === 'CONTRACT_PRICE' || normalized === 'LAST_PRICE' || normalized === 'LAST') {
-    return translate('active.table.tpsl.workingType.last', 'Last');
+  if (takePrice === stopPrice) {
+    return null;
   }
-  if (normalized === 'INDEX_PRICE' || normalized === 'INDEX') {
-    return translate('active.table.tpsl.workingType.index', 'Index');
-  }
-  if (normalized === 'CONTRACT') {
-    return translate('active.table.tpsl.workingType.contract', 'Contract');
-  }
-  return normalized
-    .replace(/_/g, ' ')
-    .toLowerCase()
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+
+  const min = Math.min(takePrice, stopPrice);
+  const max = Math.max(takePrice, stopPrice);
+  const clamped = Math.min(Math.max(mark, min), max);
+  const relative = (clamped - min) / (max - min);
+  const profitIsMax = takePrice >= stopPrice;
+  const ratio = profitIsMax ? relative : 1 - relative;
+
+  return Math.max(0, Math.min(1, ratio));
 }
 
-function describeOrderExecutionLabel(value) {
-  if (!value) return '';
-  const normalized = value.toString().toUpperCase();
-  if (normalized.includes('MARKET')) {
-    return translate('active.table.tpsl.order.market', 'Market');
-  }
-  if (normalized.includes('LIMIT') || normalized === 'STOP' || normalized === 'TAKE_PROFIT') {
-    return translate('active.table.tpsl.order.limit', 'Limit');
-  }
-  return normalized
-    .replace(/_/g, ' ')
-    .toLowerCase()
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-}
+function buildPositionProgressBar({ takeEntry, stopEntry, markPrice }) {
+  const container = document.createElement('div');
+  container.className = 'position-progress-container';
 
-function buildTpSlLine(kind, entry) {
-  if (!entry || !Number.isFinite(entry.price)) return null;
-  const line = document.createElement('div');
-  line.className = `tp-sl-line tp-sl-${kind === 'take' ? 'take' : 'stop'}`;
-  const label = document.createElement('span');
-  label.className = 'tp-sl-label';
-  label.textContent =
-    kind === 'take'
-      ? translate('active.table.tp', 'TP')
-      : translate('active.table.sl', 'SL');
-  line.append(label);
-  const value = document.createElement('span');
-  value.className = 'tp-sl-value';
-  value.textContent = formatPriceDisplay(entry.price);
-  line.append(value);
+  const track = document.createElement('div');
+  track.className = 'position-progress-track';
+  container.append(track);
 
-  const metaParts = [];
-  if (entry.meta) {
-    const workingLabel = describeWorkingTypeLabel(entry.meta.workingType);
-    const executionLabel = describeOrderExecutionLabel(entry.meta.type);
-    if (workingLabel) metaParts.push(workingLabel);
-    if (executionLabel) metaParts.push(executionLabel);
+  const indicator = document.createElement('div');
+  indicator.className = 'position-progress-indicator';
+  track.append(indicator);
+
+  const progressValue = computePositionProgressValue(takeEntry, stopEntry, markPrice);
+  if (progressValue === null) {
+    container.classList.add('is-inactive');
+  } else {
+    indicator.style.left = `${(progressValue * 100).toFixed(2)}%`;
   }
 
-  if (metaParts.length > 0) {
-    const meta = document.createElement('span');
-    meta.className = 'tp-sl-meta';
-    meta.textContent = `(${metaParts.join(' · ')})`;
-    line.append(meta);
-  }
-
-  return line;
+  return container;
 }
 
 function getPositionTimestamp(position) {
@@ -5029,8 +4939,13 @@ function updateActivePositionsView() {
     const sizeField = pickNumericField(position, ACTIVE_POSITION_ALIASES.size || []);
     const signedQuantityField = pickNumericField(position, ACTIVE_POSITION_SIGNED_SIZE_KEYS || []);
     const notionalField = pickNumericField(position, ACTIVE_POSITION_NOTIONAL_KEYS || []);
+    const entryField = pickNumericField(position, ACTIVE_POSITION_ALIASES.entry || []);
+    const markField = pickNumericField(position, ACTIVE_POSITION_ALIASES.mark || []);
+    const takeEntry = extractTpSlEntry(position, 'take');
+    const stopEntry = extractTpSlEntry(position, 'stop');
 
     const symbolCell = document.createElement('td');
+    symbolCell.className = 'active-positions-symbol-cell';
     const symbolWrapper = document.createElement('div');
     symbolWrapper.className = 'active-positions-symbol-wrapper';
     const symbolLabel = document.createElement('span');
@@ -5044,6 +4959,13 @@ function updateActivePositionsView() {
       symbolWrapper.append(sideBadge);
     }
     symbolCell.append(symbolWrapper);
+    symbolCell.append(
+      buildPositionProgressBar({
+        takeEntry,
+        stopEntry,
+        markPrice: markField.numeric,
+      }),
+    );
     applyActivePositionLabel(symbolCell, 'symbol');
     row.append(symbolCell);
 
@@ -5080,7 +5002,6 @@ function updateActivePositionsView() {
 
     const entryCell = document.createElement('td');
     entryCell.className = 'numeric';
-    const entryField = pickNumericField(position, ACTIVE_POSITION_ALIASES.entry || []);
     entryCell.textContent = formatPriceDisplay(entryField.numeric, {
       minimumFractionDigits: 6,
       maximumFractionDigits: 6,
@@ -5090,7 +5011,6 @@ function updateActivePositionsView() {
 
     const markCell = document.createElement('td');
     markCell.className = 'numeric';
-    const markField = pickNumericField(position, ACTIVE_POSITION_ALIASES.mark || []);
     markCell.textContent = formatPriceDisplay(markField.numeric, {
       minimumFractionDigits: 6,
       maximumFractionDigits: 6,
@@ -5140,28 +5060,6 @@ function updateActivePositionsView() {
     }
     applyActivePositionLabel(marginCell, 'margin');
     row.append(marginCell);
-
-    const tpSlCell = document.createElement('td');
-    tpSlCell.className = 'numeric tp-sl-cell';
-    const takeEntry = extractTpSlEntry(position, 'take');
-    const stopEntry = extractTpSlEntry(position, 'stop');
-    const takeLine = buildTpSlLine('take', takeEntry);
-    const stopLine = buildTpSlLine('stop', stopEntry);
-    if (takeLine || stopLine) {
-      const wrapper = document.createElement('div');
-      wrapper.className = 'tp-sl-wrapper';
-      if (takeLine) wrapper.append(takeLine);
-      if (stopLine) wrapper.append(stopLine);
-      if (wrapper.childElementCount > 0) {
-        tpSlCell.append(wrapper);
-      } else {
-        tpSlCell.textContent = '–';
-      }
-    } else {
-      tpSlCell.textContent = '–';
-    }
-    applyActivePositionLabel(tpSlCell, 'tp_sl');
-    row.append(tpSlCell);
 
     const pnlCell = document.createElement('td');
     pnlCell.className = 'numeric';
@@ -8026,8 +7924,6 @@ function handleAiRequestModalKeydown(event) {
     closeAiRequestModal();
   }
 }
-
-
 
 function setAiHintMessage(message) {
   if (!aiHint) return;
