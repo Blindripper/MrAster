@@ -65,18 +65,41 @@ class LinUCB:
         self.d = int(d or len(FEATURES))
         self.A = np.eye(self.d) * self.l2  # d×d
         self.b = np.zeros((self.d, 1))  # d×1
+        self._A_inv: Optional[np.ndarray] = None
+        if self.l2 > 0:
+            self._A_inv = np.eye(self.d) / self.l2
 
     def predict_ucb(self, x: "np.ndarray") -> float:
         # x: d×1
-        A_inv = np.linalg.inv(self.A)
+        if self._A_inv is None:
+            try:
+                self._A_inv = np.linalg.pinv(self.A)
+            except np.linalg.LinAlgError:
+                self._A_inv = np.linalg.pinv(self.A + np.eye(self.d) * 1e-9)
+        A_inv = self._A_inv
         theta = A_inv @ self.b  # d×1
         mu = float((theta.T @ x)[0, 0])
-        s = float(math.sqrt((x.T @ A_inv @ x)[0, 0]))
+        Ax = A_inv @ x
+        var = float((x.T @ Ax)[0, 0])
+        if var < 0.0:
+            var = 0.0
+        s = float(math.sqrt(var))
         return mu + self.alpha * s
 
     def learn(self, x: "np.ndarray", reward: float) -> None:
         self.A += x @ x.T
         self.b += float(reward) * x
+        if self._A_inv is not None:
+            try:
+                Ax = self._A_inv @ x
+                denom = 1.0 + float((x.T @ Ax)[0, 0])
+                if denom <= 1e-12:
+                    self._A_inv = None
+                else:
+                    update = Ax @ Ax.T / denom
+                    self._A_inv = self._A_inv - update
+            except Exception:
+                self._A_inv = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {"alpha": self.alpha, "l2": self.l2, "d": self.d, "A": self.A.tolist(), "b": self.b.tolist()}
@@ -106,6 +129,7 @@ class LinUCB:
             obj.b[:min_dim, 0] = stored_b[:min_dim, 0]
         else:
             obj.b = np.zeros((target_dim, 1))
+        obj._A_inv = None
         return obj
 
 # ---------------------------- Alpha Model ------------------------------------
