@@ -1012,6 +1012,7 @@ body.paper-mode .hero-paper-toggle span {
   background: var(--surface);
   border: 2px solid rgba(255, 255, 255, 0.85);
   box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.35);
+  transition: left 0.25s ease, background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .position-progress-container.is-inactive .position-progress-indicator {
