@@ -4714,7 +4714,10 @@ function matchesTpSlKind(normalized, source, expectedKind) {
 function extractTpSlEntry(position, kind) {
   const keys = kind === 'take' ? TAKE_PROFIT_FIELD_KEYS : STOP_LOSS_FIELD_KEYS;
   const numericField = pickNumericField(position, keys);
-  let price = Number.isFinite(numericField.numeric) ? Math.abs(numericField.numeric) : null;
+  let price =
+    Number.isFinite(numericField.numeric) && Math.abs(numericField.numeric) > 0
+      ? Math.abs(numericField.numeric)
+      : null;
 
   let meta = null;
   const bucketCandidates = [];
@@ -4821,11 +4824,14 @@ function extractTpSlEntry(position, kind) {
     }
   }
 
-  if (!Number.isFinite(price) && meta && Number.isFinite(meta.price)) {
-    price = Math.abs(meta.price);
+  if (!Number.isFinite(price) && meta) {
+    const metaPrice = toNumeric(meta.price);
+    if (Number.isFinite(metaPrice) && Math.abs(metaPrice) > 0) {
+      price = Math.abs(metaPrice);
+    }
   }
 
-  return { price: Number.isFinite(price) ? price : null, meta };
+  return { price: Number.isFinite(price) && price > 0 ? price : null, meta };
 }
 
 function computePositionProgressValue(takeEntry, stopEntry, markPrice) {
