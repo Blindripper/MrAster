@@ -1664,14 +1664,17 @@ class AITradeAdvisor:
         self._temperature_supported = True
         self._temperature_override = self._resolve_temperature()
         self._cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
-        self._recent_plans: "OrderedDict[str, Tuple[float, Dict[str, Any], bool]]" = OrderedDict()
+        self._recent_plans: "OrderedDict[str, Tuple[float, Dict[str, Any], bool, float]]" = OrderedDict()
         self._pending_requests: Dict[str, Dict[str, Any]] = {}
         self._pending_order: deque[str] = deque()
-        self._min_interval = max(0.0, AI_MIN_INTERVAL_SECONDS)
+        self._base_min_interval = max(0.0, AI_MIN_INTERVAL_SECONDS)
+        self._min_interval = self._base_min_interval
+        self._base_global_cooldown = max(0.0, AI_GLOBAL_COOLDOWN)
+        self._last_global_interval = self._base_global_cooldown
         self._last_global_request = 0.0
         self._plan_timeout = AI_PLAN_TIMEOUT
         self._pending_limit = AI_PENDING_LIMIT
-        self._plan_delivery_ttl = max(self._min_interval * 3.0, 90.0)
+        self._plan_delivery_ttl = max(self._base_min_interval * 3.0, 90.0)
         self._ready_callback = wakeup_cb
         self._activity_logger = activity_logger
         self._leverage_lookup = leverage_lookup
@@ -1896,7 +1899,17 @@ class AITradeAdvisor:
                 except Exception:
                     ts_val = time.time()
                 delivered = bool(entry.get("delivered", False))
-                self._recent_plans[key] = (ts_val, copy.deepcopy(plan), delivered)
+                interval_raw = entry.get("min_interval")
+                try:
+                    interval_val = float(interval_raw)
+                except Exception:
+                    interval_val = self._base_min_interval
+                self._recent_plans[key] = (
+                    ts_val,
+                    copy.deepcopy(plan),
+                    delivered,
+                    float(interval_val),
+                )
         while len(self._recent_plans) > self.RECENT_PLAN_LIMIT:
             self._recent_plans.popitem(last=False)
 
@@ -1907,13 +1920,16 @@ class AITradeAdvisor:
         for key, value in list(self._cache.items())[-self.CACHE_LIMIT:]:
             cache_dump.append({"key": key, "plan": copy.deepcopy(value)})
         recent_dump: List[Dict[str, Any]] = []
-        for key, (ts, plan, delivered) in list(self._recent_plans.items())[-self.RECENT_PLAN_LIMIT:]:
+        for key, (ts, plan, delivered, interval) in list(self._recent_plans.items())[
+            -self.RECENT_PLAN_LIMIT:
+        ]:
             recent_dump.append(
                 {
                     "key": key,
                     "ts": float(ts),
                     "plan": copy.deepcopy(plan),
                     "delivered": bool(delivered),
+                    "min_interval": float(interval),
                 }
             )
         self.state["ai_plan_cache"] = cache_dump
@@ -2642,6 +2658,8 @@ class AITradeAdvisor:
         throttle_key: str,
         fallback: Dict[str, Any],
         now: float,
+        min_interval: Optional[float] = None,
+        global_cooldown: Optional[float] = None,
     ) -> Tuple[Optional[str], Optional[Any]]:
         info = self._pending_requests.get(throttle_key)
         if not info:
@@ -2653,6 +2671,25 @@ class AITradeAdvisor:
                 type(fallback).__name__,
             )
             fallback = {}
+        if min_interval is not None:
+            try:
+                info["min_interval"] = max(0.0, float(min_interval))
+            except Exception:
+                pass
+        guard_interval = info.get("global_cooldown")
+        if global_cooldown is not None:
+            try:
+                guard_interval = max(0.0, float(global_cooldown))
+            except Exception:
+                guard_interval = guard_interval
+        if guard_interval is None:
+            guard_interval = self._base_global_cooldown
+        try:
+            guard_interval = max(0.0, float(guard_interval))
+        except Exception:
+            guard_interval = self._base_global_cooldown
+        if global_cooldown is not None:
+            info["global_cooldown"] = guard_interval
         kind = str(info.get("kind", "plan"))
         note = info.get("note") or "Waiting for AI plan response"
         future = info.get("future")
@@ -2672,7 +2709,7 @@ class AITradeAdvisor:
                 return "fallback", disabled_plan
             ready_after = float(info.get("ready_after", now) or now)
             if ready_after <= now and self._client:
-                cooldown_ok = AI_GLOBAL_COOLDOWN <= 0 or (now - self._last_global_request) >= AI_GLOBAL_COOLDOWN
+                cooldown_ok = guard_interval <= 0 or (now - self._last_global_request) >= guard_interval
                 concurrency_ok = self._active_pending() < AI_CONCURRENCY
                 if cooldown_ok and concurrency_ok:
                     future = self._dispatch_request(
@@ -2686,14 +2723,20 @@ class AITradeAdvisor:
                         info["future"] = future
                         info["dispatched_at"] = now
                         self._last_global_request = now
+                        self._last_global_interval = guard_interval
                         note = "Waiting for AI plan response"
                         self._attach_future_callback(throttle_key, future)
                     else:
                         self._remove_pending_entry(throttle_key)
-                        self._recent_plan_store(throttle_key, fallback, now)
+                        self._recent_plan_store(
+                            throttle_key,
+                            fallback,
+                            now,
+                            min_interval=info.get("min_interval"),
+                        )
                         return "fallback", fallback
                 else:
-                    info["ready_after"] = now + max(0.5, AI_GLOBAL_COOLDOWN or 0.5)
+                    info["ready_after"] = now + max(0.5, guard_interval or 0.5)
             stub = self._pending_stub(
                 fallback,
                 f"{kind}_pending",
@@ -2730,7 +2773,12 @@ class AITradeAdvisor:
             timeout_plan["take"] = bool(fallback.get("take", True))
             timeout_plan["decision"] = "take" if timeout_plan["take"] else "skip"
             timeout_plan["ai_fallback"] = True
-            self._recent_plan_store(throttle_key, fallback, now)
+            self._recent_plan_store(
+                throttle_key,
+                fallback,
+                now,
+                min_interval=info.get("min_interval"),
+            )
             return "timeout", timeout_plan
         stub = self._pending_stub(
             fallback,
@@ -2769,12 +2817,30 @@ class AITradeAdvisor:
                 request_id = str(fallback_id)
         if request_id and isinstance(fallback, dict):
             fallback.setdefault("request_id", request_id)
+        min_interval = None
+        if isinstance(meta, dict):
+            meta_interval = meta.get("min_interval")
+            if meta_interval is not None:
+                try:
+                    min_interval = max(0.0, float(meta_interval))
+                except Exception:
+                    min_interval = None
         if not response_text:
-            self._recent_plan_store(throttle_key, fallback, now)
+            self._recent_plan_store(
+                throttle_key,
+                fallback,
+                now,
+                min_interval=min_interval,
+            )
             return fallback
         parsed = self._parse_structured(response_text)
         if not isinstance(parsed, dict):
-            self._recent_plan_store(throttle_key, fallback, now)
+            self._recent_plan_store(
+                throttle_key,
+                fallback,
+                now,
+                min_interval=min_interval,
+            )
             return fallback
         request_payload: Optional[Dict[str, Any]] = None
         if isinstance(meta, dict):
@@ -2825,7 +2891,13 @@ class AITradeAdvisor:
             plan_ready.setdefault("request_id", request_id)
         if cache_key_ready:
             self._cache_store(str(cache_key_ready), plan_ready)
-        self._recent_plan_store(throttle_key, plan_ready, now, delivered=False)
+        self._recent_plan_store(
+            throttle_key,
+            plan_ready,
+            now,
+            delivered=False,
+            min_interval=min_interval,
+        )
         return plan_ready
 
     def flush_pending(self) -> List[Tuple[str, Dict[str, Any]]]:
@@ -2845,7 +2917,13 @@ class AITradeAdvisor:
                     throttle_key,
                 )
                 fallback = {}
-            status, payload = self._process_pending_request(throttle_key, fallback, now)
+            status, payload = self._process_pending_request(
+                throttle_key,
+                fallback,
+                now,
+                min_interval=info.get("min_interval") if isinstance(info, dict) else None,
+                global_cooldown=info.get("global_cooldown") if isinstance(info, dict) else None,
+            )
             if status != "response":
                 continue
             bundle = payload or {}
@@ -2980,36 +3058,71 @@ class AITradeAdvisor:
             self._cache.popitem(last=False)
         self._persist_state()
 
-    def _recent_plan_lookup(self, key: str, now: Optional[float] = None) -> Optional[Dict[str, Any]]:
+    def _recent_plan_lookup(
+        self,
+        key: str,
+        now: Optional[float] = None,
+        min_interval: Optional[float] = None,
+    ) -> Optional[Dict[str, Any]]:
         if key not in self._recent_plans:
             return None
         if now is None:
             now = time.time()
-        ts, plan, delivered = self._recent_plans[key]
+        ts, plan, delivered, stored_interval = self._recent_plans[key]
         age = now - ts
-        if age > self._plan_delivery_ttl:
+        interval = self._base_min_interval
+        if min_interval is not None:
+            try:
+                interval = float(min_interval)
+            except Exception:
+                interval = self._base_min_interval
+        elif stored_interval is not None:
+            try:
+                interval = float(stored_interval)
+            except Exception:
+                interval = self._base_min_interval
+        plan_ttl = self._plan_delivery_ttl
+        if interval > 0:
+            plan_ttl = max(self._plan_delivery_ttl, interval * 3.0)
+        if age > plan_ttl:
             self._recent_plans.pop(key, None)
             return None
-        if delivered and age > self._min_interval:
+        if delivered and interval > 0 and age > interval:
             return None
         self._recent_plans.move_to_end(key)
+        new_delivered = delivered
         if not delivered:
-            self._recent_plans[key] = (ts, plan, True)
-            try:
-                self._persist_state()
-            except Exception:
-                pass
+            new_delivered = True
+        if min_interval is not None and min_interval >= 0:
+            interval = float(interval)
+        self._recent_plans[key] = (ts, plan, new_delivered, interval)
+        try:
+            self._persist_state()
+        except Exception:
+            pass
         return copy.deepcopy(plan)
 
     def _recent_plan_store(
-        self, key: str, plan: Dict[str, Any], now: Optional[float] = None, *, delivered: bool = True
+        self,
+        key: str,
+        plan: Dict[str, Any],
+        now: Optional[float] = None,
+        *,
+        delivered: bool = True,
+        min_interval: Optional[float] = None,
     ) -> None:
         if now is None:
             now = time.time()
         plan_copy = copy.deepcopy(plan)
         if isinstance(plan_copy, dict):
             plan_copy.pop("request_id", None)
-        self._recent_plans[key] = (now, plan_copy, bool(delivered))
+        interval = self._base_min_interval
+        if min_interval is not None:
+            try:
+                interval = max(0.0, float(min_interval))
+            except Exception:
+                interval = self._base_min_interval
+        self._recent_plans[key] = (now, plan_copy, bool(delivered), float(interval))
         self._recent_plans.move_to_end(key)
         while len(self._recent_plans) > self.RECENT_PLAN_LIMIT:
             self._recent_plans.popitem(last=False)
@@ -3026,7 +3139,7 @@ class AITradeAdvisor:
         except Exception:
             # Persistence issues should not block delivering the plan.
             pass
-        _, plan, _ = bundle
+        _, plan, _, _ = bundle
         return copy.deepcopy(plan)
 
     def consume_signal_plan(self, symbol: str) -> Optional[Tuple[str, Dict[str, Any]]]:
@@ -3038,14 +3151,17 @@ class AITradeAdvisor:
         selected_key: Optional[str] = None
         selected_side: Optional[str] = None
         selected_plan: Optional[Dict[str, Any]] = None
-        for key, (ts, plan, delivered) in list(self._recent_plans.items()):
+        for key, (ts, plan, delivered, interval) in list(self._recent_plans.items()):
             if not key.startswith(prefix):
                 continue
             age = now - ts
-            if age > self._plan_delivery_ttl:
+            plan_ttl = self._plan_delivery_ttl
+            if interval > 0:
+                plan_ttl = max(self._plan_delivery_ttl, interval * 3.0)
+            if age > plan_ttl:
                 self._recent_plans.pop(key, None)
                 continue
-            if delivered and age > self._min_interval:
+            if delivered and interval > 0 and age > interval:
                 continue
             if not isinstance(plan, dict):
                 continue
@@ -3061,6 +3177,129 @@ class AITradeAdvisor:
         except Exception:
             pass
         return str(selected_side or "").upper(), selected_plan
+
+    def _compute_ai_intervals(
+        self,
+        symbol: str,
+        sentinel: Optional[Dict[str, Any]],
+        ctx: Optional[Dict[str, Any]],
+    ) -> Dict[str, float]:
+        base_symbol = self._base_min_interval if self._base_min_interval > 0 else 0.0
+        base_global = self._base_global_cooldown if self._base_global_cooldown > 0 else 0.0
+        event_risk = 0.0
+        hype_score = 0.0
+        if isinstance(sentinel, dict):
+            try:
+                event_risk = clamp(float(sentinel.get("event_risk", 0.0) or 0.0), 0.0, 1.0)
+            except Exception:
+                event_risk = 0.0
+            try:
+                hype_score = clamp(float(sentinel.get("hype_score", 0.0) or 0.0), 0.0, 1.0)
+            except Exception:
+                hype_score = 0.0
+        playbook_active: Dict[str, Any] = {}
+        if self.playbook_manager:
+            try:
+                playbook_active = self.playbook_manager.active()
+            except Exception:
+                playbook_active = {}
+        if isinstance(playbook_active, dict):
+            features = playbook_active.get("features") if isinstance(playbook_active.get("features"), dict) else {}
+            if isinstance(features, dict):
+                for key in ("sentinel_event_risk", "event_risk"):
+                    if key in features:
+                        try:
+                            event_risk = max(event_risk, clamp(float(features[key]), 0.0, 1.0))
+                        except Exception:
+                            continue
+        sentinel_pressure = clamp(event_risk * 0.7 + hype_score * 0.3, 0.0, 1.0)
+        ai_confidence = 0.0
+        if isinstance(playbook_active, dict):
+            confidence_raw = playbook_active.get("confidence") or playbook_active.get("confidence_score")
+            if confidence_raw is not None:
+                try:
+                    ai_confidence = clamp(float(confidence_raw), 0.0, 1.0)
+                except Exception:
+                    ai_confidence = 0.0
+            features = playbook_active.get("features") if isinstance(playbook_active.get("features"), dict) else {}
+        else:
+            features = {}
+        if isinstance(ctx, dict):
+            for key in ("playbook_confidence", "tuning_confidence"):
+                if key in ctx:
+                    try:
+                        ai_confidence = max(ai_confidence, clamp(float(ctx[key]), 0.0, 1.0))
+                    except Exception:
+                        continue
+        regime_heat = 0.0
+        if isinstance(features, dict):
+            slope_val = features.get("regime_slope")
+            adx_val = features.get("regime_adx")
+            vol_val = features.get("regime_volatility") or features.get("volatility_z")
+            slope_score = 0.0
+            adx_score = 0.0
+            vol_score = 0.0
+            try:
+                slope_score = clamp(abs(float(slope_val)) / 0.9, 0.0, 1.0)
+            except Exception:
+                slope_score = 0.0
+            try:
+                adx_score = clamp(float(adx_val) / 45.0, 0.0, 1.0)
+            except Exception:
+                adx_score = 0.0
+            try:
+                vol_score = clamp(abs(float(vol_val)) / 2.2, 0.0, 1.0)
+            except Exception:
+                vol_score = 0.0
+            regime_heat = clamp((slope_score * 0.55) + (adx_score * 0.3) + (vol_score * 0.15), 0.0, 1.0)
+        remaining = self.budget.remaining()
+        if remaining is None or self.budget.limit <= 0:
+            budget_ratio = 1.0
+        else:
+            try:
+                budget_ratio = clamp(remaining / max(self.budget.limit, 1e-6), 0.0, 1.0)
+            except Exception:
+                budget_ratio = 1.0
+        quality = clamp(
+            ai_confidence * 0.55 + regime_heat * 0.25 + (1.0 - sentinel_pressure) * 0.2,
+            0.0,
+            1.0,
+        )
+        pressure_bonus = clamp(sentinel_pressure * (0.6 + 0.3 * ai_confidence), 0.0, 0.95)
+        symbol_interval = base_symbol
+        if base_symbol > 0:
+            down_factor = clamp(1.0 - pressure_bonus, 0.35, 1.1)
+            up_factor = 1.0 + clamp(0.45 - quality, 0.0, 0.45) * 0.35
+            symbol_interval = base_symbol * down_factor * up_factor
+            if budget_ratio < 0.35:
+                budget_scale = clamp((0.35 - budget_ratio) / 0.35, 0.0, 1.0)
+                symbol_interval *= 1.0 + budget_scale * 0.8
+            symbol_interval = clamp(symbol_interval, max(base_symbol * 0.35, 1.5), base_symbol * 2.4)
+        else:
+            symbol_interval = 0.0
+            if budget_ratio < 0.3:
+                symbol_interval = clamp((0.3 - budget_ratio) * 6.0, 0.0, 8.0)
+        global_interval = base_global
+        if base_global > 0:
+            down_factor_g = clamp(1.0 - pressure_bonus * 0.7, 0.25, 1.1)
+            up_factor_g = 1.0 + clamp(0.5 - quality, 0.0, 0.5) * 0.45
+            global_interval = base_global * down_factor_g * up_factor_g
+            if budget_ratio < 0.35:
+                budget_scale = clamp((0.35 - budget_ratio) / 0.35, 0.0, 1.0)
+                global_interval *= 1.0 + budget_scale * 1.1
+            global_interval = max(0.5, global_interval)
+        else:
+            global_interval = 0.0
+            if symbol_interval <= 0 and budget_ratio < 0.25:
+                global_interval = max(0.5, (0.25 - budget_ratio) * 4.0)
+        return {
+            "symbol_interval": float(symbol_interval),
+            "global_interval": float(global_interval),
+            "event_risk": float(event_risk),
+            "confidence": float(ai_confidence),
+            "budget_ratio": float(budget_ratio),
+            "regime_heat": float(regime_heat),
+        }
 
     def _ensure_bounds(self, text: str, fallback: str) -> str:
         base_words = [w for w in re.split(r"\s+", (text or "").strip()) if w]
@@ -3750,7 +3989,30 @@ class AITradeAdvisor:
 
         throttle_key = plan_key
         now = time.time()
-        status, payload = self._process_pending_request(throttle_key, fallback, now)
+        interval_meta = self._compute_ai_intervals(symbol, sentinel, ctx)
+        min_interval = float(interval_meta.get("symbol_interval", self._base_min_interval))
+        if min_interval < 0:
+            min_interval = 0.0
+        global_cooldown = float(interval_meta.get("global_interval", self._base_global_cooldown))
+        if global_cooldown < 0:
+            global_cooldown = 0.0
+        if isinstance(ctx, dict):
+            try:
+                ctx["ai_cooldown_symbol_interval"] = float(min_interval)
+                ctx["ai_cooldown_global_interval"] = float(global_cooldown)
+                ctx["ai_cooldown_event_risk"] = float(interval_meta.get("event_risk", 0.0))
+                ctx["ai_cooldown_confidence"] = float(interval_meta.get("confidence", 0.0))
+                ctx["ai_cooldown_budget_ratio"] = float(interval_meta.get("budget_ratio", 1.0))
+                ctx["ai_cooldown_regime_heat"] = float(interval_meta.get("regime_heat", 0.0))
+            except Exception:
+                pass
+        status, payload = self._process_pending_request(
+            throttle_key,
+            fallback,
+            now,
+            min_interval=min_interval,
+            global_cooldown=global_cooldown,
+        )
         if status in {"pending", "timeout"}:
             return payload  # type: ignore[return-value]
         if status == "fallback":
@@ -3761,12 +4023,17 @@ class AITradeAdvisor:
             meta = bundle.get("info") if isinstance(bundle, dict) else {}
             return self._finalize_response(throttle_key, fallback, meta, response_text, now)
 
-        recent_plan = self._recent_plan_lookup(throttle_key, now)
+        recent_plan = self._recent_plan_lookup(throttle_key, now, min_interval)
         if recent_plan is not None:
             return recent_plan
 
         if not self._has_pending_capacity(throttle_key):
-            self._recent_plan_store(throttle_key, fallback, now)
+            self._recent_plan_store(
+                throttle_key,
+                fallback,
+                now,
+                min_interval=min_interval,
+            )
             return self._pending_stub(
                 fallback,
                 "plan_queue_full",
@@ -3842,7 +4109,12 @@ class AITradeAdvisor:
         cache_key = self._cache_key("plan", system_prompt, user_payload)
         cached_plan = self._cache_lookup(cache_key)
         if cached_plan is not None:
-            self._recent_plan_store(throttle_key, cached_plan, now)
+            self._recent_plan_store(
+                throttle_key,
+                cached_plan,
+                now,
+                min_interval=min_interval,
+            )
             return cached_plan
         estimate = self._estimate_prospective_cost(system_prompt, base_prompt)
         if not async_mode or not self._client:
@@ -3852,7 +4124,12 @@ class AITradeAdvisor:
             try:
                 user_prompt = json.dumps(payload_with_id, sort_keys=True, separators=(",", ":"))
             except Exception:
-                self._recent_plan_store(throttle_key, fallback, now)
+                self._recent_plan_store(
+                    throttle_key,
+                    fallback,
+                    now,
+                    min_interval=min_interval,
+                )
                 return fallback
             fallback["request_id"] = request_id
             meta = {"symbol": symbol, "context": "plan", "request_id": request_id}
@@ -3864,11 +4141,21 @@ class AITradeAdvisor:
                 request_meta=meta,
             )
             if not response:
-                self._recent_plan_store(throttle_key, fallback, now)
+                self._recent_plan_store(
+                    throttle_key,
+                    fallback,
+                    now,
+                    min_interval=min_interval,
+                )
                 return fallback
             parsed = self._parse_structured(response)
             if not isinstance(parsed, dict):
-                self._recent_plan_store(throttle_key, fallback, now)
+                self._recent_plan_store(
+                    throttle_key,
+                    fallback,
+                    now,
+                    min_interval=min_interval,
+                )
                 return fallback
             parsed.setdefault("request_id", request_id)
             plan = self._apply_plan_overrides(
@@ -3878,12 +4165,22 @@ class AITradeAdvisor:
             )
             plan.setdefault("request_id", request_id)
             self._cache_store(cache_key, plan)
-            self._recent_plan_store(throttle_key, plan, now)
+            self._recent_plan_store(
+                throttle_key,
+                plan,
+                now,
+                min_interval=min_interval,
+            )
             return plan
 
         if not self.budget.can_spend(estimate, kind="plan", model=self.model):
             self._log_budget_block("plan", estimate)
-            self._recent_plan_store(throttle_key, fallback, now)
+            self._recent_plan_store(
+                throttle_key,
+                fallback,
+                now,
+                min_interval=min_interval,
+            )
             return fallback
 
         request_id = self._new_request_id("plan", throttle_key)
@@ -3892,15 +4189,25 @@ class AITradeAdvisor:
         try:
             user_prompt = json.dumps(payload_with_id, sort_keys=True, separators=(",", ":"))
         except Exception:
-            self._recent_plan_store(throttle_key, fallback, now)
+            self._recent_plan_store(
+                throttle_key,
+                fallback,
+                now,
+                min_interval=min_interval,
+            )
             return fallback
         meta = {"symbol": symbol, "context": "plan", "request_id": request_id}
         fallback["request_id"] = request_id
 
-        cooldown_blocked = AI_GLOBAL_COOLDOWN > 0 and (now - self._last_global_request) < AI_GLOBAL_COOLDOWN
+        cooldown_blocked = global_cooldown > 0 and (now - self._last_global_request) < global_cooldown
         if cooldown_blocked or self._active_pending() >= AI_CONCURRENCY:
             if not self._has_pending_capacity(throttle_key):
-                self._recent_plan_store(throttle_key, fallback, now)
+                self._recent_plan_store(
+                    throttle_key,
+                    fallback,
+                    now,
+                    min_interval=min_interval,
+                )
                 return self._pending_stub(
                     fallback,
                     "plan_queue_full",
@@ -3918,7 +4225,7 @@ class AITradeAdvisor:
                 "kind": "plan",
                 "estimate": estimate,
                 "queued_at": now,
-                "ready_after": now + max(0.5, AI_GLOBAL_COOLDOWN or 0.5),
+                "ready_after": now + max(0.5, global_cooldown or 0.5),
                 "note": "Queued for AI planning",
                 "notified": False,
                 "request_meta": meta,
@@ -3931,12 +4238,19 @@ class AITradeAdvisor:
                 request_id=request_id,
             )
             pending_info["request_id"] = request_id
+            pending_info["min_interval"] = float(min_interval)
+            pending_info["global_cooldown"] = float(global_cooldown)
             self._pending_requests[throttle_key] = pending_info
             self._register_pending_key(throttle_key)
             return stub
 
         if not self._has_pending_capacity(throttle_key):
-            self._recent_plan_store(throttle_key, fallback, now)
+            self._recent_plan_store(
+                throttle_key,
+                fallback,
+                now,
+                min_interval=min_interval,
+            )
             return self._pending_stub(
                 fallback,
                 "plan_queue_full",
@@ -3953,7 +4267,12 @@ class AITradeAdvisor:
             request_meta=meta,
         )
         if not future:
-            self._recent_plan_store(throttle_key, fallback, now)
+            self._recent_plan_store(
+                throttle_key,
+                fallback,
+                now,
+                min_interval=min_interval,
+            )
             return fallback
         self._pending_requests[throttle_key] = {
             "future": future,
@@ -3969,9 +4288,12 @@ class AITradeAdvisor:
             "notified": False,
             "request_meta": meta,
             "request_id": request_id,
+            "min_interval": float(min_interval),
+            "global_cooldown": float(global_cooldown),
         }
         self._register_pending_key(throttle_key)
         self._last_global_request = now
+        self._last_global_interval = global_cooldown
         self._attach_future_callback(throttle_key, future)
         stub = self._pending_stub(
             fallback,
@@ -4066,7 +4388,30 @@ class AITradeAdvisor:
 
         throttle_key = trend_key
         now = time.time()
-        status, payload = self._process_pending_request(throttle_key, fallback, now)
+        interval_meta = self._compute_ai_intervals(symbol, sentinel, ctx)
+        min_interval = float(interval_meta.get("symbol_interval", self._base_min_interval))
+        if min_interval < 0:
+            min_interval = 0.0
+        global_cooldown = float(interval_meta.get("global_interval", self._base_global_cooldown))
+        if global_cooldown < 0:
+            global_cooldown = 0.0
+        if isinstance(ctx, dict):
+            try:
+                ctx["ai_cooldown_symbol_interval"] = float(min_interval)
+                ctx["ai_cooldown_global_interval"] = float(global_cooldown)
+                ctx["ai_cooldown_event_risk"] = float(interval_meta.get("event_risk", 0.0))
+                ctx["ai_cooldown_confidence"] = float(interval_meta.get("confidence", 0.0))
+                ctx["ai_cooldown_budget_ratio"] = float(interval_meta.get("budget_ratio", 1.0))
+                ctx["ai_cooldown_regime_heat"] = float(interval_meta.get("regime_heat", 0.0))
+            except Exception:
+                pass
+        status, payload = self._process_pending_request(
+            throttle_key,
+            fallback,
+            now,
+            min_interval=min_interval,
+            global_cooldown=global_cooldown,
+        )
         if status in {"pending", "timeout"}:
             return payload  # type: ignore[return-value]
         if status == "fallback":
@@ -4077,12 +4422,17 @@ class AITradeAdvisor:
             meta = bundle.get("info") if isinstance(bundle, dict) else {}
             return self._finalize_response(throttle_key, fallback, meta, response_text, now)
 
-        recent_plan = self._recent_plan_lookup(throttle_key, now)
+        recent_plan = self._recent_plan_lookup(throttle_key, now, min_interval)
         if recent_plan is not None:
             return recent_plan
 
         if not self._has_pending_capacity(throttle_key):
-            self._recent_plan_store(throttle_key, fallback, now)
+            self._recent_plan_store(
+                throttle_key,
+                fallback,
+                now,
+                min_interval=min_interval,
+            )
             return self._pending_stub(
                 fallback,
                 "plan_queue_full",
@@ -4150,7 +4500,12 @@ class AITradeAdvisor:
         cache_key = self._cache_key("trend", system_prompt, user_payload)
         cached_plan = self._cache_lookup(cache_key)
         if cached_plan is not None:
-            self._recent_plan_store(throttle_key, cached_plan, now)
+            self._recent_plan_store(
+                throttle_key,
+                cached_plan,
+                now,
+                min_interval=min_interval,
+            )
             return cached_plan
         estimate = self._estimate_prospective_cost(system_prompt, base_prompt)
         if not async_mode or not self._client:
@@ -4160,7 +4515,12 @@ class AITradeAdvisor:
             try:
                 user_prompt = json.dumps(payload_with_id, sort_keys=True, separators=(",", ":"))
             except Exception:
-                self._recent_plan_store(throttle_key, fallback, now)
+                self._recent_plan_store(
+                    throttle_key,
+                    fallback,
+                    now,
+                    min_interval=min_interval,
+                )
                 return fallback
             fallback["request_id"] = request_id
             meta = {"symbol": symbol, "context": "trend", "request_id": request_id}
@@ -4172,11 +4532,21 @@ class AITradeAdvisor:
                 request_meta=meta,
             )
             if not response:
-                self._recent_plan_store(throttle_key, fallback, now)
+                self._recent_plan_store(
+                    throttle_key,
+                    fallback,
+                    now,
+                    min_interval=min_interval,
+                )
                 return fallback
             parsed = self._parse_structured(response)
             if not isinstance(parsed, dict):
-                self._recent_plan_store(throttle_key, fallback, now)
+                self._recent_plan_store(
+                    throttle_key,
+                    fallback,
+                    now,
+                    min_interval=min_interval,
+                )
                 return fallback
             parsed.setdefault("request_id", request_id)
             plan = self._apply_trend_plan_overrides(
@@ -4186,12 +4556,22 @@ class AITradeAdvisor:
             )
             plan.setdefault("request_id", request_id)
             self._cache_store(cache_key, plan)
-            self._recent_plan_store(throttle_key, plan, now)
+            self._recent_plan_store(
+                throttle_key,
+                plan,
+                now,
+                min_interval=min_interval,
+            )
             return plan
 
         if not self.budget.can_spend(estimate, kind="trend", model=self.model):
             self._log_budget_block("trend", estimate)
-            self._recent_plan_store(throttle_key, fallback, now)
+            self._recent_plan_store(
+                throttle_key,
+                fallback,
+                now,
+                min_interval=min_interval,
+            )
             return fallback
 
         request_id = self._new_request_id("trend", throttle_key)
@@ -4200,15 +4580,25 @@ class AITradeAdvisor:
         try:
             user_prompt = json.dumps(payload_with_id, sort_keys=True, separators=(",", ":"))
         except Exception:
-            self._recent_plan_store(throttle_key, fallback, now)
+            self._recent_plan_store(
+                throttle_key,
+                fallback,
+                now,
+                min_interval=min_interval,
+            )
             return fallback
         meta = {"symbol": symbol, "context": "trend", "request_id": request_id}
         fallback["request_id"] = request_id
 
-        cooldown_blocked = AI_GLOBAL_COOLDOWN > 0 and (now - self._last_global_request) < AI_GLOBAL_COOLDOWN
+        cooldown_blocked = global_cooldown > 0 and (now - self._last_global_request) < global_cooldown
         if cooldown_blocked or self._active_pending() >= AI_CONCURRENCY:
             if not self._has_pending_capacity(throttle_key):
-                self._recent_plan_store(throttle_key, fallback, now)
+                self._recent_plan_store(
+                    throttle_key,
+                    fallback,
+                    now,
+                    min_interval=min_interval,
+                )
                 return self._pending_stub(
                     fallback,
                     "plan_queue_full",
@@ -4226,7 +4616,7 @@ class AITradeAdvisor:
                 "kind": "trend",
                 "estimate": estimate,
                 "queued_at": now,
-                "ready_after": now + max(0.5, AI_GLOBAL_COOLDOWN or 0.5),
+                "ready_after": now + max(0.5, global_cooldown or 0.5),
                 "note": "Queued for AI planning",
                 "notified": False,
                 "request_meta": meta,
@@ -4239,12 +4629,19 @@ class AITradeAdvisor:
                 request_id=request_id,
             )
             pending_info["request_id"] = request_id
+            pending_info["min_interval"] = float(min_interval)
+            pending_info["global_cooldown"] = float(global_cooldown)
             self._pending_requests[throttle_key] = pending_info
             self._register_pending_key(throttle_key)
             return stub
 
         if not self._has_pending_capacity(throttle_key):
-            self._recent_plan_store(throttle_key, fallback, now)
+            self._recent_plan_store(
+                throttle_key,
+                fallback,
+                now,
+                min_interval=min_interval,
+            )
             return self._pending_stub(
                 fallback,
                 "plan_queue_full",
@@ -4261,7 +4658,12 @@ class AITradeAdvisor:
             request_meta=meta,
         )
         if not future:
-            self._recent_plan_store(throttle_key, fallback, now)
+            self._recent_plan_store(
+                throttle_key,
+                fallback,
+                now,
+                min_interval=min_interval,
+            )
             return fallback
         self._pending_requests[throttle_key] = {
             "future": future,
@@ -4277,9 +4679,12 @@ class AITradeAdvisor:
             "notified": False,
             "request_meta": meta,
             "request_id": request_id,
+            "min_interval": float(min_interval),
+            "global_cooldown": float(global_cooldown),
         }
         self._register_pending_key(throttle_key)
         self._last_global_request = now
+        self._last_global_interval = global_cooldown
         self._attach_future_callback(throttle_key, future)
         stub = self._pending_stub(
             fallback,

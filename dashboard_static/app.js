@@ -327,10 +327,14 @@ const TRANSLATIONS = {
     'quick.presets.low.subtitle': 'Мало сделок · 30% риск на сделку · 33% капитала',
     'quick.presets.mid.title': 'Mid',
     'quick.presets.mid.subtitle': 'Сбалансированная торговля · 50% риск на сделку · 66% капитала',
-    'quick.presets.high.title': 'High',
-    'quick.presets.high.subtitle': 'Часто · агрессивно · 100% риск на сделку',
-    'quick.presets.att.title': 'ATT',
-    'quick.presets.att.subtitle': 'Против тренда',
+  'quick.presets.high.title': 'High',
+  'quick.presets.high.subtitle': 'Часто · агрессивно · 100% риск на сделку',
+  'quick.presets.att.title': 'ATT',
+  'quick.presets.att.subtitle': 'Против тренда',
+  'quick.presets.adaptive.title': 'Adaptive',
+  'quick.presets.adaptive.subtitle': 'Adaptive sizing · Dynamic confidence cap',
+  'quick.presets.focus.title': 'Focus',
+  'quick.presets.focus.subtitle': 'High conviction throttle · AI-weighted sizing',
     'quick.leverage.title': 'Плечо',
     'quick.leverage.placeholder': 'Базовое плечо: –',
     'quick.description': 'Выберите профиль, чтобы загрузить рекомендованные параметры риска.',
@@ -578,10 +582,14 @@ const TRANSLATIONS = {
     'quick.presets.low.subtitle': 'Niedrige Frequenz · 30 % Risiko pro Trade · 33 % Kapitaleinsatz',
     'quick.presets.mid.title': 'Mid',
     'quick.presets.mid.subtitle': 'Ausgewogenes Trading · 50 % Risiko pro Trade · 66 % Kapitaleinsatz',
-    'quick.presets.high.title': 'High',
-    'quick.presets.high.subtitle': 'Hohe Frequenz · Aggressiv · 100 % Risiko pro Trade',
-    'quick.presets.att.title': 'ATT',
-    'quick.presets.att.subtitle': 'Counter-Trend-Setup',
+  'quick.presets.high.title': 'High',
+  'quick.presets.high.subtitle': 'Hohe Frequenz · Aggressiv · 100 % Risiko pro Trade',
+  'quick.presets.att.title': 'ATT',
+  'quick.presets.att.subtitle': 'Counter-Trend-Setup',
+  'quick.presets.adaptive.title': 'Adaptive',
+  'quick.presets.adaptive.subtitle': 'Adaptive sizing · Dynamic confidence cap',
+  'quick.presets.focus.title': 'Focus',
+  'quick.presets.focus.subtitle': 'High conviction throttle · AI-weighted sizing',
     'quick.leverage.title': 'Hebel',
     'quick.leverage.placeholder': 'Basishebel: –',
     'quick.description': 'Wähle eine Konfiguration, um empfohlene Risiko-Parameter zu laden.',
@@ -832,10 +840,14 @@ const TRANSLATIONS = {
     'quick.presets.low.subtitle': '거래 적음 · 거래당 위험 30% · 자본 33%',
     'quick.presets.mid.title': 'Mid',
     'quick.presets.mid.subtitle': '균형 트레이딩 · 거래당 위험 50% · 자본 66%',
-    'quick.presets.high.title': 'High',
-    'quick.presets.high.subtitle': '고빈도 · 공격적 · 거래당 위험 100%',
-    'quick.presets.att.title': 'ATT',
-    'quick.presets.att.subtitle': '역추세 세팅',
+  'quick.presets.high.title': 'High',
+  'quick.presets.high.subtitle': '고빈도 · 공격적 · 거래당 위험 100%',
+  'quick.presets.att.title': 'ATT',
+  'quick.presets.att.subtitle': '역추세 세팅',
+  'quick.presets.adaptive.title': 'Adaptive',
+  'quick.presets.adaptive.subtitle': 'Adaptive sizing · Dynamic confidence cap',
+  'quick.presets.focus.title': 'Focus',
+  'quick.presets.focus.subtitle': 'High conviction throttle · AI-weighted sizing',
     'quick.leverage.title': '레버리지',
     'quick.leverage.placeholder': '기준 레버리지: –',
     'quick.description': '추천 위험 파라미터를 불러오려면 프로파일을 선택하세요.',
@@ -1086,10 +1098,14 @@ const TRANSLATIONS = {
     'quick.presets.low.subtitle': 'Basse fréquence · Risque 30 % par trade · Capital 33 %',
     'quick.presets.mid.title': 'Mid',
     'quick.presets.mid.subtitle': 'Trading équilibré · Risque 50 % par trade · Capital 66 %',
-    'quick.presets.high.title': 'High',
-    'quick.presets.high.subtitle': 'Haute fréquence · Agressif · Risque 100 % par trade',
-    'quick.presets.att.title': 'ATT',
-    'quick.presets.att.subtitle': 'Configuration contrarienne',
+  'quick.presets.high.title': 'High',
+  'quick.presets.high.subtitle': 'Haute fréquence · Agressif · Risque 100 % par trade',
+  'quick.presets.att.title': 'ATT',
+  'quick.presets.att.subtitle': 'Configuration contrarienne',
+  'quick.presets.adaptive.title': 'Adaptive',
+  'quick.presets.adaptive.subtitle': 'Adaptive sizing · Dynamic confidence cap',
+  'quick.presets.focus.title': 'Focus',
+  'quick.presets.focus.subtitle': 'High conviction throttle · AI-weighted sizing',
     'quick.leverage.title': 'Effet de levier',
     'quick.leverage.placeholder': 'Effet de levier de base : –',
     'quick.description': 'Choisissez une configuration pour charger les paramètres de risque recommandés.',
@@ -1340,10 +1356,14 @@ const TRANSLATIONS = {
     'quick.presets.low.subtitle': 'Baja frecuencia · 30% de riesgo por operación · 33% capital',
     'quick.presets.mid.title': 'Mid',
     'quick.presets.mid.subtitle': 'Trading equilibrado · 50% de riesgo por operación · 66% capital',
-    'quick.presets.high.title': 'High',
-    'quick.presets.high.subtitle': 'Alta frecuencia · Agresivo · 100% de riesgo por operación',
-    'quick.presets.att.title': 'ATT',
-    'quick.presets.att.subtitle': 'Configuración contra tendencia',
+  'quick.presets.high.title': 'High',
+  'quick.presets.high.subtitle': 'Alta frecuencia · Agresivo · 100% de riesgo por operación',
+  'quick.presets.att.title': 'ATT',
+  'quick.presets.att.subtitle': 'Configuración contra tendencia',
+  'quick.presets.adaptive.title': 'Adaptive',
+  'quick.presets.adaptive.subtitle': 'Adaptive sizing · Dynamic confidence cap',
+  'quick.presets.focus.title': 'Focus',
+  'quick.presets.focus.subtitle': 'High conviction throttle · AI-weighted sizing',
     'quick.leverage.title': 'Apalancamiento',
     'quick.leverage.placeholder': 'Apalancamiento base: –',
     'quick.description': 'Elige una configuración para cargar los parámetros de riesgo recomendados.',
@@ -1588,10 +1608,14 @@ const TRANSLATIONS = {
     'quick.presets.low.subtitle': 'Düşük frekans · İşlem başına %30 risk · %33 sermaye',
     'quick.presets.mid.title': 'Mid',
     'quick.presets.mid.subtitle': 'Dengeli trading · İşlem başına %50 risk · %66 sermaye',
-    'quick.presets.high.title': 'High',
-    'quick.presets.high.subtitle': 'Yüksek frekans · Agresif · İşlem başına %100 risk',
-    'quick.presets.att.title': 'ATT',
-    'quick.presets.att.subtitle': 'Trend karşıtı kurulum',
+  'quick.presets.high.title': 'High',
+  'quick.presets.high.subtitle': 'Yüksek frekans · Agresif · İşlem başına %100 risk',
+  'quick.presets.att.title': 'ATT',
+  'quick.presets.att.subtitle': 'Trend karşıtı kurulum',
+  'quick.presets.adaptive.title': 'Adaptive',
+  'quick.presets.adaptive.subtitle': 'Adaptive sizing · Dynamic confidence cap',
+  'quick.presets.focus.title': 'Focus',
+  'quick.presets.focus.subtitle': 'High conviction throttle · AI-weighted sizing',
     'quick.leverage.title': 'Kaldıraç',
     'quick.leverage.placeholder': 'Temel kaldıraç: –',
     'quick.description': 'Önerilen risk parametrelerini yüklemek için bir profil seçin.',
@@ -1837,10 +1861,14 @@ const TRANSLATIONS = {
     'quick.presets.low.subtitle': '低频交易 · 单笔风险 30% · 33% 资金占用',
     'quick.presets.mid.title': 'Mid',
     'quick.presets.mid.subtitle': '均衡交易 · 单笔风险 50% · 66% 资金占用',
-    'quick.presets.high.title': 'High',
-    'quick.presets.high.subtitle': '高频 · 进取 · 单笔风险 100%',
-    'quick.presets.att.title': 'ATT',
-    'quick.presets.att.subtitle': '逆势策略',
+  'quick.presets.high.title': 'High',
+  'quick.presets.high.subtitle': '高频 · 进取 · 单笔风险 100%',
+  'quick.presets.att.title': 'ATT',
+  'quick.presets.att.subtitle': '逆势策略',
+  'quick.presets.adaptive.title': 'Adaptive',
+  'quick.presets.adaptive.subtitle': 'Adaptive sizing · Dynamic confidence cap',
+  'quick.presets.focus.title': 'Focus',
+  'quick.presets.focus.subtitle': 'High conviction throttle · AI-weighted sizing',
     'quick.leverage.title': '杠杆',
     'quick.leverage.placeholder': '基础杠杆：–',
     'quick.description': '选择一个配置以载入推荐的风险参数。',
@@ -2935,6 +2963,171 @@ const PRESETS = {
     maxOpenGlobal: 0,
     maxOpenPerSymbol: 1,
     trendBias: 'against',
+  },
+  adaptive: {
+    label: 'Adaptive',
+    summary:
+      'Regime-aware sizing: 55% risk per trade, 8× leverage ceiling, and event-risk driven confidence caps to prioritise quality flows.',
+    risk: 55,
+    leverage: 8,
+    edgeMinR: 0.06,
+    slAtr: 1.25,
+    tpAtr: 2.15,
+    fasttp: {
+      minR: 0.22,
+      ret1: -0.001,
+      ret3: -0.0022,
+      snapAtr: 0.24,
+      cooldown: 38,
+    },
+    sizeMult: {
+      base: 1.05,
+      s: 1.1,
+      m: 1.5,
+      l: 2.05,
+    },
+    funding: {
+      enabled: true,
+      maxLong: 0.0011,
+      maxShort: 0.0013,
+    },
+    alpha: {
+      threshold: 0.54,
+      minConf: 0.24,
+      promoteDelta: 0.16,
+      rewardMargin: 0.055,
+    },
+    alphaWarmup: 36,
+    banditEnabled: true,
+    alphaEnabled: true,
+    equityFraction: 0.7,
+    maxOpenGlobal: 0,
+    maxOpenPerSymbol: 1,
+    trendBias: 'with',
+    confidenceSizing: {
+      enabled: true,
+      base: { min: 0.95, max: 3.1, blend: 0.6, exp: 2.05, cap: 3.4 },
+      ranges: {
+        min: [0.85, 1.18],
+        max: [2.4, 3.9],
+        blend: [0.45, 0.78],
+        exp: [1.6, 2.45],
+        cap: [2.8, 4.1],
+        confidence: [0.32, 0.82],
+        eventRisk: [0.1, 0.7],
+        hype: [0.1, 0.65],
+        sentinelFactor: [0.7, 1.6],
+        regimeHeat: [-0.4, 0.6],
+        budgetRatio: [0.15, 1.1],
+      },
+      weights: {
+        confidence: 0.38,
+        eventRisk: 0.22,
+        hype: 0.1,
+        sentinelFactor: 0.12,
+        regimeHeat: 0.1,
+        budgetRatio: 0.08,
+      },
+      drift: 0.7,
+      fallbackConfidence: 0.55,
+      fallbackEventRisk: 0.24,
+      fallbackHype: 0.18,
+      fallbackSentinelFactor: 1.0,
+      fallbackRegimeHeat: 0,
+      fallbackBudgetRatio: 0.2,
+      gating: {
+        confidenceFloor: 0.35,
+        confidencePenaltyHigh: 0.85,
+        confidencePenaltyLow: 0.4,
+        budgetCeiling: 0.75,
+        budgetMax: 1.25,
+        budgetPenaltyHigh: 0.9,
+        budgetPenaltyLow: 0.45,
+      },
+    },
+  },
+  focus: {
+    label: 'Focus',
+    summary:
+      'High-conviction throttle: 45% base risk, 6× leverage, and confidence-weighted caps that open up only when sentinel heat cooperates.',
+    risk: 45,
+    leverage: 6,
+    edgeMinR: 0.07,
+    slAtr: 1.2,
+    tpAtr: 2.05,
+    fasttp: {
+      minR: 0.2,
+      ret1: -0.0009,
+      ret3: -0.0019,
+      snapAtr: 0.22,
+      cooldown: 48,
+    },
+    sizeMult: {
+      base: 0.95,
+      s: 0.95,
+      m: 1.35,
+      l: 1.85,
+    },
+    funding: {
+      enabled: true,
+      maxLong: 0.001,
+      maxShort: 0.0012,
+    },
+    alpha: {
+      threshold: 0.58,
+      minConf: 0.28,
+      promoteDelta: 0.18,
+      rewardMargin: 0.06,
+    },
+    alphaWarmup: 45,
+    banditEnabled: true,
+    alphaEnabled: true,
+    equityFraction: 0.55,
+    maxOpenGlobal: 0,
+    maxOpenPerSymbol: 1,
+    trendBias: 'with',
+    confidenceSizing: {
+      enabled: true,
+      base: { min: 0.9, max: 3.35, blend: 0.68, exp: 2.35, cap: 3.8 },
+      ranges: {
+        min: [0.8, 1.22],
+        max: [2.5, 4.2],
+        blend: [0.5, 0.85],
+        exp: [1.7, 2.7],
+        cap: [3.0, 4.4],
+        confidence: [0.38, 0.9],
+        eventRisk: [0.08, 0.75],
+        hype: [0.08, 0.7],
+        sentinelFactor: [0.75, 1.7],
+        regimeHeat: [-0.3, 0.7],
+        budgetRatio: [0.1, 1.2],
+      },
+      weights: {
+        confidence: 0.46,
+        eventRisk: 0.18,
+        hype: 0.1,
+        sentinelFactor: 0.1,
+        regimeHeat: 0.08,
+        budgetRatio: 0.08,
+      },
+      drift: 0.78,
+      fallbackConfidence: 0.52,
+      fallbackEventRisk: 0.22,
+      fallbackHype: 0.16,
+      fallbackSentinelFactor: 1.05,
+      fallbackRegimeHeat: 0.05,
+      fallbackBudgetRatio: 0.18,
+      gating: {
+        confidenceFloor: 0.42,
+        confidencePenaltyHigh: 0.88,
+        confidencePenaltyLow: 0.35,
+        budgetCeiling: 0.65,
+        budgetMax: 1.2,
+        budgetPenaltyHigh: 0.92,
+        budgetPenaltyLow: 0.4,
+      },
+      signalBias: 0.05,
+    },
   },
 };
 
@@ -10179,6 +10372,438 @@ function getPresetScaling(preset) {
   return { safeRisk, safeLeverage, ratio, unlimited };
 }
 
+function scaleRange(value, inputRange = [0, 1], outputRange = [0, 1]) {
+  const numeric = Number(value);
+  let [inMin, inMax] = Array.isArray(inputRange) ? inputRange.map(Number) : [0, 1];
+  if (!Number.isFinite(inMin)) inMin = 0;
+  if (!Number.isFinite(inMax)) inMax = 1;
+  if (inMax === inMin) {
+    const [outMin, outMax] = Array.isArray(outputRange) ? outputRange.map(Number) : [0, 1];
+    const midpoint = Number.isFinite(outMin) && Number.isFinite(outMax) ? (outMin + outMax) / 2 : 0.5;
+    return midpoint;
+  }
+  if (inMax < inMin) {
+    [inMin, inMax] = [inMax, inMin];
+  }
+  const normalized = Number.isFinite(numeric) ? (numeric - inMin) / (inMax - inMin) : 0.5;
+  const clamped = clampValue(normalized, 0, 1);
+  let [outMin, outMax] = Array.isArray(outputRange) ? outputRange.map(Number) : [0, 1];
+  if (!Number.isFinite(outMin)) outMin = 0;
+  if (!Number.isFinite(outMax)) outMax = 1;
+  if (outMax < outMin) {
+    [outMin, outMax] = [outMax, outMin];
+  }
+  return outMin + (outMax - outMin) * clamped;
+}
+
+function getPlaybookFeatureValue(playbook, key, fallback = null) {
+  if (!playbook || !key) return fallback;
+  const normalized = key.toString().toLowerCase();
+  const toNumeric = (candidate) => {
+    const numeric = Number(candidate);
+    return Number.isFinite(numeric) ? numeric : null;
+  };
+
+  const direct = toNumeric(playbook[key]);
+  if (direct !== null) {
+    return direct;
+  }
+
+  if (typeof playbook === 'object' && playbook) {
+    for (const [candidateKey, candidateValue] of Object.entries(playbook)) {
+      if (typeof candidateKey === 'string' && candidateKey.toLowerCase() === normalized) {
+        const numeric = toNumeric(candidateValue);
+        if (numeric !== null) return numeric;
+      }
+    }
+  }
+
+  if (Array.isArray(playbook.features)) {
+    for (const feature of playbook.features) {
+      if (!feature || typeof feature !== 'object') continue;
+      const name = (feature.name || feature.key || feature.label || '').toString().toLowerCase();
+      if (name !== normalized) continue;
+      const numeric = toNumeric(feature.value ?? feature.score ?? feature.weight ?? feature.amount);
+      if (numeric !== null) return numeric;
+    }
+  }
+
+  const extraBuckets = [playbook.context, playbook.meta, playbook.snapshot, playbook.metrics];
+  for (const bucket of extraBuckets) {
+    if (!bucket || typeof bucket !== 'object') continue;
+    const bucketDirect = toNumeric(bucket[key]);
+    if (bucketDirect !== null) return bucketDirect;
+    for (const [candidateKey, candidateValue] of Object.entries(bucket)) {
+      if (typeof candidateKey === 'string' && candidateKey.toLowerCase() === normalized) {
+        const numeric = toNumeric(candidateValue);
+        if (numeric !== null) return numeric;
+      }
+    }
+  }
+
+  return fallback;
+}
+
+function deriveConfidenceSizingContext(preset, env = {}) {
+  if (!preset || !preset.confidenceSizing) {
+    return null;
+  }
+  const config = preset.confidenceSizing || {};
+  const context = {
+    confidence: null,
+    confidenceSource: 'default',
+    eventRisk: null,
+    hype: null,
+    sentinelFactor: null,
+    regimeSlope: null,
+    regimeAdx: null,
+    regimeHeat: null,
+    budgetRatio: null,
+    budgetLimit: null,
+    budgetSpent: null,
+  };
+
+  const playbook = lastPlaybookState && typeof lastPlaybookState === 'object' ? lastPlaybookState : null;
+
+  if (playbook) {
+    const playbookConfidence = getPlaybookFeatureValue(playbook, 'confidence', null);
+    const directConfidence = Number(playbook.confidence);
+    if (Number.isFinite(directConfidence)) {
+      context.confidence = clampValue(directConfidence, 0, 1);
+      context.confidenceSource = 'playbook';
+    } else if (playbookConfidence !== null) {
+      context.confidence = clampValue(playbookConfidence, 0, 1);
+      context.confidenceSource = 'playbook';
+    }
+    const eventRisk = getPlaybookFeatureValue(playbook, 'sentinel_event_risk', null);
+    if (eventRisk !== null) {
+      context.eventRisk = clampValue(eventRisk, 0, 1);
+    }
+    const hype = getPlaybookFeatureValue(playbook, 'sentinel_hype', null);
+    if (hype !== null) {
+      context.hype = clampValue(hype, 0, 1);
+    }
+    const sentinelFactor = getPlaybookFeatureValue(playbook, 'sentinel_factor', null);
+    if (sentinelFactor !== null) {
+      context.sentinelFactor = clampValue(sentinelFactor, 0.2, 3.0);
+    }
+    const regimeSlope = getPlaybookFeatureValue(playbook, 'regime_slope', null);
+    if (regimeSlope !== null) {
+      context.regimeSlope = clampValue(regimeSlope, -2, 2);
+    }
+    const regimeAdx = getPlaybookFeatureValue(playbook, 'regime_adx', null);
+    if (regimeAdx !== null) {
+      const normalizedAdx = clampValue(regimeAdx, 0, 100) / 100;
+      context.regimeAdx = clampValue(normalizedAdx, 0, 1);
+    }
+  }
+
+  const fallbackConfidence = Number(config.fallbackConfidence ?? 0.5);
+  if (context.confidence === null) {
+    context.confidence = clampValue(
+      Number.isFinite(fallbackConfidence) ? fallbackConfidence : 0.5,
+      0,
+      1,
+    );
+  }
+  if (context.confidenceSource !== 'playbook') {
+    context.confidenceSource = 'fallback';
+  }
+
+  const fallbackHype = Number(config.fallbackHype ?? 0.18);
+  if (context.hype === null) {
+    context.hype = clampValue(Number.isFinite(fallbackHype) ? fallbackHype : 0.18, 0, 1);
+  }
+
+  const fallbackEventRisk = Number(config.fallbackEventRisk ?? context.hype ?? 0.2);
+  if (context.eventRisk === null) {
+    context.eventRisk = clampValue(Number.isFinite(fallbackEventRisk) ? fallbackEventRisk : 0.2, 0, 1);
+  }
+
+  const fallbackSentinel = Number(config.fallbackSentinelFactor ?? 1.0);
+  if (context.sentinelFactor === null) {
+    context.sentinelFactor = clampValue(
+      Number.isFinite(fallbackSentinel) ? fallbackSentinel : 1.0,
+      0.2,
+      3.0,
+    );
+  }
+
+  const fallbackSlope = Number(config.fallbackRegimeSlope ?? 0);
+  if (context.regimeSlope === null) {
+    context.regimeSlope = clampValue(Number.isFinite(fallbackSlope) ? fallbackSlope : 0, -1.5, 1.5);
+  }
+
+  const fallbackAdx = Number(config.fallbackRegimeAdx ?? 0.45);
+  if (context.regimeAdx === null) {
+    context.regimeAdx = clampValue(Number.isFinite(fallbackAdx) ? fallbackAdx : 0.45, 0, 1);
+  }
+
+  const slopeComponent = Number.isFinite(context.regimeSlope) ? context.regimeSlope : 0;
+  const adxComponent = Number.isFinite(context.regimeAdx) ? context.regimeAdx : 0.45;
+  const eventRiskComponent = Number.isFinite(context.eventRisk) ? context.eventRisk : 0.2;
+  const hypeComponent = Number.isFinite(context.hype) ? context.hype : 0.18;
+  const sentinelComponent = Number.isFinite(context.sentinelFactor) ? context.sentinelFactor - 1 : 0;
+  const rawHeat =
+    slopeComponent * 0.45 +
+    (adxComponent - 0.5) * 0.35 +
+    (eventRiskComponent - 0.25) * 0.25 +
+    (hypeComponent - 0.25) * 0.15 +
+    sentinelComponent * 0.12;
+  context.regimeHeat = clampValue(Number.isFinite(rawHeat) ? rawHeat : 0, -1, 1);
+
+  if (lastAiBudget && typeof lastAiBudget === 'object') {
+    const limit = Number(lastAiBudget.limit);
+    const spent = Number(lastAiBudget.spent);
+    if (Number.isFinite(limit) && limit > 0 && Number.isFinite(spent) && spent >= 0) {
+      context.budgetLimit = limit;
+      context.budgetSpent = clampValue(spent, 0, Math.max(limit, spent));
+      context.budgetRatio = clampValue(spent / limit, 0, 5);
+    } else if (Number.isFinite(spent) && spent >= 0) {
+      context.budgetSpent = clampValue(spent, 0, spent);
+    }
+  }
+
+  if (context.budgetRatio === null && env && env.ASTER_AI_DAILY_BUDGET_USD !== undefined) {
+    const envLimit = Number(env.ASTER_AI_DAILY_BUDGET_USD);
+    if (Number.isFinite(envLimit) && envLimit > 0) {
+      context.budgetLimit = envLimit;
+    }
+  }
+
+  if (context.budgetRatio === null) {
+    const fallbackBudgetRatio = Number(config.fallbackBudgetRatio ?? 0.2);
+    context.budgetRatio = clampValue(
+      Number.isFinite(fallbackBudgetRatio) ? fallbackBudgetRatio : 0.2,
+      0,
+      5,
+    );
+  }
+
+  return context;
+}
+
+function computeConfidenceSizingTargets(preset, context, env = {}) {
+  if (!preset || !preset.confidenceSizing) {
+    return null;
+  }
+  const config = preset.confidenceSizing || {};
+  const envState = env || {};
+  const ranges = config.ranges || {};
+  const weights = config.weights || {};
+  const drift = clampValue(Number.isFinite(Number(config.drift)) ? Number(config.drift) : 0.65, 0, 1);
+  const safeContext = context || deriveConfidenceSizingContext(preset, envState) || {};
+
+  const metrics = {
+    confidence: clampValue(
+      Number.isFinite(Number(safeContext.confidence))
+        ? Number(safeContext.confidence)
+        : Number.isFinite(Number(config.fallbackConfidence))
+        ? Number(config.fallbackConfidence)
+        : 0.5,
+      0,
+      1,
+    ),
+    eventRisk: clampValue(
+      Number.isFinite(Number(safeContext.eventRisk))
+        ? Number(safeContext.eventRisk)
+        : Number.isFinite(Number(config.fallbackEventRisk))
+        ? Number(config.fallbackEventRisk)
+        : 0.2,
+      0,
+      1,
+    ),
+    hype: clampValue(
+      Number.isFinite(Number(safeContext.hype))
+        ? Number(safeContext.hype)
+        : Number.isFinite(Number(config.fallbackHype))
+        ? Number(config.fallbackHype)
+        : 0.18,
+      0,
+      1,
+    ),
+    sentinelFactor: clampValue(
+      Number.isFinite(Number(safeContext.sentinelFactor))
+        ? Number(safeContext.sentinelFactor)
+        : Number.isFinite(Number(config.fallbackSentinelFactor))
+        ? Number(config.fallbackSentinelFactor)
+        : 1.0,
+      0.2,
+      3.0,
+    ),
+    regimeHeat: clampValue(
+      Number.isFinite(Number(safeContext.regimeHeat))
+        ? Number(safeContext.regimeHeat)
+        : Number.isFinite(Number(config.fallbackRegimeHeat))
+        ? Number(config.fallbackRegimeHeat)
+        : 0,
+      -1,
+      1,
+    ),
+    budgetRatio: clampValue(
+      Number.isFinite(Number(safeContext.budgetRatio))
+        ? Number(safeContext.budgetRatio)
+        : Number.isFinite(Number(config.fallbackBudgetRatio))
+        ? Number(config.fallbackBudgetRatio)
+        : 0.2,
+      0,
+      5,
+    ),
+  };
+
+  const rangeFor = (name, fallbackLow, fallbackHigh) => {
+    const candidate = ranges[name];
+    if (Array.isArray(candidate) && candidate.length >= 2) {
+      let [low, high] = candidate.map(Number);
+      if (!Number.isFinite(low) || !Number.isFinite(high)) {
+        return [fallbackLow, fallbackHigh];
+      }
+      if (high < low) {
+        [low, high] = [high, low];
+      }
+      if (low === high) {
+        const delta = Math.abs(low) * 0.1 || 0.1;
+        return [low - delta, high + delta];
+      }
+      return [low, high];
+    }
+    return [fallbackLow, fallbackHigh];
+  };
+
+  let weightedSum = 0;
+  let totalWeight = 0;
+  for (const [key, weightRaw] of Object.entries(weights)) {
+    const weight = Number(weightRaw);
+    if (!Number.isFinite(weight) || weight <= 0) {
+      continue;
+    }
+    let score = 0.5;
+    if (key === 'confidence') {
+      score = scaleRange(metrics.confidence, rangeFor('confidence', 0, 1), [0, 1]);
+    } else if (key === 'eventRisk') {
+      score = scaleRange(metrics.eventRisk, rangeFor('eventRisk', 0, 1), [0, 1]);
+    } else if (key === 'hype') {
+      score = scaleRange(metrics.hype, rangeFor('hype', 0, 1), [0, 1]);
+    } else if (key === 'sentinelFactor') {
+      score = scaleRange(metrics.sentinelFactor, rangeFor('sentinelFactor', 0.6, 1.6), [0, 1]);
+    } else if (key === 'regimeHeat') {
+      score = scaleRange(metrics.regimeHeat, rangeFor('regimeHeat', -1, 1), [0, 1]);
+    } else if (key === 'budgetRatio') {
+      score = 1 - scaleRange(metrics.budgetRatio, rangeFor('budgetRatio', 0, 1.2), [0, 1]);
+    } else if (Object.prototype.hasOwnProperty.call(metrics, key)) {
+      score = scaleRange(metrics[key], rangeFor(key, 0, 1), [0, 1]);
+    }
+    weightedSum += score * weight;
+    totalWeight += weight;
+  }
+
+  let signal = totalWeight > 0 ? clampValue(weightedSum / totalWeight, 0, 1) : 0.5;
+
+  const gating = config.gating || {};
+  if (Number.isFinite(metrics.confidence) && gating.confidenceFloor !== undefined) {
+    const floor = Number(gating.confidenceFloor);
+    if (Number.isFinite(floor) && metrics.confidence < floor) {
+      const high = Number.isFinite(Number(gating.confidencePenaltyHigh))
+        ? Number(gating.confidencePenaltyHigh)
+        : 0.85;
+      const low = Number.isFinite(Number(gating.confidencePenaltyLow))
+        ? Number(gating.confidencePenaltyLow)
+        : 0.35;
+      const normalized = scaleRange(metrics.confidence, [0, floor], [0, 1]);
+      const penalty = clampValue(low + (high - low) * normalized, 0.2, 1);
+      signal *= penalty;
+    }
+  }
+  if (Number.isFinite(metrics.budgetRatio) && gating.budgetCeiling !== undefined) {
+    const ceiling = Number(gating.budgetCeiling);
+    const upper = Number.isFinite(Number(gating.budgetMax)) ? Number(gating.budgetMax) : ceiling + 0.6;
+    if (Number.isFinite(ceiling) && metrics.budgetRatio > ceiling) {
+      const high = Number.isFinite(Number(gating.budgetPenaltyHigh))
+        ? Number(gating.budgetPenaltyHigh)
+        : 0.9;
+      const low = Number.isFinite(Number(gating.budgetPenaltyLow)) ? Number(gating.budgetPenaltyLow) : 0.45;
+      const normalized = scaleRange(metrics.budgetRatio, [ceiling, upper], [0, 1]);
+      const penalty = clampValue(high + (low - high) * normalized, 0.2, 1);
+      signal *= penalty;
+    }
+  }
+  if (Number.isFinite(Number(config.signalBias))) {
+    signal = clampValue(signal + Number(config.signalBias), 0, 1);
+  }
+
+  const computeTarget = (rangeName, baseKey, fallbackRange) => {
+    const baseValue = Number(config.base?.[baseKey]);
+    const [low, high] = rangeFor(rangeName, fallbackRange[0], fallbackRange[1]);
+    const dynamic = scaleRange(signal, [0, 1], [low, high]);
+    if (Number.isFinite(baseValue)) {
+      return baseValue * (1 - drift) + dynamic * drift;
+    }
+    return dynamic;
+  };
+
+  const target = {
+    min: computeTarget('min', 'min', [0.85, 1.15]),
+    max: computeTarget('max', 'max', [2.2, 3.6]),
+    blend: computeTarget('blend', 'blend', [0.45, 0.8]),
+    exp: computeTarget('exp', 'exp', [1.5, 2.5]),
+    cap: computeTarget('cap', 'cap', [2.6, 4.2]),
+  };
+
+  target.min = clampValue(target.min, 0.5, 1.5);
+  target.max = clampValue(target.max, target.min + 0.1, 5.0);
+  target.blend = clampValue(target.blend, 0.2, 0.95);
+  target.exp = clampValue(target.exp, 1.0, 3.5);
+  target.cap = clampValue(Math.max(target.cap, target.max + 0.05), target.max + 0.05, 5.5);
+
+  const currentValues = {
+    min: getEnvNumber(envState, 'ASTER_CONFIDENCE_SIZE_MIN', target.min),
+    max: getEnvNumber(envState, 'ASTER_CONFIDENCE_SIZE_MAX', target.max),
+    blend: getEnvNumber(envState, 'ASTER_CONFIDENCE_SIZE_BLEND', target.blend),
+    exp: getEnvNumber(envState, 'ASTER_CONFIDENCE_SIZE_EXP', target.exp),
+    cap: getEnvNumber(envState, 'ASTER_SIZE_MULT_CAP', target.cap),
+  };
+
+  const noteParts = [];
+  if (Number.isFinite(metrics.confidence)) {
+    const confidenceLabel = safeContext.confidenceSource === 'playbook' ? ' (playbook)' : '';
+    noteParts.push(`Confidence ${formatNumber(metrics.confidence, 2)}${confidenceLabel}`);
+  }
+  if (Number.isFinite(metrics.eventRisk)) {
+    noteParts.push(`Event risk ${(metrics.eventRisk * 100).toFixed(0)}%`);
+  }
+  if (Number.isFinite(metrics.hype)) {
+    noteParts.push(`Hype ${(metrics.hype * 100).toFixed(0)}%`);
+  }
+  if (Number.isFinite(metrics.sentinelFactor)) {
+    noteParts.push(`Sentinel factor ${formatNumber(metrics.sentinelFactor, 2)}×`);
+  }
+  if (Number.isFinite(metrics.regimeHeat)) {
+    noteParts.push(`Regime heat ${formatNumber(metrics.regimeHeat, 2)}`);
+  }
+  if (Number.isFinite(metrics.budgetRatio)) {
+    noteParts.push(`Budget load ${(clampValue(metrics.budgetRatio, 0, 5) * 100).toFixed(0)}%`);
+  }
+  const contextNote = noteParts.length ? `Context — ${noteParts.join(' · ')}` : '';
+
+  return {
+    enabled: config.enabled !== false,
+    enabledEnv: getEnvBoolean(envState, 'ASTER_CONFIDENCE_SIZING', true),
+    target,
+    current: currentValues,
+    note: contextNote,
+    context: {
+      ...safeContext,
+      confidence: metrics.confidence,
+      eventRisk: metrics.eventRisk,
+      hype: metrics.hype,
+      sentinelFactor: metrics.sentinelFactor,
+      regimeHeat: metrics.regimeHeat,
+      budgetRatio: metrics.budgetRatio,
+      signal,
+    },
+  };
+}
+
 function getEnvNumber(env, key, fallback) {
   if (!env || env[key] === undefined || env[key] === null || env[key] === '') {
     return fallback;
@@ -10385,6 +11010,44 @@ function renderPresetMeta(presetKey = selectedPreset) {
       });
     }
 
+    const envState = currentConfig?.env ?? {};
+    const sizingContext = deriveConfidenceSizingContext(preset, envState);
+    const sizingTargets = computeConfidenceSizingTargets(preset, sizingContext, envState);
+    if (sizingTargets) {
+      const { target: sizingTarget, current: sizingCurrent, note: sizingNote, enabledEnv } = sizingTargets;
+      const displayValue = `${formatMultiplierValue(sizingTarget.min)} → ${formatMultiplierValue(sizingTarget.max)}`;
+      const detailParts = [
+        `Blend ${formatNumber(sizingTarget.blend, 2)}`,
+        `Exp ${formatNumber(sizingTarget.exp, 2)}`,
+        `Cap ${formatMultiplierValue(sizingTarget.cap)}`,
+      ];
+      const noteParts = [];
+      if (!enabledEnv) {
+        noteParts.push('Current: disabled');
+      }
+      const differs =
+        enabledEnv &&
+        (numbersDiffer(sizingCurrent.min, sizingTarget.min, 1e-3) ||
+          numbersDiffer(sizingCurrent.max, sizingTarget.max, 1e-3) ||
+          numbersDiffer(sizingCurrent.blend, sizingTarget.blend, 1e-3) ||
+          numbersDiffer(sizingCurrent.exp, sizingTarget.exp, 1e-3) ||
+          numbersDiffer(sizingCurrent.cap, sizingTarget.cap, 1e-3));
+      if (differs) {
+        noteParts.push(
+          `Current: min ${formatMultiplierValue(sizingCurrent.min)} / max ${formatMultiplierValue(sizingCurrent.max)}, blend ${formatNumber(sizingCurrent.blend, 2)}, exp ${formatNumber(sizingCurrent.exp, 2)}, cap ${formatMultiplierValue(sizingCurrent.cap)}`,
+        );
+      }
+      if (sizingNote) {
+        noteParts.push(sizingNote);
+      }
+      appendPresetMetaItem(presetMlDetails, {
+        label: 'Confidence sizing',
+        value: displayValue,
+        detail: detailParts.join(' · '),
+        note: noteParts.join(' · '),
+      });
+    }
+
     if (!presetMlDetails.children.length) {
       const empty = document.createElement('li');
       empty.className = 'preset-meta-empty';
@@ -10480,6 +11143,18 @@ function buildQuickSetupPayload() {
     ASTER_ALPHA_REWARD_MARGIN: toFixedString(preset.alpha.rewardMargin, 2),
     ASTER_ALPHA_WARMUP: toFixedString(preset?.alphaWarmup ?? 40, 0),
   };
+
+  const envState = currentConfig?.env ?? {};
+  const sizingContext = deriveConfidenceSizingContext(preset, envState);
+  const sizingTargets = computeConfidenceSizingTargets(preset, sizingContext, envState);
+  if (sizingTargets) {
+    payload.ASTER_CONFIDENCE_SIZING = sizingTargets.enabled === false ? 'false' : 'true';
+    payload.ASTER_CONFIDENCE_SIZE_MIN = toFixedString(sizingTargets.target.min, 2);
+    payload.ASTER_CONFIDENCE_SIZE_MAX = toFixedString(sizingTargets.target.max, 2);
+    payload.ASTER_CONFIDENCE_SIZE_BLEND = toFixedString(sizingTargets.target.blend, 2);
+    payload.ASTER_CONFIDENCE_SIZE_EXP = toFixedString(sizingTargets.target.exp, 2);
+    payload.ASTER_SIZE_MULT_CAP = toFixedString(sizingTargets.target.cap, 2);
+  }
 
   if (preset.unlimitedBudget) {
     payload.ASTER_AI_DAILY_BUDGET_USD = '0';
