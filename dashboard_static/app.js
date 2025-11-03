@@ -159,7 +159,7 @@ const TRANSLATIONS = {
     'active.table.leverage': 'Плечо',
     'active.table.margin': 'Маржа',
     'active.table.pnl': 'PNL (ROE%)',
-    'active.table.tpsl': 'TP/SL позиции',
+    'active.table.tpsl': 'TP/SL',
     'active.table.distance': 'Дистанция до TP/SL',
     'status.title': 'Статус',
     'status.state': 'Состояние',
@@ -412,7 +412,7 @@ const TRANSLATIONS = {
     'active.table.leverage': 'Hebel',
     'active.table.margin': 'Margin',
     'active.table.pnl': 'PNL (ROE%)',
-    'active.table.tpsl': 'TP/SL der Position',
+    'active.table.tpsl': 'TP/SL',
     'active.table.distance': 'TP/SL-Distanz',
     'status.title': 'Status',
     'status.state': 'Zustand',
@@ -668,7 +668,7 @@ const TRANSLATIONS = {
     'active.table.leverage': '레버리지',
     'active.table.margin': '증거금',
     'active.table.pnl': 'PNL (ROE%)',
-    'active.table.tpsl': '포지션 TP/SL',
+    'active.table.tpsl': 'TP/SL',
     'active.table.distance': 'TP/SL 거리',
     'status.title': '상태',
     'status.state': '상태',
@@ -924,7 +924,7 @@ const TRANSLATIONS = {
     'active.table.leverage': 'Effet de levier',
     'active.table.margin': 'Marge',
     'active.table.pnl': 'PNL (ROE %)',
-    'active.table.tpsl': 'TP/SL de la position',
+    'active.table.tpsl': 'TP/SL',
     'active.table.distance': 'Distance TP/SL',
     'status.title': 'Statut',
     'status.state': 'État',
@@ -1180,7 +1180,7 @@ const TRANSLATIONS = {
     'active.table.leverage': 'Apalancamiento',
     'active.table.margin': 'Margen',
     'active.table.pnl': 'PNL (ROE%)',
-    'active.table.tpsl': 'TP/SL de la posición',
+    'active.table.tpsl': 'TP/SL',
     'active.table.distance': 'Distancia TP/SL',
     'status.title': 'Estado',
     'status.state': 'Estado',
@@ -1435,7 +1435,7 @@ const TRANSLATIONS = {
     'active.table.leverage': 'Kaldıraç',
     'active.table.margin': 'Marj',
     'active.table.pnl': 'PNL (ROE%)',
-    'active.table.tpsl': 'Pozisyon TP/SL',
+    'active.table.tpsl': 'TP/SL',
     'active.table.distance': 'TP/SL Mesafesi',
     'status.title': 'Durum',
     'status.state': 'Durum',
@@ -1684,7 +1684,7 @@ const TRANSLATIONS = {
     'active.table.leverage': '杠杆',
     'active.table.margin': '保证金',
     'active.table.pnl': '盈亏 (ROE%)',
-    'active.table.tpsl': '仓位止盈/止损',
+    'active.table.tpsl': 'TP/SL',
     'active.table.distance': 'TP/SL 距离',
     'status.title': '状态',
     'status.state': '运行状态',
@@ -3871,8 +3871,7 @@ const ACTIVE_POSITION_FIELD_LABELS = {
   leverage: 'Leverage',
   margin: 'Margin',
   pnl: 'PNL (ROE%)',
-  brackets: 'TP/SL for position',
-  distance: 'TP/SL Distance',
+  brackets: 'TP/SL',
 };
 
 function applyActivePositionLabel(cell, key) {
@@ -4603,6 +4602,28 @@ function formatBracketDistance(bracketField, markField, fallbackField) {
   };
 }
 
+function computeBracketProgress(bracketField, entryField, markField) {
+  const targetNumeric = resolveFieldNumeric(bracketField);
+  const entryNumeric = resolveFieldNumeric(entryField);
+  const markNumeric = resolveFieldNumeric(markField);
+
+  if (!Number.isFinite(targetNumeric) || !Number.isFinite(entryNumeric) || !Number.isFinite(markNumeric)) {
+    return null;
+  }
+
+  const totalDistance = Math.abs(targetNumeric - entryNumeric);
+  if (totalDistance === 0) {
+    return Math.abs(targetNumeric - markNumeric) < 1e-8 ? 100 : 0;
+  }
+
+  const remainingDistance = Math.abs(targetNumeric - markNumeric);
+  const rawProgress = (1 - remainingDistance / totalDistance) * 100;
+  if (!Number.isFinite(rawProgress)) {
+    return null;
+  }
+  return Math.max(0, Math.min(100, rawProgress));
+}
+
 function normalizeSymbolValue(symbol) {
   if (symbol === undefined || symbol === null) return '';
   return symbol.toString().trim().toUpperCase();
@@ -4993,7 +5014,7 @@ function updateActivePositionsView() {
     const quoteSuffix = quoteAsset ? ` ${quoteAsset}` : '';
 
     const tpSlCell = document.createElement('td');
-    tpSlCell.className = 'numeric active-positions-brackets';
+    tpSlCell.className = 'numeric active-positions-brackets active-positions-progress';
     const nextTpField = pickBracketNumericField(
       position,
       ACTIVE_POSITION_ALIASES.nextTp || [],
@@ -5008,8 +5029,60 @@ function updateActivePositionsView() {
     const slDisplay = formatBracketLevel(stopField);
     const tpDistanceInfo = formatBracketDistance(nextTpField, markField, entryField);
     const slDistanceInfo = formatBracketDistance(stopField, markField, entryField);
+    const tpProgress = computeBracketProgress(nextTpField, entryField, markField);
+    const slProgress = computeBracketProgress(stopField, entryField, markField);
 
-    const buildBracketRow = (labelText, primaryText, secondaryText) => {
+    const buildDistanceText = (info) => {
+      if (!info) return null;
+      const parts = [];
+      if (info.priceText) {
+        parts.push(`${info.priceText}${quoteSuffix}`.trim());
+      }
+      if (info.percentText) {
+        parts.push(info.percentText);
+      }
+      if (!parts.length) {
+        return null;
+      }
+      return { text: parts.join(' · '), tone: info.tone || null };
+    };
+
+    const createProgressMeter = (tone, progress) => {
+      const meter = document.createElement('div');
+      meter.className = `active-positions-meter active-positions-meter-${tone}`;
+      meter.setAttribute('role', 'progressbar');
+      meter.setAttribute('aria-valuemin', '0');
+      meter.setAttribute('aria-valuemax', '100');
+
+      const scale = document.createElement('div');
+      scale.className = 'active-positions-meter-scale';
+      ['1', '50', '100'].forEach((tick) => {
+        const tickNode = document.createElement('span');
+        tickNode.textContent = tick;
+        scale.append(tickNode);
+      });
+
+      const track = document.createElement('div');
+      track.className = 'active-positions-meter-track';
+      const fill = document.createElement('div');
+      fill.className = 'active-positions-meter-fill';
+
+      if (Number.isFinite(progress)) {
+        const width = Math.max(0, Math.min(100, progress));
+        fill.style.width = `${width}%`;
+        meter.setAttribute('aria-valuenow', width.toFixed(0));
+      } else {
+        fill.style.width = '0%';
+        meter.classList.add('active-positions-meter-empty');
+        meter.setAttribute('aria-valuetext', '–');
+      }
+
+      track.append(fill);
+      meter.append(scale, track);
+      return meter;
+    };
+
+    const buildBracketRow = (labelText, primaryText, secondaryText, meterTone, progress) => {
       const bracketRow = document.createElement('div');
       bracketRow.className = 'active-positions-bracket';
 
@@ -5017,32 +5090,48 @@ function updateActivePositionsView() {
       label.className = 'active-positions-bracket-label';
       label.textContent = labelText;
 
-      const valueWrapper = document.createElement('span');
+      const valueWrapper = document.createElement('div');
       valueWrapper.className = 'active-positions-bracket-values';
 
-      const value = document.createElement('span');
-      value.className = 'active-positions-bracket-value';
-      value.textContent = primaryText;
-      valueWrapper.append(value);
+      if (primaryText) {
+        const value = document.createElement('span');
+        value.className = 'active-positions-bracket-value';
+        value.textContent = primaryText;
+        valueWrapper.append(value);
+      }
 
       if (secondaryText) {
         const secondary = document.createElement('span');
         secondary.className = 'active-positions-bracket-subvalue';
-        secondary.textContent = secondaryText;
+        secondary.textContent = secondaryText.text;
+        if (secondaryText.tone === 'profit') {
+          secondary.classList.add('tone-profit');
+        } else if (secondaryText.tone === 'loss') {
+          secondary.classList.add('tone-loss');
+        }
         valueWrapper.append(secondary);
       }
 
+      valueWrapper.append(createProgressMeter(meterTone, progress));
       bracketRow.append(label, valueWrapper);
       return bracketRow;
     };
 
     let hasBracketLevel = false;
     if (tpDisplay && tpDisplay !== '–') {
-      tpSlCell.append(buildBracketRow('TP', tpDisplay));
+      const primary = `${tpDisplay}${quoteSuffix}`.trim();
+      const secondary = buildDistanceText(tpDistanceInfo);
+      tpSlCell.append(
+        buildBracketRow('TP', primary, secondary, 'tp', tpProgress),
+      );
       hasBracketLevel = true;
     }
     if (slDisplay && slDisplay !== '–') {
-      tpSlCell.append(buildBracketRow('SL', slDisplay));
+      const primary = `${slDisplay}${quoteSuffix}`.trim();
+      const secondary = buildDistanceText(slDistanceInfo);
+      tpSlCell.append(
+        buildBracketRow('SL', primary, secondary, 'sl', slProgress),
+      );
       hasBracketLevel = true;
     }
     if (!hasBracketLevel) {
@@ -5051,34 +5140,6 @@ function updateActivePositionsView() {
     }
     applyActivePositionLabel(tpSlCell, 'brackets');
     row.append(tpSlCell);
-
-    const tpSlDistanceCell = document.createElement('td');
-    tpSlDistanceCell.className = 'numeric active-positions-brackets active-positions-distance';
-    let hasBracketDistance = false;
-    if (tpDistanceInfo && (tpDistanceInfo.priceText || tpDistanceInfo.percentText)) {
-      const hasSecondary = tpDistanceInfo.priceText && tpDistanceInfo.percentText;
-      const primaryText = tpDistanceInfo.priceText
-        ? `${tpDistanceInfo.priceText}${quoteSuffix}`.trim()
-        : tpDistanceInfo.percentText || '';
-      const secondaryText = hasSecondary ? tpDistanceInfo.percentText : null;
-      tpSlDistanceCell.append(buildBracketRow('TP', primaryText, secondaryText));
-      hasBracketDistance = true;
-    }
-    if (slDistanceInfo && (slDistanceInfo.priceText || slDistanceInfo.percentText)) {
-      const hasSecondary = slDistanceInfo.priceText && slDistanceInfo.percentText;
-      const primaryText = slDistanceInfo.priceText
-        ? `${slDistanceInfo.priceText}${quoteSuffix}`.trim()
-        : slDistanceInfo.percentText || '';
-      const secondaryText = hasSecondary ? slDistanceInfo.percentText : null;
-      tpSlDistanceCell.append(buildBracketRow('SL', primaryText, secondaryText));
-      hasBracketDistance = true;
-    }
-    if (!hasBracketDistance) {
-      tpSlDistanceCell.classList.add('active-positions-brackets-empty');
-      tpSlDistanceCell.textContent = '–';
-    }
-    applyActivePositionLabel(tpSlDistanceCell, 'distance');
-    row.append(tpSlDistanceCell);
 
     activePositionsRows.append(row);
   });

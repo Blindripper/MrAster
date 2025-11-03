@@ -1000,9 +1000,9 @@ body.paper-mode .hero-paper-toggle span {
 .active-positions-brackets {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: stretch;
   justify-content: flex-end;
-  gap: 0.45rem;
+  gap: 0.6rem;
 }
 
 .active-positions-brackets.active-positions-brackets-empty {
@@ -1012,16 +1012,11 @@ body.paper-mode .hero-paper-toggle span {
   color: var(--text-muted);
 }
 
-.active-positions-distance {
-  gap: 0.45rem;
-}
-
 .active-positions-bracket {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: flex-end;
-  gap: 0.45rem;
-  white-space: nowrap;
+  gap: 0.65rem;
 }
 
 .active-positions-bracket-label {
@@ -1029,13 +1024,16 @@ body.paper-mode .hero-paper-toggle span {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-muted);
+  padding-top: 0.15rem;
 }
 
 .active-positions-bracket-values {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 0.2rem;
+  align-items: stretch;
+  gap: 0.35rem;
+  text-align: right;
+  width: min(16rem, 100%);
 }
 
 .active-positions-bracket-value {
@@ -1046,6 +1044,77 @@ body.paper-mode .hero-paper-toggle span {
   font-size: 0.72rem;
   letter-spacing: 0.02em;
   color: var(--text-muted);
+}
+
+.active-positions-progress {
+  min-width: min(14rem, 100%);
+}
+
+.active-positions-meter {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
+  width: 100%;
+}
+
+.active-positions-meter-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  color: var(--text-subtle);
+}
+
+.active-positions-meter-track {
+  position: relative;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.22);
+  overflow: hidden;
+}
+
+.active-positions-meter-track::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0.16) 0%,
+    rgba(255, 255, 255, 0.16) 1%,
+    transparent 1%,
+    transparent 49%,
+    rgba(255, 255, 255, 0.2) 50%,
+    transparent 51%,
+    transparent 99%,
+    rgba(255, 255, 255, 0.16) 99%,
+    rgba(255, 255, 255, 0.16) 100%
+  );
+  pointer-events: none;
+}
+
+.active-positions-meter-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: inherit;
+  transition: width 0.35s ease;
+  background: linear-gradient(90deg, rgba(245, 196, 107, 0.6), rgba(245, 196, 107, 0.85));
+}
+
+.active-positions-meter-tp .active-positions-meter-fill {
+  background: linear-gradient(90deg, rgba(74, 222, 128, 0.7), rgba(34, 197, 94, 0.95));
+}
+
+.active-positions-meter-sl .active-positions-meter-fill {
+  background: linear-gradient(90deg, rgba(248, 113, 113, 0.7), rgba(239, 68, 68, 0.95));
+}
+
+.active-positions-meter-empty .active-positions-meter-track {
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.active-positions-meter-empty .active-positions-meter-fill {
+  background: rgba(148, 163, 184, 0.16);
 }
 
 .active-positions-empty {
