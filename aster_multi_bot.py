@@ -236,7 +236,7 @@ CONFIDENCE_SIZING_ENABLED = os.getenv("ASTER_CONFIDENCE_SIZING", "true").lower()
     "yes",
     "on",
 )
-CONFIDENCE_SIZING_MIN = max(0.0, float(os.getenv("ASTER_CONFIDENCE_SIZE_MIN", "3.0")))
+CONFIDENCE_SIZING_MIN = max(0.0, float(os.getenv("ASTER_CONFIDENCE_SIZE_MIN", "1.0")))
 CONFIDENCE_SIZING_MAX = max(
     CONFIDENCE_SIZING_MIN,
     float(os.getenv("ASTER_CONFIDENCE_SIZE_MAX", "3.0")),
