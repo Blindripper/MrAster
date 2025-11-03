@@ -102,6 +102,8 @@ const xNewsStatus = document.getElementById('x-news-status');
 const xNewsLogContainer = document.getElementById('x-news-log');
 const xNewsLogList = document.getElementById('x-news-log-list');
 const xNewsLogEmpty = document.getElementById('x-news-log-empty');
+const xNewsTopCoins = document.getElementById('x-news-top-coins');
+const xNewsTopCoinsList = document.getElementById('x-news-top-coins-list');
 const MEME_COMPOSER_WINDOW_NAME = 'mraster-meme-composer';
 const MEME_COMPOSER_WINDOW_FEATURES =
   'width=920,height=1080,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes';
@@ -124,6 +126,9 @@ const X_NEWS_LOG_LIMIT = 80;
 const X_NEWS_COMPACT_FORMATTER = typeof Intl !== 'undefined'
   ? new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 })
   : null;
+const X_NEWS_TOP_LIMIT = 5;
+
+const xNewsEngagementTotals = new Map();
 
 const TRANSLATIONS = {
   ru: {
@@ -380,6 +385,7 @@ const TRANSLATIONS = {
     'xNews.enabled': 'X News активированы',
     'xNews.hint': 'Перед включением поместите экспорт cookies <code>{{file}}</code> рядом с ботом.',
     'xNews.hintActive': 'X News активны. Убедитесь, что <code>{{file}}</code> остаётся рядом с ботом.',
+    'xNews.topCoins.label': 'Топ монет (❤️+🔁+💬)',
     'xNews.error': 'Не удалось включить X News',
     'logs.activity.title': 'Лента активности',
     'logs.activity.subtitle': 'Ключевые сделки, предупреждения и события высокого сигнала.',
@@ -644,6 +650,7 @@ const TRANSLATIONS = {
     'xNews.enabled': 'X News aktiviert',
     'xNews.hint': 'Lege die Cookie-Datei <code>{{file}}</code> vor dem Aktivieren neben den Bot.',
     'xNews.hintActive': 'X News sind aktiv. Stelle sicher, dass <code>{{file}}</code> beim Bot liegt.',
+    'xNews.topCoins.label': 'Top-Coins (❤️+🔁+💬)',
     'xNews.error': 'X News konnten nicht aktiviert werden',
     'logs.activity.title': 'Aktivitätsfeed',
     'logs.activity.subtitle': 'Wichtige Trades, Warnungen und Hochsignal-Ereignisse.',
@@ -910,6 +917,7 @@ const TRANSLATIONS = {
     'xNews.enabled': 'X News 활성화됨',
     'xNews.hint': '활성화 전에 <code>{{file}}</code> 쿠키 내보내기를 봇과 같은 위치에 두세요.',
     'xNews.hintActive': 'X News가 활성화되었습니다. <code>{{file}}</code> 파일이 봇 옆에 있는지 확인하세요.',
+    'xNews.topCoins.label': '상위 코인 (❤️+🔁+💬)',
     'xNews.error': 'X News를 활성화할 수 없습니다',
     'logs.activity.title': '활동 피드',
     'logs.activity.subtitle': '핵심 거래, 경고, 하이 시그널 이벤트.',
@@ -1176,6 +1184,7 @@ const TRANSLATIONS = {
     'xNews.enabled': 'X News activé',
     'xNews.hint': 'Avant d’activer, placez l’export cookie <code>{{file}}</code> à côté du bot.',
     'xNews.hintActive': 'X News est actif. Assurez-vous que <code>{{file}}</code> reste près du bot.',
+    'xNews.topCoins.label': 'Meilleurs coins (❤️+🔁+💬)',
     'xNews.error': 'Impossible d’activer X News',
     'logs.activity.title': 'Flux d’activité',
     'logs.activity.subtitle': 'Trades clés, alertes et événements à fort signal.',
@@ -1442,6 +1451,7 @@ const TRANSLATIONS = {
     'xNews.enabled': 'X News activado',
     'xNews.hint': 'Antes de activar, coloca la exportación de cookies <code>{{file}}</code> junto al bot.',
     'xNews.hintActive': 'X News está activo. Asegúrate de que <code>{{file}}</code> permanezca junto al bot.',
+    'xNews.topCoins.label': 'Mejores monedas (❤️+🔁+💬)',
     'xNews.error': 'No se pudo activar X News',
     'logs.activity.title': 'Feed de actividad',
     'logs.activity.subtitle': 'Operaciones clave, alertas y eventos de alta señal.',
@@ -1700,6 +1710,7 @@ const TRANSLATIONS = {
     'xNews.enabled': 'X News etkin',
     'xNews.hint': 'Etkinleştirmeden önce <code>{{file}}</code> çerez dışa aktarımını botun yanına yerleştir.',
     'xNews.hintActive': 'X News etkin. <code>{{file}}</code> dosyasının botla birlikte kaldığından emin ol.',
+    'xNews.topCoins.label': 'En iyi coinler (❤️+🔁+💬)',
     'xNews.error': 'X News etkinleştirilemedi',
     'logs.activity.title': 'Aktivite akışı',
     'logs.activity.subtitle': 'Kilit işlemler, uyarılar ve yüksek sinyal olayları.',
@@ -1961,6 +1972,7 @@ const TRANSLATIONS = {
     'xNews.enabled': 'X News 已启用',
     'xNews.hint': '启用前请将 <code>{{file}}</code> cookie 导出文件放在机器人目录旁。',
     'xNews.hintActive': 'X News 已启用。请确保 <code>{{file}}</code> 始终与机器人放在一起。',
+    'xNews.topCoins.label': '热门币种 (❤️+🔁+💬)',
     'xNews.error': '无法启用 X News',
     'logs.activity.title': '活动信息流',
     'logs.activity.subtitle': '关键交易、预警和高信号事件。',
@@ -3491,6 +3503,122 @@ function formatXNewsPercent(value) {
   return `${bounded.toFixed(digits)}%`;
 }
 
+function normalizeXNewsEngagement(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 0;
+  if (num <= 0) return 0;
+  return Math.round(num);
+}
+
+function extractXNewsEngagementTotals(data, fallbackEvents = []) {
+  if (!data) return null;
+  const readTotals = (source) => {
+    if (!source || typeof source !== 'object') return null;
+    const likes = normalizeXNewsEngagement(source.likes);
+    const retweets = normalizeXNewsEngagement(source.retweets);
+    const replies = normalizeXNewsEngagement(source.replies);
+    const total = likes + retweets + replies;
+    return { likes, retweets, replies, total };
+  };
+  const events = Array.isArray(fallbackEvents) ? fallbackEvents : [];
+  const dataEvents = Array.isArray(data.events) ? data.events : [];
+  const hasEvents = events.length > 0 || dataEvents.length > 0;
+  const candidates = [data.engagement, data.meta?.engagement_totals, data.meta?.engagement];
+  for (const candidate of candidates) {
+    const totals = readTotals(candidate);
+    if (totals && (totals.total > 0 || hasEvents)) {
+      return totals;
+    }
+  }
+  if (!hasEvents) {
+    return null;
+  }
+  const sourceEvents = events.length > 0 ? events : dataEvents;
+  if (!sourceEvents.length) {
+    return { likes: 0, retweets: 0, replies: 0, total: 0 };
+  }
+  const totals = { likes: 0, retweets: 0, replies: 0 };
+  sourceEvents.forEach((event) => {
+    if (!event || typeof event !== 'object') return;
+    totals.likes += normalizeXNewsEngagement(event.likes);
+    totals.retweets += normalizeXNewsEngagement(event.retweets);
+    totals.replies += normalizeXNewsEngagement(event.replies);
+  });
+  totals.total = totals.likes + totals.retweets + totals.replies;
+  return totals;
+}
+
+function updateXNewsTopCoinsDisplay() {
+  if (!xNewsTopCoins || !xNewsTopCoinsList) return;
+  xNewsTopCoinsList.innerHTML = '';
+  const entries = Array.from(xNewsEngagementTotals.entries()).filter(([, totals]) => {
+    return totals && totals.total > 0;
+  });
+  entries.sort((a, b) => b[1].total - a[1].total);
+  const topEntries = entries.slice(0, X_NEWS_TOP_LIMIT);
+  if (!topEntries.length) {
+    xNewsTopCoins.hidden = true;
+    return;
+  }
+  topEntries.forEach(([symbol, totals]) => {
+    const item = document.createElement('li');
+    item.className = 'x-news-top__item';
+    const symbolEl = document.createElement('strong');
+    symbolEl.className = 'x-news-top__symbol';
+    symbolEl.textContent = symbol;
+    const statsEl = document.createElement('span');
+    statsEl.className = 'x-news-top__stats';
+    const statMeta = [
+      ['❤️', totals.likes],
+      ['🔁', totals.retweets],
+      ['💬', totals.replies],
+    ];
+    statMeta.forEach(([icon, value]) => {
+      const stat = document.createElement('span');
+      stat.className = 'x-news-top__stat';
+      stat.textContent = `${icon} ${formatXNewsCompactNumber(value) || value.toString()}`;
+      if (Number.isFinite(value)) {
+        try {
+          stat.title = `${value.toLocaleString()}`;
+        } catch (err) {
+          stat.title = `${value}`;
+        }
+      }
+      statsEl.append(stat);
+    });
+    item.append(symbolEl, statsEl);
+    xNewsTopCoinsList.append(item);
+  });
+  xNewsTopCoins.hidden = false;
+}
+
+function clearXNewsTopCoins() {
+  xNewsEngagementTotals.clear();
+  if (xNewsTopCoinsList) {
+    xNewsTopCoinsList.innerHTML = '';
+  }
+  if (xNewsTopCoins) {
+    xNewsTopCoins.hidden = true;
+  }
+}
+
+function registerXNewsEngagementTotals(result, events) {
+  if (!result) return;
+  const symbolRaw = (result.symbol || result.query || '').toString().trim();
+  if (!symbolRaw) return;
+  const symbol = symbolRaw.toUpperCase();
+  const totals = extractXNewsEngagementTotals(result, events);
+  if (!totals || totals.total <= 0) {
+    if (xNewsEngagementTotals.has(symbol)) {
+      xNewsEngagementTotals.delete(symbol);
+      updateXNewsTopCoinsDisplay();
+    }
+    return;
+  }
+  xNewsEngagementTotals.set(symbol, totals);
+  updateXNewsTopCoinsDisplay();
+}
+
 function parseXNewsResultPayload(raw) {
   if (!raw) return null;
   const trimmed = raw.toString().trim();
@@ -3579,6 +3707,7 @@ function createXNewsResultEntry(data, ts) {
 
   const body = document.createElement('div');
   body.className = 'x-news-result';
+  const events = Array.isArray(data.events) ? data.events : [];
 
   const header = document.createElement('div');
   header.className = 'x-news-result__header';
@@ -3597,7 +3726,7 @@ function createXNewsResultEntry(data, ts) {
     if (feedPill) metaWrap.append(feedPill);
   }
   const totalPosts = Number(data.count ?? data.meta?.post_count);
-  const displayedPosts = Array.isArray(data.events) ? data.events.length : 0;
+  const displayedPosts = events.length;
   const tweetLimit = Number(data.tweet_limit ?? data.meta?.tweet_limit);
   const postsTitleParts = [];
   if (Number.isFinite(displayedPosts)) {
@@ -3620,6 +3749,20 @@ function createXNewsResultEntry(data, ts) {
   if (hypePercent) {
     const hypePill = createXNewsMetaPill('Hype', hypePercent);
     if (hypePill) metaWrap.append(hypePill);
+  }
+  const engagementTotals = extractXNewsEngagementTotals(data, events);
+  if (engagementTotals) {
+    const likeValue = formatXNewsCompactNumber(engagementTotals.likes) || engagementTotals.likes.toString();
+    const retweetValue =
+      formatXNewsCompactNumber(engagementTotals.retweets) || engagementTotals.retweets.toString();
+    const replyValue =
+      formatXNewsCompactNumber(engagementTotals.replies) || engagementTotals.replies.toString();
+    const likePill = createXNewsMetaPill('❤️ Likes', likeValue);
+    const retweetPill = createXNewsMetaPill('🔁 Retweets', retweetValue);
+    const replyPill = createXNewsMetaPill('💬 Replies', replyValue);
+    [likePill, retweetPill, replyPill].forEach((pill) => {
+      if (pill) metaWrap.append(pill);
+    });
   }
   const topEngagement = formatXNewsCompactNumber(data.meta?.top_engagement);
   if (topEngagement) {
@@ -3721,6 +3864,7 @@ function resetXNewsLog(messageKey, fallback) {
   if (xNewsLogList) {
     xNewsLogList.innerHTML = '';
   }
+  clearXNewsTopCoins();
   if (messageKey) {
     setXNewsLogEmpty(messageKey, fallback);
   } else if (xNewsLogEmpty) {
@@ -3731,6 +3875,9 @@ function resetXNewsLog(messageKey, fallback) {
 function setXNewsLogState(enabled) {
   if (!xNewsLogContainer) return;
   xNewsLogContainer.dataset.state = enabled ? 'active' : 'disabled';
+  if (!enabled) {
+    clearXNewsTopCoins();
+  }
   const hasEntries = Boolean(xNewsLogList && xNewsLogList.children.length > 0);
   if (enabled) {
     if (!hasEntries) {
@@ -3754,6 +3901,7 @@ function maybeAppendXNewsLogEntry({ parsed, rawLine, level, ts }) {
     }
     const entry = createXNewsResultEntry(structuredResult, ts);
     xNewsLogList.append(entry);
+    registerXNewsEngagementTotals(structuredResult, structuredResult.events);
     while (xNewsLogList.children.length > X_NEWS_LOG_LIMIT) {
       xNewsLogList.removeChild(xNewsLogList.firstChild);
     }

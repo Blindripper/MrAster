@@ -717,9 +717,15 @@
               </p>
             </div>
           </div>
-          <button class="primary subtle" id="btn-enable-x-news" data-i18n="xNews.enable">
-            Enable X News
-          </button>
+          <div class="x-news-card__controls">
+            <div class="x-news-top" id="x-news-top-coins" hidden>
+              <span class="x-news-top__label" data-i18n="xNews.topCoins.label">Top coins (❤️+🔁+💬)</span>
+              <ol class="x-news-top__list" id="x-news-top-coins-list"></ol>
+            </div>
+            <button class="primary subtle" id="btn-enable-x-news" data-i18n="xNews.enable">
+              Enable X News
+            </button>
+          </div>
         </div>
         <p class="card-hint" id="x-news-status" data-i18n="xNews.hint">
           Place your <code>xAuth.json</code> cookie export next to the bot directory before enabling.

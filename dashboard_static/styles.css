@@ -3679,6 +3679,84 @@ body.ai-mode .ai-config-panel h3 {
   box-shadow: 0 0 0 3px rgba(245, 196, 107, 0.18);
 }
 
+.x-news-card__controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  align-items: flex-end;
+}
+
+@media (min-width: 720px) {
+  .x-news-card__controls {
+    flex-direction: row;
+    align-items: center;
+    gap: 1.1rem;
+  }
+}
+
+.x-news-top {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.85rem;
+  background: rgba(15, 23, 42, 0.36);
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  min-width: 14rem;
+}
+
+.x-news-top__label {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(191, 219, 254, 0.82);
+}
+
+.x-news-top__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  width: 100%;
+}
+
+.x-news-top__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  font-size: 0.8rem;
+  color: rgba(226, 232, 240, 0.9);
+}
+
+.x-news-top__symbol {
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #f8fafc;
+}
+
+.x-news-top__stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.x-news-top__stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(30, 64, 175, 0.28);
+  color: rgba(224, 242, 254, 0.94);
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  font-size: 0.72rem;
+}
+
 .x-news-log {
   border-radius: 1.15rem;
   border: 1px solid rgba(245, 196, 107, 0.1);
@@ -3687,7 +3765,7 @@ body.ai-mode .ai-config-panel h3 {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  max-height: 260px;
+  max-height: 340px;
   overflow: hidden;
   transition: opacity 0.2s ease;
 }
@@ -3720,7 +3798,7 @@ body.ai-mode .ai-config-panel h3 {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
-  max-height: 180px;
+  max-height: 260px;
   overflow-y: auto;
   padding-right: 0.35rem;
 }
