@@ -133,6 +133,10 @@ _SENSITIVE_FIELD_NAMES: Set[str] = {
     "ASTER_API_SECRET",
     "ASTER_OPENAI_API_KEY",
     "ASTER_CHAT_OPENAI_API_KEY",
+    "ASTER_AI_NEWS_API_KEY",
+    "ASTER_AI_ONCHAIN_API_KEY",
+    "ASTER_AI_SOCIAL_API_KEY",
+    "ASTER_AI_OPTIONS_API_KEY",
 }
 _REDACTED_TOKEN = "********"
 
@@ -144,11 +148,19 @@ def _collect_sensitive_tokens() -> Tuple[str, ...]:
         API_SECRET,
         OPENAI_API_KEY,
         CHAT_OPENAI_API_KEY,
+        SENTINEL_NEWS_TOKEN,
+        SENTINEL_ONCHAIN_TOKEN,
+        SENTINEL_SOCIAL_TOKEN,
+        SENTINEL_OPTIONS_TOKEN,
         os.getenv("ASTER_API_KEY", "").strip(),
         os.getenv("ASTER_API_SECRET", "").strip(),
         os.getenv("ASTER_OPENAI_API_KEY", "").strip(),
         os.getenv("ASTER_CHAT_OPENAI_API_KEY", "").strip(),
         os.getenv("OPENAI_API_KEY", "").strip(),
+        os.getenv("ASTER_AI_NEWS_API_KEY", "").strip(),
+        os.getenv("ASTER_AI_ONCHAIN_API_KEY", "").strip(),
+        os.getenv("ASTER_AI_SOCIAL_API_KEY", "").strip(),
+        os.getenv("ASTER_AI_OPTIONS_API_KEY", "").strip(),
     ):
         if not candidate:
             continue
