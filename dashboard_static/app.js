@@ -4508,26 +4508,27 @@ function pickBracketNumericField(position, candidates, hints) {
 function formatBracketLevel(field) {
   if (!field) return '–';
 
-  const candidates = collectFieldCandidates(field);
-  if (candidates.length === 0) {
-    return '–';
-  }
-
-  const numeric = resolveNumericFromCandidates(candidates);
-  if (Number.isFinite(numeric)) {
-    const formatted = formatPriceDisplay(numeric, {
-      minimumFractionDigits: 7,
-      maximumFractionDigits: 7,
+  const numeric = resolveFieldNumeric(field);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    const absValue = Math.abs(numeric);
+    let digits = 6;
+    if (absValue >= 100000) digits = 0;
+    else if (absValue >= 10000) digits = 1;
+    else if (absValue >= 1000) digits = 2;
+    else if (absValue >= 100) digits = 2;
+    else if (absValue >= 10) digits = 3;
+    else if (absValue >= 1) digits = 4;
+    else if (absValue >= 0.1) digits = 5;
+    const formatted = numeric.toLocaleString(undefined, {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
     });
-    if (formatted && formatted !== '–') {
+    if (formatted) {
       return formatted;
     }
-    return Number(numeric).toLocaleString(undefined, {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 7,
-    });
   }
 
+  const candidates = collectFieldCandidates(field);
   for (const candidate of candidates) {
     if (typeof candidate === 'string' || typeof candidate === 'number') {
       const text = candidate.toString().trim();
@@ -4547,39 +4548,76 @@ function formatBracketDistance(bracketField, markField, fallbackField) {
     markNumeric = resolveFieldNumeric(fallbackField);
   }
   if (!Number.isFinite(bracketNumeric) || !Number.isFinite(markNumeric)) {
-    return '–';
+    return null;
   }
 
   const difference = bracketNumeric - markNumeric;
   const absDiff = Math.abs(difference);
   let digits = 6;
-  if (absDiff >= 1000) digits = 0;
-  else if (absDiff >= 100) digits = 1;
-  else if (absDiff >= 10) digits = 2;
-  else if (absDiff >= 1) digits = 3;
-  else if (absDiff >= 0.1) digits = 4;
-  else if (absDiff >= 0.01) digits = 5;
+  if (absDiff >= 100000) digits = 0;
+  else if (absDiff >= 1000) digits = 1;
+  else if (absDiff >= 100) digits = 2;
+  else if (absDiff >= 10) digits = 3;
+  else if (absDiff >= 1) digits = 4;
+  else if (absDiff >= 0.1) digits = 5;
 
   const priceDisplay = formatSignedNumber(difference, digits);
-  if (!priceDisplay) {
-    return '–';
-  }
+  const tone = difference > 0 ? 'profit' : difference < 0 ? 'loss' : null;
 
-  let percentDisplay = '';
+  let percentText = null;
   if (markNumeric !== 0) {
     const percent = (difference / markNumeric) * 100;
-    const formattedPercent = formatSignedNumber(percent, 2);
+    const percentDigits = Math.abs(percent) >= 10 ? 1 : 2;
+    const formattedPercent = formatSignedNumber(percent, percentDigits);
     if (formattedPercent) {
-      percentDisplay = ` (${formattedPercent}%)`;
+      percentText = `${formattedPercent}%`;
     }
   }
 
-  return `${priceDisplay}${percentDisplay}`;
+  if (!priceDisplay && !percentText) {
+    return null;
+  }
+
+  return {
+    priceText: priceDisplay || null,
+    percentText,
+    tone,
+  };
 }
 
 function normalizeSymbolValue(symbol) {
   if (symbol === undefined || symbol === null) return '';
   return symbol.toString().trim().toUpperCase();
+}
+
+const KNOWN_QUOTE_ASSETS = [
+  'FDUSD',
+  'USDT',
+  'USDC',
+  'BUSD',
+  'TUSD',
+  'USDP',
+  'DAI',
+  'EUR',
+  'GBP',
+  'JPY',
+  'TRY',
+  'BTC',
+  'ETH',
+  'BNB',
+  'USD',
+];
+
+function resolveQuoteAsset(symbol) {
+  const normalized = normalizeSymbolValue(symbol);
+  if (!normalized) return '';
+  for (let index = 0; index < KNOWN_QUOTE_ASSETS.length; index += 1) {
+    const candidate = KNOWN_QUOTE_ASSETS[index];
+    if (normalized.endsWith(candidate)) {
+      return candidate;
+    }
+  }
+  return '';
 }
 
 function getNormalizedActivePositionSymbol(position) {
@@ -4852,20 +4890,14 @@ function updateActivePositionsView() {
     const entryCell = document.createElement('td');
     entryCell.className = 'numeric';
     const entryField = pickNumericField(position, ACTIVE_POSITION_ALIASES.entry || []);
-    entryCell.textContent = formatPriceDisplay(entryField.numeric, {
-      minimumFractionDigits: 7,
-      maximumFractionDigits: 7,
-    });
+    entryCell.textContent = formatPriceDisplay(entryField.numeric);
     applyActivePositionLabel(entryCell, 'entry');
     row.append(entryCell);
 
     const markCell = document.createElement('td');
     markCell.className = 'numeric';
     const markField = pickNumericField(position, ACTIVE_POSITION_ALIASES.mark || []);
-    markCell.textContent = formatPriceDisplay(markField.numeric, {
-      minimumFractionDigits: 7,
-      maximumFractionDigits: 7,
-    });
+    markCell.textContent = formatPriceDisplay(markField.numeric);
     applyActivePositionLabel(markCell, 'mark');
     row.append(markCell);
 
@@ -4939,6 +4971,9 @@ function updateActivePositionsView() {
     applyActivePositionLabel(pnlCell, 'pnl');
     row.append(pnlCell);
 
+    const quoteAsset = resolveQuoteAsset(symbolValue);
+    const quoteSuffix = quoteAsset ? ` ${quoteAsset}` : '';
+
     const tpSlCell = document.createElement('td');
     tpSlCell.className = 'numeric active-positions-brackets';
     const nextTpField = pickBracketNumericField(
@@ -4953,10 +4988,10 @@ function updateActivePositionsView() {
     );
     const tpDisplay = formatBracketLevel(nextTpField);
     const slDisplay = formatBracketLevel(stopField);
-    const tpDistanceDisplay = formatBracketDistance(nextTpField, markField, entryField);
-    const slDistanceDisplay = formatBracketDistance(stopField, markField, entryField);
+    const tpDistanceInfo = formatBracketDistance(nextTpField, markField, entryField);
+    const slDistanceInfo = formatBracketDistance(stopField, markField, entryField);
 
-    const buildBracketRow = (labelText, valueText) => {
+    const buildBracketRow = (labelText, primaryText, secondaryText) => {
       const bracketRow = document.createElement('div');
       bracketRow.className = 'active-positions-bracket';
 
@@ -4964,11 +4999,22 @@ function updateActivePositionsView() {
       label.className = 'active-positions-bracket-label';
       label.textContent = labelText;
 
+      const valueWrapper = document.createElement('span');
+      valueWrapper.className = 'active-positions-bracket-values';
+
       const value = document.createElement('span');
       value.className = 'active-positions-bracket-value';
-      value.textContent = valueText;
+      value.textContent = primaryText;
+      valueWrapper.append(value);
 
-      bracketRow.append(label, value);
+      if (secondaryText) {
+        const secondary = document.createElement('span');
+        secondary.className = 'active-positions-bracket-subvalue';
+        secondary.textContent = secondaryText;
+        valueWrapper.append(secondary);
+      }
+
+      bracketRow.append(label, valueWrapper);
       return bracketRow;
     };
 
@@ -4991,12 +5037,22 @@ function updateActivePositionsView() {
     const tpSlDistanceCell = document.createElement('td');
     tpSlDistanceCell.className = 'numeric active-positions-brackets active-positions-distance';
     let hasBracketDistance = false;
-    if (tpDistanceDisplay && tpDistanceDisplay !== '–') {
-      tpSlDistanceCell.append(buildBracketRow('TP', tpDistanceDisplay));
+    if (tpDistanceInfo && (tpDistanceInfo.priceText || tpDistanceInfo.percentText)) {
+      const hasSecondary = tpDistanceInfo.priceText && tpDistanceInfo.percentText;
+      const primaryText = tpDistanceInfo.priceText
+        ? `${tpDistanceInfo.priceText}${quoteSuffix}`.trim()
+        : tpDistanceInfo.percentText || '';
+      const secondaryText = hasSecondary ? tpDistanceInfo.percentText : null;
+      tpSlDistanceCell.append(buildBracketRow('TP', primaryText, secondaryText));
       hasBracketDistance = true;
     }
-    if (slDistanceDisplay && slDistanceDisplay !== '–') {
-      tpSlDistanceCell.append(buildBracketRow('SL', slDistanceDisplay));
+    if (slDistanceInfo && (slDistanceInfo.priceText || slDistanceInfo.percentText)) {
+      const hasSecondary = slDistanceInfo.priceText && slDistanceInfo.percentText;
+      const primaryText = slDistanceInfo.priceText
+        ? `${slDistanceInfo.priceText}${quoteSuffix}`.trim()
+        : slDistanceInfo.percentText || '';
+      const secondaryText = hasSecondary ? slDistanceInfo.percentText : null;
+      tpSlDistanceCell.append(buildBracketRow('SL', primaryText, secondaryText));
       hasBracketDistance = true;
     }
     if (!hasBracketDistance) {

@@ -912,7 +912,7 @@ body.paper-mode .hero-paper-toggle span {
 
 .active-positions-table {
   width: 100%;
-  min-width: 820px;
+  min-width: 760px;
   border-collapse: collapse;
   font-size: 0.92rem;
 }
@@ -934,7 +934,7 @@ body.paper-mode .hero-paper-toggle span {
 }
 
 .active-positions-table tbody td {
-  padding: 0.6rem 0.75rem;
+  padding: 0.56rem 0.7rem;
   border-bottom: 1px solid rgba(245, 196, 107, 0.08);
   font-variant-numeric: tabular-nums;
   color: var(--text);
@@ -961,7 +961,7 @@ body.paper-mode .hero-paper-toggle span {
 .active-positions-symbol-wrapper {
   display: inline-flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.45rem;
 }
 
 .side-badge {
@@ -999,35 +999,28 @@ body.paper-mode .hero-paper-toggle span {
 
 .active-positions-brackets {
   display: flex;
-  flex-direction: row;
-  align-items: baseline;
+  flex-direction: column;
+  align-items: flex-end;
   justify-content: flex-end;
-  gap: 1.2rem;
-  flex-wrap: nowrap;
+  gap: 0.45rem;
 }
 
 .active-positions-brackets.active-positions-brackets-empty {
-  display: flex;
-  flex-direction: row;
-  gap: 0;
+  align-items: flex-end;
   justify-content: flex-end;
+  gap: 0;
   color: var(--text-muted);
 }
 
 .active-positions-distance {
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.4rem;
-}
-
-.active-positions-distance .active-positions-bracket {
-  justify-content: flex-end;
+  gap: 0.45rem;
 }
 
 .active-positions-bracket {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.35rem;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 0.45rem;
   white-space: nowrap;
 }
 
@@ -1038,8 +1031,21 @@ body.paper-mode .hero-paper-toggle span {
   color: var(--text-muted);
 }
 
+.active-positions-bracket-values {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
+}
+
 .active-positions-bracket-value {
   font-variant-numeric: tabular-nums;
+}
+
+.active-positions-bracket-subvalue {
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
 }
 
 .active-positions-empty {
