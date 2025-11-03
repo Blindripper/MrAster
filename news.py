@@ -166,7 +166,9 @@ async def load_cookies(path: str) -> List[dict]:
 
 
 async def _extract_post(article) -> Optional[ScrapedPost]:
-    text_node = await article.query_selector("div[lang]")
+    text_node = await article.query_selector("div[data-testid='tweetText']")
+    if text_node is None:
+        text_node = await article.query_selector("div[lang], span[lang]")
     if text_node is None:
         return None
     try:
@@ -177,6 +179,13 @@ async def _extract_post(article) -> Optional[ScrapedPost]:
         return None
 
     lang = await text_node.get_attribute("lang")
+    if not lang:
+        lang_node = await text_node.query_selector("[lang]")
+        if lang_node:
+            try:
+                lang = await lang_node.get_attribute("lang")
+            except Exception:
+                lang = None
 
     handle = None
     author = None
@@ -231,6 +240,10 @@ async def scrape_query(context, query: str, feed: str, limit: int, delay: float,
     url = base if feed == "top" else base + "&f=live"
     log.debug("🌐 %s → %s", query, url)
     await page.goto(url, wait_until="domcontentloaded")
+    try:
+        await page.wait_for_selector("article[data-testid='tweet']", timeout=8000)
+    except Exception:
+        log.debug("⌛️ Keine Beiträge für %s geladen (Timeout).", query)
     await page.wait_for_timeout(3000)
 
     collected: List[ScrapedPost] = []
@@ -258,6 +271,7 @@ async def scrape_query(context, query: str, feed: str, limit: int, delay: float,
         await page.mouse.wheel(0, 2000)
         await page.wait_for_timeout(int(delay * 1000))
     await page.close()
+    log.debug("📥 %d Beiträge für %s erfasst.", len(collected), query)
     return collected
 
 
