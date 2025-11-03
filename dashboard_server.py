@@ -1510,19 +1510,21 @@ def _fetch_position_brackets(
         for order in orders:
             if not isinstance(order, dict):
                 continue
-            order_type = str(order.get("type") or "").upper()
-            if "STOP" not in order_type and "TAKE_PROFIT" not in order_type:
+            order_type_raw = order.get("type")
+            order_type = str(order_type_raw or "").upper()
+            order_type_norm = order_type.replace("-", "_").replace(" ", "_")
+            if "STOP" not in order_type_norm and "TAKE_PROFIT" not in order_type_norm:
                 continue
 
             close_position = _is_truthy(order.get("closePosition"))
             reduce_only = _is_truthy(order.get("reduceOnly"))
+            inferred_reduce = False
 
             if not close_position and not reduce_only:
                 # Some venues omit these flags on reduce-only exit orders. In that
                 # case we infer the intent from the declared side: take-profit/
                 # stop orders that move in the opposite direction of the open
                 # position are still valid bracket levels.
-                inferred_reduce = False
                 order_side = str(order.get("side") or "").upper()
                 position_side_hint = str(order.get("positionSide") or "").upper()
                 if position_side_hint in {"LONG", "BOTH"}:
@@ -1567,7 +1569,7 @@ def _fetch_position_brackets(
 
             bucket = results.setdefault(symbol, {}).setdefault(side_key or "ANY", {})
 
-            kind = "take" if "TAKE_PROFIT" in order_type else "stop"
+            kind = "take" if "TAKE_PROFIT" in order_type_norm else "stop"
             existing = bucket.get(kind)
             if existing is not None:
                 if isinstance(existing, dict):
