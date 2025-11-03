@@ -912,7 +912,7 @@ body.paper-mode .hero-paper-toggle span {
 
 .active-positions-table {
   width: 100%;
-  min-width: 720px;
+  min-width: 820px;
   border-collapse: collapse;
   font-size: 0.92rem;
 }
@@ -1006,6 +1006,16 @@ body.paper-mode .hero-paper-toggle span {
   flex-wrap: nowrap;
 }
 
+.active-positions-distance {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+}
+
+.active-positions-distance .active-positions-bracket {
+  justify-content: flex-end;
+}
+
 .active-positions-bracket {
   display: inline-flex;
   align-items: baseline;
@@ -1052,7 +1062,7 @@ body.paper-mode .hero-paper-toggle span {
 
 @media (max-width: 900px) {
   .active-positions-table {
-    min-width: 640px;
+    min-width: 720px;
   }
 }
 
@@ -1115,7 +1125,9 @@ body.paper-mode .hero-paper-toggle span {
   }
 
   .active-positions-table tbody td:nth-child(5),
-  .active-positions-table tbody td:nth-child(6) {
+  .active-positions-table tbody td:nth-child(6),
+  .active-positions-table tbody td:nth-child(8),
+  .active-positions-table tbody td:nth-child(9) {
     grid-column: 1 / -1;
   }
 
@@ -1123,6 +1135,10 @@ body.paper-mode .hero-paper-toggle span {
     align-items: baseline;
     justify-content: flex-start;
     gap: 0.8rem;
+  }
+
+  .active-positions-distance {
+    align-items: flex-start;
   }
 }
 

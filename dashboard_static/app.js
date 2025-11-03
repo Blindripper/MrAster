@@ -3861,7 +3861,7 @@ const ACTIVE_POSITION_FIELD_LABELS = {
   margin: 'Margin',
   pnl: 'PNL (ROE%)',
   brackets: 'TP/SL for position',
-  distance: 'TP/SL distance',
+  distance: 'TP/SL Distance',
 };
 
 function applyActivePositionLabel(cell, key) {
@@ -4394,9 +4394,12 @@ function formatBracketLevel(field) {
   return '–';
 }
 
-function formatBracketDistance(bracketField, markField) {
+function formatBracketDistance(bracketField, markField, fallbackField) {
   const bracketNumeric = resolveFieldNumeric(bracketField);
-  const markNumeric = resolveFieldNumeric(markField);
+  let markNumeric = resolveFieldNumeric(markField);
+  if (!Number.isFinite(markNumeric)) {
+    markNumeric = resolveFieldNumeric(fallbackField);
+  }
   if (!Number.isFinite(bracketNumeric) || !Number.isFinite(markNumeric)) {
     return '–';
   }
@@ -4792,8 +4795,8 @@ function updateActivePositionsView() {
     const stopField = pickNumericField(position, ACTIVE_POSITION_ALIASES.stop || []);
     const tpDisplay = formatBracketLevel(nextTpField);
     const slDisplay = formatBracketLevel(stopField);
-    const tpDistanceDisplay = formatBracketDistance(nextTpField, markField);
-    const slDistanceDisplay = formatBracketDistance(stopField, markField);
+    const tpDistanceDisplay = formatBracketDistance(nextTpField, markField, entryField);
+    const slDistanceDisplay = formatBracketDistance(stopField, markField, entryField);
 
     const buildBracketRow = (labelText, valueText) => {
       const bracketRow = document.createElement('div');
