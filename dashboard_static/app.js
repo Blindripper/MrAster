@@ -4850,6 +4850,27 @@ function computePositionProgressValue(takeEntry, stopEntry, markPrice) {
   return Math.max(0, Math.min(1, ratio));
 }
 
+function computeProgressIndicatorColor(progressValue) {
+  if (!Number.isFinite(progressValue)) {
+    return null;
+  }
+
+  const clamped = Math.max(0, Math.min(1, progressValue));
+  const start = { r: 239, g: 68, b: 68 }; // Stop loss (red)
+  const end = { r: 34, g: 197, b: 94 }; // Take profit (green)
+
+  const mix = (from, to) => Math.round(from + (to - from) * clamped);
+  const r = mix(start.r, end.r);
+  const g = mix(start.g, end.g);
+  const b = mix(start.b, end.b);
+
+  return {
+    solid: `rgb(${r}, ${g}, ${b})`,
+    glow: `rgba(${r}, ${g}, ${b}, 0.45)`,
+    halo: `rgba(${r}, ${g}, ${b}, 0.2)`,
+  };
+}
+
 function buildPositionProgressBar({ takeEntry, stopEntry, markPrice }) {
   const container = document.createElement('div');
   container.className = 'position-progress-container';
@@ -4867,6 +4888,12 @@ function buildPositionProgressBar({ takeEntry, stopEntry, markPrice }) {
     container.classList.add('is-inactive');
   } else {
     indicator.style.left = `${(progressValue * 100).toFixed(2)}%`;
+    const indicatorColors = computeProgressIndicatorColor(progressValue);
+    if (indicatorColors) {
+      indicator.style.background = indicatorColors.solid;
+      indicator.style.borderColor = indicatorColors.solid;
+      indicator.style.boxShadow = `0 0 0 1px rgba(15, 23, 42, 0.35), 0 0 0 4px ${indicatorColors.halo}, 0 0 8px 0 ${indicatorColors.glow}`;
+    }
   }
 
   return container;
