@@ -11,9 +11,11 @@ POSTMORTEM_FEATURE_MAP: Dict[str, str] = {
     "trend_break": "pm_trend_break",
     "news_driver": "pm_news_driver",
     "liquidity_gap": "pm_liquidity_gap",
+    "liquidity_vacuum": "pm_liquidity_vacuum",
     "execution_delay": "pm_execution_delay",
     "sentiment_conflict": "pm_sentiment_conflict",
     "macro_event": "pm_macro_event",
+    "news_fade": "pm_news_fade",
 }
 POSTMORTEM_EXTRA_FEATURES = (
     "pm_volatility_bias",
