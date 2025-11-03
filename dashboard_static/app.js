@@ -121,6 +121,9 @@ const DEFAULT_LANGUAGE = 'en';
 const SUPPORTED_LANGUAGES = ['en', 'ru', 'zh', 'ko', 'de', 'fr', 'es', 'tr'];
 const COMPACT_SKIP_AGGREGATION_WINDOW = 600; // seconds
 const X_NEWS_LOG_LIMIT = 80;
+const X_NEWS_COMPACT_FORMATTER = typeof Intl !== 'undefined'
+  ? new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 })
+  : null;
 
 const TRANSLATIONS = {
   ru: {
@@ -3457,6 +3460,259 @@ function setXNewsLogEmpty(key, fallback) {
   xNewsLogEmpty.hidden = false;
 }
 
+function formatXNewsCompactNumber(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  if (num === 0) return '0';
+  if (X_NEWS_COMPACT_FORMATTER) {
+    try {
+      return X_NEWS_COMPACT_FORMATTER.format(num);
+    } catch (err) {
+      console.warn('Compact formatter failed', err);
+    }
+  }
+  const abs = Math.abs(num);
+  if (abs >= 1_000_000_000) return `${(num / 1_000_000_000).toFixed(1)}B`;
+  if (abs >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
+  return num.toString();
+}
+
+function formatXNewsPercent(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  const fraction = num > 1 ? num : num * 100;
+  const bounded = Math.max(0, Math.min(100, fraction));
+  const digits = bounded >= 10 ? 0 : 1;
+  return `${bounded.toFixed(digits)}%`;
+}
+
+function parseXNewsResultPayload(raw) {
+  if (!raw) return null;
+  const trimmed = raw.toString().trim();
+  if (!trimmed.startsWith('X_NEWS_RESULT')) return null;
+  const payload = trimmed.slice('X_NEWS_RESULT'.length).trim();
+  if (!payload) return null;
+  try {
+    return JSON.parse(payload);
+  } catch (err) {
+    try {
+      const normalized = payload.replace(/'/g, '"');
+      return JSON.parse(normalized);
+    } catch (err2) {
+      console.warn('Failed to parse X news payload', err2);
+      return null;
+    }
+  }
+}
+
+function createXNewsMetaPill(label, value, options = {}) {
+  if (!label || value === undefined || value === null) return null;
+  const pill = document.createElement('span');
+  pill.className = 'x-news-result__meta-pill';
+  if (options.title) {
+    pill.title = options.title;
+  }
+  const labelEl = document.createElement('span');
+  labelEl.className = 'x-news-result__meta-label';
+  labelEl.textContent = label;
+  const valueEl = document.createElement('strong');
+  valueEl.textContent = value;
+  pill.append(labelEl, valueEl);
+  return pill;
+}
+
+function createXNewsEventStats(event) {
+  if (!event) return null;
+  const stats = [];
+  const addStat = (icon, raw, title) => {
+    const num = Number(raw);
+    if (!Number.isFinite(num) || num <= 0) return;
+    const formatted = formatXNewsCompactNumber(num) || num.toString();
+    stats.push({ icon, formatted, title });
+  };
+  addStat('❤️', event.likes, 'Likes');
+  addStat('🔁', event.retweets, 'Retweets');
+  addStat('💬', event.replies, 'Replies');
+  if (!stats.length) return null;
+  const container = document.createElement('span');
+  container.className = 'x-news-result__event-stats';
+  stats.forEach((stat) => {
+    const item = document.createElement('span');
+    item.className = 'x-news-result__event-stat';
+    if (stat.title) {
+      item.title = stat.title;
+    }
+    const iconEl = document.createElement('span');
+    iconEl.className = 'x-news-result__event-stat-icon';
+    iconEl.textContent = stat.icon;
+    const valueEl = document.createElement('strong');
+    valueEl.textContent = stat.formatted;
+    item.append(iconEl, valueEl);
+    container.append(item);
+  });
+  return container;
+}
+
+function getXNewsFeedLabel(feed) {
+  if (!feed) return '';
+  const normalized = feed.toString().trim().toLowerCase();
+  if (!normalized) return '';
+  if (normalized === 'top') return 'Top feed';
+  if (normalized === 'live') return 'Live feed';
+  return `${toTitleWords(normalized)} feed`;
+}
+
+function createXNewsResultEntry(data, ts) {
+  const entry = document.createElement('div');
+  entry.className = 'x-news-log__entry x-news-log__entry--result';
+  entry.dataset.level = 'info';
+  entry.dataset.kind = 'result';
+
+  const timeEl = document.createElement('span');
+  timeEl.className = 'x-news-log__time';
+  timeEl.textContent = ts ? new Date(ts * 1000).toLocaleTimeString() : '—';
+
+  const body = document.createElement('div');
+  body.className = 'x-news-result';
+
+  const header = document.createElement('div');
+  header.className = 'x-news-result__header';
+
+  const symbolEl = document.createElement('div');
+  symbolEl.className = 'x-news-result__symbol';
+  const symbolRaw = (data.symbol || data.query || '').toString().trim();
+  symbolEl.textContent = symbolRaw ? symbolRaw.toUpperCase() : 'X News scrape';
+  header.append(symbolEl);
+
+  const metaWrap = document.createElement('div');
+  metaWrap.className = 'x-news-result__meta';
+  const feedLabel = getXNewsFeedLabel(data.feed || data.meta?.feed);
+  if (feedLabel) {
+    const feedPill = createXNewsMetaPill('Feed', feedLabel.replace(/\s+feed$/i, ''));
+    if (feedPill) metaWrap.append(feedPill);
+  }
+  const totalPosts = Number(data.count ?? data.meta?.post_count);
+  const displayedPosts = Array.isArray(data.events) ? data.events.length : 0;
+  const tweetLimit = Number(data.tweet_limit ?? data.meta?.tweet_limit);
+  const postsTitleParts = [];
+  if (Number.isFinite(displayedPosts)) {
+    postsTitleParts.push(`Displayed: ${displayedPosts}`);
+  }
+  if (Number.isFinite(totalPosts) && totalPosts !== displayedPosts) {
+    postsTitleParts.push(`Scraped: ${totalPosts}`);
+  }
+  if (Number.isFinite(tweetLimit)) {
+    postsTitleParts.push(`Limit: ${tweetLimit}`);
+  }
+  if (Number.isFinite(totalPosts) || Number.isFinite(displayedPosts)) {
+    const labelValue = Number.isFinite(totalPosts) ? totalPosts : displayedPosts;
+    const postsPill = createXNewsMetaPill('Posts', labelValue.toString(), {
+      title: postsTitleParts.join(' • '),
+    });
+    if (postsPill) metaWrap.append(postsPill);
+  }
+  const hypePercent = formatXNewsPercent(data.hype ?? data.meta?.hype);
+  if (hypePercent) {
+    const hypePill = createXNewsMetaPill('Hype', hypePercent);
+    if (hypePill) metaWrap.append(hypePill);
+  }
+  const topEngagement = formatXNewsCompactNumber(data.meta?.top_engagement);
+  if (topEngagement) {
+    const engagementPill = createXNewsMetaPill('Top eng.', topEngagement, {
+      title: 'Highest engagement score observed',
+    });
+    if (engagementPill) metaWrap.append(engagementPill);
+  }
+  if (data.cached) {
+    const cachePill = createXNewsMetaPill('Cache', 'Warm');
+    if (cachePill) metaWrap.append(cachePill);
+  }
+  if (metaWrap.children.length > 0) {
+    header.append(metaWrap);
+  }
+  body.append(header);
+
+  const summaryParts = [];
+  if (displayedPosts > 0) {
+    const base = `Showing ${displayedPosts}${
+      Number.isFinite(totalPosts) && totalPosts !== displayedPosts ? ` of ${totalPosts}` : ''
+    } post${displayedPosts === 1 ? '' : 's'}`;
+    summaryParts.push(base);
+  } else if (Number.isFinite(totalPosts)) {
+    summaryParts.push(`0 of ${totalPosts} posts matched the filters`);
+  }
+  if (feedLabel) {
+    summaryParts.push(feedLabel);
+  }
+  if (hypePercent) {
+    summaryParts.push(`Hype ${hypePercent}`);
+  }
+  const summaryText = summaryParts.join(' · ');
+  if (summaryText) {
+    const summaryEl = document.createElement('p');
+    summaryEl.className = 'x-news-result__summary';
+    summaryEl.textContent = summaryText;
+    body.append(summaryEl);
+  }
+
+  const events = Array.isArray(data.events) ? data.events : [];
+  if (events.length > 0) {
+    const list = document.createElement('ul');
+    list.className = 'x-news-result__events';
+    events.forEach((event) => {
+      if (!event) return;
+      const item = document.createElement('li');
+      item.className = 'x-news-result__event';
+      const headlineText = (event.headline || '').toString().trim();
+      const url = (event.url || '').toString().trim();
+      const headlineEl = url ? document.createElement('a') : document.createElement('span');
+      headlineEl.className = 'x-news-result__event-headline';
+      headlineEl.textContent = headlineText || 'News update';
+      if (url) {
+        headlineEl.href = url;
+        headlineEl.target = '_blank';
+        headlineEl.rel = 'noopener noreferrer';
+      }
+      item.append(headlineEl);
+
+      const metaRow = document.createElement('div');
+      metaRow.className = 'x-news-result__event-meta';
+      const sourceRaw = (event.source || event.author || '').toString().trim();
+      if (sourceRaw) {
+        const sourceEl = document.createElement('span');
+        sourceEl.className = 'x-news-result__event-source';
+        sourceEl.textContent = sourceRaw;
+        metaRow.append(sourceEl);
+      }
+      const timestampText = formatTimeShort(event.timestamp || event.time || null);
+      if (timestampText && timestampText !== '–') {
+        const timeEl = document.createElement('span');
+        timeEl.className = 'x-news-result__event-time';
+        timeEl.textContent = timestampText;
+        metaRow.append(timeEl);
+      }
+      const statsEl = createXNewsEventStats(event);
+      if (statsEl) {
+        metaRow.append(statsEl);
+      }
+      if (metaRow.children.length > 0) {
+        item.append(metaRow);
+      }
+      list.append(item);
+    });
+    body.append(list);
+  } else {
+    const empty = document.createElement('div');
+    empty.className = 'x-news-result__empty';
+    empty.textContent = 'No posts extracted for this scrape.';
+    body.append(empty);
+  }
+
+  entry.append(timeEl, body);
+  return entry;
+}
+
 function resetXNewsLog(messageKey, fallback) {
   if (xNewsLogList) {
     xNewsLogList.innerHTML = '';
@@ -3487,6 +3743,19 @@ function setXNewsLogState(enabled) {
 
 function maybeAppendXNewsLogEntry({ parsed, rawLine, level, ts }) {
   if (!xNewsLogList) return;
+  const structuredResult = parseXNewsResultPayload(parsed?.message || rawLine || '');
+  if (structuredResult) {
+    if (xNewsLogEmpty) {
+      xNewsLogEmpty.hidden = true;
+    }
+    const entry = createXNewsResultEntry(structuredResult, ts);
+    xNewsLogList.append(entry);
+    while (xNewsLogList.children.length > X_NEWS_LOG_LIMIT) {
+      xNewsLogList.removeChild(xNewsLogList.firstChild);
+    }
+    xNewsLogList.scrollTop = xNewsLogList.scrollHeight;
+    return;
+  }
   const loggerName = (parsed?.logger || '').toString();
   const message = (parsed?.message || parsed?.raw || rawLine || '').toString();
   const normalizedLogger = loggerName.toLowerCase();

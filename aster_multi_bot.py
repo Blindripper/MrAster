@@ -1250,6 +1250,7 @@ class NewsTrendSentinel:
             return []
         events: List[Dict[str, Any]] = []
         engagement_scores: List[float] = []
+        feed_name = getattr(scraper, "feed", feed)
         for post in posts:
             if not isinstance(post, dict):
                 continue
@@ -1268,6 +1269,13 @@ class NewsTrendSentinel:
             url = post.get("url")
             if isinstance(url, str) and url:
                 entry["url"] = url
+            timestamp = post.get("timestamp")
+            if isinstance(timestamp, str) and timestamp:
+                entry["timestamp"] = timestamp
+            for key in ("likes", "retweets", "replies"):
+                value = post.get(key)
+                if isinstance(value, (int, float)):
+                    entry[key] = int(value)
             events.append(entry)
             engagement = 0.0
             for weight, key in ((0.6, "retweets"), (0.5, "likes"), (0.3, "replies")):
@@ -1288,6 +1296,8 @@ class NewsTrendSentinel:
             "post_count": len(events),
             "query": symbol,
         }
+        meta["feed"] = feed_name
+        meta["tweet_limit"] = getattr(scraper, "tweet_limit", X_NEWS_LIMIT)
         if engagement_scores:
             meta["top_engagement"] = max(engagement_scores)
             meta["avg_engagement"] = sum(engagement_scores) / len(engagement_scores)
@@ -1297,6 +1307,19 @@ class NewsTrendSentinel:
             "hype": hype,
             "meta": meta,
         }
+        summary = {
+            "symbol": symbol,
+            "query": symbol,
+            "feed": feed_name,
+            "count": len(events),
+            "hype": round(hype, 4),
+            "tweet_limit": getattr(scraper, "tweet_limit", X_NEWS_LIMIT),
+            "meta": meta,
+            "events": events[: min(len(events), 5)],
+            "cached": False,
+            "fetched_at": now,
+        }
+        log.debug("X_NEWS_RESULT %s", json.dumps(summary, ensure_ascii=False))
         return events
 
     @staticmethod
