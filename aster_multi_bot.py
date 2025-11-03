@@ -1251,6 +1251,9 @@ class NewsTrendSentinel:
         events: List[Dict[str, Any]] = []
         engagement_scores: List[float] = []
         feed_name = getattr(scraper, "feed", X_NEWS_FEED)
+        total_likes = 0
+        total_retweets = 0
+        total_replies = 0
         for post in posts:
             if not isinstance(post, dict):
                 continue
@@ -1276,6 +1279,12 @@ class NewsTrendSentinel:
                 value = post.get(key)
                 if isinstance(value, (int, float)):
                     entry[key] = int(value)
+                    if key == "likes":
+                        total_likes += int(value)
+                    elif key == "retweets":
+                        total_retweets += int(value)
+                    elif key == "replies":
+                        total_replies += int(value)
             events.append(entry)
             engagement = 0.0
             for weight, key in ((0.6, "retweets"), (0.5, "likes"), (0.3, "replies")):
@@ -1298,6 +1307,13 @@ class NewsTrendSentinel:
         }
         meta["feed"] = feed_name
         meta["tweet_limit"] = getattr(scraper, "tweet_limit", X_NEWS_LIMIT)
+        engagement_totals = {
+            "likes": int(total_likes),
+            "retweets": int(total_retweets),
+            "replies": int(total_replies),
+        }
+        engagement_totals["sum"] = sum(engagement_totals.values())
+        meta["engagement_totals"] = engagement_totals
         if engagement_scores:
             meta["top_engagement"] = max(engagement_scores)
             meta["avg_engagement"] = sum(engagement_scores) / len(engagement_scores)
@@ -1315,6 +1331,7 @@ class NewsTrendSentinel:
             "hype": round(hype, 4),
             "tweet_limit": getattr(scraper, "tweet_limit", X_NEWS_LIMIT),
             "meta": meta,
+            "engagement": engagement_totals,
             "events": events[: min(len(events), 5)],
             "cached": False,
             "fetched_at": now,
