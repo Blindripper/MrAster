@@ -4662,14 +4662,20 @@ function updateActivePositionsView() {
     const entryCell = document.createElement('td');
     entryCell.className = 'numeric';
     const entryField = pickNumericField(position, ACTIVE_POSITION_ALIASES.entry || []);
-    entryCell.textContent = formatPriceDisplay(entryField.numeric);
+    entryCell.textContent = formatPriceDisplay(entryField.numeric, {
+      minimumFractionDigits: 6,
+      maximumFractionDigits: 6,
+    });
     applyActivePositionLabel(entryCell, 'entry');
     row.append(entryCell);
 
     const markCell = document.createElement('td');
     markCell.className = 'numeric';
     const markField = pickNumericField(position, ACTIVE_POSITION_ALIASES.mark || []);
-    markCell.textContent = formatPriceDisplay(markField.numeric);
+    markCell.textContent = formatPriceDisplay(markField.numeric, {
+      minimumFractionDigits: 6,
+      maximumFractionDigits: 6,
+    });
     applyActivePositionLabel(markCell, 'mark');
     row.append(markCell);
 
