@@ -40,6 +40,11 @@ from concurrent.futures import Future, ThreadPoolExecutor
 
 import requests
 
+try:  # optional dependency, used for real-time user-data streams
+    import websocket  # type: ignore
+except Exception:  # pragma: no cover - optional, handled at runtime
+    websocket = None
+
 from decimal import Decimal
 from requests.exceptions import RequestException
 
@@ -189,6 +194,9 @@ ORDERBOOK_TTL = max(0.5, float(os.getenv("ASTER_ORDERBOOK_TTL", "2.5") or 2.5))
 ORDERBOOK_ON_DEMAND = max(0, int(os.getenv("ASTER_ORDERBOOK_ON_DEMAND", "6") or 6))
 
 
+USER_STREAM_ENABLED = os.getenv("ASTER_USER_STREAM", "true").lower() in ("1", "true", "yes", "on")
+
+
 def _int_env(name: str, default: int) -> int:
     try:
         value = int(os.getenv(name, str(default)))
@@ -221,6 +229,27 @@ def _coerce_positive_float(value: Any) -> float:
     if not math.isfinite(numeric) or numeric <= 0:
         return 0.0
     return float(numeric)
+
+
+def _coerce_float(value: Any, default: Optional[float] = None) -> Optional[float]:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(numeric):
+        return default
+    return float(numeric)
+
+
+def _coerce_int(value: Any, default: Optional[int] = None) -> Optional[int]:
+    try:
+        return int(str(value).strip())
+    except Exception:
+        try:
+            return int(float(value))
+        except Exception:
+            return default
+
 
 MIN_QUOTE_VOL = float(os.getenv("ASTER_MIN_QUOTE_VOL_USDT", "150000"))
 SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.0030"))  # 0.30 %
@@ -3874,11 +3903,49 @@ class PaperBroker:
         self.closed: List[Dict[str, Any]] = []
         self.realized_pnl: float = 0.0
         self._order_seq = 1
+        self._trade_seq = 1
+        self.trades: List[Dict[str, Any]] = []
 
     def _next_order_id(self) -> int:
         oid = self._order_seq
         self._order_seq += 1
         return oid
+
+    def _next_trade_id(self) -> int:
+        tid = self._trade_seq
+        self._trade_seq += 1
+        return tid
+
+    def _record_trade(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        qty: float,
+        price: float,
+        order_id: Optional[int] = None,
+        realized_pnl: float = 0.0,
+        commission: float = 0.0,
+        timestamp: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        trade_id = self._next_trade_id()
+        ts = timestamp if timestamp is not None else time.time()
+        payload = {
+            "symbol": symbol,
+            "id": trade_id,
+            "tradeId": trade_id,
+            "orderId": order_id or trade_id,
+            "price": f"{float(price):.10f}",
+            "qty": f"{float(qty):.10f}",
+            "realizedPnl": f"{float(realized_pnl):.10f}",
+            "commission": f"{float(commission):.10f}",
+            "commissionAsset": QUOTE,
+            "buyer": side.upper() == "BUY",
+            "maker": False,
+            "time": int(ts * 1000),
+        }
+        self.trades.append(payload)
+        return payload
 
     @staticmethod
     def _decode_bracket_price(payload: Any) -> Optional[float]:
@@ -4002,6 +4069,14 @@ class PaperBroker:
             record["ai"] = ai_meta
         self.realized_pnl += float(pnl)
         self.closed.append(record)
+        exit_side = "SELL" if side == "BUY" else "BUY"
+        self._record_trade(
+            symbol=symbol,
+            side=exit_side,
+            qty=base_qty,
+            price=float(exit_price),
+            realized_pnl=float(pnl),
+        )
         self.positions.pop(symbol, None)
 
     def _same_direction(self, existing_qty: float, delta: float) -> bool:
@@ -4108,6 +4183,13 @@ class PaperBroker:
             pos.setdefault("ctx", {})
         self._update_unrealized(self.positions.get(symbol, {}), fill_price)
         order_id = self._next_order_id()
+        self._record_trade(
+            symbol=symbol,
+            side=side,
+            qty=abs(signed_qty),
+            price=float(fill_price),
+            order_id=order_id,
+        )
         return {
             "paper": True,
             "symbol": symbol,
@@ -4115,6 +4197,7 @@ class PaperBroker:
             "status": "FILLED",
             "avgPrice": float(fill_price),
             "executedQty": qty,
+            "clientOrderId": f"paper-{order_id}",
             "side": side,
         }
 
@@ -4158,6 +4241,14 @@ class PaperBroker:
             record["ai"] = ai_meta
         self.closed.append(record)
         self.realized_pnl += float(pnl)
+        exit_side = "SELL" if side == "BUY" else "BUY"
+        self._record_trade(
+            symbol=symbol,
+            side=exit_side,
+            qty=float(qty_closed),
+            price=float(fill_price),
+            realized_pnl=float(pnl),
+        )
         remaining_qty = multiplier * qty_left
         if qty_left <= 1e-12:
             self.positions.pop(symbol, None)
@@ -4228,6 +4319,26 @@ class PaperBroker:
         self.closed.clear()
         return records
 
+    def user_trades(
+        self,
+        symbol: str,
+        *,
+        order_id: Optional[int] = None,
+        from_id: Optional[int] = None,
+        start_time: Optional[int] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        trades = [t for t in self.trades if t.get("symbol") == symbol]
+        if order_id is not None:
+            trades = [t for t in trades if int(t.get("orderId", 0)) == int(order_id)]
+        if from_id is not None:
+            trades = [t for t in trades if int(t.get("id", 0)) >= int(from_id)]
+        if start_time is not None:
+            trades = [t for t in trades if int(t.get("time", 0)) >= int(start_time)]
+        trades.sort(key=lambda item: int(item.get("id", 0)))
+        capped = max(1, min(int(limit), 1000))
+        return trades[:capped]
+
 
 class Exchange:
     def __init__(self, base: str, api_key: str, api_secret: str, recv_window: int = 10000):
@@ -4241,6 +4352,15 @@ class Exchange:
         self._max_retries = HTTP_RETRIES
         self._backoff = HTTP_BACKOFF
         self._paper: Optional[PaperBroker] = PaperBroker(self) if PAPER else None
+        ws_env = os.getenv("ASTER_WS_BASE", "").strip()
+        if ws_env:
+            self.ws_base = ws_env.rstrip("/")
+        elif self.base.startswith("https://"):
+            self.ws_base = "wss://" + self.base[len("https://") :]
+        elif self.base.startswith("http://"):
+            self.ws_base = "ws://" + self.base[len("http://") :]
+        else:
+            self.ws_base = self.base
 
     def _headers(self) -> Dict[str, str]:
         h = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -4382,6 +4502,42 @@ class Exchange:
             return orders
         return self.signed("get", "/fapi/v1/openOrders", {"symbol": symbol})
 
+    def query_order(
+        self,
+        symbol: str,
+        *,
+        order_id: Optional[int] = None,
+        client_order_id: Optional[str] = None,
+    ) -> Any:
+        payload: Dict[str, Any] = {"symbol": symbol}
+        if order_id is not None:
+            payload["orderId"] = str(int(order_id))
+        elif client_order_id:
+            payload["origClientOrderId"] = client_order_id
+        else:
+            raise ValueError("order_id or client_order_id required")
+        if PAPER and self._paper:
+            # Paper mode orders are executed immediately – synthesize status.
+            trades = self._paper.user_trades(symbol, order_id=payload.get("orderId"))
+            qty = 0.0
+            price = 0.0
+            if trades:
+                for trade in trades:
+                    q = _coerce_float(trade.get("qty")) or 0.0
+                    p = _coerce_float(trade.get("price")) or 0.0
+                    qty += q
+                    price += p * q
+            avg = price / qty if qty > 0 else 0.0
+            return {
+                "symbol": symbol,
+                "orderId": payload.get("orderId"),
+                "status": "FILLED" if qty > 0 else "NEW",
+                "executedQty": f"{qty:.10f}",
+                "avgPrice": f"{avg:.10f}",
+                "updateTime": int(time.time() * 1000),
+            }
+        return self.signed("get", "/fapi/v1/order", payload)
+
     def cancel_order(self, symbol: str, order_id: int) -> Any:
         if PAPER and self._paper:
             self._paper.cancel_brackets(symbol)
@@ -4458,6 +4614,259 @@ class Exchange:
             return False
         return self._paper.replace_take_profit(symbol, price)
 
+    def get_user_trades(
+        self,
+        symbol: str,
+        *,
+        order_id: Optional[int] = None,
+        from_id: Optional[int] = None,
+        start_time: Optional[int] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        if PAPER and self._paper:
+            return self._paper.user_trades(
+                symbol,
+                order_id=order_id,
+                from_id=from_id,
+                start_time=start_time,
+                limit=limit,
+            )
+        payload: Dict[str, Any] = {"symbol": symbol, "limit": max(1, min(int(limit), 1000))}
+        if order_id is not None:
+            payload["orderId"] = int(order_id)
+        if from_id is not None:
+            payload["fromId"] = int(from_id)
+        if start_time is not None:
+            payload["startTime"] = int(start_time)
+        return self.signed("get", "/fapi/v1/userTrades", payload)
+
+    def create_listen_key(self) -> Optional[str]:
+        if PAPER and self._paper:
+            return f"paper-{uuid.uuid4().hex}"
+        url = f"{self.base}/fapi/v1/listenKey"
+        r = self._request_with_retry(self.s.post, url, headers=self._headers())
+        r.raise_for_status()
+        data = r.json()
+        return data.get("listenKey")
+
+    def keepalive_listen_key(self, listen_key: str) -> None:
+        if PAPER and self._paper:
+            return
+        url = f"{self.base}/fapi/v1/listenKey"
+        self._request_with_retry(
+            self.s.put,
+            url,
+            headers=self._headers(),
+            data={"listenKey": listen_key},
+        )
+
+    def close_listen_key(self, listen_key: str) -> None:
+        if PAPER and self._paper:
+            return
+        url = f"{self.base}/fapi/v1/listenKey"
+        self._request_with_retry(
+            self.s.delete,
+            url,
+            headers=self._headers(),
+            data={"listenKey": listen_key},
+        )
+
+    def await_order_fill(
+        self,
+        symbol: str,
+        order_info: Optional[Dict[str, Any]],
+        *,
+        timeout: float = 6.0,
+        poll_interval: float = 0.25,
+    ) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
+        if not order_info:
+            return None, []
+        order_id = _coerce_int(order_info.get("orderId"))
+        client_order_id = order_info.get("clientOrderId")
+        if PAPER and self._paper:
+            trades = self._paper.user_trades(symbol, order_id=order_id)
+            return order_info, trades
+        deadline = time.time() + max(0.5, timeout)
+        latest = dict(order_info)
+        while time.time() < deadline:
+            status = str(latest.get("status") or "").upper()
+            executed = _coerce_float(latest.get("executedQty")) or 0.0
+            if status in {"FILLED", "PARTIALLY_FILLED"} and executed > 0:
+                break
+            try:
+                latest = self.query_order(
+                    symbol,
+                    order_id=order_id,
+                    client_order_id=client_order_id,
+                )
+            except Exception as exc:
+                log.debug(f"order status poll failed for {symbol}: {exc}")
+            time.sleep(poll_interval)
+        trades: List[Dict[str, Any]] = []
+        try:
+            trades = self.get_user_trades(symbol, order_id=order_id)
+        except Exception as exc:
+            log.debug(f"userTrades fetch failed for {symbol}: {exc}")
+        return latest, trades
+
+
+class UserDataStream:
+    def __init__(
+        self,
+        exchange: Exchange,
+        *,
+        on_execution: Optional[Callable[[Dict[str, Any]], None]] = None,
+        on_account: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> None:
+        self.exchange = exchange
+        self._on_execution = on_execution
+        self._on_account = on_account
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._ws_thread: Optional[threading.Thread] = None
+        self._ws_app: Any = None
+        self._listen_key: Optional[str] = None
+        self._last_keepalive = 0.0
+        self._keepalive_interval = float(os.getenv("ASTER_WS_KEEPALIVE", "1200") or 1200)
+        self._reconnect_delay = 5.0
+        path = os.getenv("ASTER_WS_USER_PATH", "/ws/")
+        self._ws_path = path if path.startswith("/") else f"/{path}"
+
+    def start(self) -> None:
+        if websocket is None:
+            log.debug("websocket-client package not available; user stream disabled")
+            return
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, name="user-data-stream", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._ws_app is not None:
+            try:
+                self._ws_app.close()
+            except Exception:
+                pass
+        if self._ws_thread and self._ws_thread.is_alive():
+            self._ws_thread.join(timeout=2.0)
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=2.0)
+        if self._listen_key:
+            try:
+                self.exchange.close_listen_key(self._listen_key)
+            except Exception:
+                pass
+        self._listen_key = None
+
+    def _build_url(self, listen_key: str) -> str:
+        base = self.exchange.ws_base.rstrip("/")
+        path = self._ws_path
+        if not path.endswith("/"):
+            path = f"{path}/"
+        return f"{base}{path}{listen_key}"
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            try:
+                if not self._listen_key:
+                    self._listen_key = self.exchange.create_listen_key()
+                    self._last_keepalive = time.time()
+                if not self._listen_key:
+                    time.sleep(self._reconnect_delay)
+                    continue
+                url = self._build_url(self._listen_key)
+                self._run_socket(url)
+            except Exception as exc:
+                log.debug(f"user stream failure: {exc}")
+            if self._stop.is_set():
+                break
+            time.sleep(self._reconnect_delay)
+
+    def _run_socket(self, url: str) -> None:
+        if websocket is None:
+            return
+
+        def _on_message(_ws, message: str) -> None:
+            if self._stop.is_set():
+                return
+            try:
+                payload = json.loads(message)
+            except ValueError:
+                return
+            self._handle_payload(payload)
+
+        def _on_error(_ws, error: Any) -> None:
+            log.debug(f"user stream error: {error}")
+
+        def _on_close(_ws, *_args) -> None:
+            log.debug("user stream closed")
+
+        self._ws_app = websocket.WebSocketApp(
+            url,
+            on_message=_on_message,
+            on_error=_on_error,
+            on_close=_on_close,
+        )
+
+        self._ws_thread = threading.Thread(
+            target=lambda: self._ws_app.run_forever(ping_interval=30, ping_timeout=10),
+            name="user-data-ws",
+            daemon=True,
+        )
+        self._ws_thread.start()
+
+        while not self._stop.is_set():
+            if self._ws_thread and not self._ws_thread.is_alive():
+                break
+            now = time.time()
+            if self._listen_key and (now - self._last_keepalive) > max(60.0, self._keepalive_interval):
+                try:
+                    self.exchange.keepalive_listen_key(self._listen_key)
+                    self._last_keepalive = now
+                except Exception as exc:
+                    log.debug(f"user stream keepalive failed: {exc}")
+            time.sleep(5.0)
+
+    def _handle_payload(self, payload: Dict[str, Any]) -> None:
+        event_type = str(payload.get("e") or "").upper()
+        event_time = payload.get("E")
+        if event_type == "ORDER_TRADE_UPDATE":
+            order = payload.get("o") or {}
+            data = {
+                "symbol": order.get("s"),
+                "status": order.get("X"),
+                "side": order.get("S"),
+                "orderId": order.get("i"),
+                "clientOrderId": order.get("c"),
+                "executedQty": order.get("z"),
+                "avgPrice": order.get("ap"),
+                "lastQty": order.get("l"),
+                "lastPrice": order.get("L"),
+                "commission": order.get("n"),
+                "realizedPnl": order.get("rp"),
+                "tradeId": order.get("t"),
+                "tradeTime": order.get("T"),
+                "event_time": event_time,
+            }
+            if self._on_execution:
+                try:
+                    self._on_execution(data)
+                except Exception as exc:
+                    log.debug(f"execution callback failed: {exc}")
+        elif event_type == "ACCOUNT_UPDATE":
+            account = payload.get("a") or {}
+            data = {
+                "positions": account.get("P") or [],
+                "balances": account.get("B") or [],
+                "event_time": event_time,
+            }
+            if self._on_account:
+                try:
+                    self._on_account(data)
+                except Exception as exc:
+                    log.debug(f"account callback failed: {exc}")
 # ========= Universe =========
 class SymbolUniverse:
     def __init__(
@@ -6062,6 +6471,7 @@ class TradeManager:
     ):
         record: Dict[str, Any] = {
             "entry": float(entry),
+            "expected_entry": float(entry),
             "sl": float(sl),
             "tp": float(tp),
             "side": side,
@@ -6070,6 +6480,7 @@ class TradeManager:
             "bucket": bucket,
             "atr_abs": float(atr_abs),
             "opened_at": time.time(),
+            "filled_qty": 0.0,
         }
         if meta:
             sanitized = self._sanitize_meta(meta)
@@ -6084,6 +6495,132 @@ class TradeManager:
                 self.policy.note_entry(symbol, ctx=ctx, size_bucket=bucket)
             except Exception as e:
                 log.debug(f"policy note_entry fail: {e}")
+
+    def register_entry_fill(
+        self,
+        symbol: str,
+        order_info: Optional[Dict[str, Any]],
+        trades: Sequence[Dict[str, Any]],
+    ) -> None:
+        rec = self.state.get("live_trades", {}).get(symbol)
+        if not isinstance(rec, dict):
+            return
+        avg_price = _coerce_float((order_info or {}).get("avgPrice"))
+        executed_qty = _coerce_float((order_info or {}).get("executedQty"))
+        status = str((order_info or {}).get("status") or "").upper()
+        entry_order_id = _coerce_int((order_info or {}).get("orderId"))
+        client_order_id = (order_info or {}).get("clientOrderId")
+        if trades:
+            total_qty = 0.0
+            total_cost = 0.0
+            commission = rec.get("entry_commission", 0.0) or 0.0
+            trade_ids: List[int] = []
+            for trade in trades:
+                qty = _coerce_float(trade.get("qty")) or 0.0
+                price = _coerce_float(trade.get("price")) or 0.0
+                total_qty += qty
+                total_cost += qty * price
+                commission += _coerce_float(trade.get("commission")) or 0.0
+                tid = _coerce_int(trade.get("id") or trade.get("tradeId"))
+                if tid is not None:
+                    trade_ids.append(tid)
+            if total_qty > 0 and total_cost > 0:
+                avg_price = total_cost / total_qty
+                executed_qty = total_qty
+            if trade_ids:
+                rec["last_trade_id"] = max(trade_ids)
+            rec["entry_commission"] = float(commission)
+        if avg_price is not None and avg_price > 0:
+            rec["entry"] = float(avg_price)
+        if executed_qty is not None and executed_qty > 0:
+            rec["qty"] = float(executed_qty)
+            rec["filled_qty"] = float(executed_qty)
+        if entry_order_id is not None:
+            rec["entry_order_id"] = int(entry_order_id)
+        if client_order_id:
+            rec["client_order_id"] = client_order_id
+        if status:
+            rec["order_status"] = status
+        ts = _coerce_float((order_info or {}).get("updateTime"))
+        if ts is not None:
+            rec["last_update"] = float(ts) / (1000.0 if ts > 1e6 else 1.0)
+        rec.setdefault("fills", []).append(
+            {
+                "avg": float(avg_price or rec.get("entry", 0.0)),
+                "qty": float(executed_qty or rec.get("qty", 0.0)),
+                "order_id": entry_order_id,
+                "client_order_id": client_order_id,
+                "status": status,
+                "ts": time.time(),
+            }
+        )
+        self.save()
+
+    def handle_order_update(self, payload: Dict[str, Any]) -> None:
+        symbol = str(payload.get("symbol") or "").upper()
+        if not symbol:
+            return
+        rec = self.state.get("live_trades", {}).get(symbol)
+        if not isinstance(rec, dict):
+            return
+        side = str(payload.get("side") or "").upper()
+        if side and rec.get("side") and side != rec.get("side"):
+            return
+        status = str(payload.get("status") or "").upper()
+        if status not in {"FILLED", "PARTIALLY_FILLED", "TRADE"}:
+            return
+        order_info = {
+            "symbol": symbol,
+            "orderId": payload.get("orderId"),
+            "clientOrderId": payload.get("clientOrderId"),
+            "status": payload.get("status"),
+            "executedQty": payload.get("executedQty") or payload.get("cumulativeQty"),
+            "avgPrice": payload.get("avgPrice") or payload.get("priceAvg"),
+            "updateTime": payload.get("event_time"),
+        }
+        trade_stub: List[Dict[str, Any]] = []
+        last_qty = payload.get("lastQty") or payload.get("tradeQty")
+        last_price = payload.get("lastPrice") or payload.get("tradePrice")
+        if last_qty:
+            trade_stub.append(
+                {
+                    "qty": last_qty,
+                    "price": last_price,
+                    "commission": payload.get("commission"),
+                    "realizedPnl": payload.get("realizedPnl"),
+                    "buyer": side == "BUY",
+                    "tradeId": payload.get("tradeId"),
+                    "id": payload.get("tradeId"),
+                    "time": payload.get("tradeTime") or payload.get("event_time"),
+                }
+            )
+        try:
+            self.register_entry_fill(symbol, order_info, trade_stub)
+        except Exception as exc:
+            log.debug(f"order update registration failed for {symbol}: {exc}")
+
+    def handle_account_update(self, payload: Dict[str, Any]) -> None:
+        live = self.state.get("live_trades", {})
+        if not isinstance(live, dict) or not live:
+            return
+        positions = payload.get("positions") or payload.get("P") or []
+        for entry in positions:
+            symbol = str(entry.get("symbol") or entry.get("s") or "").upper()
+            if not symbol or symbol not in live:
+                continue
+            rec = live.get(symbol)
+            if not isinstance(rec, dict):
+                continue
+            amt = _coerce_float(entry.get("positionAmt") or entry.get("pa"))
+            if amt is not None:
+                rec["position_amt"] = float(amt)
+            entry_price = _coerce_float(entry.get("entryPrice") or entry.get("ep"))
+            if entry_price is not None and entry_price > 0:
+                rec.setdefault("entry", float(entry_price))
+            realized = _coerce_float(entry.get("realizedPnl") or entry.get("rp"))
+            if realized is not None:
+                rec["realized_snapshot"] = float(realized)
+        self.save()
 
     def remove_closed_trades(
         self,
@@ -6182,18 +6719,83 @@ class TradeManager:
                 continue  # noch offen
 
             self._cancel_stale_exit_orders(sym)
-            entry = float(rec.get("entry")); sl = float(rec.get("sl"))
-            side = rec.get("side"); qty = float(rec.get("qty"))
-            # Exit-Preis näherungsweise aus Mid
+            entry = float(rec.get("entry"))
+            sl = float(rec.get("sl"))
+            side = rec.get("side")
+            qty = float(rec.get("qty"))
+            last_trade_id = rec.get("last_trade_id")
+            start_time = None
+            opened_at = rec.get("opened_at")
+            if isinstance(opened_at, (int, float)) and opened_at > 0:
+                start_time = int(max(0, opened_at - 5) * 1000)
             try:
-                bt = self.exchange.get_book_ticker(sym)
-                ask = float(bt.get("askPrice", 0.0) or 0.0); bid = float(bt.get("bidPrice", 0.0) or 0.0)
-                exit_px = (ask + bid) / 2.0 if ask > 0 and bid > 0 else entry
-            except Exception:
-                exit_px = entry
-            prof = (exit_px - entry) * qty if side == "BUY" else (entry - exit_px) * qty
-            risk = max(1e-9, abs(entry - sl) * qty)
-            r_mult = float(prof / risk)
+                trades = self.exchange.get_user_trades(
+                    sym,
+                    from_id=(int(last_trade_id) + 1) if isinstance(last_trade_id, (int, float)) else None,
+                    start_time=start_time,
+                )
+            except Exception as exc:
+                log.debug(f"userTrades closing fetch failed for {sym}: {exc}")
+                trades = []
+            closing_qty = 0.0
+            closing_cost = 0.0
+            closing_commission = 0.0
+            realized_pnl = 0.0
+            latest_trade_id = last_trade_id
+            for trade in trades or []:
+                buyer_flag = bool(trade.get("buyer"))
+                is_exit = (side == "BUY" and not buyer_flag) or (side == "SELL" and buyer_flag)
+                tid = _coerce_int(trade.get("id") or trade.get("tradeId"))
+                if tid is not None:
+                    latest_trade_id = tid if latest_trade_id is None else max(latest_trade_id, tid)
+                if not is_exit:
+                    continue
+                qty_tr = _coerce_float(trade.get("qty")) or 0.0
+                px_tr = _coerce_float(trade.get("price")) or 0.0
+                pnl_tr = _coerce_float(trade.get("realizedPnl")) or 0.0
+                fee_tr = _coerce_float(trade.get("commission")) or 0.0
+                closing_qty += qty_tr
+                closing_cost += qty_tr * px_tr
+                realized_pnl += pnl_tr
+                closing_commission += fee_tr
+            if latest_trade_id is not None:
+                rec["last_trade_id"] = latest_trade_id
+            if closing_qty <= 0:
+                # fallback: Mid-price estimate
+                try:
+                    bt = self.exchange.get_book_ticker(sym)
+                    ask = float(bt.get("askPrice", 0.0) or 0.0)
+                    bid = float(bt.get("bidPrice", 0.0) or 0.0)
+                    exit_px = (ask + bid) / 2.0 if ask > 0 and bid > 0 else entry
+                except Exception:
+                    exit_px = entry
+                prof = (exit_px - entry) * qty if side == "BUY" else (entry - exit_px) * qty
+                risk = max(1e-9, abs(entry - sl) * qty)
+                r_mult = float(prof / risk)
+                gross_pnl = prof
+                exit_commission = 0.0
+                rec["exit_price"] = float(exit_px)
+                rec["pnl"] = float(prof)
+            else:
+                exit_px = closing_cost / max(closing_qty, 1e-9)
+                entry_commission = rec.get("entry_commission", 0.0) or 0.0
+                total_commission = entry_commission + closing_commission
+                gross_pnl = float(realized_pnl)
+                net_pnl = gross_pnl - total_commission
+                if abs(total_commission) <= 1e-9:
+                    prof = gross_pnl
+                else:
+                    prof = net_pnl
+                risk = max(1e-9, abs(entry - sl) * qty)
+                r_mult = float(prof / risk)
+                rec["exit_commission"] = float(closing_commission)
+                rec["entry_commission"] = float(entry_commission)
+                rec["fees_total"] = float(total_commission)
+                rec["gross_pnl"] = float(gross_pnl)
+                rec["exit_price"] = float(exit_px)
+                rec["exit_qty"] = float(closing_qty)
+                rec["pnl"] = float(prof)
+                exit_commission = closing_commission
             if self.policy and BANDIT_ENABLED:
                 try:
                     self.policy.note_exit(symbol, pnl_r=r_mult, ctx=rec.get("ctx"), size_bucket=rec.get("bucket"))
@@ -6202,19 +6804,26 @@ class TradeManager:
             hist = self.state.setdefault("trade_history", [])
             closed_at = time.time()
             opened_at = float(rec.get("opened_at", closed_at) or closed_at)
+            entry_commission = rec.get("entry_commission", 0.0) or 0.0
+            total_fees = entry_commission + (rec.get("exit_commission", 0.0) or 0.0)
+            pnl_value = rec.get("pnl", prof)
             record = {
                 "symbol": sym,
                 "side": side,
                 "qty": float(qty),
                 "entry": float(entry),
-                "exit": float(exit_px),
-                "pnl": float(prof),
+                "exit": float(rec.get("exit_price", exit_px if 'exit_px' in locals() else entry)),
+                "pnl": float(pnl_value),
                 "pnl_r": float(r_mult),
                 "opened_at": float(opened_at),
                 "closed_at": float(closed_at),
                 "bucket": rec.get("bucket"),
                 "context": rec.get("ctx", {}),
             }
+            if abs(total_fees) > 0:
+                record["fees"] = float(total_fees)
+            if "gross_pnl" in rec:
+                record["pnl_gross"] = float(rec["gross_pnl"])
             ai_meta = rec.get("ai")
             if ai_meta:
                 record["ai"] = ai_meta
@@ -6489,6 +7098,17 @@ class Bot:
             recv_window=RECV_WINDOW,
         )
         self.trade_mgr = TradeManager(self.exchange, self.policy, self.state)
+        self.user_stream: Optional[UserDataStream] = None
+        if USER_STREAM_ENABLED:
+            try:
+                self.user_stream = UserDataStream(
+                    self.exchange,
+                    on_execution=self._handle_stream_execution,
+                    on_account=self._handle_stream_account,
+                )
+                self.user_stream.start()
+            except Exception as exc:
+                log.debug(f"user stream initialization failed: {exc}")
         self._reset_decision_stats()
         self.fasttp = FastTP(self.exchange, self.guard, self.state)
         self.decision_tracker = DecisionTracker(self.state, self.trade_mgr.save)
@@ -6527,6 +7147,22 @@ class Bot:
     @property
     def strategy(self) -> Strategy:
         return self._strategy
+
+    def _handle_stream_execution(self, payload: Dict[str, Any]) -> None:
+        if not isinstance(payload, dict):
+            return
+        try:
+            self.trade_mgr.handle_order_update(payload)
+        except Exception as exc:
+            log.debug(f"stream execution dispatch failed: {exc}")
+
+    def _handle_stream_account(self, payload: Dict[str, Any]) -> None:
+        if not isinstance(payload, dict):
+            return
+        try:
+            self.trade_mgr.handle_account_update(payload)
+        except Exception as exc:
+            log.debug(f"stream account dispatch failed: {exc}")
 
     def _ensure_banned_state(self) -> None:
         banned = self.state.get("banned_symbols")
@@ -8329,7 +8965,7 @@ class Bot:
             order_params["stopLoss"] = build_bracket_payload("SL", sig, sl)
             order_params["takeProfit"] = build_bracket_payload("TP", sig, tp)
             try:
-                self.exchange.post_order(order_params)
+                order_response = self.exchange.post_order(order_params)
             except requests.HTTPError as exc:
                 status = getattr(exc.response, "status_code", None)
                 detail = ""
@@ -8393,19 +9029,37 @@ class Bot:
             if self.decision_tracker and not manual_override:
                 self.decision_tracker.record_acceptance(bucket, persist=False)
             self.trade_mgr.note_entry(symbol, px, sl, tp, sig, float(q_str), ctx, bucket, atr_abs, meta=ai_meta)
+            final_order: Optional[Dict[str, Any]] = None
+            order_trades: List[Dict[str, Any]] = []
+            try:
+                final_order, order_trades = self.exchange.await_order_fill(symbol, order_response)
+            except Exception as exc:
+                log.debug(f"order fill await failed for {symbol}: {exc}")
+            if final_order or order_trades:
+                try:
+                    self.trade_mgr.register_entry_fill(symbol, final_order, order_trades)
+                except Exception as exc:
+                    log.debug(f"register entry fill failed for {symbol}: {exc}")
+            live_trade = self.state.get("live_trades", {}).get(symbol, {})
+            fill_qty = _coerce_float((final_order or {}).get("executedQty"))
+            if fill_qty is None or fill_qty <= 0:
+                fill_qty = _coerce_float(live_trade.get("qty")) or float(q_str)
+            fill_price = _coerce_float((final_order or {}).get("avgPrice"))
+            if fill_price is None or fill_price <= 0:
+                fill_price = _coerce_float(live_trade.get("entry")) or px
             if manual_override:
                 self._complete_manual_request(
                     manual_req,
                     "filled",
                     result={
-                        "quantity": float(q_str),
-                        "entry": float(px),
+                        "quantity": float(fill_qty or 0.0),
+                        "entry": float(fill_price or px),
                         "stop": float(sl),
                         "target": float(tp),
                     },
                 )
             try:
-                filled_qty = float(q_str)
+                filled_qty = float(fill_qty or q_str)
             except (TypeError, ValueError):
                 filled_qty = float(qty)
             current_amt = float(pos_map.get(symbol, 0.0) or 0.0)
@@ -8414,12 +9068,13 @@ class Bot:
             alpha_msg = ""
             if alpha_prob is not None:
                 alpha_msg = f" alpha={alpha_prob:.3f}/{(alpha_conf or 0.0):.2f}"
+            live_entry = float(live_trade.get("entry", fill_price or px) or px)
             log.info(
-                "ENTRY %s %s qty=%s px≈%.6f SL=%.6f TP=%.6f bucket=%s%s",
+                "ENTRY %s %s qty=%.6f px≈%.6f SL=%.6f TP=%.6f bucket=%s%s",
                 symbol,
                 sig,
-                q_str,
-                px,
+                float(fill_qty or qty),
+                live_entry,
                 sl,
                 tp,
                 bucket,
@@ -8820,6 +9475,11 @@ class Bot:
         if not loop:
             self.run_once()
             log.info("Done (single run).")
+            if self.user_stream:
+                try:
+                    self.user_stream.stop()
+                except Exception as exc:
+                    log.debug(f"user stream shutdown failed: {exc}")
             return
 
         while running:
@@ -8833,6 +9493,11 @@ class Bot:
             triggered = self._ai_wakeup_event.wait(timeout=wait_time)
             if triggered:
                 continue
+        if self.user_stream:
+            try:
+                self.user_stream.stop()
+            except Exception as exc:
+                log.debug(f"user stream shutdown failed: {exc}")
         log.info("Bot stopped. Safe to exit.")
 
 # ========= main =========
