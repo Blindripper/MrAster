@@ -2682,6 +2682,22 @@ def _coerce_env_value(value: Any) -> str:
     return str(value)
 
 
+SENSITIVE_ENV_MARKERS = ("KEY", "TOKEN", "SECRET", "PASSWORD")
+
+
+def _is_secret_env_key(key: str) -> bool:
+    upper_key = (key or "").upper()
+    return any(marker in upper_key for marker in SENSITIVE_ENV_MARKERS)
+
+
+def _redact_env_value(key: str, value: Any) -> Any:
+    if value is None:
+        return None
+    if _is_secret_env_key(key):
+        return "[redacted]"
+    return value
+
+
 def _build_config_change_payload(changes: List[Dict[str, Any]]) -> Dict[str, Any]:
     preview = changes[:CONFIG_CHANGE_PREVIEW_LIMIT]
     payload: Dict[str, Any] = {
@@ -2690,6 +2706,7 @@ def _build_config_change_payload(changes: List[Dict[str, Any]]) -> Dict[str, Any
                 "key": change.get("key"),
                 "old": change.get("old"),
                 "new": change.get("new"),
+                "redacted": change.get("redacted", False),
             }
             for change in preview
         ],
@@ -2711,7 +2728,14 @@ async def update_config(update: ConfigUpdate) -> Dict[str, Any]:
         new_value = _coerce_env_value(value)
         old_value = env_cfg.get(key)
         if old_value != new_value:
-            changes.append({"key": key, "old": old_value, "new": new_value})
+            changes.append(
+                {
+                    "key": key,
+                    "old": _redact_env_value(key, old_value),
+                    "new": _redact_env_value(key, new_value),
+                    "redacted": _is_secret_env_key(key),
+                }
+            )
         env_cfg[key] = new_value
     _save_config(CONFIG)
     payload = _build_config_change_payload(changes)
