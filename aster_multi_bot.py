@@ -437,18 +437,33 @@ def stoch_rsi(
     if not rsi_vals:
         return [], []
     stoch: List[float] = []
-    window: deque = deque()
-    for val in rsi_vals:
-        window.append(val)
-        if len(window) > period and period > 0:
-            window.popleft()
-        if len(window) < period or period <= 0:
-            stoch.append(50.0)
-            continue
-        low = min(window)
-        high = max(window)
-        rng = max(high - low, 1e-9)
-        stoch.append(((val - low) / rng) * 100.0)
+    if period <= 0:
+        stoch.extend([50.0] * len(rsi_vals))
+    else:
+        min_deque: deque = deque()
+        max_deque: deque = deque()
+        for idx, val in enumerate(rsi_vals):
+            while min_deque and min_deque[-1][0] >= val:
+                min_deque.pop()
+            min_deque.append((val, idx))
+            while max_deque and max_deque[-1][0] <= val:
+                max_deque.pop()
+            max_deque.append((val, idx))
+
+            boundary = idx - period + 1
+            while min_deque and min_deque[0][1] < boundary:
+                min_deque.popleft()
+            while max_deque and max_deque[0][1] < boundary:
+                max_deque.popleft()
+
+            if idx + 1 < period:
+                stoch.append(50.0)
+                continue
+
+            low = min_deque[0][0]
+            high = max_deque[0][0]
+            rng = max(high - low, 1e-9)
+            stoch.append(((val - low) / rng) * 100.0)
     k_line = _sma_series(stoch, max(smooth_k, 1))
     d_line = _sma_series(k_line, max(smooth_d, 1))
     return k_line, d_line
@@ -5771,7 +5786,11 @@ class Strategy:
         payload: Dict[str, Any] = {}
         if ctx:
             try:
-                payload = json.loads(json.dumps(ctx, default=lambda o: float(o)))
+                sanitized = self._sanitize_for_json(ctx)
+                if isinstance(sanitized, dict):
+                    payload = sanitized
+                else:
+                    payload = dict(ctx)
             except Exception:
                 payload = dict(ctx)
         payload.setdefault("skip_reason", reason)

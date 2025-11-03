@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from datetime import datetime
 import time
-from typing import Any, Callable, Dict, Iterable, List, Optional
+from collections import deque
+from typing import Any, Callable, Deque, Dict, Iterable, List, Optional
 
 POSTMORTEM_FEATURE_MAP: Dict[str, str] = {
     "trend_break": "pm_trend_break",
@@ -137,6 +138,15 @@ class ParameterTuner:
         self._min_trades = 4
         self._ai_interval = 5 * 60
         self._history_cap = 220
+        existing_history = self._state.get("history")
+        if isinstance(existing_history, list):
+            self._history: Deque[Dict[str, Any]] = deque(existing_history, maxlen=self._history_cap)
+        else:
+            self._history = deque(maxlen=self._history_cap)
+            if isinstance(existing_history, deque):
+                for item in list(existing_history)[-self._history_cap:]:
+                    self._history.append(item)
+        self._state["history"] = list(self._history)
 
     def observe(self, trade: Dict[str, Any], features: Dict[str, float]) -> None:
         record = {
@@ -147,11 +157,8 @@ class ParameterTuner:
             "pnl_r": float(trade.get("pnl_r", 0.0) or 0.0),
             "features": {k: float(v) for k, v in (features or {}).items()},
         }
-        history: List[Dict[str, Any]] = self._state.setdefault("history", [])
-        history.append(record)
-        if len(history) > self._history_cap:
-            del history[: len(history) - self._history_cap]
-        self._state["history"] = history
+        self._history.append(record)
+        self._state["history"] = list(self._history)
         self._recompute_local_overrides()
         self._maybe_request_ai()
 
@@ -179,7 +186,7 @@ class ParameterTuner:
         ctx["tuning_active"] = 1.0 if overrides else 0.0
 
     def _recompute_local_overrides(self) -> None:
-        history: List[Dict[str, Any]] = self._state.get("history", [])
+        history: List[Dict[str, Any]] = list(self._history)
         if not history:
             return
         bucket_perf: Dict[str, List[float]] = {"S": [], "M": [], "L": []}
@@ -247,7 +254,7 @@ class ParameterTuner:
         self._root["tuning_overrides"] = overrides
 
     def _maybe_request_ai(self) -> None:
-        history: List[Dict[str, Any]] = self._state.get("history", [])
+        history: List[Dict[str, Any]] = list(self._history)
         if len(history) < self._min_trades:
             return
         now = time.time()
