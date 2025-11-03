@@ -3708,7 +3708,6 @@ function createXNewsResultEntry(data, ts) {
   const body = document.createElement('div');
   body.className = 'x-news-result';
   const events = Array.isArray(data.events) ? data.events : [];
-
   const header = document.createElement('div');
   header.className = 'x-news-result__header';
 
@@ -3803,7 +3802,6 @@ function createXNewsResultEntry(data, ts) {
     body.append(summaryEl);
   }
 
-  const events = Array.isArray(data.events) ? data.events : [];
   if (events.length > 0) {
     const list = document.createElement('ul');
     list.className = 'x-news-result__events';
