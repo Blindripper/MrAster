@@ -1471,8 +1471,26 @@ def _fetch_position_brackets(
             order_type = str(order.get("type") or "").upper()
             if "STOP" not in order_type and "TAKE_PROFIT" not in order_type:
                 continue
-            if not (_is_truthy(order.get("closePosition")) or _is_truthy(order.get("reduceOnly"))):
-                continue
+
+            close_position = _is_truthy(order.get("closePosition"))
+            reduce_only = _is_truthy(order.get("reduceOnly"))
+
+            if not close_position and not reduce_only:
+                # Some venues omit these flags on reduce-only exit orders. In that
+                # case we infer the intent from the declared side: take-profit/
+                # stop orders that move in the opposite direction of the open
+                # position are still valid bracket levels.
+                inferred_reduce = False
+                order_side = str(order.get("side") or "").upper()
+                position_side_hint = str(order.get("positionSide") or "").upper()
+                if position_side_hint in {"LONG", "BOTH"}:
+                    inferred_reduce = order_side == "SELL"
+                elif position_side_hint == "SHORT":
+                    inferred_reduce = order_side == "BUY"
+                elif order_side in {"BUY", "SELL"}:
+                    inferred_reduce = True
+                if not inferred_reduce:
+                    continue
 
             price_candidates = (
                 order.get("stopPrice"),
