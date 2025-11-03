@@ -912,7 +912,7 @@ body.paper-mode .hero-paper-toggle span {
 
 .active-positions-table {
   width: 100%;
-  min-width: 920px;
+  min-width: 1020px;
   border-collapse: collapse;
   font-size: 0.9rem;
 }
@@ -958,9 +958,15 @@ body.paper-mode .hero-paper-toggle span {
   text-align: right;
 }
 
+.active-positions-table thead th:nth-child(7),
+.active-positions-table tbody td:nth-child(7) {
+  min-width: 170px;
+}
+
 .active-positions-table thead th:nth-child(8),
 .active-positions-table tbody td:nth-child(8) {
   padding-right: 0.4rem;
+  min-width: 168px;
 }
 
 .tp-sl-cell {
@@ -978,6 +984,8 @@ body.paper-mode .hero-paper-toggle span {
   display: inline-flex;
   align-items: baseline;
   gap: 0.35rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .tp-sl-label {
@@ -1002,6 +1010,8 @@ body.paper-mode .hero-paper-toggle span {
 .tp-sl-meta {
   font-size: 0.68rem;
   color: var(--text-muted);
+  width: 100%;
+  text-align: right;
 }
 
 .active-positions-symbol-wrapper {
@@ -1138,7 +1148,7 @@ body.paper-mode .hero-paper-toggle span {
 
 @media (max-width: 900px) {
   .active-positions-table {
-    min-width: 760px;
+    min-width: 840px;
   }
 }
 
