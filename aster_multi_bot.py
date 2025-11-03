@@ -6163,15 +6163,17 @@ class TradeManager:
                 )
                 history_added = True
                 processed_syms.add(sym)
-            for sym in processed_syms:
-                live.pop(sym, None)
-
         try:
             pos = self.exchange.get_position_risk()
             pos_map = {p.get("symbol"): float(p.get("positionAmt", "0") or 0.0) for p in pos}
         except Exception as e:
             log.debug(f"positionRisk fail: {e}")
             pos_map = {}
+
+        for sym in processed_syms:
+            amt = float(pos_map.get(sym, 0.0) or 0.0)
+            if abs(amt) <= 1e-12:
+                live.pop(sym, None)
 
         to_del: List[str] = []
         for sym, rec in live.items():
