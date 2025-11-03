@@ -42,3 +42,33 @@ def test_mask_sensitive_payload_masks_nested_values(monkeypatch):
     assert masked["nested"]["details"][1]["ASTER_OPENAI_API_KEY"] == bot._REDACTED_TOKEN
     # Unrelated values stay intact
     assert masked["nested"]["details"][1]["other"] == "ok"
+
+
+def test_mask_sensitive_payload_redacts_change_entries(monkeypatch):
+    # Ensure runtime key rotations are masked even when the value was not seen at import time
+    monkeypatch.setattr(bot, "_SENSITIVE_TOKEN_VALUES", tuple(), raising=False)
+
+    payload = {
+        "changes": [
+            {
+                "key": "ASTER_OPENAI_API_KEY",
+                "old": "sk-old-123",
+                "new": "sk-new-456",
+            },
+            {
+                "key": "UNRELATED_KEY",
+                "old": "before",
+                "new": "after",
+            },
+        ]
+    }
+
+    masked = bot._mask_sensitive_payload(payload)
+
+    sensitive_change, other_change = masked["changes"]
+
+    assert sensitive_change["old"] == bot._REDACTED_TOKEN
+    assert sensitive_change["new"] == bot._REDACTED_TOKEN
+
+    assert other_change["old"] == "before"
+    assert other_change["new"] == "after"

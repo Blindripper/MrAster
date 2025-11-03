@@ -173,8 +173,19 @@ def _mask_sensitive_text(text: str) -> str:
 def _mask_sensitive_payload(value: Any) -> Any:
     if isinstance(value, dict):
         sanitized: Dict[Any, Any] = {}
+        key_field_value = value.get("key")
+        redact_related_changes = (
+            isinstance(key_field_value, str)
+            and key_field_value in _SENSITIVE_FIELD_NAMES
+        )
         for key, item in value.items():
             if isinstance(key, str) and key in _SENSITIVE_FIELD_NAMES:
+                sanitized[key] = _REDACTED_TOKEN
+            elif (
+                redact_related_changes
+                and isinstance(key, str)
+                and key in {"old", "new"}
+            ):
                 sanitized[key] = _REDACTED_TOKEN
             else:
                 sanitized[key] = _mask_sensitive_payload(item)
