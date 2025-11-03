@@ -4735,26 +4735,30 @@ function updateActivePositionsView() {
     marginCell.className = 'numeric';
     const marginField = pickNumericField(position, ACTIVE_POSITION_ALIASES.margin || []);
     let marginNumeric = Number.isFinite(marginField.numeric) ? Math.abs(marginField.numeric) : null;
-    if (!Number.isFinite(marginNumeric)) {
+    if (!Number.isFinite(marginNumeric) || marginNumeric <= 0) {
       if (Number.isFinite(notionalNumeric) && Number.isFinite(leverageNumeric) && leverageNumeric > 0) {
         marginNumeric = notionalNumeric / leverageNumeric;
-      } else {
+      }
+      if (!Number.isFinite(marginNumeric) || marginNumeric <= 0) {
         const priceForNotional = Number.isFinite(markField.numeric)
           ? Math.abs(markField.numeric)
           : Number.isFinite(entryField.numeric)
-          ? Math.abs(entryField.numeric)
-          : null;
+              ? Math.abs(entryField.numeric)
+              : null;
         if (
           Number.isFinite(quantityNumeric) &&
           Number.isFinite(priceForNotional) &&
           Number.isFinite(leverageNumeric) &&
           leverageNumeric > 0
         ) {
-          marginNumeric = (quantityNumeric * priceForNotional) / leverageNumeric;
+          const candidate = (quantityNumeric * priceForNotional) / leverageNumeric;
+          if (Number.isFinite(candidate) && candidate > 0) {
+            marginNumeric = candidate;
+          }
         }
       }
     }
-    if (Number.isFinite(marginNumeric)) {
+    if (Number.isFinite(marginNumeric) && marginNumeric > 0) {
       marginCell.textContent = formatPositionSize(marginNumeric);
     } else {
       marginCell.textContent = '–';
@@ -4814,15 +4818,37 @@ function updateActivePositionsView() {
       return bracketRow;
     };
 
-    tpSlCell.append(buildBracketRow('TP', tpDisplay));
-    tpSlCell.append(buildBracketRow('SL', slDisplay));
+    let hasBracketLevel = false;
+    if (tpDisplay && tpDisplay !== '–') {
+      tpSlCell.append(buildBracketRow('TP', tpDisplay));
+      hasBracketLevel = true;
+    }
+    if (slDisplay && slDisplay !== '–') {
+      tpSlCell.append(buildBracketRow('SL', slDisplay));
+      hasBracketLevel = true;
+    }
+    if (!hasBracketLevel) {
+      tpSlCell.classList.add('active-positions-brackets-empty');
+      tpSlCell.textContent = '–';
+    }
     applyActivePositionLabel(tpSlCell, 'brackets');
     row.append(tpSlCell);
 
     const tpSlDistanceCell = document.createElement('td');
     tpSlDistanceCell.className = 'numeric active-positions-brackets active-positions-distance';
-    tpSlDistanceCell.append(buildBracketRow('TP', tpDistanceDisplay));
-    tpSlDistanceCell.append(buildBracketRow('SL', slDistanceDisplay));
+    let hasBracketDistance = false;
+    if (tpDistanceDisplay && tpDistanceDisplay !== '–') {
+      tpSlDistanceCell.append(buildBracketRow('TP', tpDistanceDisplay));
+      hasBracketDistance = true;
+    }
+    if (slDistanceDisplay && slDistanceDisplay !== '–') {
+      tpSlDistanceCell.append(buildBracketRow('SL', slDistanceDisplay));
+      hasBracketDistance = true;
+    }
+    if (!hasBracketDistance) {
+      tpSlDistanceCell.classList.add('active-positions-brackets-empty');
+      tpSlDistanceCell.textContent = '–';
+    }
     applyActivePositionLabel(tpSlDistanceCell, 'distance');
     row.append(tpSlDistanceCell);
 

@@ -1006,6 +1006,14 @@ body.paper-mode .hero-paper-toggle span {
   flex-wrap: nowrap;
 }
 
+.active-positions-brackets.active-positions-brackets-empty {
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+  justify-content: flex-end;
+  color: var(--text-muted);
+}
+
 .active-positions-distance {
   flex-direction: column;
   align-items: flex-end;

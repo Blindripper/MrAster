@@ -1090,7 +1090,11 @@ def _build_snapshot_entry_from_record(
         snapshot_entry["positionNotional"] = notional
         snapshot_entry["size_usdt"] = notional
 
-    if margin_val is None and notional is not None and leverage:
+    if (
+        (margin_val is None or (isinstance(margin_val, (int, float)) and margin_val <= 0))
+        and notional is not None
+        and leverage
+    ):
         try:
             if leverage > 0:
                 margin_val = abs(notional) / leverage
@@ -1947,9 +1951,17 @@ def _merge_position_record(
         extra.get("margin"),
         extra.get("positionMargin"),
         extra.get("isolatedMargin"),
+        extra.get("initialMargin"),
+        extra.get("positionInitialMargin"),
     ]
     for margin_val in margin_candidates:
         if margin_val is None:
+            continue
+        try:
+            numeric_margin = float(margin_val)
+        except (TypeError, ValueError):
+            numeric_margin = None
+        if numeric_margin is None or numeric_margin <= 0:
             continue
         merged["margin"] = margin_val
         merged["positionMargin"] = margin_val
