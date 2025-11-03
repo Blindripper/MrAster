@@ -963,11 +963,6 @@ body.paper-mode .hero-paper-toggle span {
   padding-right: 0.4rem;
 }
 
-.active-positions-table thead th:nth-child(8),
-.active-positions-table tbody td:nth-child(8) {
-  min-width: clamp(17rem, 26vw, 24rem);
-}
-
 .active-positions-symbol-wrapper {
   display: inline-flex;
   align-items: center;
@@ -1005,59 +1000,6 @@ body.paper-mode .hero-paper-toggle span {
 
 .active-positions-size {
   font-variant-numeric: tabular-nums;
-}
-
-.active-positions-brackets {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: flex-end;
-  gap: 0.65rem;
-}
-
-.active-positions-brackets.active-positions-brackets-empty {
-  align-items: flex-end;
-  justify-content: flex-end;
-  gap: 0;
-  color: var(--text-muted);
-}
-
-.active-positions-bracket {
-  display: grid;
-  grid-template-columns: min-content minmax(0, 1fr);
-  align-items: flex-start;
-  gap: 0.35rem 0.85rem;
-}
-
-.active-positions-bracket-label {
-  font-size: 0.68rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  padding-top: 0.15rem;
-}
-
-.active-positions-bracket-values {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.3rem;
-  text-align: right;
-  width: 100%;
-}
-
-.active-positions-bracket-value {
-  font-variant-numeric: tabular-nums;
-}
-
-.active-positions-bracket-subvalue {
-  font-size: 0.72rem;
-  letter-spacing: 0.02em;
-  color: var(--text-muted);
-}
-
-.active-positions-progress {
-  min-width: 100%;
 }
 
 .active-positions-meter {
@@ -1219,24 +1161,13 @@ body.paper-mode .hero-paper-toggle span {
 
   .active-positions-table tbody td:nth-child(5),
   .active-positions-table tbody td:nth-child(6),
-  .active-positions-table tbody td:nth-child(8),
-  .active-positions-table tbody td:nth-child(9) {
+  .active-positions-table tbody td:nth-child(7) {
     grid-column: 1 / -1;
   }
 
-  .active-positions-table thead th:nth-child(8),
-  .active-positions-table tbody td:nth-child(8) {
+  .active-positions-table thead th:nth-child(7),
+  .active-positions-table tbody td:nth-child(7) {
     min-width: 0;
-  }
-
-  .active-positions-brackets {
-    align-items: baseline;
-    justify-content: flex-start;
-    gap: 0.8rem;
-  }
-
-  .active-positions-distance {
-    align-items: flex-start;
   }
 }
 

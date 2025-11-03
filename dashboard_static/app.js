@@ -159,8 +159,6 @@ const TRANSLATIONS = {
     'active.table.leverage': 'Плечо',
     'active.table.margin': 'Маржа',
     'active.table.pnl': 'PNL (ROE%)',
-    'active.table.tpsl': 'TP/SL',
-    'active.table.distance': 'Дистанция до TP/SL',
     'status.title': 'Статус',
     'status.state': 'Состояние',
     'status.pid': 'PID',
@@ -412,8 +410,6 @@ const TRANSLATIONS = {
     'active.table.leverage': 'Hebel',
     'active.table.margin': 'Margin',
     'active.table.pnl': 'PNL (ROE%)',
-    'active.table.tpsl': 'TP/SL',
-    'active.table.distance': 'TP/SL-Distanz',
     'status.title': 'Status',
     'status.state': 'Zustand',
     'status.pid': 'PID',
@@ -668,8 +664,6 @@ const TRANSLATIONS = {
     'active.table.leverage': '레버리지',
     'active.table.margin': '증거금',
     'active.table.pnl': 'PNL (ROE%)',
-    'active.table.tpsl': 'TP/SL',
-    'active.table.distance': 'TP/SL 거리',
     'status.title': '상태',
     'status.state': '상태',
     'status.pid': 'PID',
@@ -924,8 +918,6 @@ const TRANSLATIONS = {
     'active.table.leverage': 'Effet de levier',
     'active.table.margin': 'Marge',
     'active.table.pnl': 'PNL (ROE %)',
-    'active.table.tpsl': 'TP/SL',
-    'active.table.distance': 'Distance TP/SL',
     'status.title': 'Statut',
     'status.state': 'État',
     'status.pid': 'PID',
@@ -1180,8 +1172,6 @@ const TRANSLATIONS = {
     'active.table.leverage': 'Apalancamiento',
     'active.table.margin': 'Margen',
     'active.table.pnl': 'PNL (ROE%)',
-    'active.table.tpsl': 'TP/SL',
-    'active.table.distance': 'Distancia TP/SL',
     'status.title': 'Estado',
     'status.state': 'Estado',
     'status.pid': 'PID',
@@ -1435,8 +1425,6 @@ const TRANSLATIONS = {
     'active.table.leverage': 'Kaldıraç',
     'active.table.margin': 'Marj',
     'active.table.pnl': 'PNL (ROE%)',
-    'active.table.tpsl': 'TP/SL',
-    'active.table.distance': 'TP/SL Mesafesi',
     'status.title': 'Durum',
     'status.state': 'Durum',
     'status.pid': 'PID',
@@ -1684,8 +1672,6 @@ const TRANSLATIONS = {
     'active.table.leverage': '杠杆',
     'active.table.margin': '保证金',
     'active.table.pnl': '盈亏 (ROE%)',
-    'active.table.tpsl': 'TP/SL',
-    'active.table.distance': 'TP/SL 距离',
     'status.title': '状态',
     'status.state': '运行状态',
     'status.pid': 'PID',
@@ -3820,46 +3806,6 @@ const ACTIVE_POSITION_ALIASES = {
     'marginUsd',
     'margin_usdt',
   ],
-  nextTp: [
-    'next_tp',
-    'tp_next',
-    'take',
-    'take_price',
-    'takePrice',
-    'nextTarget',
-    'next_tp_price',
-    'tp',
-    'take_profit_next',
-    'take_profit',
-    'takeProfit',
-    'take_profit_price',
-    'takeProfitPrice',
-    'tp_price',
-    'tpPrice',
-    'tp_target',
-    'tpTarget',
-    'target',
-    'target_price',
-    'targetPrice',
-  ],
-  stop: [
-    'stop',
-    'stop_loss',
-    'stopLoss',
-    'stop_price',
-    'stopPrice',
-    'stop_price_next',
-    'stopPriceNext',
-    'stopLossPrice',
-    'stop_loss_price',
-    'sl',
-    'stop_next',
-    'next_stop',
-    'stop_trigger',
-    'stopTrigger',
-    'stopTarget',
-    'stop_loss_next',
-  ],
   side: ['side', 'positionSide', 'direction'],
 };
 
@@ -3871,7 +3817,6 @@ const ACTIVE_POSITION_FIELD_LABELS = {
   leverage: 'Leverage',
   margin: 'Margin',
   pnl: 'PNL (ROE%)',
-  brackets: 'TP/SL',
 };
 
 function applyActivePositionLabel(cell, key) {
@@ -3879,46 +3824,6 @@ function applyActivePositionLabel(cell, key) {
     cell.setAttribute('data-label', ACTIVE_POSITION_FIELD_LABELS[key]);
   }
 }
-
-const BRACKET_FIELD_SOURCE_KEYS = [
-  'brackets',
-  'bracket',
-  'targets',
-  'target',
-  'levels',
-  'level',
-  'exits',
-  'exit',
-  'orders',
-  'order',
-  'openOrders',
-  'pendingOrders',
-  'stopOrders',
-  'stopOrder',
-  'takeProfitOrders',
-  'takeProfitOrder',
-  'tpOrders',
-  'tpOrder',
-  'slOrders',
-  'slOrder',
-  'exitOrders',
-  'exitOrder',
-  'execution',
-  'executions',
-  'fills',
-  'fill',
-  'details',
-  'orderParams',
-  'order_params',
-  'management',
-  'plan',
-  'proposal',
-  'ai',
-  'ctx',
-];
-
-const BRACKET_TP_HINTS = ['tp', 'take', 'target', 'profit', 'takeprofit', 'takeprice', 'tpprice', 'tptarget'];
-const BRACKET_SL_HINTS = ['sl', 'stop', 'loss', 'stoploss', 'stopprice', 'stoptrigger'];
 
 const ACTIVE_POSITION_TIMESTAMP_NUMERIC_KEYS = [
   'opened_at',
@@ -4409,293 +4314,9 @@ function resolveFieldNumeric(field) {
   return resolveNumericFromCandidates(candidates);
 }
 
-function pickBracketNumericField(position, candidates, hints) {
-  const direct = pickNumericField(position, candidates);
-  if (Number.isFinite(direct.numeric)) {
-    return direct;
-  }
-
-  let fallback = direct;
-
-  if (position && typeof position === 'object' && Array.isArray(candidates)) {
-    for (let index = 0; index < candidates.length; index += 1) {
-      const key = candidates[index];
-      if (!key || key === direct.key) {
-        continue;
-      }
-      if (!(key in position)) {
-        continue;
-      }
-      const rawValue = position[key];
-      const numeric = resolveFieldNumeric(rawValue);
-      if (Number.isFinite(numeric)) {
-        return {
-          value: unwrapPositionValue(rawValue),
-          raw: rawValue,
-          key,
-          numeric,
-        };
-      }
-      const fallbackValue = unwrapPositionValue(rawValue);
-      if (
-        !fallback ||
-        fallback.key === null ||
-        fallback.value === undefined ||
-        fallback.value === null ||
-        fallback.value === ''
-      ) {
-        fallback = {
-          value: fallbackValue,
-          raw: rawValue,
-          key,
-          numeric: Number.isFinite(numeric) ? numeric : null,
-        };
-      }
-    }
-  }
-
-  const normalizedHints = Array.isArray(hints)
-    ? hints.map((hint) => hint.toLowerCase())
-    : [];
-  const visited = new Set();
-
-  const considerValue = (value, keyHint) => {
-    if (value === undefined || value === null) return null;
-    const numeric = resolveFieldNumeric(value);
-    if (!Number.isFinite(numeric)) return null;
-    return {
-      value: unwrapPositionValue(value),
-      raw: value,
-      key: keyHint || null,
-      numeric,
-    };
-  };
-
-  const matchesHint = (text) => {
-    if (!text || !normalizedHints.length) return false;
-    const normalized = text.toString().toLowerCase();
-    return normalizedHints.some((hint) => normalized.includes(hint));
-  };
-
-  const inspectNode = (node, keyHint = '') => {
-    if (node === undefined || node === null) return null;
-
-    if (typeof node === 'number' || typeof node === 'string') {
-      return considerValue(node, keyHint);
-    }
-
-    if (typeof node !== 'object') {
-      return null;
-    }
-
-    if (visited.has(node)) {
-      return null;
-    }
-    visited.add(node);
-
-    if (!Array.isArray(node)) {
-      const metaCandidates = [
-        node.type,
-        node.kind,
-        node.label,
-        node.name,
-        node.tag,
-        node.orderType,
-        node.side,
-        node.intent,
-      ];
-      if (metaCandidates.some((item) => matchesHint(item))) {
-        const metaResolved = considerValue(node, keyHint);
-        if (metaResolved) {
-          return metaResolved;
-        }
-      }
-    }
-
-    if (Array.isArray(node)) {
-      for (let index = 0; index < node.length; index += 1) {
-        const candidate = node[index];
-        const nestedHint = keyHint ? `${keyHint}[${index}]` : `[${index}]`;
-        const resolved = inspectNode(candidate, nestedHint);
-        if (resolved) {
-          return resolved;
-        }
-      }
-      return null;
-    }
-
-    const entries = Object.entries(node);
-
-    for (let idx = 0; idx < entries.length; idx += 1) {
-      const [key, value] = entries[idx];
-      if (matchesHint(key)) {
-        const resolved = considerValue(value, keyHint ? `${keyHint}.${key}` : key);
-        if (resolved) {
-          return resolved;
-        }
-      }
-    }
-
-    for (let idx = 0; idx < entries.length; idx += 1) {
-      const [key, value] = entries[idx];
-      const resolved = inspectNode(value, keyHint ? `${keyHint}.${key}` : key);
-      if (resolved) {
-        return resolved;
-      }
-    }
-
-    return null;
-  };
-
-  if (position && typeof position === 'object') {
-    for (let index = 0; index < BRACKET_FIELD_SOURCE_KEYS.length; index += 1) {
-      const sourceKey = BRACKET_FIELD_SOURCE_KEYS[index];
-      if (!(sourceKey in position)) continue;
-      const resolved = inspectNode(position[sourceKey], sourceKey);
-      if (resolved) {
-        return resolved;
-      }
-    }
-  }
-
-  return fallback;
-}
-
-function formatBracketLevel(field) {
-  if (!field) return '–';
-
-  const numeric = resolveFieldNumeric(field);
-  if (Number.isFinite(numeric) && numeric > 0) {
-    const absValue = Math.abs(numeric);
-    let digits = 6;
-    if (absValue >= 100000) digits = 0;
-    else if (absValue >= 10000) digits = 1;
-    else if (absValue >= 1000) digits = 2;
-    else if (absValue >= 100) digits = 2;
-    else if (absValue >= 10) digits = 3;
-    else if (absValue >= 1) digits = 4;
-    else if (absValue >= 0.1) digits = 5;
-    const formatted = numeric.toLocaleString(undefined, {
-      minimumFractionDigits: digits,
-      maximumFractionDigits: digits,
-    });
-    if (formatted) {
-      return formatted;
-    }
-  }
-
-  const candidates = collectFieldCandidates(field);
-  for (const candidate of candidates) {
-    if (typeof candidate === 'string' || typeof candidate === 'number') {
-      const text = candidate.toString().trim();
-      if (text) {
-        return text;
-      }
-    }
-  }
-
-  return '–';
-}
-
-function formatBracketDistance(bracketField, markField, fallbackField) {
-  const bracketNumeric = resolveFieldNumeric(bracketField);
-  let markNumeric = resolveFieldNumeric(markField);
-  if (!Number.isFinite(markNumeric)) {
-    markNumeric = resolveFieldNumeric(fallbackField);
-  }
-  if (!Number.isFinite(bracketNumeric) || !Number.isFinite(markNumeric)) {
-    return null;
-  }
-
-  const difference = bracketNumeric - markNumeric;
-  const absDiff = Math.abs(difference);
-  let digits = 6;
-  if (absDiff >= 100000) digits = 0;
-  else if (absDiff >= 1000) digits = 1;
-  else if (absDiff >= 100) digits = 2;
-  else if (absDiff >= 10) digits = 3;
-  else if (absDiff >= 1) digits = 4;
-  else if (absDiff >= 0.1) digits = 5;
-
-  const priceDisplay = formatSignedNumber(difference, digits);
-  const tone = difference > 0 ? 'profit' : difference < 0 ? 'loss' : null;
-
-  let percentText = null;
-  if (markNumeric !== 0) {
-    const percent = (difference / markNumeric) * 100;
-    const percentDigits = Math.abs(percent) >= 10 ? 1 : 2;
-    const formattedPercent = formatSignedNumber(percent, percentDigits);
-    if (formattedPercent) {
-      percentText = `${formattedPercent}%`;
-    }
-  }
-
-  if (!priceDisplay && !percentText) {
-    return null;
-  }
-
-  return {
-    priceText: priceDisplay || null,
-    percentText,
-    tone,
-  };
-}
-
-function computeBracketProgress(bracketField, entryField, markField) {
-  const targetNumeric = resolveFieldNumeric(bracketField);
-  const entryNumeric = resolveFieldNumeric(entryField);
-  const markNumeric = resolveFieldNumeric(markField);
-
-  if (!Number.isFinite(targetNumeric) || !Number.isFinite(entryNumeric) || !Number.isFinite(markNumeric)) {
-    return null;
-  }
-
-  const totalDistance = Math.abs(targetNumeric - entryNumeric);
-  if (totalDistance === 0) {
-    return Math.abs(targetNumeric - markNumeric) < 1e-8 ? 100 : 0;
-  }
-
-  const remainingDistance = Math.abs(targetNumeric - markNumeric);
-  const rawProgress = (1 - remainingDistance / totalDistance) * 100;
-  if (!Number.isFinite(rawProgress)) {
-    return null;
-  }
-  return Math.max(0, Math.min(100, rawProgress));
-}
-
 function normalizeSymbolValue(symbol) {
   if (symbol === undefined || symbol === null) return '';
   return symbol.toString().trim().toUpperCase();
-}
-
-const KNOWN_QUOTE_ASSETS = [
-  'FDUSD',
-  'USDT',
-  'USDC',
-  'BUSD',
-  'TUSD',
-  'USDP',
-  'DAI',
-  'EUR',
-  'GBP',
-  'JPY',
-  'TRY',
-  'BTC',
-  'ETH',
-  'BNB',
-  'USD',
-];
-
-function resolveQuoteAsset(symbol) {
-  const normalized = normalizeSymbolValue(symbol);
-  if (!normalized) return '';
-  for (let index = 0; index < KNOWN_QUOTE_ASSETS.length; index += 1) {
-    const candidate = KNOWN_QUOTE_ASSETS[index];
-    if (normalized.endsWith(candidate)) {
-      return candidate;
-    }
-  }
-  return '';
 }
 
 function getNormalizedActivePositionSymbol(position) {
@@ -5122,137 +4743,6 @@ function updateActivePositionsView() {
     }
     applyActivePositionLabel(pnlCell, 'pnl');
     row.append(pnlCell);
-
-    const quoteAsset = resolveQuoteAsset(symbolValue);
-    const quoteSuffix = quoteAsset ? ` ${quoteAsset}` : '';
-
-    const tpSlCell = document.createElement('td');
-    tpSlCell.className = 'numeric active-positions-brackets active-positions-progress';
-    const nextTpField = pickBracketNumericField(
-      position,
-      ACTIVE_POSITION_ALIASES.nextTp || [],
-      BRACKET_TP_HINTS,
-    );
-    const stopField = pickBracketNumericField(
-      position,
-      ACTIVE_POSITION_ALIASES.stop || [],
-      BRACKET_SL_HINTS,
-    );
-    const tpDisplay = formatBracketLevel(nextTpField);
-    const slDisplay = formatBracketLevel(stopField);
-    const tpDistanceInfo = formatBracketDistance(nextTpField, markField, entryField);
-    const slDistanceInfo = formatBracketDistance(stopField, markField, entryField);
-    const tpProgress = computeBracketProgress(nextTpField, entryField, markField);
-    const slProgress = computeBracketProgress(stopField, entryField, markField);
-
-    const buildDistanceText = (info) => {
-      if (!info) return null;
-      const parts = [];
-      if (info.priceText) {
-        parts.push(`${info.priceText}${quoteSuffix}`.trim());
-      }
-      if (info.percentText) {
-        parts.push(info.percentText);
-      }
-      if (!parts.length) {
-        return null;
-      }
-      return { text: parts.join(' · '), tone: info.tone || null };
-    };
-
-    const createProgressMeter = (tone, progress) => {
-      const meter = document.createElement('div');
-      meter.className = `active-positions-meter active-positions-meter-${tone}`;
-      meter.setAttribute('role', 'progressbar');
-      meter.setAttribute('aria-valuemin', '0');
-      meter.setAttribute('aria-valuemax', '100');
-
-      const scale = document.createElement('div');
-      scale.className = 'active-positions-meter-scale';
-      ['1', '50', '100'].forEach((tick) => {
-        const tickNode = document.createElement('span');
-        tickNode.textContent = tick;
-        scale.append(tickNode);
-      });
-
-      const track = document.createElement('div');
-      track.className = 'active-positions-meter-track';
-      const fill = document.createElement('div');
-      fill.className = 'active-positions-meter-fill';
-
-      if (Number.isFinite(progress)) {
-        const width = Math.max(0, Math.min(100, progress));
-        fill.style.width = `${width}%`;
-        meter.setAttribute('aria-valuenow', width.toFixed(0));
-      } else {
-        fill.style.width = '0%';
-        meter.classList.add('active-positions-meter-empty');
-        meter.setAttribute('aria-valuetext', '–');
-      }
-
-      track.append(fill);
-      meter.append(scale, track);
-      return meter;
-    };
-
-    const buildBracketRow = (labelText, primaryText, secondaryText, meterTone, progress) => {
-      const bracketRow = document.createElement('div');
-      bracketRow.className = 'active-positions-bracket';
-
-      const label = document.createElement('span');
-      label.className = 'active-positions-bracket-label';
-      label.textContent = labelText;
-
-      const valueWrapper = document.createElement('div');
-      valueWrapper.className = 'active-positions-bracket-values';
-
-      if (primaryText) {
-        const value = document.createElement('span');
-        value.className = 'active-positions-bracket-value';
-        value.textContent = primaryText;
-        valueWrapper.append(value);
-      }
-
-      if (secondaryText) {
-        const secondary = document.createElement('span');
-        secondary.className = 'active-positions-bracket-subvalue';
-        secondary.textContent = secondaryText.text;
-        if (secondaryText.tone === 'profit') {
-          secondary.classList.add('tone-profit');
-        } else if (secondaryText.tone === 'loss') {
-          secondary.classList.add('tone-loss');
-        }
-        valueWrapper.append(secondary);
-      }
-
-      valueWrapper.append(createProgressMeter(meterTone, progress));
-      bracketRow.append(label, valueWrapper);
-      return bracketRow;
-    };
-
-    let hasBracketLevel = false;
-    if (tpDisplay && tpDisplay !== '–') {
-      const primary = `${tpDisplay}${quoteSuffix}`.trim();
-      const secondary = buildDistanceText(tpDistanceInfo);
-      tpSlCell.append(
-        buildBracketRow('TP', primary, secondary, 'tp', tpProgress),
-      );
-      hasBracketLevel = true;
-    }
-    if (slDisplay && slDisplay !== '–') {
-      const primary = `${slDisplay}${quoteSuffix}`.trim();
-      const secondary = buildDistanceText(slDistanceInfo);
-      tpSlCell.append(
-        buildBracketRow('SL', primary, secondary, 'sl', slProgress),
-      );
-      hasBracketLevel = true;
-    }
-    if (!hasBracketLevel) {
-      tpSlCell.classList.add('active-positions-brackets-empty');
-      tpSlCell.textContent = '–';
-    }
-    applyActivePositionLabel(tpSlCell, 'brackets');
-    row.append(tpSlCell);
 
     activePositionsRows.append(row);
   });
