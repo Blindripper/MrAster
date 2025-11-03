@@ -2040,6 +2040,10 @@ let pendingPlaybookResponseCount = 0;
 let lastPlaybookState = null;
 let lastPlaybookActivity = [];
 let lastPlaybookProcess = [];
+let basePlaybookActivity = [];
+const liveLogActivityEntries = [];
+const liveLogActivitySignatures = new Set();
+const LIVE_LOG_ACTIVITY_LIMIT = 120;
 const tradeProposalRegistry = new Map();
 const fallbackProposalKeys = new Map();
 let fallbackProposalCounter = 0;
@@ -5653,6 +5657,277 @@ function parseStructuredLog(line, fallbackLevel = 'info') {
   };
 }
 
+const LOG_ACTIVITY_HTTP_LABELS = {
+  'fapi/v1/exchangeInfo': 'exchange information',
+  'fapi/v1/ticker/24hr': '24h ticker data',
+  'fapi/v1/leverageBracket': 'leverage bracket limits',
+};
+
+const LOG_ACTIVITY_PATTERNS = [
+  {
+    regex: /Loaded\s+(\d+)\s+default symbols/i,
+    build: (ctx, match) => ({
+      headline: 'Market catalogue ready',
+      body: formatActivitySentence(
+        `Loaded ${match[1]} default symbols from Aster markets for scanning`,
+      ),
+    }),
+  },
+  {
+    regex: /Starting bot \(mode=([^,]+),\s*loop=([^)]+)\)/i,
+    build: (ctx, match) => {
+      const mode = toTitleCase(match[1]);
+      const loop = match[2].trim();
+      const loopBody = loop ? formatActivitySentence(`Loop mode ${loop}`) : '';
+      return {
+        headline: `Booting trading bot in ${mode} mode`,
+        body: loopBody,
+      };
+    },
+  },
+  {
+    regex: /Bot starting in ([^.(]+) mode(?:\s*\(([^)]+)\))?/i,
+    build: (ctx, match) => {
+      const mode = toTitleCase(match[1]);
+      const detail = match[2] ? formatActivitySentence(match[2]) : '';
+      return {
+        headline: `Bot entering ${mode} mode`,
+        body: detail,
+      };
+    },
+  },
+  {
+    regex: /Starting new HTTPS connection \((\d+)\):\s*([^\s]+)/i,
+    build: (ctx, match) => ({
+      headline: 'Opening HTTPS connection',
+      body: formatActivitySentence(
+        `Attempt ${match[1]} connecting to ${match[2]} for market data`,
+      ),
+    }),
+  },
+  {
+    regex:
+      /https?:\/\/([^\s]+)\s+"(GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD)\s+([^"\s]+)\s+HTTP\/[0-9.]+"\s+(\d{3})/i,
+    build: (ctx, match) => {
+      const [, host, methodRaw, pathRaw, statusRaw] = match;
+      const method = methodRaw.toUpperCase();
+      const status = Number(statusRaw);
+      const [path, query = ''] = pathRaw.split('?');
+      const endpoint = path.replace(/^\/+/, '');
+      const label =
+        LOG_ACTIVITY_HTTP_LABELS[endpoint] ||
+        toTitleWords(endpoint.split('/').pop() || endpoint) ||
+        'API endpoint';
+      let symbolNote = '';
+      if (query) {
+        try {
+          const params = new URLSearchParams(query);
+          const symbol = params.get('symbol');
+          if (symbol) {
+            symbolNote = ` for ${symbol}`;
+          }
+        } catch (err) {
+          // ignore malformed query strings
+        }
+      }
+      const success = Number.isFinite(status) && status < 400;
+      const action = method === 'GET' ? 'Fetched' : 'Requested';
+      const statusText = success ? `HTTP ${status}` : `HTTP ${status} error`;
+      return {
+        headline: `${action} ${label}${symbolNote}`.trim(),
+        body: formatActivitySentence(
+          `Request to ${host}${path} completed with ${statusText}`,
+        ),
+      };
+    },
+  },
+  {
+    regex: /websocket-client package not available; user stream disabled/i,
+    build: () => ({
+      headline: 'User stream disabled',
+      body: formatActivitySentence(
+        'The websocket-client package is missing, so the personal account stream remains offline',
+      ),
+      notes: 'Install websocket-client to enable live account events.',
+    }),
+  },
+  {
+    regex: /Using selector:\s*([A-Za-z0-9_]+)/i,
+    build: (ctx, match) => ({
+      headline: 'Async engine ready',
+      body: formatActivitySentence(`Asyncio is using the ${match[1]} selector`),
+    }),
+  },
+  {
+    regex: /Bot process started/i,
+    build: () => ({
+      headline: 'Bot process started',
+      body: formatActivitySentence('Trading bot subprocess is running'),
+    }),
+  },
+  {
+    regex: /Bot process stopped/i,
+    build: () => ({
+      headline: 'Bot process stopped',
+      body: formatActivitySentence('Trading bot subprocess has been stopped'),
+    }),
+  },
+  {
+    regex: /Bot process finished/i,
+    build: () => ({
+      headline: 'Bot process finished',
+      body: formatActivitySentence('Trading bot subprocess exited'),
+    }),
+  },
+];
+
+function formatActivitySentence(text) {
+  const cleaned = (text || '').toString().replace(/\s+/g, ' ').trim();
+  if (!cleaned) return '';
+  const sentence = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
+}
+
+function formatActivityHeadline(text) {
+  const cleaned = (text || '').toString().replace(/\s+/g, ' ').trim();
+  if (!cleaned) return '';
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+function deriveLogSourceLabel(loggerName) {
+  if (!loggerName) return '';
+  return loggerName
+    .toString()
+    .split('.')
+    .map((part) => toTitleCase(part))
+    .filter(Boolean)
+    .join(' › ');
+}
+
+function mergePlaybookActivityWithLive() {
+  return [...(Array.isArray(basePlaybookActivity) ? basePlaybookActivity : []), ...liveLogActivityEntries];
+}
+
+function buildLogActivitySignature(rawLine, tsEpoch) {
+  const base = (rawLine || '').toString().trim();
+  if (base) return base;
+  if (Number.isFinite(tsEpoch)) return `${tsEpoch}`;
+  return `${Date.now()}::${Math.random().toString(36).slice(2)}`;
+}
+
+function mapLogLevelToActivityKind(level) {
+  const normalized = (level || '').toString().toLowerCase();
+  if (normalized === 'error') return 'error';
+  if (normalized === 'warning') return 'warning';
+  return 'update';
+}
+
+function buildFriendlyLogActivity(context) {
+  const { message, logger } = context;
+  const trimmedMessage = (message || '').trim();
+  if (!trimmedMessage) {
+    return null;
+  }
+  for (const pattern of LOG_ACTIVITY_PATTERNS) {
+    const match = trimmedMessage.match(pattern.regex);
+    if (match) {
+      const result = pattern.build(context, match);
+      if (result && result.headline) {
+        return result;
+      }
+    }
+  }
+  const source = deriveLogSourceLabel(logger);
+  if (trimmedMessage.length <= 80) {
+    return {
+      headline: formatActivityHeadline(trimmedMessage),
+      notes: source ? `Source: ${source}` : '',
+    };
+  }
+  return {
+    headline: source ? `${source} update` : formatActivityHeadline(trimmedMessage.slice(0, 60)),
+    body: formatActivitySentence(trimmedMessage),
+    notes: source ? `Source: ${source}` : '',
+  };
+}
+
+function normalizeLiveActivityEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const normalized = {
+    kind: entry.kind || 'update',
+    headline: entry.headline || '',
+  };
+  if (entry.body) normalized.body = entry.body;
+  if (entry.notes) normalized.notes = entry.notes;
+  if (entry.ts) normalized.ts = entry.ts;
+  if (Number.isFinite(entry.ts_epoch)) normalized.ts_epoch = entry.ts_epoch;
+  if (entry.request_id) normalized.request_id = entry.request_id;
+  if (entry._signature) normalized._signature = entry._signature;
+  return normalized;
+}
+
+function appendLiveActivityEntry(entry) {
+  const normalized = normalizeLiveActivityEntry(entry);
+  if (!normalized || !normalized.headline) return;
+  const signature = normalized._signature;
+  if (signature && liveLogActivitySignatures.has(signature)) return;
+  if (signature) {
+    liveLogActivitySignatures.add(signature);
+  }
+  liveLogActivityEntries.push(normalized);
+  while (liveLogActivityEntries.length > LIVE_LOG_ACTIVITY_LIMIT) {
+    const removed = liveLogActivityEntries.shift();
+    if (removed && removed._signature) {
+      liveLogActivitySignatures.delete(removed._signature);
+    }
+  }
+  lastPlaybookActivity = mergePlaybookActivityWithLive();
+  renderPlaybookActivitySection();
+  updatePlaybookPendingState();
+}
+
+function translateLogToActivity(parsed, rawLine, level, ts) {
+  if (!parsed) return null;
+  const loggerName = (parsed.logger || '').toString().toLowerCase();
+  if (loggerName.includes('news')) return null;
+  const message = parsed.message || parsed.raw || rawLine || '';
+  if (!message || /^AI_FEED\b/.test(message)) return null;
+  const friendly = buildFriendlyLogActivity({
+    message,
+    logger: parsed.logger,
+    level,
+  });
+  if (!friendly || !friendly.headline) return null;
+  let tsEpoch = Number(ts);
+  if (!Number.isFinite(tsEpoch)) {
+    const parsedTs = parsed.timestamp ? Date.parse(parsed.timestamp) : Number.NaN;
+    if (!Number.isNaN(parsedTs)) {
+      tsEpoch = parsedTs / 1000;
+    }
+  }
+  const isoTs = Number.isFinite(tsEpoch)
+    ? new Date(tsEpoch * 1000).toISOString()
+    : new Date().toISOString();
+  const entry = {
+    kind: mapLogLevelToActivityKind(level),
+    headline: friendly.headline,
+    ts: isoTs,
+  };
+  if (friendly.body) entry.body = friendly.body;
+  if (friendly.notes) entry.notes = friendly.notes;
+  if (Number.isFinite(tsEpoch)) {
+    entry.ts_epoch = tsEpoch;
+  }
+  entry._signature = buildLogActivitySignature(rawLine || parsed.raw || friendly.headline, entry.ts_epoch);
+  return entry;
+}
+
+function maybeAppendActivityFromLog({ parsed, rawLine, level, ts }) {
+  const entry = translateLogToActivity(parsed, rawLine, level, ts);
+  if (!entry) return;
+  appendLiveActivityEntry(entry);
+}
+
 function toTitleWords(value) {
   return (value || '')
     .toString()
@@ -6254,6 +6529,7 @@ function appendLogLine({ line, level, ts }) {
   }
 
   appendCompactLog({ line: parsed.raw ?? line, level: derivedLevel, ts });
+  maybeAppendActivityFromLog({ parsed, rawLine: line, level: derivedLevel, ts });
   maybeAppendXNewsLogEntry({ parsed, rawLine: line, level: derivedLevel, ts });
 }
 
@@ -7380,7 +7656,8 @@ function buildPlaybookMeta(entry) {
 
 function renderPlaybookOverview(playbook, activity, process) {
   lastPlaybookState = playbook && typeof playbook === 'object' ? { ...playbook } : null;
-  lastPlaybookActivity = Array.isArray(activity) ? activity.slice() : [];
+  basePlaybookActivity = Array.isArray(activity) ? activity.slice() : [];
+  lastPlaybookActivity = mergePlaybookActivityWithLive();
   lastPlaybookProcess = Array.isArray(process) ? process.slice() : [];
   renderPlaybookSummarySection();
   renderPlaybookProcessSection();
