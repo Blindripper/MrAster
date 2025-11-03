@@ -2358,6 +2358,83 @@ def _save_config(config: Dict[str, Any]) -> None:
 CONFIG: Dict[str, Any] = _load_config()
 
 
+_SENSITIVE_ENV_KEYS: Tuple[str, ...] = (
+    "ASTER_API_KEY",
+    "ASTER_API_SECRET",
+    "ASTER_OPENAI_API_KEY",
+    "ASTER_CHAT_OPENAI_API_KEY",
+    "OPENAI_API_KEY",
+)
+
+_SENSITIVE_FIELD_NAMES: Set[str] = {
+    "ASTER_API_KEY",
+    "ASTER_API_SECRET",
+    "ASTER_OPENAI_API_KEY",
+    "ASTER_CHAT_OPENAI_API_KEY",
+    "ASTER_DASHBOARD_CHAT_API_KEY",
+    "ASTER_CHAT_API_KEY",
+    "OPENAI_API_KEY",
+}
+
+_REDACTED_TOKEN = "********"
+_SENSITIVE_TOKEN_VALUES: Tuple[str, ...] = ()
+
+
+def _refresh_sensitive_tokens() -> None:
+    global _SENSITIVE_TOKEN_VALUES
+    tokens: List[str] = []
+    env_cfg = CONFIG.get("env", {}) if isinstance(CONFIG.get("env"), dict) else {}
+    for key in _SENSITIVE_ENV_KEYS:
+        for source in (
+            os.getenv(key, ""),
+            env_cfg.get(key, "") if isinstance(env_cfg, dict) else "",
+        ):
+            candidate = str(source or "").strip()
+            if candidate and candidate not in tokens:
+                tokens.append(candidate)
+    _SENSITIVE_TOKEN_VALUES = tuple(tokens)
+
+
+def _mask_sensitive_text(text: str) -> str:
+    if not isinstance(text, str) or not text:
+        return text
+    masked = text
+    for token in _SENSITIVE_TOKEN_VALUES:
+        if token:
+            masked = masked.replace(token, _REDACTED_TOKEN)
+    return masked
+
+
+def _mask_sensitive_payload(value: Any) -> Any:
+    if isinstance(value, dict):
+        sanitized: Dict[Any, Any] = {}
+        for key, item in value.items():
+            if isinstance(key, str) and key in _SENSITIVE_FIELD_NAMES:
+                sanitized[key] = _REDACTED_TOKEN
+            else:
+                sanitized[key] = _mask_sensitive_payload(item)
+        return sanitized
+    if isinstance(value, list):
+        return [_mask_sensitive_payload(item) for item in value]
+    if isinstance(value, tuple):
+        return [_mask_sensitive_payload(item) for item in value]
+    if isinstance(value, set):
+        return [_mask_sensitive_payload(item) for item in value]
+    if isinstance(value, str):
+        return _mask_sensitive_text(value)
+    try:
+        text = str(value)
+    except Exception:
+        return value
+    masked_text = _mask_sensitive_text(text)
+    if masked_text != text:
+        return masked_text
+    return value
+
+
+_refresh_sensitive_tokens()
+
+
 class ConfigUpdate(BaseModel):
     env: Dict[str, str] = Field(default_factory=dict)
 
@@ -2423,9 +2500,10 @@ class LogHub:
             self.clients.discard(ws)
 
     async def push(self, line: str, level: str = "info") -> None:
+        sanitized_line = _mask_sensitive_text(str(line or ""))
         payload = {
             "ts": time.time(),
-            "line": line,
+            "line": sanitized_line,
             "level": level,
         }
         async with self._lock:
@@ -2714,7 +2792,8 @@ async def update_config(update: ConfigUpdate) -> Dict[str, Any]:
             changes.append({"key": key, "old": old_value, "new": new_value})
         env_cfg[key] = new_value
     _save_config(CONFIG)
-    payload = _build_config_change_payload(changes)
+    _refresh_sensitive_tokens()
+    payload = _mask_sensitive_payload(_build_config_change_payload(changes))
     message = "Configuration updated"
     message = f"{message} {json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}"
     await loghub.push(message, level="system")
@@ -2787,15 +2866,18 @@ def _append_ai_activity_entry(
     entry: Dict[str, Any] = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "kind": str(kind or "info"),
-        "headline": str(headline or kind or "info"),
+        "headline": _mask_sensitive_text(str(headline or kind or "info")),
     }
     if body:
-        entry["body"] = str(body)
+        entry["body"] = _mask_sensitive_text(str(body))
     if data is not None:
+        sanitized_data = _mask_sensitive_payload(data)
         try:
-            entry["data"] = json.loads(json.dumps(data, default=lambda o: str(o)))
+            entry["data"] = json.loads(
+                json.dumps(sanitized_data, default=lambda o: str(o))
+            )
         except Exception:
-            entry["data"] = data
+            entry["data"] = sanitized_data
 
     attempts = 0
     while attempts < 3:
@@ -2808,7 +2890,7 @@ def _append_ai_activity_entry(
         state["ai_activity"] = feed[-250:]
         try:
             STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True))
-            detail = f"{entry['kind']} | {entry['headline']}"
+            detail = _mask_sensitive_text(f"{entry['kind']} | {entry['headline']}")
             try:
                 loop = asyncio.get_running_loop()
             except RuntimeError:
