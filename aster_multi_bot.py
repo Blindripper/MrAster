@@ -86,6 +86,7 @@ AI_MODE_ENABLED = MODE == "ai" or os.getenv("ASTER_AI_MODE", "").lower() in ("1"
 OPENAI_API_KEY = os.getenv("ASTER_OPENAI_API_KEY", "").strip()
 if not OPENAI_API_KEY:
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+CHAT_OPENAI_API_KEY = os.getenv("ASTER_CHAT_OPENAI_API_KEY", "").strip()
 AI_MODEL = os.getenv("ASTER_AI_MODEL", "gpt-4o").strip() or "gpt-4o"
 AI_DAILY_BUDGET = float(os.getenv("ASTER_AI_DAILY_BUDGET_USD", "20") or 0)
 if PRESET_MODE in {"high", "att"}:
@@ -124,6 +125,76 @@ X_NEWS_SCROLL_DELAY = max(0.25, float(os.getenv("ASTER_X_NEWS_SCROLL_DELAY", "1.
 X_NEWS_FEED = os.getenv("ASTER_X_NEWS_FEED", "top").strip().lower() or "top"
 
 _OPENAI_CLIENT: Optional[OpenAIClient] = None
+
+
+_SENSITIVE_FIELD_NAMES: Set[str] = {
+    "ASTER_API_KEY",
+    "Aster_API_KEY",
+    "ASTER_API_SECRET",
+    "ASTER_OPENAI_API_KEY",
+    "ASTER_CHAT_OPENAI_API_KEY",
+}
+_REDACTED_TOKEN = "********"
+
+
+def _collect_sensitive_tokens() -> Tuple[str, ...]:
+    tokens: List[str] = []
+    for candidate in (
+        API_KEY,
+        API_SECRET,
+        OPENAI_API_KEY,
+        CHAT_OPENAI_API_KEY,
+        os.getenv("ASTER_API_KEY", "").strip(),
+        os.getenv("ASTER_API_SECRET", "").strip(),
+        os.getenv("ASTER_OPENAI_API_KEY", "").strip(),
+        os.getenv("ASTER_CHAT_OPENAI_API_KEY", "").strip(),
+        os.getenv("OPENAI_API_KEY", "").strip(),
+    ):
+        if not candidate:
+            continue
+        if candidate not in tokens:
+            tokens.append(candidate)
+    return tuple(tokens)
+
+
+_SENSITIVE_TOKEN_VALUES: Tuple[str, ...] = _collect_sensitive_tokens()
+
+
+def _mask_sensitive_text(text: str) -> str:
+    if not isinstance(text, str) or not text:
+        return text
+    masked = text
+    for token in _SENSITIVE_TOKEN_VALUES:
+        if token:
+            masked = masked.replace(token, _REDACTED_TOKEN)
+    return masked
+
+
+def _mask_sensitive_payload(value: Any) -> Any:
+    if isinstance(value, dict):
+        sanitized: Dict[Any, Any] = {}
+        for key, item in value.items():
+            if isinstance(key, str) and key in _SENSITIVE_FIELD_NAMES:
+                sanitized[key] = _REDACTED_TOKEN
+            else:
+                sanitized[key] = _mask_sensitive_payload(item)
+        return sanitized
+    if isinstance(value, list):
+        return [_mask_sensitive_payload(item) for item in value]
+    if isinstance(value, tuple):
+        return [_mask_sensitive_payload(item) for item in value]
+    if isinstance(value, set):
+        return [_mask_sensitive_payload(item) for item in value]
+    if isinstance(value, str):
+        return _mask_sensitive_text(value)
+    try:
+        text = str(value)
+    except Exception:
+        return value
+    masked_text = _mask_sensitive_text(text)
+    if masked_text != text:
+        return masked_text
+    return value
 
 
 def _shared_openai_client() -> Optional[OpenAIClient]:
@@ -9032,15 +9103,16 @@ class Bot:
         entry: Dict[str, Any] = {
             "ts": datetime.now(timezone.utc).isoformat(),
             "kind": kind_label,
-            "headline": str(headline or ""),
+            "headline": _mask_sensitive_text(str(headline or "")),
         }
         if body:
-            entry["body"] = str(body)
+            entry["body"] = _mask_sensitive_text(str(body))
         if data:
+            sanitized_data = _mask_sensitive_payload(data)
             try:
-                entry["data"] = json.loads(json.dumps(data, default=lambda o: str(o)))
+                entry["data"] = json.loads(json.dumps(sanitized_data, default=lambda o: str(o)))
             except Exception:
-                entry["data"] = data
+                entry["data"] = sanitized_data
         feed = self.state.setdefault("ai_activity", [])
         feed.append(entry)
         if len(feed) > 250:
