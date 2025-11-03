@@ -4740,11 +4740,84 @@ function formatSignedNumber(value, digits = 2) {
   return abs;
 }
 
-function formatPercentField(field, digits = 2) {
-  if (!field || !Number.isFinite(field.numeric)) {
+function extractFieldStringSource(field) {
+  if (!field) return null;
+  if (typeof field.value === 'string' && field.value.trim()) {
+    return field.value;
+  }
+  if (Array.isArray(field.raw)) {
+    for (const entry of field.raw) {
+      if (typeof entry === 'string' && entry.trim()) {
+        return entry;
+      }
+      if (entry && typeof entry === 'object') {
+        if (typeof entry.value === 'string' && entry.value.trim()) {
+          return entry.value;
+        }
+        if (typeof entry.price === 'string' && entry.price.trim()) {
+          return entry.price;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function parseLocalizedPercent(field) {
+  const source = extractFieldStringSource(field);
+  if (typeof source !== 'string') return null;
+  const trimmed = source.trim();
+  if (!trimmed || !trimmed.includes(',')) {
     return null;
   }
+
+  const lastComma = trimmed.lastIndexOf(',');
+  if (lastComma === -1) return null;
+  const digitsAfterComma = trimmed.length - lastComma - 1;
+  if (digitsAfterComma <= 0) {
+    return null;
+  }
+
+  const hasPercentSign = trimmed.includes('%');
+  const lastDot = trimmed.lastIndexOf('.');
+  const commaLooksDecimal =
+    hasPercentSign || digitsAfterComma !== 3 || lastDot === -1 || lastDot < lastComma;
+  if (!commaLooksDecimal) {
+    return null;
+  }
+
+  let normalized = trimmed.replace(/\s+/g, '');
+  if (lastDot > lastComma && lastDot !== -1) {
+    normalized = normalized.replace(/,/g, '');
+  } else {
+    normalized = normalized.replace(/\./g, '');
+    normalized = normalized.replace(/,/g, '.');
+  }
+  normalized = normalized.replace(/[^0-9+-.eE]/g, '');
+  if (!normalized || normalized === '+' || normalized === '-') {
+    return null;
+  }
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatPercentField(field, digits = 2) {
+  if (!field) {
+    return null;
+  }
+
   let numeric = field.numeric;
+  const localized = parseLocalizedPercent(field);
+  if (!Number.isFinite(numeric) && Number.isFinite(localized)) {
+    numeric = localized;
+  } else if (Number.isFinite(numeric) && Number.isFinite(localized) && numeric < 0) {
+    numeric = localized;
+  }
+
+  if (!Number.isFinite(numeric)) {
+    return null;
+  }
+
   const key = (field.key || '').toString();
   const keyHintsPercent = /percent|pct/i.test(key);
   if (!keyHintsPercent && Math.abs(numeric) <= 10) {
