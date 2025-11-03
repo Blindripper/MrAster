@@ -5683,6 +5683,15 @@ function formatExtraDetails(raw) {
     .join(' • ');
 }
 
+function formatConfigDeltaValue(value) {
+  if (value === null || value === undefined) return 'unset';
+  const raw = value.toString();
+  if (raw === '') return 'empty';
+  const singleLine = raw.replace(/\s+/g, ' ').trim();
+  if (!singleLine) return 'empty';
+  return singleLine.length > 80 ? `${singleLine.slice(0, 77)}…` : singleLine;
+}
+
 function resolveLogCategory(friendly) {
   if (!friendly || typeof friendly !== 'object') return '';
   const reasonKey = friendly.reason ? friendly.reason.toString().toLowerCase() : '';
@@ -6076,9 +6085,46 @@ function humanizeLogLine(line, fallbackLevel = 'info') {
     return { text, label, severity, relevant, parsed };
   }
 
-  const configMatch = parsed.message?.match(/^Configuration updated$/);
-  if (configMatch) {
-    text = 'Configuration saved successfully.';
+  const configPrefix = 'Configuration updated';
+  if (parsed.message?.startsWith(configPrefix)) {
+    const remainderRaw = parsed.message.slice(configPrefix.length).trim();
+    const remainder = remainderRaw.startsWith(':')
+      ? remainderRaw.slice(1).trim()
+      : remainderRaw;
+    let changeSummary = remainder;
+    if (remainder && remainder.startsWith('{')) {
+      try {
+        const payload = JSON.parse(remainder);
+        const changes = Array.isArray(payload?.changes) ? payload.changes : [];
+        if (changes.length) {
+          const formatted = changes
+            .map((change) => {
+              const key = change?.key || 'Setting';
+              const from = formatConfigDeltaValue(change?.old);
+              const to = formatConfigDeltaValue(change?.new);
+              return `${key} ${from} → ${to}`;
+            })
+            .join('; ');
+          const moreCountRaw = payload?.more ?? Math.max(0, (payload?.total || 0) - changes.length);
+          const moreCountValue = Number(moreCountRaw);
+          const moreCount = Number.isFinite(moreCountValue) ? moreCountValue : 0;
+          const prefix = changes.length === 1 ? 'Updated' : 'Updated settings';
+          changeSummary = `${prefix}: ${formatted}`;
+          if (moreCount > 0) {
+            changeSummary += `; +${moreCount} more change${moreCount === 1 ? '' : 's'}`;
+          }
+        } else if (typeof payload?.total === 'number' && payload.total === 0) {
+          changeSummary = 'Configuration saved (no changes detected).';
+        }
+      } catch (err) {
+        console.warn('Unable to parse config change payload', err);
+      }
+    } else if (!remainder) {
+      changeSummary = 'Configuration saved successfully.';
+    } else if (/^ASTER_[A-Z0-9_]/.test(remainder)) {
+      changeSummary = `Updated ${remainder}`;
+    }
+    text = changeSummary || 'Configuration saved successfully.';
     label = 'Settings';
     severity = 'system';
     relevant = true;

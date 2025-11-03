@@ -2671,15 +2671,53 @@ async def get_config() -> Dict[str, Any]:
     return CONFIG
 
 
+CONFIG_CHANGE_PREVIEW_LIMIT = 5
+
+
+def _coerce_env_value(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _build_config_change_payload(changes: List[Dict[str, Any]]) -> Dict[str, Any]:
+    preview = changes[:CONFIG_CHANGE_PREVIEW_LIMIT]
+    payload: Dict[str, Any] = {
+        "changes": [
+            {
+                "key": change.get("key"),
+                "old": change.get("old"),
+                "new": change.get("new"),
+            }
+            for change in preview
+        ],
+        "total": len(changes),
+    }
+    remaining = len(changes) - len(preview)
+    if remaining > 0:
+        payload["more"] = remaining
+    return payload
+
+
 @app.put("/api/config")
 async def update_config(update: ConfigUpdate) -> Dict[str, Any]:
     env_cfg = CONFIG.setdefault("env", {})
+    changes: List[Dict[str, Any]] = []
     for key, value in update.env.items():
         if key not in ALLOWED_ENV_KEYS:
             raise HTTPException(status_code=400, detail=f"Unknown key: {key}")
-        env_cfg[key] = str(value)
+        new_value = _coerce_env_value(value)
+        old_value = env_cfg.get(key)
+        if old_value != new_value:
+            changes.append({"key": key, "old": old_value, "new": new_value})
+        env_cfg[key] = new_value
     _save_config(CONFIG)
-    await loghub.push("Configuration updated", level="system")
+    payload = _build_config_change_payload(changes)
+    message = "Configuration updated"
+    message = f"{message} {json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}"
+    await loghub.push(message, level="system")
     return CONFIG
 
 
