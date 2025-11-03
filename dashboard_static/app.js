@@ -4682,6 +4682,99 @@ function normalizeTpSlMeta(meta) {
   return normalized;
 }
 
+const TP_SL_BOOLEAN_POSITIVE_TOKENS = ['true', 'yes', 'on', 'enabled', 'active', 'enable'];
+const TP_SL_BOOLEAN_NEGATIVE_TOKENS = ['false', 'no', 'off', 'disabled', 'inactive', 'disable'];
+const TP_SL_TAKE_KIND_HINTS = ['TAKE', 'TP', 'TARGET', 'PROFIT'];
+const TP_SL_STOP_KIND_HINTS = ['STOP', 'SL', 'LOSS', 'RISK', 'CUT'];
+
+function interpretTpSlFlag(value) {
+  return parseFlagValue(value, TP_SL_BOOLEAN_POSITIVE_TOKENS, TP_SL_BOOLEAN_NEGATIVE_TOKENS);
+}
+
+function inferTpSlKindFromText(value) {
+  if (!value) return null;
+  const normalized = value.toString().toUpperCase();
+  if (TP_SL_TAKE_KIND_HINTS.some((hint) => normalized.includes(hint))) {
+    return 'take';
+  }
+  if (TP_SL_STOP_KIND_HINTS.some((hint) => normalized.includes(hint))) {
+    return 'stop';
+  }
+  return null;
+}
+
+function inferTpSlKindFromValue(value) {
+  if (!value || typeof value !== 'object') return null;
+
+  const booleanMappings = [
+    {
+      keys: [
+        'isTp',
+        'is_tp',
+        'isTake',
+        'is_take',
+        'isTakeProfit',
+        'tpActive',
+        'tp_active',
+        'takeActive',
+        'take_active',
+        'takeProfitActive',
+      ],
+      kind: 'take',
+    },
+    {
+      keys: [
+        'isSl',
+        'is_sl',
+        'isStop',
+        'is_stop',
+        'isStopLoss',
+        'slActive',
+        'sl_active',
+        'stopActive',
+        'stop_active',
+        'stopLossActive',
+      ],
+      kind: 'stop',
+    },
+  ];
+
+  for (const mapping of booleanMappings) {
+    for (const key of mapping.keys) {
+      if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+      const interpreted = interpretTpSlFlag(value[key]);
+      if (interpreted === true) return mapping.kind;
+      if (interpreted === false) continue;
+    }
+  }
+
+  const textFields = [
+    value.kind,
+    value.tag,
+    value.type,
+    value.orderType,
+    value.triggerType,
+    value.stopType,
+    value.category,
+    value.label,
+    value.name,
+    value.strategyType,
+  ];
+
+  for (const field of textFields) {
+    const inferred = inferTpSlKindFromText(field);
+    if (inferred) return inferred;
+  }
+
+  return null;
+}
+
+function matchesTpSlKind(normalized, source, expectedKind) {
+  const inferred = inferTpSlKindFromValue(source) || inferTpSlKindFromValue(normalized);
+  if (!inferred) return true;
+  return inferred === expectedKind;
+}
+
 function extractTpSlEntry(position, kind) {
   const keys = kind === 'take' ? TAKE_PROFIT_FIELD_KEYS : STOP_LOSS_FIELD_KEYS;
   const numericField = pickNumericField(position, keys);
@@ -4704,16 +4797,90 @@ function extractTpSlEntry(position, kind) {
     }
   }
 
-  const fallbackKeys = kind === 'take' ? ['take', 'tp'] : ['stop', 'sl'];
-  for (const bucket of bucketCandidates) {
-    if (!bucket || typeof bucket !== 'object') continue;
-    let candidate = bucket[kind];
-    for (let i = 0; i < fallbackKeys.length && (candidate == null || candidate === undefined); i += 1) {
-      candidate = bucket[fallbackKeys[i]];
+  const directKeys = kind === 'take' ? ['take', 'tp'] : ['stop', 'sl'];
+  const searchKeys = [
+    ...new Set([
+      ...directKeys,
+      ...keys,
+      'price',
+      'stopPrice',
+      'triggerPrice',
+      'limitPrice',
+      'orders',
+      'legs',
+      'list',
+      'items',
+      'entries',
+      'targets',
+      'stops',
+      'levels',
+      'data',
+      'payload',
+      'children',
+      'tpOrders',
+      'tp_orders',
+      'slOrders',
+      'sl_orders',
+    ]),
+  ];
+  const searchKeySet = new Set(searchKeys);
+
+  const ensurePrice = (value) => {
+    const numeric = toNumeric(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) return;
+    if (!Number.isFinite(price)) {
+      price = Math.abs(numeric);
     }
+  };
+
+  const visited = new Set();
+
+  const resolveMeta = (candidate) => {
+    if (meta) return true;
+    if (candidate === undefined || candidate === null) return false;
+    if (Array.isArray(candidate)) {
+      for (const item of candidate) {
+        if (resolveMeta(item)) return true;
+      }
+      return false;
+    }
+    if (typeof candidate !== 'object') {
+      ensurePrice(candidate);
+      return false;
+    }
+    if (visited.has(candidate)) {
+      return false;
+    }
+    visited.add(candidate);
+
     const normalized = normalizeTpSlMeta(candidate);
-    if (normalized) {
+    if (normalized && matchesTpSlKind(normalized, candidate, kind)) {
+      if (!Number.isFinite(price) && Number.isFinite(normalized.price)) {
+        price = Math.abs(normalized.price);
+      }
       meta = normalized;
+      return true;
+    }
+
+    for (const key of searchKeys) {
+      if (!Object.prototype.hasOwnProperty.call(candidate, key)) continue;
+      if (resolveMeta(candidate[key])) {
+        return true;
+      }
+    }
+
+    for (const key of Object.keys(candidate)) {
+      if (searchKeySet.has(key)) continue;
+      if (resolveMeta(candidate[key])) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  for (const bucket of bucketCandidates) {
+    if (resolveMeta(bucket)) {
       break;
     }
   }
