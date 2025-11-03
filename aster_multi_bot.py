@@ -1250,7 +1250,7 @@ class NewsTrendSentinel:
             return []
         events: List[Dict[str, Any]] = []
         engagement_scores: List[float] = []
-        feed_name = getattr(scraper, "feed", feed)
+        feed_name = getattr(scraper, "feed", X_NEWS_FEED)
         for post in posts:
             if not isinstance(post, dict):
                 continue
