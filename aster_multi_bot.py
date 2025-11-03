@@ -6332,6 +6332,7 @@ class Strategy:
         self._orderbook_budget_max = ORDERBOOK_ON_DEMAND
         self._orderbook_budget = 0
         self._orderbook_ttl = ORDERBOOK_TTL
+        self.playbook_manager: Optional[PlaybookManager] = None
         if self.state:
             scores = self.state.get("universe_scores")
             if isinstance(scores, dict):
@@ -8390,6 +8391,10 @@ class Bot:
                     self.sentinel.set_ai_client(self.ai_advisor._client)
                 except Exception:
                     pass
+            try:
+                self._strategy.playbook_manager = self.ai_advisor.playbook_manager
+            except Exception:
+                pass
 
     @property
     def strategy(self) -> Strategy:
