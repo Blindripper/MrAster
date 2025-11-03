@@ -4986,7 +4986,20 @@ function updateActivePositionsView() {
     const pnlCell = document.createElement('td');
     pnlCell.className = 'numeric';
     const pnlField = pickNumericField(position, ACTIVE_POSITION_ALIASES.pnl || []);
-    const pnlPercentField = formatPercentField(pickNumericField(position, ACTIVE_POSITION_ALIASES.roe || []));
+    const roePercentSource = pickNumericField(position, ACTIVE_POSITION_ALIASES.roe || []);
+    let pnlPercentField = null;
+    if (Number.isFinite(roePercentSource.numeric)) {
+      const adjustedKey =
+        roePercentSource.key && /percent|pct/i.test(roePercentSource.key)
+          ? roePercentSource.key
+          : `${roePercentSource.key || 'roe'}_percent`;
+      pnlPercentField = formatPercentField(
+        { ...roePercentSource, numeric: roePercentSource.numeric / 100, key: adjustedKey },
+        2,
+      );
+    } else {
+      pnlPercentField = formatPercentField(roePercentSource, 2);
+    }
     let pnlDisplay = '–';
     let pnlTone = null;
     if (Number.isFinite(pnlField.numeric)) {
