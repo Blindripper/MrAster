@@ -3870,6 +3870,39 @@ function applyActivePositionLabel(cell, key) {
   }
 }
 
+const BRACKET_FIELD_SOURCE_KEYS = [
+  'brackets',
+  'bracket',
+  'targets',
+  'target',
+  'levels',
+  'level',
+  'exits',
+  'exit',
+  'orders',
+  'order',
+  'openOrders',
+  'pendingOrders',
+  'stopOrders',
+  'stopOrder',
+  'takeProfitOrders',
+  'takeProfitOrder',
+  'tpOrders',
+  'tpOrder',
+  'slOrders',
+  'slOrder',
+  'exitOrders',
+  'exitOrder',
+  'management',
+  'plan',
+  'proposal',
+  'ai',
+  'ctx',
+];
+
+const BRACKET_TP_HINTS = ['tp', 'take', 'target', 'profit', 'takeprofit'];
+const BRACKET_SL_HINTS = ['sl', 'stop', 'loss', 'stoploss'];
+
 const ACTIVE_POSITION_TIMESTAMP_NUMERIC_KEYS = [
   'opened_at',
   'openedAt',
@@ -4359,6 +4392,119 @@ function resolveFieldNumeric(field) {
   return resolveNumericFromCandidates(candidates);
 }
 
+function pickBracketNumericField(position, candidates, hints) {
+  const direct = pickNumericField(position, candidates);
+  if (Number.isFinite(direct.numeric)) {
+    return direct;
+  }
+
+  const normalizedHints = Array.isArray(hints)
+    ? hints.map((hint) => hint.toLowerCase())
+    : [];
+  const visited = new Set();
+
+  const considerValue = (value, keyHint) => {
+    if (value === undefined || value === null) return null;
+    const numeric = resolveFieldNumeric(value);
+    if (!Number.isFinite(numeric)) return null;
+    return {
+      value: unwrapPositionValue(value),
+      raw: value,
+      key: keyHint || null,
+      numeric,
+    };
+  };
+
+  const matchesHint = (text) => {
+    if (!text || !normalizedHints.length) return false;
+    const normalized = text.toString().toLowerCase();
+    return normalizedHints.some((hint) => normalized.includes(hint));
+  };
+
+  const inspectNode = (node, keyHint = '') => {
+    if (node === undefined || node === null) return null;
+
+    if (typeof node === 'number' || typeof node === 'string') {
+      return considerValue(node, keyHint);
+    }
+
+    if (typeof node !== 'object') {
+      return null;
+    }
+
+    if (visited.has(node)) {
+      return null;
+    }
+    visited.add(node);
+
+    if (!Array.isArray(node)) {
+      const metaCandidates = [
+        node.type,
+        node.kind,
+        node.label,
+        node.name,
+        node.tag,
+        node.orderType,
+        node.side,
+        node.intent,
+      ];
+      if (metaCandidates.some((item) => matchesHint(item))) {
+        const metaResolved = considerValue(node, keyHint);
+        if (metaResolved) {
+          return metaResolved;
+        }
+      }
+    }
+
+    if (Array.isArray(node)) {
+      for (let index = 0; index < node.length; index += 1) {
+        const candidate = node[index];
+        const nestedHint = keyHint ? `${keyHint}[${index}]` : `[${index}]`;
+        const resolved = inspectNode(candidate, nestedHint);
+        if (resolved) {
+          return resolved;
+        }
+      }
+      return null;
+    }
+
+    const entries = Object.entries(node);
+
+    for (let idx = 0; idx < entries.length; idx += 1) {
+      const [key, value] = entries[idx];
+      if (matchesHint(key)) {
+        const resolved = considerValue(value, keyHint ? `${keyHint}.${key}` : key);
+        if (resolved) {
+          return resolved;
+        }
+      }
+    }
+
+    for (let idx = 0; idx < entries.length; idx += 1) {
+      const [key, value] = entries[idx];
+      const resolved = inspectNode(value, keyHint ? `${keyHint}.${key}` : key);
+      if (resolved) {
+        return resolved;
+      }
+    }
+
+    return null;
+  };
+
+  if (position && typeof position === 'object') {
+    for (let index = 0; index < BRACKET_FIELD_SOURCE_KEYS.length; index += 1) {
+      const sourceKey = BRACKET_FIELD_SOURCE_KEYS[index];
+      if (!(sourceKey in position)) continue;
+      const resolved = inspectNode(position[sourceKey], sourceKey);
+      if (resolved) {
+        return resolved;
+      }
+    }
+  }
+
+  return direct;
+}
+
 function formatBracketLevel(field) {
   if (!field) return '–';
 
@@ -4795,8 +4941,16 @@ function updateActivePositionsView() {
 
     const tpSlCell = document.createElement('td');
     tpSlCell.className = 'numeric active-positions-brackets';
-    const nextTpField = pickNumericField(position, ACTIVE_POSITION_ALIASES.nextTp || []);
-    const stopField = pickNumericField(position, ACTIVE_POSITION_ALIASES.stop || []);
+    const nextTpField = pickBracketNumericField(
+      position,
+      ACTIVE_POSITION_ALIASES.nextTp || [],
+      BRACKET_TP_HINTS,
+    );
+    const stopField = pickBracketNumericField(
+      position,
+      ACTIVE_POSITION_ALIASES.stop || [],
+      BRACKET_SL_HINTS,
+    );
     const tpDisplay = formatBracketLevel(nextTpField);
     const slDisplay = formatBracketLevel(stopField);
     const tpDistanceDisplay = formatBracketDistance(nextTpField, markField, entryField);
