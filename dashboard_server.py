@@ -129,6 +129,8 @@ ENV_DEFAULTS: Dict[str, str] = {
     "ASTER_AI_NEWS_ENDPOINT": "",
     "ASTER_AI_NEWS_API_KEY": "",
     "ASTER_CHAT_OPENAI_API_KEY": "",
+    "ASTER_X_NEWS_ENABLED": "false",
+    "ASTER_X_AUTH_FILE": "xAuth.json",
 }
 
 # Mapping of well-known asset names to their corresponding base tickers to
