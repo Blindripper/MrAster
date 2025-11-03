@@ -158,6 +158,15 @@ const TRANSLATIONS = {
     'active.table.mark': 'Маркет-прайс',
     'active.table.leverage': 'Плечо',
     'active.table.margin': 'Маржа',
+    'active.table.tpsl': 'TP/SL',
+    'active.table.tp': 'TP',
+    'active.table.sl': 'SL',
+    'active.table.tpsl.workingType.mark': 'Mark',
+    'active.table.tpsl.workingType.last': 'Last',
+    'active.table.tpsl.workingType.index': 'Index',
+    'active.table.tpsl.workingType.contract': 'Contract',
+    'active.table.tpsl.order.market': 'Market',
+    'active.table.tpsl.order.limit': 'Limit',
     'active.table.pnl': 'PNL (ROE%)',
     'status.title': 'Статус',
     'status.state': 'Состояние',
@@ -409,6 +418,15 @@ const TRANSLATIONS = {
     'active.table.mark': 'Markpreis',
     'active.table.leverage': 'Hebel',
     'active.table.margin': 'Margin',
+    'active.table.tpsl': 'TP/SL',
+    'active.table.tp': 'TP',
+    'active.table.sl': 'SL',
+    'active.table.tpsl.workingType.mark': 'Mark',
+    'active.table.tpsl.workingType.last': 'Last',
+    'active.table.tpsl.workingType.index': 'Index',
+    'active.table.tpsl.workingType.contract': 'Contract',
+    'active.table.tpsl.order.market': 'Market',
+    'active.table.tpsl.order.limit': 'Limit',
     'active.table.pnl': 'PNL (ROE%)',
     'status.title': 'Status',
     'status.state': 'Zustand',
@@ -663,6 +681,15 @@ const TRANSLATIONS = {
     'active.table.mark': '마크 가격',
     'active.table.leverage': '레버리지',
     'active.table.margin': '증거금',
+    'active.table.tpsl': 'TP/SL',
+    'active.table.tp': 'TP',
+    'active.table.sl': 'SL',
+    'active.table.tpsl.workingType.mark': 'Mark',
+    'active.table.tpsl.workingType.last': 'Last',
+    'active.table.tpsl.workingType.index': 'Index',
+    'active.table.tpsl.workingType.contract': 'Contract',
+    'active.table.tpsl.order.market': 'Market',
+    'active.table.tpsl.order.limit': 'Limit',
     'active.table.pnl': 'PNL (ROE%)',
     'status.title': '상태',
     'status.state': '상태',
@@ -917,6 +944,15 @@ const TRANSLATIONS = {
     'active.table.mark': 'Prix de marché',
     'active.table.leverage': 'Effet de levier',
     'active.table.margin': 'Marge',
+    'active.table.tpsl': 'TP/SL',
+    'active.table.tp': 'TP',
+    'active.table.sl': 'SL',
+    'active.table.tpsl.workingType.mark': 'Mark',
+    'active.table.tpsl.workingType.last': 'Last',
+    'active.table.tpsl.workingType.index': 'Index',
+    'active.table.tpsl.workingType.contract': 'Contract',
+    'active.table.tpsl.order.market': 'Market',
+    'active.table.tpsl.order.limit': 'Limit',
     'active.table.pnl': 'PNL (ROE %)',
     'status.title': 'Statut',
     'status.state': 'État',
@@ -1171,6 +1207,15 @@ const TRANSLATIONS = {
     'active.table.mark': 'Precio de marca',
     'active.table.leverage': 'Apalancamiento',
     'active.table.margin': 'Margen',
+    'active.table.tpsl': 'TP/SL',
+    'active.table.tp': 'TP',
+    'active.table.sl': 'SL',
+    'active.table.tpsl.workingType.mark': 'Mark',
+    'active.table.tpsl.workingType.last': 'Last',
+    'active.table.tpsl.workingType.index': 'Index',
+    'active.table.tpsl.workingType.contract': 'Contract',
+    'active.table.tpsl.order.market': 'Market',
+    'active.table.tpsl.order.limit': 'Limit',
     'active.table.pnl': 'PNL (ROE%)',
     'status.title': 'Estado',
     'status.state': 'Estado',
@@ -1424,6 +1469,15 @@ const TRANSLATIONS = {
     'active.table.mark': 'Mark fiyatı',
     'active.table.leverage': 'Kaldıraç',
     'active.table.margin': 'Marj',
+    'active.table.tpsl': 'TP/SL',
+    'active.table.tp': 'TP',
+    'active.table.sl': 'SL',
+    'active.table.tpsl.workingType.mark': 'Mark',
+    'active.table.tpsl.workingType.last': 'Last',
+    'active.table.tpsl.workingType.index': 'Index',
+    'active.table.tpsl.workingType.contract': 'Contract',
+    'active.table.tpsl.order.market': 'Market',
+    'active.table.tpsl.order.limit': 'Limit',
     'active.table.pnl': 'PNL (ROE%)',
     'status.title': 'Durum',
     'status.state': 'Durum',
@@ -1671,6 +1725,15 @@ const TRANSLATIONS = {
     'active.table.mark': '标记价格',
     'active.table.leverage': '杠杆',
     'active.table.margin': '保证金',
+    'active.table.tpsl': 'TP/SL',
+    'active.table.tp': 'TP',
+    'active.table.sl': 'SL',
+    'active.table.tpsl.workingType.mark': 'Mark',
+    'active.table.tpsl.workingType.last': 'Last',
+    'active.table.tpsl.workingType.index': 'Index',
+    'active.table.tpsl.workingType.contract': 'Contract',
+    'active.table.tpsl.order.market': 'Market',
+    'active.table.tpsl.order.limit': 'Limit',
     'active.table.pnl': '盈亏 (ROE%)',
     'status.title': '状态',
     'status.state': '运行状态',
@@ -3776,6 +3839,47 @@ const ACTIVE_POSITION_NOTIONAL_KEYS = [
   'sizeUsd',
 ];
 
+const TAKE_PROFIT_FIELD_KEYS = [
+  'tp',
+  'take',
+  'take_price',
+  'takePrice',
+  'take_profit',
+  'takeProfit',
+  'takeProfitPrice',
+  'take_profit_price',
+  'take_profit_next',
+  'takeProfitNext',
+  'tp_price',
+  'tpPrice',
+  'tp_target',
+  'tpTarget',
+  'next_tp',
+  'target',
+  'target_price',
+  'targetPrice',
+];
+
+const STOP_LOSS_FIELD_KEYS = [
+  'sl',
+  'stop',
+  'stop_price',
+  'stopPrice',
+  'stop_price_next',
+  'stopPriceNext',
+  'stop_loss',
+  'stopLoss',
+  'stopLossPrice',
+  'stop_loss_price',
+  'stop_loss_next',
+  'stopLossNext',
+  'stop_target',
+  'stopTarget',
+  'stop_trigger',
+  'stopTrigger',
+  'next_stop',
+];
+
 const ACTIVE_POSITION_ALIASES = {
   symbol: ['symbol', 'sym', 'ticker', 'pair'],
   size: [...ACTIVE_POSITION_NOTIONAL_KEYS, ...ACTIVE_POSITION_SIGNED_SIZE_KEYS],
@@ -3816,6 +3920,7 @@ const ACTIVE_POSITION_FIELD_LABELS = {
   mark: 'Mark price',
   leverage: 'Leverage',
   margin: 'Margin',
+  tp_sl: 'TP/SL',
   pnl: 'PNL (ROE%)',
 };
 
@@ -4543,6 +4648,153 @@ function extractPositionSide(position, sizeField, signedQuantityField) {
   return null;
 }
 
+function normalizeTpSlMeta(meta) {
+  if (!meta || typeof meta !== 'object') return null;
+  const normalized = {};
+  const priceKeys = ['price', 'stopPrice', 'triggerPrice', 'limitPrice'];
+  for (const key of priceKeys) {
+    if (!(key in meta)) continue;
+    const numeric = toNumeric(meta[key]);
+    if (!Number.isFinite(numeric) || numeric <= 0) continue;
+    const absolute = Math.abs(numeric);
+    if (normalized.price == null) {
+      normalized.price = absolute;
+    }
+    normalized[key] = absolute;
+  }
+  if (meta.workingType) {
+    normalized.workingType = meta.workingType.toString().toUpperCase();
+  }
+  if (meta.type) {
+    normalized.type = meta.type.toString().toUpperCase();
+  }
+  if (meta.positionSide) {
+    normalized.positionSide = meta.positionSide;
+  }
+  ['reduceOnly', 'closePosition', 'inferredReduceOnly'].forEach((flag) => {
+    if (Object.prototype.hasOwnProperty.call(meta, flag)) {
+      normalized[flag] = Boolean(meta[flag]);
+    }
+  });
+  if (meta.source) {
+    normalized.source = meta.source;
+  }
+  return normalized;
+}
+
+function extractTpSlEntry(position, kind) {
+  const keys = kind === 'take' ? TAKE_PROFIT_FIELD_KEYS : STOP_LOSS_FIELD_KEYS;
+  const numericField = pickNumericField(position, keys);
+  let price = Number.isFinite(numericField.numeric) ? Math.abs(numericField.numeric) : null;
+
+  let meta = null;
+  const bucketCandidates = [];
+  if (position && typeof position === 'object') {
+    if (position.tp_sl_meta && typeof position.tp_sl_meta === 'object') {
+      bucketCandidates.push(position.tp_sl_meta);
+    }
+    if (position.tpSlMeta && typeof position.tpSlMeta === 'object') {
+      bucketCandidates.push(position.tpSlMeta);
+    }
+    if (position.bracket_meta && typeof position.bracket_meta === 'object') {
+      bucketCandidates.push(position.bracket_meta);
+    }
+    if (position.brackets && typeof position.brackets === 'object') {
+      bucketCandidates.push(position.brackets);
+    }
+  }
+
+  const fallbackKeys = kind === 'take' ? ['take', 'tp'] : ['stop', 'sl'];
+  for (const bucket of bucketCandidates) {
+    if (!bucket || typeof bucket !== 'object') continue;
+    let candidate = bucket[kind];
+    for (let i = 0; i < fallbackKeys.length && (candidate == null || candidate === undefined); i += 1) {
+      candidate = bucket[fallbackKeys[i]];
+    }
+    const normalized = normalizeTpSlMeta(candidate);
+    if (normalized) {
+      meta = normalized;
+      break;
+    }
+  }
+
+  if (!Number.isFinite(price) && meta && Number.isFinite(meta.price)) {
+    price = Math.abs(meta.price);
+  }
+
+  return { price: Number.isFinite(price) ? price : null, meta };
+}
+
+function describeWorkingTypeLabel(value) {
+  if (!value) return '';
+  const normalized = value.toString().toUpperCase();
+  if (normalized === 'MARK' || normalized === 'MARK_PRICE') {
+    return translate('active.table.tpsl.workingType.mark', 'Mark');
+  }
+  if (normalized === 'CONTRACT_PRICE' || normalized === 'LAST_PRICE' || normalized === 'LAST') {
+    return translate('active.table.tpsl.workingType.last', 'Last');
+  }
+  if (normalized === 'INDEX_PRICE' || normalized === 'INDEX') {
+    return translate('active.table.tpsl.workingType.index', 'Index');
+  }
+  if (normalized === 'CONTRACT') {
+    return translate('active.table.tpsl.workingType.contract', 'Contract');
+  }
+  return normalized
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function describeOrderExecutionLabel(value) {
+  if (!value) return '';
+  const normalized = value.toString().toUpperCase();
+  if (normalized.includes('MARKET')) {
+    return translate('active.table.tpsl.order.market', 'Market');
+  }
+  if (normalized.includes('LIMIT') || normalized === 'STOP' || normalized === 'TAKE_PROFIT') {
+    return translate('active.table.tpsl.order.limit', 'Limit');
+  }
+  return normalized
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function buildTpSlLine(kind, entry) {
+  if (!entry || !Number.isFinite(entry.price)) return null;
+  const line = document.createElement('div');
+  line.className = `tp-sl-line tp-sl-${kind === 'take' ? 'take' : 'stop'}`;
+  const label = document.createElement('span');
+  label.className = 'tp-sl-label';
+  label.textContent =
+    kind === 'take'
+      ? translate('active.table.tp', 'TP')
+      : translate('active.table.sl', 'SL');
+  line.append(label);
+  const value = document.createElement('span');
+  value.className = 'tp-sl-value';
+  value.textContent = formatPriceDisplay(entry.price);
+  line.append(value);
+
+  const metaParts = [];
+  if (entry.meta) {
+    const workingLabel = describeWorkingTypeLabel(entry.meta.workingType);
+    const executionLabel = describeOrderExecutionLabel(entry.meta.type);
+    if (workingLabel) metaParts.push(workingLabel);
+    if (executionLabel) metaParts.push(executionLabel);
+  }
+
+  if (metaParts.length > 0) {
+    const meta = document.createElement('span');
+    meta.className = 'tp-sl-meta';
+    meta.textContent = `(${metaParts.join(' · ')})`;
+    line.append(meta);
+  }
+
+  return line;
+}
+
 function getPositionTimestamp(position) {
   const numericField = pickNumericField(position, ACTIVE_POSITION_TIMESTAMP_NUMERIC_KEYS);
   if (Number.isFinite(numericField.numeric)) {
@@ -4721,6 +4973,28 @@ function updateActivePositionsView() {
     }
     applyActivePositionLabel(marginCell, 'margin');
     row.append(marginCell);
+
+    const tpSlCell = document.createElement('td');
+    tpSlCell.className = 'numeric tp-sl-cell';
+    const takeEntry = extractTpSlEntry(position, 'take');
+    const stopEntry = extractTpSlEntry(position, 'stop');
+    const takeLine = buildTpSlLine('take', takeEntry);
+    const stopLine = buildTpSlLine('stop', stopEntry);
+    if (takeLine || stopLine) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'tp-sl-wrapper';
+      if (takeLine) wrapper.append(takeLine);
+      if (stopLine) wrapper.append(stopLine);
+      if (wrapper.childElementCount > 0) {
+        tpSlCell.append(wrapper);
+      } else {
+        tpSlCell.textContent = '–';
+      }
+    } else {
+      tpSlCell.textContent = '–';
+    }
+    applyActivePositionLabel(tpSlCell, 'tp_sl');
+    row.append(tpSlCell);
 
     const pnlCell = document.createElement('td');
     pnlCell.className = 'numeric';

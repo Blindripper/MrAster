@@ -1380,18 +1380,60 @@ STOP_LOSS_FIELD_KEYS: Tuple[str, ...] = (
 )
 
 
-def _apply_bracket_price(record: Dict[str, Any], kind: str, price: float) -> None:
+def _apply_bracket_price(record: Dict[str, Any], kind: str, price: Any) -> None:
     if not isinstance(record, dict):
         return
-    try:
-        numeric_price = float(price)
-    except (TypeError, ValueError):
+
+    meta: Optional[Dict[str, Any]]
+    numeric_price: Optional[float]
+
+    if isinstance(price, dict):
+        meta = dict(price)
+        numeric_price = None
+        for candidate in (
+            meta.get("price"),
+            meta.get("stopPrice"),
+            meta.get("triggerPrice"),
+            meta.get("limitPrice"),
+        ):
+            numeric_price = _safe_float(candidate)
+            if numeric_price is not None:
+                break
+        if numeric_price is None:
+            return
+        meta["price"] = numeric_price
+    else:
+        meta = None
+        numeric_price = _safe_float(price)
+        if numeric_price is None:
+            return
+
+    if numeric_price <= 0:
         return
 
     keys = TAKE_PROFIT_FIELD_KEYS if kind == "take" else STOP_LOSS_FIELD_KEYS
 
     for key in keys:
         record[key] = numeric_price
+
+    if meta is not None:
+        normalized_meta: Dict[str, Any] = {"price": numeric_price}
+        for field in ("type", "workingType", "positionSide", "source"):
+            value = meta.get(field)
+            if value is None:
+                continue
+            if isinstance(value, str):
+                normalized_meta[field] = value
+            else:
+                normalized_meta[field] = value
+        for flag in ("reduceOnly", "closePosition", "inferredReduceOnly"):
+            if flag in meta:
+                normalized_meta[flag] = bool(meta.get(flag))
+        for extra_field in ("triggerPrice", "stopPrice", "limitPrice"):
+            extra_val = _safe_float(meta.get(extra_field))
+            if extra_val is not None:
+                normalized_meta[extra_field] = extra_val
+        record.setdefault("tp_sl_meta", {})[kind] = normalized_meta
 
 
 def _entry_has_bracket_prices(record: Dict[str, Any]) -> bool:
@@ -1528,30 +1570,61 @@ def _fetch_position_brackets(
             kind = "take" if "TAKE_PROFIT" in order_type else "stop"
             existing = bucket.get(kind)
             if existing is not None:
-                try:
-                    existing_val = float(existing)
-                except (TypeError, ValueError):
-                    existing_val = None
+                if isinstance(existing, dict):
+                    existing_val = _safe_float(existing.get("price"))
+                else:
+                    try:
+                        existing_val = float(existing)
+                    except (TypeError, ValueError):
+                        existing_val = None
             else:
                 existing_val = None
+
+            working_type_raw = order.get("workingType") or order.get("priceType")
+            working_type = str(working_type_raw).upper().strip() if working_type_raw else None
+
+            order_meta = {
+                "price": price_val,
+                "type": order_type,
+                "workingType": working_type,
+                "reduceOnly": bool(reduce_only or inferred_reduce),
+                "closePosition": bool(close_position),
+                "positionSide": position_side_raw or None,
+                "source": "openOrders",
+            }
+
+            trigger_price_val = _safe_float(order.get("triggerPrice"))
+            if trigger_price_val is not None:
+                order_meta["triggerPrice"] = trigger_price_val
+
+            stop_price_val = _safe_float(order.get("stopPrice"))
+            if stop_price_val is not None and stop_price_val != trigger_price_val:
+                order_meta["stopPrice"] = stop_price_val
+
+            limit_price_val = _safe_float(order.get("price"))
+            if limit_price_val is not None and limit_price_val != price_val:
+                order_meta["limitPrice"] = limit_price_val
+
+            if inferred_reduce and not reduce_only:
+                order_meta["inferredReduceOnly"] = True
 
             if side_key == "BUY":
                 if kind == "stop":
                     if existing_val is None or price_val > existing_val:
-                        bucket[kind] = price_val
+                        bucket[kind] = order_meta
                 else:
                     if existing_val is None or price_val < existing_val:
-                        bucket[kind] = price_val
+                        bucket[kind] = order_meta
             elif side_key == "SELL":
                 if kind == "stop":
                     if existing_val is None or price_val < existing_val:
-                        bucket[kind] = price_val
+                        bucket[kind] = order_meta
                 else:
                     if existing_val is None or price_val > existing_val:
-                        bucket[kind] = price_val
+                        bucket[kind] = order_meta
             else:
                 if existing_val is None:
-                    bucket[kind] = price_val
+                    bucket[kind] = order_meta
 
     return results
 
