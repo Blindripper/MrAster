@@ -115,6 +115,14 @@ AI_PENDING_LIMIT = max(
     int(os.getenv("ASTER_AI_PENDING_LIMIT", str(_default_pending_limit)) or _default_pending_limit),
 )
 
+X_NEWS_ENABLED = os.getenv("ASTER_X_NEWS_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+X_NEWS_COOKIES_PATH = os.getenv("ASTER_X_AUTH_FILE", "xAuth.json").strip() or "xAuth.json"
+X_NEWS_CACHE_TTL = max(120.0, float(os.getenv("ASTER_X_NEWS_CACHE_TTL_SECONDS", "900") or 900.0))
+X_NEWS_LIMIT = max(5, int(os.getenv("ASTER_X_NEWS_LIMIT", "30") or 30))
+X_NEWS_SCROLL_ATTEMPTS = max(4, int(os.getenv("ASTER_X_NEWS_SCROLL_ATTEMPTS", "25") or 25))
+X_NEWS_SCROLL_DELAY = max(0.25, float(os.getenv("ASTER_X_NEWS_SCROLL_DELAY", "1.2") or 1.2))
+X_NEWS_FEED = os.getenv("ASTER_X_NEWS_FEED", "top").strip().lower() or "top"
+
 _OPENAI_CLIENT: Optional[OpenAIClient] = None
 
 
@@ -873,6 +881,11 @@ class NewsTrendSentinel:
         self._ai_client: Optional[OpenAIClient] = ai_client or _shared_openai_client()
         self._pending_ai: Dict[str, Dict[str, Any]] = {}
         self._ai_cache: Dict[str, Dict[str, Any]] = {}
+        self._news_scraper: Optional[Any] = None
+        self._news_scraper_unavailable = not X_NEWS_ENABLED
+        self._news_scraper_error_logged = False
+        self._news_error_cls: Optional[type] = None
+        self._news_cache: Dict[str, Dict[str, Any]] = {}
 
     def set_ai_client(self, client: Optional[OpenAIClient]) -> None:
         if client is not None:
@@ -1081,36 +1094,139 @@ class NewsTrendSentinel:
         return payload or {}
 
     def _news_events(self, symbol: str) -> List[Dict[str, Any]]:
-        if not self.enabled or not SENTINEL_NEWS_ENDPOINT:
+        if not self.enabled:
             return []
+        if SENTINEL_NEWS_ENDPOINT:
+            try:
+                headers = {}
+                params = {"symbol": symbol}
+                if SENTINEL_NEWS_TOKEN:
+                    headers["Authorization"] = f"Bearer {SENTINEL_NEWS_TOKEN}"
+                resp = requests.get(
+                    SENTINEL_NEWS_ENDPOINT,
+                    params=params,
+                    headers=headers,
+                    timeout=6,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                items = data if isinstance(data, list) else data.get("items") or data.get("results") or []
+                events: List[Dict[str, Any]] = []
+                for item in items[:6]:
+                    title = str(item.get("title") or item.get("headline") or "Event").strip()
+                    source = str(item.get("source") or item.get("origin") or "news").strip()
+                    severity = str(item.get("severity") or item.get("label") or "info").strip()
+                    events.append({
+                        "headline": title,
+                        "source": source,
+                        "severity": severity.lower(),
+                    })
+                return events
+            except Exception as exc:
+                log.debug(f"sentinel news fetch failed {symbol}: {exc}")
+        return self._local_news_events(symbol)
+
+    def _ensure_local_news_scraper(self):
+        if self._news_scraper_unavailable:
+            return None
+        if self._news_scraper is not None:
+            return self._news_scraper
         try:
-            headers = {}
-            params = {"symbol": symbol}
-            if SENTINEL_NEWS_TOKEN:
-                headers["Authorization"] = f"Bearer {SENTINEL_NEWS_TOKEN}"
-            resp = requests.get(
-                SENTINEL_NEWS_ENDPOINT,
-                params=params,
-                headers=headers,
-                timeout=6,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            items = data if isinstance(data, list) else data.get("items") or data.get("results") or []
-            events: List[Dict[str, Any]] = []
-            for item in items[:6]:
-                title = str(item.get("title") or item.get("headline") or "Event").strip()
-                source = str(item.get("source") or item.get("origin") or "news").strip()
-                severity = str(item.get("severity") or item.get("label") or "info").strip()
-                events.append({
-                    "headline": title,
-                    "source": source,
-                    "severity": severity.lower(),
-                })
-            return events
+            from news import NewsScraper, NewsScraperError  # type: ignore
         except Exception as exc:
-            log.debug(f"sentinel news fetch failed {symbol}: {exc}")
+            log.debug(f"sentinel local news unavailable: {exc}")
+            self._news_scraper_unavailable = True
+            return None
+        feed = X_NEWS_FEED if X_NEWS_FEED in {"top", "live"} else "top"
+        try:
+            scraper = NewsScraper(
+                cookies_path=X_NEWS_COOKIES_PATH,
+                feed=feed,
+                tweet_limit=X_NEWS_LIMIT,
+                scroll_delay=X_NEWS_SCROLL_DELAY,
+                scroll_attempts=X_NEWS_SCROLL_ATTEMPTS,
+                cache_ttl=X_NEWS_CACHE_TTL,
+            )
+        except Exception as exc:
+            log.debug(f"sentinel local news init failed: {exc}")
+            self._news_scraper_unavailable = True
+            return None
+        self._news_scraper = scraper
+        try:
+            self._news_error_cls = NewsScraperError  # type: ignore[name-defined]
+        except Exception:
+            self._news_error_cls = None
+        return self._news_scraper
+
+    def _local_news_events(self, symbol: str) -> List[Dict[str, Any]]:
+        scraper = self._ensure_local_news_scraper()
+        if scraper is None:
             return []
+        now = time.time()
+        cached = self._news_cache.get(symbol)
+        if cached and now - float(cached.get("ts", 0.0)) < X_NEWS_CACHE_TTL:
+            return cached.get("events", [])
+        try:
+            posts = scraper.fetch(symbol, limit=X_NEWS_LIMIT)
+        except Exception as exc:
+            if self._news_error_cls and isinstance(exc, self._news_error_cls):
+                self._news_scraper_unavailable = True
+            if isinstance(exc, FileNotFoundError):
+                self._news_scraper_unavailable = True
+            if not self._news_scraper_error_logged:
+                log.debug(f"sentinel x news fetch failed {symbol}: {exc}")
+                self._news_scraper_error_logged = True
+            return []
+        events: List[Dict[str, Any]] = []
+        engagement_scores: List[float] = []
+        for post in posts:
+            if not isinstance(post, dict):
+                continue
+            text = str(post.get("text") or "").strip()
+            if not text:
+                continue
+            headline = text.replace("\n", " ").strip()
+            if len(headline) > 220:
+                headline = headline[:217].rstrip() + "…"
+            source = str(post.get("handle") or post.get("author") or "x-top-post").strip() or "x-top-post"
+            entry: Dict[str, Any] = {
+                "headline": headline,
+                "source": source,
+                "severity": "info",
+            }
+            url = post.get("url")
+            if isinstance(url, str) and url:
+                entry["url"] = url
+            events.append(entry)
+            engagement = 0.0
+            for weight, key in ((0.6, "retweets"), (0.5, "likes"), (0.3, "replies")):
+                value = post.get(key)
+                if isinstance(value, (int, float)):
+                    engagement += float(value) * weight
+            if engagement:
+                engagement_scores.append(engagement)
+        hype = 0.0
+        if events:
+            base_ratio = min(1.0, len(events) / max(1, scraper.tweet_limit))
+            hype = max(0.0, min(1.0, base_ratio * 0.6))
+            if engagement_scores:
+                top_score = max(engagement_scores)
+                hype = min(1.0, max(hype, hype + min(0.4, top_score / 5000.0)))
+        meta: Dict[str, Any] = {
+            "source": "x-top-posts",
+            "post_count": len(events),
+            "query": symbol,
+        }
+        if engagement_scores:
+            meta["top_engagement"] = max(engagement_scores)
+            meta["avg_engagement"] = sum(engagement_scores) / len(engagement_scores)
+        self._news_cache[symbol] = {
+            "ts": now,
+            "events": events,
+            "hype": hype,
+            "meta": meta,
+        }
+        return events
 
     @staticmethod
     def _safe_float(value: Any) -> Optional[float]:
@@ -1451,6 +1567,20 @@ class NewsTrendSentinel:
                     payload["event_risk"] = clamp(payload.get("event_risk", 0.0) + 0.2, 0.0, 1.0)
                     payload["label"] = "red"
                     payload.setdefault("actions", {})["hard_block"] = True
+            cached_news = self._news_cache.get(symbol)
+            if cached_news:
+                ts_cached = float(cached_news.get("ts", 0.0) or 0.0)
+                if now - ts_cached > X_NEWS_CACHE_TTL * 1.5:
+                    self._news_cache.pop(symbol, None)
+                else:
+                    hype_bonus = float(cached_news.get("hype", 0.0) or 0.0)
+                    if hype_bonus:
+                        base_hype = float(payload.get("hype_score", 0.0) or 0.0)
+                        payload["hype_score"] = clamp(max(base_hype, hype_bonus), 0.0, 1.0)
+                    meta_block = cached_news.get("meta")
+                    if isinstance(meta_block, dict):
+                        external_meta_block = payload.setdefault("meta", {}).setdefault("external", {})
+                        external_meta_block["x_social"] = dict(meta_block)
             extra_metrics, external_meta, extra_events = self._collect_external_metrics(symbol)
             if extra_events:
                 payload["events"] = (payload.get("events") or []) + extra_events
