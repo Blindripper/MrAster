@@ -603,15 +603,15 @@
         <div class="preset-buttons" role="group" aria-label="Risk presets">
           <button class="preset" data-preset="low">
             <span class="preset-title" data-i18n="quick.presets.low.title">Low</span>
-            <span class="preset-subtitle" data-i18n="quick.presets.low.subtitle">Few trades · low risk · 33% equity use</span>
+            <span class="preset-subtitle" data-i18n="quick.presets.low.subtitle">Few trades · 30% risk per trade · 33% equity use</span>
           </button>
           <button class="preset" data-preset="mid">
             <span class="preset-title" data-i18n="quick.presets.mid.title">Mid</span>
-            <span class="preset-subtitle" data-i18n="quick.presets.mid.subtitle">Balanced trading · 66% equity use</span>
+            <span class="preset-subtitle" data-i18n="quick.presets.mid.subtitle">Balanced trading · 50% risk per trade · 66% equity use</span>
           </button>
           <button class="preset" data-preset="high">
             <span class="preset-title" data-i18n="quick.presets.high.title">High</span>
-            <span class="preset-subtitle" data-i18n="quick.presets.high.subtitle">Frequent · aggressive · 100% equity</span>
+            <span class="preset-subtitle" data-i18n="quick.presets.high.subtitle">Frequent · aggressive · 100% risk per trade</span>
           </button>
           <button class="preset" data-preset="att">
             <span class="preset-title" data-i18n="quick.presets.att.title">ATT</span>
@@ -623,22 +623,22 @@
           <div class="risk-control">
             <div class="risk-control-header">
               <span data-i18n="quick.risk.label">Risk per trade</span>
-              <span id="risk-value" class="risk-value">1.0%</span>
+              <span id="risk-value" class="risk-value">50.0%</span>
             </div>
             <input
               type="range"
               id="risk-slider"
               min="0.25"
-              max="5"
+              max="100"
               step="0.25"
-              value="1.0"
+              value="50"
               aria-label="Risk per trade (%)"
               data-i18n="quick.risk.aria"
               data-i18n-attr="aria-label"
             />
             <div class="risk-scale">
               <span data-i18n="quick.risk.min">0.25%</span>
-              <span data-i18n="quick.risk.max">5%</span>
+              <span data-i18n="quick.risk.max">100%</span>
             </div>
           </div>
           <div class="risk-control">
