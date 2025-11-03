@@ -34,7 +34,7 @@ import threading
 from pathlib import Path
 from datetime import datetime, timezone, date
 from urllib.parse import urlencode
-from typing import Dict, List, Tuple, Optional, Any, Callable, Sequence, Set
+from typing import Dict, List, Tuple, Optional, Any, Callable, Sequence, Set, Iterable
 
 from collections import OrderedDict, deque
 from concurrent.futures import Future
@@ -97,6 +97,12 @@ SENTINEL_ENABLED = os.getenv("ASTER_AI_SENTINEL_ENABLED", "true").lower() in ("1
 SENTINEL_DECAY_MINUTES = float(os.getenv("ASTER_AI_SENTINEL_DECAY_MINUTES", "60") or 60)
 SENTINEL_NEWS_ENDPOINT = os.getenv("ASTER_AI_NEWS_ENDPOINT", "").strip()
 SENTINEL_NEWS_TOKEN = os.getenv("ASTER_AI_NEWS_API_KEY", "").strip()
+SENTINEL_ONCHAIN_ENDPOINT = os.getenv("ASTER_AI_ONCHAIN_ENDPOINT", "").strip()
+SENTINEL_ONCHAIN_TOKEN = os.getenv("ASTER_AI_ONCHAIN_API_KEY", "").strip() or SENTINEL_NEWS_TOKEN
+SENTINEL_SOCIAL_ENDPOINT = os.getenv("ASTER_AI_SOCIAL_ENDPOINT", "").strip()
+SENTINEL_SOCIAL_TOKEN = os.getenv("ASTER_AI_SOCIAL_API_KEY", "").strip() or SENTINEL_NEWS_TOKEN
+SENTINEL_OPTIONS_ENDPOINT = os.getenv("ASTER_AI_OPTIONS_ENDPOINT", "").strip()
+SENTINEL_OPTIONS_TOKEN = os.getenv("ASTER_AI_OPTIONS_API_KEY", "").strip() or SENTINEL_NEWS_TOKEN
 SENTINEL_MODEL = os.getenv("ASTER_AI_SENTINEL_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
 SENTINEL_AI_TTL = max(120.0, float(os.getenv("ASTER_AI_SENTINEL_AI_TTL_SECONDS", "600") or 600))
 AI_MIN_INTERVAL_SECONDS = float(os.getenv("ASTER_AI_MIN_INTERVAL_SECONDS", "8") or 0.0)
@@ -937,6 +943,15 @@ class NewsTrendSentinel:
                     "volatility": meta.get("volatility"),
                 }
             )
+        signals = payload.get("signals")
+        if isinstance(signals, dict):
+            request_payload["metrics"].update(
+                {
+                    "onchain_pressure": signals.get("sentinel_onchain_pressure"),
+                    "social_sentiment": signals.get("sentinel_social_sentiment"),
+                    "options_skew": signals.get("sentinel_options_skew"),
+                }
+            )
         if isinstance(ctx, dict):
             context_map = {}
             for key in ("htf_trend_up", "htf_trend_down", "sentinel_soft_block", "trend"):
@@ -1097,6 +1112,215 @@ class NewsTrendSentinel:
             log.debug(f"sentinel news fetch failed {symbol}: {exc}")
             return []
 
+    @staticmethod
+    def _safe_float(value: Any) -> Optional[float]:
+        if isinstance(value, bool):
+            return 1.0 if value else 0.0
+        if isinstance(value, (int, float)):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+        if isinstance(value, str):
+            token = value.strip()
+            if not token:
+                return None
+            try:
+                return float(token)
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    def _fetch_external_payload(
+        self,
+        endpoint: str,
+        token: str,
+        symbol: str,
+        *,
+        timeout: float = 6.0,
+    ) -> Optional[Dict[str, Any]]:
+        if not endpoint:
+            return None
+        try:
+            headers = {}
+            params = {"symbol": symbol}
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            resp = requests.get(endpoint, params=params, headers=headers, timeout=timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            if isinstance(data, list):
+                return {"items": data}
+            if isinstance(data, dict):
+                return data
+        except Exception as exc:
+            log.debug(f"sentinel external fetch failed %s: %s", symbol, exc)
+        return None
+
+    def _normalize_external_events(
+        self,
+        source: str,
+        payload: Iterable[Any],
+        *,
+        limit: int = 4,
+    ) -> List[Dict[str, Any]]:
+        events: List[Dict[str, Any]] = []
+        if not payload:
+            return events
+        for raw in list(payload)[:limit]:
+            if isinstance(raw, dict):
+                title = raw.get("title") or raw.get("headline") or raw.get("name") or raw.get("event")
+                detail = raw.get("detail") or raw.get("description")
+                severity = raw.get("severity") or raw.get("label") or raw.get("type")
+                when = raw.get("time") or raw.get("ts") or raw.get("timestamp")
+            else:
+                title = str(raw)
+                detail = None
+                severity = None
+                when = None
+            entry: Dict[str, Any] = {"source": source}
+            if isinstance(title, str) and title.strip():
+                entry["headline"] = title.strip()
+            if isinstance(detail, str) and detail.strip():
+                entry["detail"] = detail.strip()
+            if isinstance(severity, str) and severity.strip():
+                entry["severity"] = severity.strip().lower()
+            val = self._safe_float(when)
+            if val is not None:
+                entry["ts"] = val
+            if entry.get("headline"):
+                events.append(entry)
+        return events
+
+    def _parse_external_payload(
+        self,
+        prefix: str,
+        payload: Optional[Dict[str, Any]],
+    ) -> Tuple[Dict[str, float], List[Dict[str, Any]]]:
+        if not isinstance(payload, dict):
+            return {}, []
+        metrics: Dict[str, float] = {}
+        def _ingest_block(block: Any) -> None:
+            if not isinstance(block, dict):
+                return
+            for key, value in block.items():
+                if key in {"events", "alerts", "signals", "items", "highlights"}:
+                    continue
+                num = self._safe_float(value)
+                if num is None:
+                    continue
+                metrics[f"{prefix}_{str(key)}"] = num
+
+        _ingest_block(payload)
+        meta_block = payload.get("metrics")
+        _ingest_block(meta_block)
+        nested = payload.get("data")
+        if isinstance(nested, dict):
+            _ingest_block(nested)
+        events_payload: List[Any] = []
+        for key in ("events", "alerts", "signals", "items", "highlights"):
+            chunk = payload.get(key)
+            if isinstance(chunk, list):
+                events_payload.extend(chunk)
+        events = self._normalize_external_events(prefix, events_payload)
+        return metrics, events
+
+    def _select_metric(
+        self,
+        metrics: Dict[str, float],
+        keys: Sequence[str],
+        *,
+        default: float = 0.0,
+        clamp_min: float = -1.0,
+        clamp_max: float = 1.0,
+    ) -> float:
+        for key in keys:
+            for metric_key, value in metrics.items():
+                if metric_key == key or metric_key.endswith(f"_{key}") or metric_key.split("_", 1)[-1] == key:
+                    return clamp(value, clamp_min, clamp_max)
+        return default
+
+    def _collect_external_metrics(
+        self, symbol: str
+    ) -> Tuple[Dict[str, float], Dict[str, Any], List[Dict[str, Any]]]:
+        summary: Dict[str, float] = {}
+        meta: Dict[str, Any] = {}
+        events: List[Dict[str, Any]] = []
+
+        onchain_payload = self._fetch_external_payload(
+            SENTINEL_ONCHAIN_ENDPOINT, SENTINEL_ONCHAIN_TOKEN, symbol
+        )
+        if onchain_payload:
+            onchain_metrics, onchain_events = self._parse_external_payload("onchain", onchain_payload)
+            if onchain_metrics:
+                meta["onchain"] = onchain_metrics
+                summary["sentinel_onchain_pressure"] = self._select_metric(
+                    onchain_metrics,
+                    ("pressure", "risk", "whale_score", "whale_pressure"),
+                    clamp_min=-1.0,
+                    clamp_max=1.0,
+                )
+                summary["sentinel_onchain_flow"] = self._select_metric(
+                    onchain_metrics,
+                    ("netflow", "net_flow", "flow", "exchange_flow", "stable_netflow"),
+                    clamp_min=-1.0,
+                    clamp_max=1.0,
+                )
+                summary["sentinel_onchain_exchange_inflow"] = self._select_metric(
+                    onchain_metrics,
+                    ("exchange_inflow", "inflow"),
+                    clamp_min=0.0,
+                    clamp_max=2.0,
+                )
+            if onchain_events:
+                events.extend(onchain_events)
+
+        social_payload = self._fetch_external_payload(
+            SENTINEL_SOCIAL_ENDPOINT, SENTINEL_SOCIAL_TOKEN, symbol
+        )
+        if social_payload:
+            social_metrics, social_events = self._parse_external_payload("social", social_payload)
+            if social_metrics:
+                meta["social"] = social_metrics
+                summary["sentinel_social_sentiment"] = self._select_metric(
+                    social_metrics,
+                    ("sentiment", "score", "hype", "bullish_score"),
+                    clamp_min=-1.0,
+                    clamp_max=1.0,
+                )
+                summary["sentinel_social_volume"] = self._select_metric(
+                    social_metrics,
+                    ("volume", "message_volume", "buzz"),
+                    clamp_min=0.0,
+                    clamp_max=2.0,
+                )
+            if social_events:
+                events.extend(social_events)
+
+        options_payload = self._fetch_external_payload(
+            SENTINEL_OPTIONS_ENDPOINT, SENTINEL_OPTIONS_TOKEN, symbol
+        )
+        if options_payload:
+            options_metrics, options_events = self._parse_external_payload("options", options_payload)
+            if options_metrics:
+                meta["options"] = options_metrics
+                summary["sentinel_options_skew"] = self._select_metric(
+                    options_metrics,
+                    ("skew", "risk_reversal", "rr", "delta_skew"),
+                    clamp_min=-1.5,
+                    clamp_max=1.5,
+                )
+                summary["sentinel_options_iv_rank"] = self._select_metric(
+                    options_metrics,
+                    ("iv_rank", "iv_percentile", "vol_rank"),
+                    clamp_min=0.0,
+                    clamp_max=1.0,
+                )
+            if options_events:
+                events.extend(options_events)
+
+        return summary, meta, events
+
     def _evaluate_from_ticker(self, symbol: str, ticker: Dict[str, Any]) -> Dict[str, Any]:
         price_change = 0.0
         quote_volume = 0.0
@@ -1227,6 +1451,56 @@ class NewsTrendSentinel:
                     payload["event_risk"] = clamp(payload.get("event_risk", 0.0) + 0.2, 0.0, 1.0)
                     payload["label"] = "red"
                     payload.setdefault("actions", {})["hard_block"] = True
+            extra_metrics, external_meta, extra_events = self._collect_external_metrics(symbol)
+            if extra_events:
+                payload["events"] = (payload.get("events") or []) + extra_events
+            if external_meta:
+                payload.setdefault("meta", {}).setdefault("external", {}).update(external_meta)
+            if extra_metrics:
+                signals = dict(extra_metrics)
+                payload["signals"] = signals
+                onchain_pressure = float(signals.get("sentinel_onchain_pressure", 0.0) or 0.0)
+                social_sentiment = float(signals.get("sentinel_social_sentiment", 0.0) or 0.0)
+                options_skew = float(signals.get("sentinel_options_skew", 0.0) or 0.0)
+                onchain_flow = float(signals.get("sentinel_onchain_flow", 0.0) or 0.0)
+                if onchain_pressure > 0.4:
+                    payload["event_risk"] = clamp(
+                        float(payload.get("event_risk", 0.0) or 0.0) + (onchain_pressure - 0.35) * 0.3,
+                        0.0,
+                        1.0,
+                    )
+                elif onchain_pressure < -0.45:
+                    payload["event_risk"] = clamp(
+                        float(payload.get("event_risk", 0.0) or 0.0) + (onchain_pressure + 0.35) * 0.2,
+                        0.0,
+                        1.0,
+                    )
+                if onchain_flow > 0.5:
+                    payload.setdefault("actions", {}).setdefault("size_factor", 1.0)
+                    payload["actions"]["size_factor"] = clamp(
+                        float(payload["actions"]["size_factor"]) * (1.0 - min(onchain_flow, 1.0) * 0.25),
+                        0.0,
+                        1.2,
+                    )
+                if social_sentiment:
+                    payload["hype_score"] = clamp(
+                        float(payload.get("hype_score", 0.0) or 0.0)
+                        + social_sentiment * 0.2,
+                        0.0,
+                        1.0,
+                    )
+                if options_skew < -0.3:
+                    payload["event_risk"] = clamp(
+                        float(payload.get("event_risk", 0.0) or 0.0) + abs(options_skew) * 0.2,
+                        0.0,
+                        1.0,
+                    )
+                elif options_skew > 0.35:
+                    payload["event_risk"] = clamp(
+                        float(payload.get("event_risk", 0.0) or 0.0) - options_skew * 0.15,
+                        0.0,
+                        1.0,
+                    )
             payload = {
                 "event_risk": float(payload.get("event_risk", 0.0) or 0.0),
                 "hype_score": float(payload.get("hype_score", 0.0) or 0.0),
@@ -1234,6 +1508,7 @@ class NewsTrendSentinel:
                 "actions": payload.get("actions", {"size_factor": 1.0, "hard_block": False}),
                 "events": payload.get("events", []),
                 "meta": payload.get("meta", {}),
+                "signals": payload.get("signals", {}),
             }
             self._last_payload[symbol] = {"ts": now, "payload": payload}
 
@@ -1250,6 +1525,19 @@ class NewsTrendSentinel:
             ctx["sentinel_event_risk"] = float(payload.get("event_risk", 0.0) or 0.0)
             ctx["sentinel_hype"] = float(payload.get("hype_score", 0.0) or 0.0)
             ctx["sentinel_label"] = payload.get("label", "green")
+            signals = payload.get("signals")
+            if isinstance(signals, dict):
+                for key in (
+                    "sentinel_onchain_pressure",
+                    "sentinel_onchain_flow",
+                    "sentinel_social_sentiment",
+                    "sentinel_social_volume",
+                    "sentinel_options_skew",
+                    "sentinel_options_iv_rank",
+                ):
+                    val = signals.get(key)
+                    if isinstance(val, (int, float)):
+                        ctx[key] = float(val)
         if store_only:
             return payload
         return payload
@@ -2611,6 +2899,16 @@ class AITradeAdvisor:
         hype_score = self._coerce_float(sentinel.get("hype_score"))
         if hype_score is not None and math.isfinite(hype_score):
             summary["hype_score"] = hype_score
+        signals = sentinel.get("signals")
+        if isinstance(signals, dict):
+            for key in (
+                "sentinel_onchain_pressure",
+                "sentinel_social_sentiment",
+                "sentinel_options_skew",
+            ):
+                value = self._coerce_float(signals.get(key))
+                if value is not None and math.isfinite(value):
+                    summary[key] = value
         return summary
 
     def _pricing(self) -> Dict[str, float]:
@@ -5491,6 +5789,19 @@ class Strategy:
                     reduced["hard_block"] = bool(actions.get("hard_block"))
                 if reduced:
                     item["actions"] = reduced
+            signals = payload.get("signals")
+            if isinstance(signals, dict):
+                for key in (
+                    "sentinel_onchain_pressure",
+                    "sentinel_social_sentiment",
+                    "sentinel_options_skew",
+                ):
+                    try:
+                        value = float(signals.get(key, 0.0) or 0.0)
+                    except Exception:
+                        continue
+                    if abs(value) > 1e-4:
+                        item[key] = value
             events = payload.get("events")
             if isinstance(events, list):
                 reduced_events: List[Dict[str, Any]] = []
@@ -5519,6 +5830,64 @@ class Strategy:
             if item:
                 trimmed[sym] = item
         return trimmed
+
+    def _playbook_regime_indicators(
+        self,
+        sentinel_state: Any,
+        budget_snapshot: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, float]:
+        if not isinstance(sentinel_state, dict) or not sentinel_state:
+            sentinel_state = {}
+        agg_event: List[float] = []
+        agg_hype: List[float] = []
+        agg_onchain: List[float] = []
+        agg_social: List[float] = []
+        agg_options: List[float] = []
+        for payload in sentinel_state.values():
+            if not isinstance(payload, dict):
+                continue
+            try:
+                agg_event.append(float(payload.get("event_risk", 0.0) or 0.0))
+            except Exception:
+                pass
+            try:
+                agg_hype.append(float(payload.get("hype_score", 0.0) or 0.0))
+            except Exception:
+                pass
+            signals = payload.get("signals")
+            if isinstance(signals, dict):
+                for collection, key in (
+                    (agg_onchain, "sentinel_onchain_pressure"),
+                    (agg_social, "sentinel_social_sentiment"),
+                    (agg_options, "sentinel_options_skew"),
+                ):
+                    try:
+                        value = float(signals.get(key, 0.0) or 0.0)
+                    except Exception:
+                        continue
+                    collection.append(value)
+        regime: Dict[str, float] = {}
+        if agg_event:
+            regime["playbook_regime_volatility"] = clamp(sum(agg_event) / len(agg_event), 0.0, 1.0)
+        if agg_hype:
+            regime["playbook_regime_activity"] = clamp(sum(agg_hype) / len(agg_hype), 0.0, 1.0)
+        if agg_onchain:
+            regime["playbook_regime_liquidity"] = clamp(sum(agg_onchain) / len(agg_onchain), -1.0, 1.0)
+        if agg_social:
+            regime["playbook_regime_sentiment"] = clamp(sum(agg_social) / len(agg_social), -1.0, 1.0)
+        if agg_options:
+            regime["playbook_regime_skew"] = clamp(sum(agg_options) / len(agg_options), -1.0, 1.0)
+        if isinstance(budget_snapshot, dict) and budget_snapshot:
+            try:
+                limit = float(budget_snapshot.get("limit", 0.0) or 0.0)
+                remaining = float(budget_snapshot.get("remaining", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                limit = 0.0
+                remaining = 0.0
+            if limit > 0:
+                utilization = clamp(1.0 - remaining / max(limit, 1e-9), 0.0, 1.0)
+                regime["playbook_regime_budget_util"] = utilization
+        return regime
 
     def _playbook_snapshot(self) -> Dict[str, Any]:
         tech_state = self.state.get("technical_snapshot") if self.state else None
@@ -5554,6 +5923,8 @@ class Strategy:
             if isinstance(trades, list):
                 recent_trades = trades[-6:]
 
+        regime = self._playbook_regime_indicators(sentinel_state, budget_snapshot)
+
         snapshot = {
             "timestamp": time.time(),
             "technical": technical_sample,
@@ -5561,6 +5932,8 @@ class Strategy:
             "budget": budget_snapshot,
             "recent_trades": recent_trades,
         }
+        if regime:
+            snapshot["regime"] = regime
         if self.playbook_manager:
             try:
                 active_playbook = self.playbook_manager.active()
@@ -8771,6 +9144,19 @@ class Bot:
                             "reason": plan.get("decision_reason"),
                             "confidence": plan.get("confidence"),
                         }
+                        exp_r = None
+                        if isinstance(ctx, dict):
+                            exp_r = ctx.get("expected_r")
+                        if exp_r is None:
+                            exp_r = plan.get("expected_r")
+                        plan_ctx = plan.get("context") if isinstance(plan.get("context"), dict) else None
+                        if exp_r is None and plan_ctx:
+                            exp_r = plan_ctx.get("expected_r")
+                        try:
+                            if exp_r is not None:
+                                meta_payload["expected_r"] = float(exp_r)
+                        except (TypeError, ValueError):
+                            pass
                         try:
                             self.ai_advisor.budget_learner.record_skip(
                                 symbol,
@@ -8913,6 +9299,19 @@ class Bot:
                             "side": sig,
                             "confidence": plan.get("confidence"),
                         }
+                        exp_r = None
+                        if isinstance(ctx, dict):
+                            exp_r = ctx.get("expected_r")
+                        if exp_r is None:
+                            exp_r = plan.get("expected_r")
+                        plan_ctx = plan.get("context") if isinstance(plan.get("context"), dict) else None
+                        if exp_r is None and plan_ctx:
+                            exp_r = plan_ctx.get("expected_r")
+                        try:
+                            if exp_r is not None:
+                                meta_payload["expected_r"] = float(exp_r)
+                        except (TypeError, ValueError):
+                            pass
                         try:
                             self.ai_advisor.budget_learner.record_skip(
                                 symbol,

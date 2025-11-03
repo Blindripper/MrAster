@@ -45,7 +45,7 @@
 
 ### AI Copilot Stack
 - **AITradeAdvisor** weighs dozens of technical, sentiment, and risk factors to deliver TAKE/SKIP calls, size overrides, leverage hints, and natural-language rationale in one JSON response.
-- **News Sentinel** (`ASTER_AI_SENTINEL_*`) feeds macro and hype scores into the advisor, vetoing trades when event risk spikes.
+- **News Sentinel** (`ASTER_AI_SENTINEL_*`) fuses ticker telemetry with optional on-chain flow, social sentiment, and options skew feeds to veto trades when event risk spikes and to scale exposure on regime shifts.
 - **PostmortemLearning** (see [Learning Loops & Self-Tuning](#learning-loops--self-tuning)) captures qualitative LLM annotations from completed trades and feeds them back as numeric features for future plans.
 - **ParameterTuner** continuously recomputes stop-loss/take-profit multipliers and bucket-specific size biases, escalating to structured LLM calls only when a statistically meaningful sample is available.
 - **PlaybookManager** synthesises regime playbooks — momentum, mean-reversion, volatility compression — that the advisor injects into every payload to stay aligned with the prevailing market mode.
@@ -254,6 +254,12 @@ All variables can be edited via environment overrides or through the dashboard (
 | `ASTER_AI_SENTINEL_DECAY_MINUTES` | `60` | Lifetime of a news warning. |
 | `ASTER_AI_NEWS_ENDPOINT` | empty | External source for breaking news. |
 | `ASTER_AI_NEWS_API_KEY` | empty | API token for the sentinel. |
+| `ASTER_AI_ONCHAIN_ENDPOINT` | empty | Optional endpoint supplying on-chain flow analytics to the sentinel. |
+| `ASTER_AI_ONCHAIN_API_KEY` | empty | API token for the on-chain data feed (falls back to the news key). |
+| `ASTER_AI_SOCIAL_ENDPOINT` | empty | Optional endpoint for social-sentiment telemetry injected into the sentinel. |
+| `ASTER_AI_SOCIAL_API_KEY` | empty | API token for the social feed (falls back to the news key). |
+| `ASTER_AI_OPTIONS_ENDPOINT` | empty | Optional endpoint for options skew / IV metrics used by the sentinel. |
+| `ASTER_AI_OPTIONS_API_KEY` | empty | API token for the options feed (falls back to the news key). |
 | `ASTER_BRACKETS_QUEUE_FILE` | `brackets_queue.json` | Queue file for guard repairs. |
 
 </details>

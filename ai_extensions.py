@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 from datetime import datetime
+import math
 import time
 from collections import deque
-from typing import Any, Callable, Deque, Dict, Iterable, List, Optional
+from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Tuple
 
 POSTMORTEM_FEATURE_MAP: Dict[str, str] = {
     "trend_break": "pm_trend_break",
@@ -132,6 +133,7 @@ class ParameterTuner:
                 "overrides": {},
                 "last_ai": 0.0,
                 "ai_notes": "",
+                "last_anomaly": {},
             },
         )
         self._request_fn = request_fn
@@ -253,6 +255,126 @@ class ParameterTuner:
         self._state["overrides"] = overrides
         self._root["tuning_overrides"] = overrides
 
+    def _detect_anomaly(self, history: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if len(history) < self._min_trades:
+            return None
+        recent = history[-40:]
+        if len(recent) < self._min_trades:
+            return None
+        pnl_values: List[float] = [float(item.get("pnl_r", 0.0) or 0.0) for item in recent]
+        mean = sum(pnl_values) / max(len(pnl_values), 1)
+        variance = sum((value - mean) ** 2 for value in pnl_values) / max(len(pnl_values), 1)
+        std = math.sqrt(max(variance, 1e-9))
+        top_outlier: Optional[Tuple[float, Dict[str, Any], float]] = None
+        if std > 1e-4:
+            for entry in recent:
+                value = float(entry.get("pnl_r", 0.0) or 0.0)
+                z_score = (value - mean) / std
+                if abs(z_score) >= 1.45:
+                    if not top_outlier or abs(z_score) > top_outlier[0]:
+                        top_outlier = (abs(z_score), entry, z_score)
+        bucket_map: Dict[str, List[float]] = {}
+        symbol_map: Dict[str, List[float]] = {}
+        for entry in recent:
+            bucket = str(entry.get("bucket") or "S").upper()
+            symbol = str(entry.get("symbol") or "*").upper()
+            pnl = float(entry.get("pnl_r", 0.0) or 0.0)
+            bucket_map.setdefault(bucket, []).append(pnl)
+            symbol_map.setdefault(symbol, []).append(pnl)
+        bucket_signal: Optional[Tuple[str, float]] = None
+        for bucket, values in bucket_map.items():
+            if len(values) < max(2, self._min_trades // 2):
+                continue
+            avg_bucket = sum(values) / len(values)
+            if avg_bucket < mean - 0.35:
+                bucket_signal = (bucket, avg_bucket)
+                break
+        symbol_signal: Optional[Tuple[str, float]] = None
+        for symbol, values in symbol_map.items():
+            if len(values) < max(2, self._min_trades // 2):
+                continue
+            avg_symbol = sum(values) / len(values)
+            if avg_symbol < mean - 0.4:
+                symbol_signal = (symbol, avg_symbol)
+                break
+        regime_flags: List[str] = []
+        def _feature_avg(feature: str) -> Optional[float]:
+            vals: List[float] = []
+            for entry in recent:
+                features = entry.get("features") or {}
+                if not isinstance(features, dict):
+                    continue
+                raw = features.get(feature)
+                if raw is None:
+                    continue
+                try:
+                    vals.append(float(raw))
+                except (TypeError, ValueError):
+                    continue
+            if not vals:
+                return None
+            return sum(vals) / len(vals)
+
+        avg_event_risk = _feature_avg("sentinel_event_risk")
+        if avg_event_risk is not None and avg_event_risk > 0.6:
+            regime_flags.append("high_event_risk")
+        avg_onchain = _feature_avg("sentinel_onchain_pressure")
+        if avg_onchain is not None:
+            if avg_onchain > 0.35:
+                regime_flags.append("onchain_pressure")
+            elif avg_onchain < -0.35:
+                regime_flags.append("onchain_outflow")
+        avg_social = _feature_avg("sentinel_social_sentiment")
+        if avg_social is not None:
+            if avg_social > 0.35:
+                regime_flags.append("bullish_sentiment")
+            elif avg_social < -0.35:
+                regime_flags.append("bearish_sentiment")
+
+        if top_outlier:
+            _, entry, z_val = top_outlier
+            anomaly = {
+                "trigger": "z_score",
+                "z_score": round(float(z_val), 3),
+                "symbol": entry.get("symbol"),
+                "bucket": entry.get("bucket"),
+                "pnl_r": entry.get("pnl_r"),
+                "mean": round(mean, 3),
+                "std": round(std, 3),
+                "sample_size": len(pnl_values),
+            }
+        elif bucket_signal:
+            anomaly = {
+                "trigger": "bucket_drawdown",
+                "bucket": bucket_signal[0],
+                "bucket_mean": round(bucket_signal[1], 3),
+                "mean": round(mean, 3),
+                "sample_size": len(pnl_values),
+            }
+        elif symbol_signal:
+            anomaly = {
+                "trigger": "symbol_drawdown",
+                "symbol": symbol_signal[0],
+                "symbol_mean": round(symbol_signal[1], 3),
+                "mean": round(mean, 3),
+                "sample_size": len(pnl_values),
+            }
+        else:
+            return None
+
+        if regime_flags:
+            anomaly["regime"] = regime_flags
+        features_tail = recent[-1].get("features") if recent else None
+        if isinstance(features_tail, dict):
+            sentinel_label = features_tail.get("sentinel_label")
+            if sentinel_label:
+                anomaly.setdefault("meta", {})["sentinel_label"] = sentinel_label
+        symbol = anomaly.get("symbol") or (recent[-1].get("symbol") if recent else None)
+        bucket = anomaly.get("bucket") or (recent[-1].get("bucket") if recent else None)
+        signature = f"{symbol}:{bucket}:{anomaly.get('trigger')}"
+        anomaly["signature"] = signature
+        return anomaly
+
     def _maybe_request_ai(self) -> None:
         history: List[Dict[str, Any]] = list(self._history)
         if len(history) < self._min_trades:
@@ -260,6 +382,19 @@ class ParameterTuner:
         now = time.time()
         if now - float(self._state.get("last_ai", 0.0) or 0.0) < self._ai_interval:
             return
+        anomaly = self._detect_anomaly(history)
+        if not anomaly:
+            return
+        last_anomaly = self._state.get("last_anomaly")
+        if isinstance(last_anomaly, dict):
+            last_sig = last_anomaly.get("signature")
+            last_ts = float(last_anomaly.get("ts", 0.0) or 0.0)
+            if (
+                last_sig
+                and last_sig == anomaly.get("signature")
+                and now - last_ts < max(self._ai_interval * 0.8, 90.0)
+            ):
+                return
         context = self._build_context_snapshot()
         payload = {
             "trades": [
@@ -278,6 +413,12 @@ class ParameterTuner:
         }
         if context:
             payload["context"] = context
+        if anomaly:
+            payload["anomaly"] = {
+                key: value
+                for key, value in anomaly.items()
+                if key not in {"signature", "ts"}
+            }
         suggestions = self._request_fn("tuning", payload)
         if not suggestions:
             return
@@ -306,6 +447,8 @@ class ParameterTuner:
         note = suggestions.get("note") if isinstance(suggestions, dict) else None
         if isinstance(note, str):
             self._state["ai_notes"] = note.strip()
+        anomaly["ts"] = time.time()
+        self._state["last_anomaly"] = anomaly
 
     def _build_context_snapshot(self) -> Dict[str, Any]:
         snapshot: Dict[str, Any] = {}
@@ -431,6 +574,7 @@ class PlaybookManager:
         self._bootstrap_retry = 90.0
         self._bootstrap_cooldown_until = 0.0
         self._event_cb = event_cb
+        self._state.setdefault("regime_snapshot", {})
 
     @staticmethod
     def _clean_string(value: Any) -> Optional[str]:
@@ -552,6 +696,10 @@ class PlaybookManager:
         now = time.time()
         last_raw = active.get("refreshed", 0.0)
         last = self._parse_timestamp(last_raw)
+        if isinstance(snapshot, dict):
+            regime_snapshot = snapshot.get("regime")
+            if isinstance(regime_snapshot, dict):
+                self._state["regime_snapshot"] = regime_snapshot
         if isinstance(active, dict) and last == 0.0 and last_raw not in (0, 0.0, None):
             active["refreshed"] = 0.0
         bootstrap_triggered = False
@@ -633,6 +781,14 @@ class PlaybookManager:
         if isinstance(features, dict):
             for key, value in features.items():
                 ctx[key] = float(value)
+        regime_snapshot = self._state.get("regime_snapshot")
+        if isinstance(regime_snapshot, dict):
+            for key, value in regime_snapshot.items():
+                try:
+                    if key not in ctx:
+                        ctx[key] = float(value)
+                except (TypeError, ValueError):
+                    continue
         ctx["playbook_mode"] = active.get("mode", "baseline")
         ctx["playbook_bias"] = active.get("bias", "neutral")
         ctx["playbook_size_bias"] = float(
@@ -761,6 +917,25 @@ class BudgetLearner:
         self._skip_limit_soft = 0.45
         self._reward_window = 60
 
+    @staticmethod
+    def _safe_float(value: Any) -> Optional[float]:
+        if isinstance(value, bool):
+            return 1.0 if value else 0.0
+        if isinstance(value, (int, float)):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+        if isinstance(value, str):
+            token = value.strip()
+            if not token:
+                return None
+            try:
+                return float(token)
+            except (TypeError, ValueError):
+                return None
+        return None
+
     def record_cost(self, kind: str, cost: float, meta: Optional[Dict[str, Any]] = None) -> None:
         symbol = None
         if meta:
@@ -792,16 +967,45 @@ class BudgetLearner:
                 "skip_reasons": {},
                 "skip_meta": [],
                 "recent_pnl": [],
+                "opportunity_cost": 0.0,
+                "slippage_cost": 0.0,
             },
         )
         sym_state["count"] = int(sym_state.get("count", 0)) + 1
         sym_state["reward"] = float(sym_state.get("reward", 0.0) or 0.0) + pnl_r
+        # decay extended metrics to keep them responsive
+        for key in ("opportunity_cost", "slippage_cost"):
+            try:
+                current = float(sym_state.get(key, 0.0) or 0.0)
+            except (TypeError, ValueError):
+                current = 0.0
+            sym_state[key] = current * 0.96
         recent = sym_state.setdefault("recent_pnl", [])
         if isinstance(recent, list):
             recent.append(pnl_r)
             if len(recent) > self._reward_window:
                 del recent[: len(recent) - self._reward_window]
             sym_state["recent_pnl"] = recent
+        context = trade.get("context") if isinstance(trade.get("context"), dict) else {}
+        expected_r = None
+        if context:
+            expected_r = self._safe_float(context.get("expected_r"))
+        if expected_r is None:
+            expected_r = self._safe_float(trade.get("expected_r"))
+        opp_cost = self._safe_float(trade.get("opportunity_cost"))
+        slip_cost = self._safe_float(trade.get("slippage"))
+        if opp_cost is None and expected_r is not None and expected_r > 0 and pnl_r <= 0:
+            opp_cost = expected_r
+        if slip_cost is None and expected_r is not None and pnl_r > 0 and expected_r > pnl_r:
+            slip_cost = expected_r - pnl_r
+        if opp_cost is None and context:
+            opp_cost = self._safe_float(context.get("opportunity_cost"))
+        if slip_cost is None and context:
+            slip_cost = self._safe_float(context.get("slippage_cost"))
+        if opp_cost is not None and opp_cost > 0:
+            sym_state["opportunity_cost"] = float(sym_state.get("opportunity_cost", 0.0) or 0.0) + float(max(opp_cost, 0.0))
+        if slip_cost is not None and slip_cost > 0:
+            sym_state["slippage_cost"] = float(sym_state.get("slippage_cost", 0.0) or 0.0) + float(max(slip_cost, 0.0))
         skip_penalty = self._decayed_skip_penalty(sym_state, update=True)
         if pnl_r > 0 and skip_penalty > 0:
             # Successful trades reduce the severity of prior AI skips.
@@ -870,6 +1074,12 @@ class BudgetLearner:
         snapshot["bias"] = float(bias)
         skip_penalty = self._decayed_skip_penalty(sym_state, update=False)
         snapshot["skip_weight"] = float(skip_penalty)
+        try:
+            snapshot["opportunity_cost"] = float(sym_state.get("opportunity_cost", 0.0) or 0.0)
+            snapshot["slippage_cost"] = float(sym_state.get("slippage_cost", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            snapshot["opportunity_cost"] = 0.0
+            snapshot["slippage_cost"] = 0.0
         recent = sym_state.get("recent_pnl")
         if isinstance(recent, list) and recent:
             tail = recent[-min(len(recent), 12) :]
@@ -925,8 +1135,15 @@ class BudgetLearner:
                 "skip_reasons": {},
                 "skip_meta": [],
                 "recent_pnl": [],
+                "opportunity_cost": 0.0,
+                "slippage_cost": 0.0,
             },
         )
+        for key in ("opportunity_cost", "slippage_cost"):
+            try:
+                sym_state[key] = float(sym_state.get(key, 0.0) or 0.0) * 0.98
+            except (TypeError, ValueError):
+                sym_state[key] = 0.0
         now = time.time()
         current = self._decayed_skip_penalty(sym_state, now=now, update=True)
         increment = float(self._skip_penalty_increment.get(kind, 0.5))
@@ -950,6 +1167,14 @@ class BudgetLearner:
             for key, value in meta.items():
                 if isinstance(value, (str, int, float, bool)):
                     sanitized[str(key)] = value
+            expected_r = self._safe_float(meta.get("expected_r") or meta.get("expected_return"))
+            opp_meta = self._safe_float(meta.get("opportunity_cost"))
+            if expected_r is None:
+                expected_r = self._safe_float(meta.get("edge"))
+            if expected_r and expected_r > 0:
+                sym_state["opportunity_cost"] = float(sym_state.get("opportunity_cost", 0.0) or 0.0) + expected_r
+            elif opp_meta and opp_meta > 0:
+                sym_state["opportunity_cost"] = float(sym_state.get("opportunity_cost", 0.0) or 0.0) + opp_meta
             if reason_token:
                 sanitized.setdefault("reason", reason_token)
             if sanitized:
@@ -973,7 +1198,13 @@ class BudgetLearner:
                 recent_avg = sum(window) / len(window)
                 avg = (recent_avg * 0.7) + (avg * 0.3)
         skip_penalty = self._decayed_skip_penalty(sym_state, now=now, update=True)
+        opp_cost = float(sym_state.get("opportunity_cost", 0.0) or 0.0)
+        slip_cost = float(sym_state.get("slippage_cost", 0.0) or 0.0)
         bias = 1.0 + avg * 0.4 - skip_penalty * self._skip_penalty_factor
+        if opp_cost > 0:
+            bias += min(0.5, opp_cost * 0.12)
+        if slip_cost > 0:
+            bias += min(0.35, slip_cost * 0.1)
         return max(0.15, min(1.8, bias))
 
     def _decayed_skip_penalty(
