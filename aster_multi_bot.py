@@ -6524,9 +6524,20 @@ class TradeManager:
                 tid = _coerce_int(trade.get("id") or trade.get("tradeId"))
                 if tid is not None:
                     trade_ids.append(tid)
+
             if total_qty > 0 and total_cost > 0:
-                avg_price = total_cost / total_qty
-                executed_qty = total_qty
+                base_qty = (
+                    _coerce_float(rec.get("qty"))
+                    or _coerce_float(rec.get("filled_qty"))
+                    or 0.0
+                )
+                base_price = _coerce_float(rec.get("entry")) or 0.0
+                cumulative_qty = base_qty + total_qty
+                if (avg_price is None or avg_price <= 0) and cumulative_qty > 0:
+                    base_cost = base_qty * base_price
+                    avg_price = (base_cost + total_cost) / cumulative_qty
+                if executed_qty is None:
+                    executed_qty = cumulative_qty if cumulative_qty > 0 else None
             if trade_ids:
                 rec["last_trade_id"] = max(trade_ids)
             rec["entry_commission"] = float(commission)
