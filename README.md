@@ -5,9 +5,9 @@
   <p>
     <a href="#-quick-start">Quick start</a>
     ·
-    <a href="#-dashboard-experience">Dashboard tour</a>
+    <a href="#dashboard-tour">Dashboard tour</a>
     ·
-    <a href="#-configuration-reference">Configuration</a>
+    <a href="#configuration-reference">Configuration</a>
     ·
     <a href="#-ai-mode-explained">AI mode</a>
   </p>
@@ -31,12 +31,13 @@
   - [Risk and Order Management](#risk-and-order-management)
   - [Observability & Resilience](#-observability--resilience)
 - [🚀 Quick Start](#-quick-start)
-- [🖥️ Dashboard Experience](#-dashboard-experience)
+- [🖥️ Dashboard Experience](#dashboard-tour)
 - [🌍 Multilingual Dashboard](#-multilingual-dashboard)
 - [🤖 AI Mode Explained](#-ai-mode-explained)
+  - [Adaptive vs Focus Quick Presets](#adaptive-vs-focus-quick-presets)
   - [Learning Loops & Self-Tuning](#learning-loops--self-tuning)
 - [🧭 Architecture Overview](#-architecture-overview)
-- [⚙️ Configuration Reference](#-configuration-reference)
+- [⚙️ Configuration Reference](#configuration-reference)
 - [🔐 Security Notice](#-security-notice)
 
 </details>
@@ -87,11 +88,12 @@
 
 > Need headless operation? Export `ASTER_PAPER=true` (optional) and run `python aster_multi_bot.py`. Set `ASTER_RUN_ONCE=true` for a single scan cycle.
 
+<a id="dashboard-tour"></a>
 ## 🖥️ Dashboard Experience
 
 - **One-click bot control**: start, stop, or relaunch the supervised `aster_multi_bot.py` process and inspect PID, uptime, and exit reasons.
 - **Live log streaming** with auto-scroll toggles, compact/detailed views, and downloadable snapshots.
-- **Risk presets & pro mode**: switch between Standard (Low/Mid/High presets + sliders) and Pro (full `ASTER_*` surface) on demand; High and ATT automatically lift the AI spend cap for uncapped execution.
+- **Risk presets & pro mode**: switch between Standard (Low/Mid/High presets + sliders), AI Quick Presets (Adaptive, Focus), and Pro (full `ASTER_*` surface) on demand. High, ATT, and Adaptive remove the AI spend cap for maximum autonomy, while Focus keeps a throttled, high-conviction posture.
 - **Safe configuration editing** writes to `dashboard_config.json`, validates keys, and syncs changes back into the running bot.
 - **Credential vaulting** keeps exchange and OpenAI keys isolated from general config edits.
 - **Performance analytics**: PnL charts, trade history, aggregated trade summaries, and market heat-strips update continuously.
@@ -127,6 +129,15 @@ When you toggle the dashboard to **AI** (or set `ASTER_MODE=ai` / `ASTER_AI_MODE
 6. **Execution & telemetry** – Approved trades inherit AI adjustments and persist rationale, sentinel state, and budget snapshots in `aster_state.json` for dashboard visualization and post-mortems.
 
 > **Learning loop.** The `note_exit` hook updates bandit matrices, the alpha model, and AI learning stores after every closed trade, with state serialized through `to_dict`/`from_dict` so progress survives restarts.
+
+### Adaptive vs Focus Quick Presets
+
+The dashboard introduces two AI-first presets designed for different conviction profiles:
+
+- **Adaptive** maximises flexibility. It allocates up to 70 % of account equity, allows as much as 55 % risk per trade with leverage caps near 8×, and lowers the confidence gate so the copilot can seize fast regime shifts. Confidence sizing weights event risk and sentinel readings more heavily, so the mode rapidly scales when catalysts line up.
+- **Focus** prioritises selectivity. Equity utilisation stays near 55 %, risk per trade is capped around 45 % with 6× leverage, and the minimum confidence floor is higher. Extra bias toward pure confidence scores keeps the throttle shut until the advisor flags truly high-conviction setups, preserving budget and drawdown room.
+
+Both presets inherit the same guardrails—bandit policy, sentinel veto, bracket repairs—but they tune the copilot weighting and budget ceilings differently. Adaptive lifts the AI spend ceiling alongside High/ATT, whereas Focus enforces a leaner budget so you can run it for longer stretches without manual intervention.
 
 ### AI Decisions Feed & Tag Legend
 
@@ -168,6 +179,7 @@ Every component is transparent inside the dashboard: AI call receipts, current p
 
 Run the bot standalone or from the dashboard; policy and state files reload automatically on startup.
 
+<a id="configuration-reference"></a>
 ## ⚙️ Configuration Reference
 
 All variables can be edited via environment overrides or through the dashboard (`dashboard_config.json`). The tables below capture the most commonly tuned options; the full list lives in `aster_multi_bot.py` and in the UI editor.
