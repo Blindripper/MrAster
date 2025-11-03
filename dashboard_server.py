@@ -1338,6 +1338,48 @@ def _fetch_position_snapshot(env: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     return snapshot
 
 
+TAKE_PROFIT_FIELD_KEYS: Tuple[str, ...] = (
+    "tp",
+    "take",
+    "take_price",
+    "takePrice",
+    "take_profit",
+    "take_profit_price",
+    "take_profit_next",
+    "takeProfit",
+    "takeProfitPrice",
+    "takeProfitNext",
+    "tp_price",
+    "tpPrice",
+    "tp_target",
+    "tpTarget",
+    "next_tp",
+    "target",
+    "target_price",
+    "targetPrice",
+)
+
+STOP_LOSS_FIELD_KEYS: Tuple[str, ...] = (
+    "sl",
+    "stop",
+    "stop_price",
+    "stopPrice",
+    "stop_price_next",
+    "stopPriceNext",
+    "stop_loss",
+    "stop_loss_price",
+    "stop_loss_next",
+    "stopLoss",
+    "stopLossPrice",
+    "stopLossNext",
+    "stop_target",
+    "stopTarget",
+    "stop_trigger",
+    "stopTrigger",
+    "next_stop",
+)
+
+
 def _apply_bracket_price(record: Dict[str, Any], kind: str, price: float) -> None:
     if not isinstance(record, dict):
         return
@@ -1346,38 +1388,22 @@ def _apply_bracket_price(record: Dict[str, Any], kind: str, price: float) -> Non
     except (TypeError, ValueError):
         return
 
-    if kind == "take":
-        keys = (
-            "tp",
-            "take_profit",
-            "take_profit_price",
-            "take_profit_next",
-            "takeProfit",
-            "takeProfitPrice",
-            "takeProfitNext",
-            "next_tp",
-            "target",
-            "target_price",
-            "targetPrice",
-        )
-    else:
-        keys = (
-            "sl",
-            "stop",
-            "stop_loss",
-            "stop_loss_price",
-            "stop_loss_next",
-            "stopLoss",
-            "stopLossPrice",
-            "stopLossNext",
-            "stop_price",
-            "stopPrice",
-            "next_stop",
-            "stopTarget",
-        )
+    keys = TAKE_PROFIT_FIELD_KEYS if kind == "take" else STOP_LOSS_FIELD_KEYS
 
     for key in keys:
         record[key] = numeric_price
+
+
+def _entry_has_bracket_prices(record: Dict[str, Any]) -> bool:
+    if not isinstance(record, dict):
+        return False
+
+    for key in TAKE_PROFIT_FIELD_KEYS + STOP_LOSS_FIELD_KEYS:
+        if key not in record:
+            continue
+        if _safe_float(record.get(key)) not in {None, 0.0}:
+            return True
+    return False
 
 
 def _fetch_position_brackets(
@@ -2042,6 +2068,44 @@ def enrich_open_positions(open_payload: Any, env: Dict[str, Any]) -> Any:
     for extra in snapshot.values():
         _register(extra)
     _collect(merged_payload)
+
+    if combined:
+        _, api_key, api_secret, recv_window = _resolve_exchange_context(env)
+        if api_key and api_secret and not _is_truthy(env.get("ASTER_PAPER")):
+            missing_symbols: Set[str] = set()
+            for composite_key, entry in combined.items():
+                if _entry_has_bracket_prices(entry):
+                    continue
+                symbol_key, _, _ = composite_key.partition(":")
+                if symbol_key:
+                    missing_symbols.add(symbol_key)
+            if missing_symbols:
+                try:
+                    bracket_levels = _fetch_position_brackets(env, missing_symbols, recv_window)
+                except Exception as exc:
+                    logger.debug("position bracket refresh failed: %s", exc)
+                else:
+                    for composite_key, entry in combined.items():
+                        symbol_key, _, side_key = composite_key.partition(":")
+                        if not symbol_key:
+                            continue
+                        side_hint = side_key or str(entry.get("side") or "").upper()
+                        levels_for_symbol = bracket_levels.get(symbol_key)
+                        if not isinstance(levels_for_symbol, dict):
+                            continue
+                        bucket = None
+                        if side_hint:
+                            bucket = levels_for_symbol.get(side_hint) or levels_for_symbol.get(side_hint.upper())
+                        if not bucket:
+                            bucket = levels_for_symbol.get("ANY")
+                        if not isinstance(bucket, dict):
+                            continue
+                        take_px = bucket.get("take")
+                        stop_px = bucket.get("stop")
+                        if take_px is not None:
+                            _apply_bracket_price(entry, "take", take_px)
+                        if stop_px is not None:
+                            _apply_bracket_price(entry, "stop", stop_px)
 
     if combined:
         return list(combined.values())

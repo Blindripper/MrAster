@@ -3823,6 +3823,9 @@ const ACTIVE_POSITION_ALIASES = {
   nextTp: [
     'next_tp',
     'tp_next',
+    'take',
+    'take_price',
+    'takePrice',
     'nextTarget',
     'next_tp_price',
     'tp',
@@ -3831,6 +3834,10 @@ const ACTIVE_POSITION_ALIASES = {
     'takeProfit',
     'take_profit_price',
     'takeProfitPrice',
+    'tp_price',
+    'tpPrice',
+    'tp_target',
+    'tpTarget',
     'target',
     'target_price',
     'targetPrice',
@@ -3841,11 +3848,15 @@ const ACTIVE_POSITION_ALIASES = {
     'stopLoss',
     'stop_price',
     'stopPrice',
+    'stop_price_next',
+    'stopPriceNext',
     'stopLossPrice',
     'stop_loss_price',
     'sl',
     'stop_next',
     'next_stop',
+    'stop_trigger',
+    'stopTrigger',
     'stopTarget',
     'stop_loss_next',
   ],
@@ -3907,8 +3918,8 @@ const BRACKET_FIELD_SOURCE_KEYS = [
   'ctx',
 ];
 
-const BRACKET_TP_HINTS = ['tp', 'take', 'target', 'profit', 'takeprofit'];
-const BRACKET_SL_HINTS = ['sl', 'stop', 'loss', 'stoploss'];
+const BRACKET_TP_HINTS = ['tp', 'take', 'target', 'profit', 'takeprofit', 'takeprice', 'tpprice', 'tptarget'];
+const BRACKET_SL_HINTS = ['sl', 'stop', 'loss', 'stoploss', 'stopprice', 'stoptrigger'];
 
 const ACTIVE_POSITION_TIMESTAMP_NUMERIC_KEYS = [
   'opened_at',
