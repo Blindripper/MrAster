@@ -4415,6 +4415,45 @@ function pickBracketNumericField(position, candidates, hints) {
     return direct;
   }
 
+  let fallback = direct;
+
+  if (position && typeof position === 'object' && Array.isArray(candidates)) {
+    for (let index = 0; index < candidates.length; index += 1) {
+      const key = candidates[index];
+      if (!key || key === direct.key) {
+        continue;
+      }
+      if (!(key in position)) {
+        continue;
+      }
+      const rawValue = position[key];
+      const numeric = resolveFieldNumeric(rawValue);
+      if (Number.isFinite(numeric)) {
+        return {
+          value: unwrapPositionValue(rawValue),
+          raw: rawValue,
+          key,
+          numeric,
+        };
+      }
+      const fallbackValue = unwrapPositionValue(rawValue);
+      if (
+        !fallback ||
+        fallback.key === null ||
+        fallback.value === undefined ||
+        fallback.value === null ||
+        fallback.value === ''
+      ) {
+        fallback = {
+          value: fallbackValue,
+          raw: rawValue,
+          key,
+          numeric: Number.isFinite(numeric) ? numeric : null,
+        };
+      }
+    }
+  }
+
   const normalizedHints = Array.isArray(hints)
     ? hints.map((hint) => hint.toLowerCase())
     : [];
@@ -4519,7 +4558,7 @@ function pickBracketNumericField(position, candidates, hints) {
     }
   }
 
-  return direct;
+  return fallback;
 }
 
 function formatBracketLevel(field) {
