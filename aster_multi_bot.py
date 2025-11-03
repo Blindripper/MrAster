@@ -3859,6 +3859,376 @@ class AITradeAdvisor:
         return self.budget.snapshot()
 
 # ========= Exchange =========
+class PaperBroker:
+    """Local futures simulator used when ``ASTER_PAPER`` is enabled.
+
+    The implementation keeps track of positions, attached stop-loss /
+    take-profit brackets and realized trade history. It is intentionally
+    lightweight but provides deterministic fills so strategy experiments can
+    be validated without hitting the live matching engine.
+    """
+
+    def __init__(self, exchange: "Exchange") -> None:
+        self.exchange = exchange
+        self.positions: Dict[str, Dict[str, Any]] = {}
+        self.closed: List[Dict[str, Any]] = []
+        self.realized_pnl: float = 0.0
+        self._order_seq = 1
+
+    def _next_order_id(self) -> int:
+        oid = self._order_seq
+        self._order_seq += 1
+        return oid
+
+    @staticmethod
+    def _decode_bracket_price(payload: Any) -> Optional[float]:
+        if not payload:
+            return None
+        data: Any = payload
+        if isinstance(payload, str):
+            try:
+                data = json.loads(payload)
+            except (TypeError, ValueError):
+                return None
+        if not isinstance(data, dict):
+            return None
+        trigger = data.get("trigger") if isinstance(data.get("trigger"), dict) else {}
+        price = trigger.get("price")
+        try:
+            return float(price)
+        except (TypeError, ValueError):
+            return None
+
+    def _position(self, symbol: str) -> Dict[str, Any]:
+        return self.positions.setdefault(
+            symbol,
+            {
+                "qty": 0.0,
+                "entry_price": 0.0,
+                "side": "",
+                "opened_at": 0.0,
+                "stop_loss": None,
+                "take_profit": None,
+                "last_price": 0.0,
+                "unrealized": 0.0,
+            },
+        )
+
+    def _update_unrealized(self, pos: Dict[str, Any], mid: float) -> None:
+        qty = float(pos.get("qty", 0.0) or 0.0)
+        if abs(qty) <= 1e-12:
+            pos["unrealized"] = 0.0
+            pos["last_price"] = float(mid)
+            return
+        entry = float(pos.get("entry_price", 0.0) or 0.0)
+        side = str(pos.get("side") or "").upper()
+        pnl = (mid - entry) * qty if side == "BUY" else (entry - mid) * abs(qty)
+        pos["unrealized"] = float(pnl)
+        pos["last_price"] = float(mid)
+
+    def update_quote(self, symbol: str, bid: float, ask: float) -> None:
+        pos = self.positions.get(symbol)
+        if not pos:
+            return
+        bid = float(bid or 0.0)
+        ask = float(ask or 0.0)
+        mid = 0.0
+        if bid > 0 and ask > 0:
+            mid = (bid + ask) / 2.0
+        elif bid > 0:
+            mid = bid
+        elif ask > 0:
+            mid = ask
+        self._update_unrealized(pos, mid)
+        side = str(pos.get("side") or "").upper()
+        if not side:
+            return
+        stop_loss = pos.get("stop_loss")
+        take_profit = pos.get("take_profit")
+        triggered: Optional[Tuple[str, float]] = None
+        if side == "BUY":
+            if take_profit is not None and bid > 0 and bid >= take_profit:
+                triggered = ("take_profit", float(take_profit))
+            elif stop_loss is not None and bid > 0 and bid <= stop_loss:
+                triggered = ("stop_loss", float(stop_loss))
+        else:
+            if take_profit is not None and ask > 0 and ask <= take_profit:
+                triggered = ("take_profit", float(take_profit))
+            elif stop_loss is not None and ask > 0 and ask >= stop_loss:
+                triggered = ("stop_loss", float(stop_loss))
+        if triggered:
+            reason, exit_price = triggered
+            self._close(symbol, exit_price, reason)
+
+    def _close(self, symbol: str, exit_price: float, reason: str) -> None:
+        pos = self.positions.get(symbol)
+        if not pos:
+            return
+        qty = float(pos.get("qty", 0.0) or 0.0)
+        if abs(qty) <= 1e-12:
+            self.positions.pop(symbol, None)
+            return
+        entry = float(pos.get("entry_price", 0.0) or 0.0)
+        side = str(pos.get("side") or "").upper() or ("BUY" if qty > 0 else "SELL")
+        now = time.time()
+        base_qty = abs(qty)
+        if side == "BUY":
+            pnl = (exit_price - entry) * base_qty
+            risk_ref = pos.get("stop_loss", entry)
+            risk = max(1e-9, abs(entry - float(risk_ref)) * base_qty)
+        else:
+            pnl = (entry - exit_price) * base_qty
+            risk_ref = pos.get("stop_loss", entry)
+            risk = max(1e-9, abs(entry - float(risk_ref)) * base_qty)
+        r_mult = pnl / risk if risk > 0 else 0.0
+        record = {
+            "symbol": symbol,
+            "side": side,
+            "qty": base_qty,
+            "entry": entry,
+            "exit": float(exit_price),
+            "pnl": float(pnl),
+            "pnl_r": float(r_mult),
+            "opened_at": float(pos.get("opened_at", now) or now),
+            "closed_at": now,
+            "bucket": pos.get("bucket"),
+            "context": pos.get("ctx", {}),
+            "reason": reason,
+            "stop_loss": pos.get("stop_loss"),
+            "take_profit": pos.get("take_profit"),
+        }
+        ai_meta = pos.get("ai")
+        if ai_meta:
+            record["ai"] = ai_meta
+        self.realized_pnl += float(pnl)
+        self.closed.append(record)
+        self.positions.pop(symbol, None)
+
+    def _same_direction(self, existing_qty: float, delta: float) -> bool:
+        return existing_qty * delta > 0
+
+    def market_order(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        symbol = str(params.get("symbol") or "").upper()
+        side = str(params.get("side") or "").upper()
+        if not symbol or side not in {"BUY", "SELL"}:
+            raise ValueError("paper mode requires symbol and side")
+        try:
+            qty = float(params.get("quantity") or params.get("origQty") or 0.0)
+        except (TypeError, ValueError):
+            qty = 0.0
+        if qty <= 0:
+            raise ValueError("quantity must be positive in paper mode")
+        stop_loss = self._decode_bracket_price(params.get("stopLoss"))
+        take_profit = self._decode_bracket_price(params.get("takeProfit"))
+        raw = self.exchange._raw_get_book_ticker(symbol)
+        bid = 0.0
+        ask = 0.0
+        if isinstance(raw, dict):
+            try:
+                bid = float(raw.get("bidPrice", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                bid = 0.0
+            try:
+                ask = float(raw.get("askPrice", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                ask = 0.0
+        if side == "BUY":
+            fill_price = ask if ask > 0 else (bid if bid > 0 else 0.0)
+        else:
+            fill_price = bid if bid > 0 else (ask if ask > 0 else 0.0)
+        if fill_price <= 0:
+            raise RuntimeError(f"No market data available for {symbol} in paper mode")
+        signed_qty = qty if side == "BUY" else -qty
+        pos = self._position(symbol)
+        existing_qty = float(pos.get("qty", 0.0) or 0.0)
+        now = time.time()
+        if abs(existing_qty) <= 1e-12:
+            pos.update(
+                {
+                    "qty": signed_qty,
+                    "entry_price": float(fill_price),
+                    "side": side,
+                    "opened_at": now,
+                    "stop_loss": stop_loss,
+                    "take_profit": take_profit,
+                }
+            )
+        elif self._same_direction(existing_qty, signed_qty):
+            new_qty = existing_qty + signed_qty
+            weight_old = abs(existing_qty)
+            weight_new = abs(signed_qty)
+            avg = 0.0
+            if weight_old + weight_new > 0:
+                avg = (
+                    pos.get("entry_price", 0.0) * weight_old + fill_price * weight_new
+                ) / (weight_old + weight_new)
+            pos.update(
+                {
+                    "qty": new_qty,
+                    "entry_price": float(avg),
+                    "side": "BUY" if new_qty > 0 else "SELL",
+                    "stop_loss": stop_loss if stop_loss is not None else pos.get("stop_loss"),
+                    "take_profit": take_profit if take_profit is not None else pos.get("take_profit"),
+                }
+            )
+        else:
+            remaining = existing_qty + signed_qty
+            closed_qty = min(abs(existing_qty), abs(signed_qty))
+            flipped = abs(signed_qty) > abs(existing_qty)
+            if closed_qty > 0:
+                exit_reason = "manual_exit"
+                self._close_partial(symbol, float(fill_price), closed_qty, exit_reason)
+            if abs(remaining) > 1e-12:
+                if flipped:
+                    pos = self._position(symbol)
+                    pos.update(
+                        {
+                            "qty": remaining,
+                            "entry_price": float(fill_price),
+                            "side": "BUY" if remaining > 0 else "SELL",
+                            "opened_at": now,
+                            "stop_loss": stop_loss,
+                            "take_profit": take_profit,
+                        }
+                    )
+                else:
+                    pos = self.positions.get(symbol)
+                    if pos:
+                        pos["qty"] = remaining
+                        pos["side"] = "BUY" if remaining > 0 else "SELL"
+                        if stop_loss is not None:
+                            pos["stop_loss"] = float(stop_loss)
+                        if take_profit is not None:
+                            pos["take_profit"] = float(take_profit)
+            else:
+                self.positions.pop(symbol, None)
+        pos = self.positions.get(symbol)
+        if pos:
+            pos.setdefault("bucket", None)
+            pos.setdefault("ctx", {})
+        self._update_unrealized(self.positions.get(symbol, {}), fill_price)
+        order_id = self._next_order_id()
+        return {
+            "paper": True,
+            "symbol": symbol,
+            "orderId": order_id,
+            "status": "FILLED",
+            "avgPrice": float(fill_price),
+            "executedQty": qty,
+            "side": side,
+        }
+
+    def _close_partial(self, symbol: str, fill_price: float, qty_closed: float, reason: str) -> None:
+        pos = self.positions.get(symbol)
+        if not pos:
+            return
+        qty = float(pos.get("qty", 0.0) or 0.0)
+        if abs(qty) <= 1e-12:
+            self.positions.pop(symbol, None)
+            return
+        entry = float(pos.get("entry_price", 0.0) or 0.0)
+        side = str(pos.get("side") or "").upper() or ("BUY" if qty > 0 else "SELL")
+        qty_left = abs(qty) - qty_closed
+        if qty_left < -1e-12:
+            qty_left = 0.0
+        multiplier = 1.0 if side == "BUY" else -1.0
+        pnl = (fill_price - entry) * qty_closed * multiplier
+        risk_ref = pos.get("stop_loss", entry)
+        risk = max(1e-9, abs(entry - float(risk_ref)) * qty_closed)
+        r_mult = pnl / risk if risk > 0 else 0.0
+        now = time.time()
+        record = {
+            "symbol": symbol,
+            "side": side,
+            "qty": qty_closed,
+            "entry": entry,
+            "exit": float(fill_price),
+            "pnl": float(pnl),
+            "pnl_r": float(r_mult),
+            "opened_at": float(pos.get("opened_at", now) or now),
+            "closed_at": now,
+            "bucket": pos.get("bucket"),
+            "context": pos.get("ctx", {}),
+            "reason": reason,
+            "stop_loss": pos.get("stop_loss"),
+            "take_profit": pos.get("take_profit"),
+        }
+        ai_meta = pos.get("ai")
+        if ai_meta:
+            record["ai"] = ai_meta
+        self.closed.append(record)
+        self.realized_pnl += float(pnl)
+        remaining_qty = multiplier * qty_left
+        if qty_left <= 1e-12:
+            self.positions.pop(symbol, None)
+        else:
+            pos["qty"] = remaining_qty
+            pos["side"] = "BUY" if remaining_qty > 0 else "SELL"
+
+    def cancel_brackets(self, symbol: str) -> None:
+        pos = self.positions.get(symbol)
+        if not pos:
+            return
+        pos["stop_loss"] = None
+        pos["take_profit"] = None
+
+    def register_brackets(
+        self,
+        symbol: str,
+        side: str,
+        qty: float,
+        entry: float,
+        stop: float,
+        take: float,
+        bucket: Optional[str] = None,
+        ctx: Optional[Dict[str, Any]] = None,
+        ai_meta: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        pos = self.positions.get(symbol)
+        if not pos:
+            return
+        pos["stop_loss"] = float(stop)
+        pos["take_profit"] = float(take)
+        if bucket is not None:
+            pos["bucket"] = bucket
+        if ctx:
+            pos["ctx"] = dict(ctx)
+        if ai_meta:
+            pos["ai"] = dict(ai_meta)
+
+    def replace_take_profit(self, symbol: str, price: float) -> bool:
+        pos = self.positions.get(symbol)
+        if not pos:
+            return False
+        pos["take_profit"] = float(price)
+        return True
+
+    def position_risk(self) -> List[Dict[str, str]]:
+        snapshot: List[Dict[str, str]] = []
+        for symbol, pos in list(self.positions.items()):
+            qty = float(pos.get("qty", 0.0) or 0.0)
+            if abs(qty) <= 1e-12:
+                continue
+            entry = float(pos.get("entry_price", 0.0) or 0.0)
+            unrealized = float(pos.get("unrealized", 0.0) or 0.0)
+            snapshot.append(
+                {
+                    "symbol": symbol,
+                    "positionAmt": f"{qty:.10f}",
+                    "entryPrice": f"{entry:.10f}",
+                    "unRealizedProfit": f"{unrealized:.10f}",
+                }
+            )
+        return snapshot
+
+    def consume_closed(self) -> List[Dict[str, Any]]:
+        if not self.closed:
+            return []
+        records = list(self.closed)
+        self.closed.clear()
+        return records
+
+
 class Exchange:
     def __init__(self, base: str, api_key: str, api_secret: str, recv_window: int = 10000):
         self.base = base.rstrip("/")
@@ -3870,6 +4240,7 @@ class Exchange:
         self.timeout = HTTP_TIMEOUT
         self._max_retries = HTTP_RETRIES
         self._backoff = HTTP_BACKOFF
+        self._paper: Optional[PaperBroker] = PaperBroker(self) if PAPER else None
 
     def _headers(self) -> Dict[str, str]:
         h = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -3943,11 +4314,41 @@ class Exchange:
             out.append([float(k[0]), float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[5]), float(k[7])])
         return out
 
+    def _raw_get_book_ticker(self, symbol: str) -> Any:
+        return self.get("/fapi/v1/ticker/bookTicker", {"symbol": symbol})
+
     def get_book_ticker(self, symbol: Optional[str] = None) -> Any:
-        params = {"symbol": symbol} if symbol else None
-        if params:
-            return self.get("/fapi/v1/ticker/bookTicker", params)
-        return self.get("/fapi/v1/ticker/bookTicker")
+        if symbol:
+            data = self._raw_get_book_ticker(symbol)
+            if PAPER and self._paper and isinstance(data, dict):
+                try:
+                    bid = float(data.get("bidPrice", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    bid = 0.0
+                try:
+                    ask = float(data.get("askPrice", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    ask = 0.0
+                self._paper.update_quote(symbol, bid, ask)
+            return data
+        payload = self.get("/fapi/v1/ticker/bookTicker")
+        if PAPER and self._paper and isinstance(payload, list):
+            for entry in payload:
+                if not isinstance(entry, dict):
+                    continue
+                sym = entry.get("symbol")
+                if not sym:
+                    continue
+                try:
+                    bid = float(entry.get("bidPrice", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    bid = 0.0
+                try:
+                    ask = float(entry.get("askPrice", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    ask = 0.0
+                self._paper.update_quote(str(sym), bid, ask)
+        return payload
 
     def get_order_book(self, symbol: str, *, limit: Optional[int] = None) -> Any:
         payload = {"symbol": symbol}
@@ -3962,22 +4363,35 @@ class Exchange:
         return self.get("/fapi/v1/premiumIndex")
 
     def get_position_risk(self) -> Any:
+        if PAPER and self._paper:
+            return self._paper.position_risk()
         return self.signed("get", "/fapi/v2/positionRisk", {})
 
     def get_open_orders(self, symbol: str) -> Any:
-        if PAPER:
-            return []
+        if PAPER and self._paper:
+            pos = self._paper.positions.get(symbol)
+            if not pos:
+                return []
+            orders = []
+            sl = pos.get("stop_loss")
+            tp = pos.get("take_profit")
+            if sl is not None:
+                orders.append({"symbol": symbol, "type": "STOP_MARKET", "triggerPrice": sl})
+            if tp is not None:
+                orders.append({"symbol": symbol, "type": "TAKE_PROFIT_MARKET", "triggerPrice": tp})
+            return orders
         return self.signed("get", "/fapi/v1/openOrders", {"symbol": symbol})
 
     def cancel_order(self, symbol: str, order_id: int) -> Any:
-        if PAPER:
+        if PAPER and self._paper:
+            self._paper.cancel_brackets(symbol)
             return {"paper": True, "symbol": symbol, "orderId": int(order_id)}
         payload = {"symbol": symbol, "orderId": str(int(order_id))}
         return self.signed("delete", "/fapi/v1/order", payload)
 
     def post_order(self, params: Dict[str, Any]) -> Any:
-        if PAPER:
-            return {"paper": True, "params": params}
+        if PAPER and self._paper:
+            return self._paper.market_order(params)
         try:
             return self.signed("post", "/fapi/v1/order", params)
         except requests.HTTPError as exc:
@@ -4004,17 +4418,45 @@ class Exchange:
             raise
 
     def cancel_all(self, symbol: str) -> Any:
-        if PAPER:
+        if PAPER and self._paper:
+            self._paper.cancel_brackets(symbol)
             return {"paper": True, "cancel": symbol}
         return self.signed("delete", "/fapi/v1/allOpenOrders", {"symbol": symbol})
 
     def set_leverage(self, symbol: str, leverage: float) -> Any:
         if leverage <= 0:
             raise ValueError("leverage must be positive")
-        if PAPER:
+        if PAPER and self._paper:
             return {"paper": True, "symbol": symbol, "leverage": leverage}
         payload = {"symbol": symbol, "leverage": int(max(1, round(leverage)))}
         return self.signed("post", "/fapi/v1/leverage", payload)
+
+    def paper_register_brackets(
+        self,
+        symbol: str,
+        side: str,
+        qty: float,
+        entry: float,
+        stop: float,
+        take: float,
+        *,
+        bucket: Optional[str] = None,
+        ctx: Optional[Dict[str, Any]] = None,
+        ai_meta: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if not (PAPER and self._paper):
+            return
+        self._paper.register_brackets(symbol, side, qty, entry, stop, take, bucket=bucket, ctx=ctx, ai_meta=ai_meta)
+
+    def paper_consume_closed(self) -> List[Dict[str, Any]]:
+        if not (PAPER and self._paper):
+            return []
+        return self._paper.consume_closed()
+
+    def paper_replace_take_profit(self, symbol: str, price: float) -> bool:
+        if not (PAPER and self._paper):
+            return False
+        return self._paper.replace_take_profit(symbol, price)
 
 # ========= Universe =========
 class SymbolUniverse:
@@ -5648,8 +6090,82 @@ class TradeManager:
         postmortem_cb: Optional[Callable[[Dict[str, Any]], Optional[Dict[str, Any]]]] = None,
     ):
         live = self.state.get("live_trades", {})
-        if not live:
-            return
+        if not isinstance(live, dict):
+            live = {}
+            self.state["live_trades"] = live
+
+        processed_syms: Set[str] = set()
+        history_added = False
+
+        paper_closed: List[Dict[str, Any]] = []
+        if PAPER:
+            try:
+                paper_closed = self.exchange.paper_consume_closed()
+            except Exception as exc:
+                log.debug(f"paper consume closed failed: {exc}")
+                paper_closed = []
+        if paper_closed:
+            hist = self.state.setdefault("trade_history", [])
+            for closed in paper_closed:
+                sym = str(closed.get("symbol") or "").upper()
+                if not sym:
+                    continue
+                rec = live.get(sym, {})
+                entry = float(closed.get("entry", rec.get("entry", 0.0)) or 0.0)
+                exit_px = float(closed.get("exit", entry) or entry)
+                qty = float(closed.get("qty", rec.get("qty", 0.0)) or 0.0)
+                side = str(closed.get("side") or rec.get("side") or ("BUY" if qty >= 0 else "SELL"))
+                pnl = float(closed.get("pnl", 0.0) or 0.0)
+                pnl_r = float(closed.get("pnl_r", 0.0) or 0.0)
+                opened_at = float(closed.get("opened_at", rec.get("opened_at", time.time())) or time.time())
+                closed_at = float(closed.get("closed_at", time.time()) or time.time())
+                bucket = rec.get("bucket") if rec else closed.get("bucket")
+                ctx = rec.get("ctx", {}) if rec else closed.get("context", {})
+                ai_meta = rec.get("ai") if isinstance(rec, dict) else closed.get("ai")
+                record = {
+                    "symbol": sym,
+                    "side": side,
+                    "qty": float(qty),
+                    "entry": float(entry),
+                    "exit": float(exit_px),
+                    "pnl": float(pnl),
+                    "pnl_r": float(pnl_r),
+                    "opened_at": opened_at,
+                    "closed_at": closed_at,
+                    "bucket": bucket,
+                    "context": ctx or {},
+                }
+                if ai_meta:
+                    record["ai"] = ai_meta
+                reason = closed.get("reason")
+                if reason:
+                    record["paper_reason"] = reason
+                if self.policy and BANDIT_ENABLED:
+                    try:
+                        self.policy.note_exit(sym, pnl_r=float(pnl_r), ctx=ctx, size_bucket=bucket)
+                    except Exception as e:
+                        log.debug(f"policy note_exit fail: {e}")
+                postmortem = None
+                if postmortem_cb:
+                    try:
+                        postmortem = postmortem_cb({**record})
+                    except Exception as exc:
+                        log.debug(f"postmortem fail {sym}: {exc}")
+                        postmortem = None
+                if postmortem:
+                    record["postmortem"] = postmortem
+                hist.append(record)
+                self._record_cumulative_metrics(record)
+                if len(hist) > max(10, self.history_max):
+                    del hist[: len(hist) - self.history_max]
+                log.info(
+                    f"EXIT {sym} {side} qty={qty:.6f} exit≈{exit_px:.6f} PNL={pnl:.2f}USDT R={pnl_r:.2f}"
+                )
+                history_added = True
+                processed_syms.add(sym)
+            for sym in processed_syms:
+                live.pop(sym, None)
+
         try:
             pos = self.exchange.get_position_risk()
             pos_map = {p.get("symbol"): float(p.get("positionAmt", "0") or 0.0) for p in pos}
@@ -5658,8 +6174,9 @@ class TradeManager:
             pos_map = {}
 
         to_del: List[str] = []
-        history_added = False
         for sym, rec in live.items():
+            if sym in processed_syms:
+                continue
             amt = pos_map.get(sym, 0.0)
             if abs(amt) > 1e-12:
                 continue  # noch offen
@@ -5722,7 +6239,7 @@ class TradeManager:
 
         for sym in to_del:
             self.state["live_trades"].pop(sym, None)
-        if to_del or history_added:
+        if to_del or history_added or processed_syms:
             self.save()
 
 # ========= Decisions =========
@@ -5851,14 +6368,20 @@ class FastTP:
 
         qty_abs = abs(pos_amt)
         try:
-            _bg_replace_tp(
-                self.guard,
-                symbol,
-                qty_abs,
-                new_exit,
-                side=("BUY" if pos_amt > 0 else "SELL")
-            )
-            ok = True
+            if PAPER:
+                ok = self.exchange.paper_replace_take_profit(
+                    symbol,
+                    new_exit,
+                )
+            else:
+                _bg_replace_tp(
+                    self.guard,
+                    symbol,
+                    qty_abs,
+                    new_exit,
+                    side=("BUY" if pos_amt > 0 else "SELL"),
+                )
+                ok = True
         except Exception as e:
             log.debug(f"FASTTP {symbol} replace error: {e}")
             ok = False
@@ -7847,10 +8370,24 @@ class Bot:
                     self._ban_symbol(symbol, "order_bad_request", details=detail or None)
                 raise
             # Brackets – versuche neue Signatur (qty+entry), fallback auf alte
-            try:
-                ok = self.guard.ensure_after_entry(symbol, sig, float(q_str), px, sl, tp)
-            except TypeError:
-                ok = self.guard.ensure_after_entry(symbol, sig, sl, tp)
+            if PAPER:
+                self.exchange.paper_register_brackets(
+                    symbol,
+                    sig,
+                    float(q_str),
+                    px,
+                    sl,
+                    tp,
+                    bucket=bucket,
+                    ctx=ctx,
+                    ai_meta=ai_meta,
+                )
+                ok = True
+            else:
+                try:
+                    ok = self.guard.ensure_after_entry(symbol, sig, float(q_str), px, sl, tp)
+                except TypeError:
+                    ok = self.guard.ensure_after_entry(symbol, sig, sl, tp)
             if not ok:
                 log.warning(f"Bracket orders for {symbol} could not be fully created.")
             if self.decision_tracker and not manual_override:
