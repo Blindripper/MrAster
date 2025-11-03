@@ -210,7 +210,7 @@ All variables can be edited via environment overrides or through the dashboard (
 | `ASTER_MAX_NOTIONAL_USDT` | `0` | Optional hard cap on order notional (set to `0` to let leverage and equity guards decide). |
 | `ASTER_SIZE_MULT_CAP` | `3.0` | Maximum position-size multiplier allowed after all adjustments. |
 | `ASTER_CONFIDENCE_SIZING` | `true` | Enables confidence-weighted sizing. When `true`, AI confidence blends between the configured multiplier bounds. |
-| `ASTER_CONFIDENCE_SIZE_MIN` / `ASTER_CONFIDENCE_SIZE_MAX` | `3.0` / `3.0` | Lower and upper multiplier targets when confidence-based sizing is active (identical values lock the multiplier to 3×). |
+| `ASTER_CONFIDENCE_SIZE_MIN` / `ASTER_CONFIDENCE_SIZE_MAX` | `1.0` / `3.0` | Lower and upper multiplier targets when confidence-based sizing is active (identical values lock the multiplier to a fixed × value). |
 | `ASTER_CONFIDENCE_SIZE_BLEND` / `ASTER_CONFIDENCE_SIZE_EXP` | `1` / `2.0` | Blend weight between baseline and confidence target, plus the exponent shaping the curve (values >1 favour high confidence). |
 | `ASTER_RISK_PER_TRADE` | `0.007`* | Share of equity per trade. |
 | `ASTER_EQUITY_FRACTION` | `0.66` | Maximum equity utilization across open positions (33% / 66% / 100% via Low / Mid / High & ATT presets). |
