@@ -1542,6 +1542,19 @@ button:focus-visible {
   line-height: 1.6;
 }
 
+.card-hint {
+  margin: 0;
+  color: var(--text-subtle);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.card-hint code {
+  color: var(--accent);
+  font-family: var(--font-mono, 'JetBrains Mono', 'Fira Mono', 'Source Code Pro', monospace);
+  font-size: 0.85em;
+}
+
 .card-header {
   display: flex;
   justify-content: space-between;

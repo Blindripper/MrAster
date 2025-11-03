@@ -115,7 +115,7 @@ AI_PENDING_LIMIT = max(
     int(os.getenv("ASTER_AI_PENDING_LIMIT", str(_default_pending_limit)) or _default_pending_limit),
 )
 
-X_NEWS_ENABLED = os.getenv("ASTER_X_NEWS_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+X_NEWS_ENABLED = os.getenv("ASTER_X_NEWS_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 X_NEWS_COOKIES_PATH = os.getenv("ASTER_X_AUTH_FILE", "xAuth.json").strip() or "xAuth.json"
 X_NEWS_CACHE_TTL = max(120.0, float(os.getenv("ASTER_X_NEWS_CACHE_TTL_SECONDS", "900") or 900.0))
 X_NEWS_LIMIT = max(5, int(os.getenv("ASTER_X_NEWS_LIMIT", "30") or 30))

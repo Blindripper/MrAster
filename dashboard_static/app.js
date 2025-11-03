@@ -97,6 +97,8 @@ const heroTotalPnl = document.getElementById('hero-total-pnl');
 const heroTotalPnlNote = document.getElementById('hero-total-pnl-note');
 const heroTotalWinRate = document.getElementById('hero-total-win-rate');
 const shareFeedback = document.getElementById('share-feedback');
+const btnEnableXNews = document.getElementById('btn-enable-x-news');
+const xNewsStatus = document.getElementById('x-news-status');
 const MEME_COMPOSER_WINDOW_NAME = 'mraster-meme-composer';
 const MEME_COMPOSER_WINDOW_FEATURES =
   'width=920,height=1080,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes';
@@ -364,6 +366,14 @@ const TRANSLATIONS = {
     'env.saved': 'Сохранено ✓',
     'env.error': 'Ошибка',
     'env.subtitle': 'Изменяйте любые параметры <code>ASTER_*</code> без перезапуска сервиса. Изменения сохраняются автоматически.',
+    'xNews.title': 'Интеграция X News',
+    'xNews.subtitle': 'Оставьте сбор X необязательным. Включайте скрейпинг только когда готовы.',
+    'xNews.enable': 'Активировать X News',
+    'xNews.enabling': 'Активация…',
+    'xNews.enabled': 'X News активированы',
+    'xNews.hint': 'Перед включением поместите экспорт cookies <code>{{file}}</code> рядом с ботом.',
+    'xNews.hintActive': 'X News активны. Убедитесь, что <code>{{file}}</code> остаётся рядом с ботом.',
+    'xNews.error': 'Не удалось включить X News',
     'logs.activity.title': 'Лента активности',
     'logs.activity.subtitle': 'Ключевые сделки, предупреждения и события высокого сигнала.',
     'logs.debug.title': 'Отладочные логи в реальном времени',
@@ -620,6 +630,14 @@ const TRANSLATIONS = {
     'env.error': 'Fehler',
     'env.subtitle':
       'Ändere beliebige <code>ASTER_*</code>-Parameter ohne Neustart des Dienstes. Anpassungen werden automatisch gespeichert.',
+    'xNews.title': 'X-News-Integration',
+    'xNews.subtitle': 'Halte den Sentinel optional. Aktiviere X-Scraping nur bei Bedarf.',
+    'xNews.enable': 'X News aktivieren',
+    'xNews.enabling': 'Aktiviere…',
+    'xNews.enabled': 'X News aktiviert',
+    'xNews.hint': 'Lege die Cookie-Datei <code>{{file}}</code> vor dem Aktivieren neben den Bot.',
+    'xNews.hintActive': 'X News sind aktiv. Stelle sicher, dass <code>{{file}}</code> beim Bot liegt.',
+    'xNews.error': 'X News konnten nicht aktiviert werden',
     'logs.activity.title': 'Aktivitätsfeed',
     'logs.activity.subtitle': 'Wichtige Trades, Warnungen und Hochsignal-Ereignisse.',
     'logs.debug.title': 'Debug-Logs in Echtzeit',
@@ -878,6 +896,14 @@ const TRANSLATIONS = {
     'env.error': '오류',
     'env.subtitle':
       '서비스를 재시작하지 않고도 모든 <code>ASTER_*</code> 파라미터를 변경하세요. 변경 사항은 자동으로 저장됩니다.',
+    'xNews.title': 'X News 연동',
+    'xNews.subtitle': 'Sentinel을 필요할 때만 사용하세요. 준비되었을 때 X 스크래핑을 활성화하세요.',
+    'xNews.enable': 'X News 활성화',
+    'xNews.enabling': '활성화 중…',
+    'xNews.enabled': 'X News 활성화됨',
+    'xNews.hint': '활성화 전에 <code>{{file}}</code> 쿠키 내보내기를 봇과 같은 위치에 두세요.',
+    'xNews.hintActive': 'X News가 활성화되었습니다. <code>{{file}}</code> 파일이 봇 옆에 있는지 확인하세요.',
+    'xNews.error': 'X News를 활성화할 수 없습니다',
     'logs.activity.title': '활동 피드',
     'logs.activity.subtitle': '핵심 거래, 경고, 하이 시그널 이벤트.',
     'logs.debug.title': '실시간 디버그 로그',
@@ -1136,6 +1162,14 @@ const TRANSLATIONS = {
     'env.error': 'Erreur',
     'env.subtitle':
       'Modifiez n’importe quel paramètre <code>ASTER_*</code> sans redémarrer le service. Les changements sont enregistrés automatiquement.',
+    'xNews.title': 'Intégration X News',
+    'xNews.subtitle': 'Gardez le sentinel facultatif. Activez le scraping X uniquement quand vous êtes prêt.',
+    'xNews.enable': 'Activer X News',
+    'xNews.enabling': 'Activation…',
+    'xNews.enabled': 'X News activé',
+    'xNews.hint': 'Avant d’activer, placez l’export cookie <code>{{file}}</code> à côté du bot.',
+    'xNews.hintActive': 'X News est actif. Assurez-vous que <code>{{file}}</code> reste près du bot.',
+    'xNews.error': 'Impossible d’activer X News',
     'logs.activity.title': 'Flux d’activité',
     'logs.activity.subtitle': 'Trades clés, alertes et événements à fort signal.',
     'logs.debug.title': 'Logs de débogage en temps réel',
@@ -1394,6 +1428,14 @@ const TRANSLATIONS = {
     'env.error': 'Error',
     'env.subtitle':
       'Modifica cualquier parámetro <code>ASTER_*</code> sin reiniciar el servicio. Los cambios se guardan automáticamente.',
+    'xNews.title': 'Integración con X News',
+    'xNews.subtitle': 'Mantén el centinela opcional. Activa el scraping de X solo cuando estés listo.',
+    'xNews.enable': 'Activar X News',
+    'xNews.enabling': 'Activando…',
+    'xNews.enabled': 'X News activado',
+    'xNews.hint': 'Antes de activar, coloca la exportación de cookies <code>{{file}}</code> junto al bot.',
+    'xNews.hintActive': 'X News está activo. Asegúrate de que <code>{{file}}</code> permanezca junto al bot.',
+    'xNews.error': 'No se pudo activar X News',
     'logs.activity.title': 'Feed de actividad',
     'logs.activity.subtitle': 'Operaciones clave, alertas y eventos de alta señal.',
     'logs.debug.title': 'Logs de depuración en tiempo real',
@@ -1644,6 +1686,14 @@ const TRANSLATIONS = {
     'env.saved': 'Kaydedildi ✓',
     'env.error': 'Hata',
     'env.subtitle': 'Servisi yeniden başlatmadan herhangi bir <code>ASTER_*</code> parametresini değiştirin. Değişiklikler otomatik kaydedilir.',
+    'xNews.title': 'X News entegrasyonu',
+    'xNews.subtitle': 'Sentinel’i isteğe bağlı tut. X taramasını yalnızca ihtiyaç duyduğunda aç.',
+    'xNews.enable': 'X News’i etkinleştir',
+    'xNews.enabling': 'Etkinleştiriliyor…',
+    'xNews.enabled': 'X News etkin',
+    'xNews.hint': 'Etkinleştirmeden önce <code>{{file}}</code> çerez dışa aktarımını botun yanına yerleştir.',
+    'xNews.hintActive': 'X News etkin. <code>{{file}}</code> dosyasının botla birlikte kaldığından emin ol.',
+    'xNews.error': 'X News etkinleştirilemedi',
     'logs.activity.title': 'Aktivite akışı',
     'logs.activity.subtitle': 'Kilit işlemler, uyarılar ve yüksek sinyal olayları.',
     'logs.debug.title': 'Gerçek zamanlı debug logları',
@@ -1897,6 +1947,14 @@ const TRANSLATIONS = {
     'env.saved': '已保存 ✓',
     'env.error': '错误',
     'env.subtitle': '无需重启服务即可修改任意 <code>ASTER_*</code> 参数。更改会自动保存。',
+    'xNews.title': 'X 新闻整合',
+    'xNews.subtitle': '让 Sentinel 保持可选。只在需要时开启 X 抓取。',
+    'xNews.enable': '启用 X News',
+    'xNews.enabling': '正在启用…',
+    'xNews.enabled': 'X News 已启用',
+    'xNews.hint': '启用前请将 <code>{{file}}</code> cookie 导出文件放在机器人目录旁。',
+    'xNews.hintActive': 'X News 已启用。请确保 <code>{{file}}</code> 始终与机器人放在一起。',
+    'xNews.error': '无法启用 X News',
     'logs.activity.title': '活动信息流',
     'logs.activity.subtitle': '关键交易、预警和高信号事件。',
     'logs.debug.title': '实时调试日志',
@@ -2060,6 +2118,7 @@ function applyTranslations(lang) {
   renderTradeSummary(lastTradeStats);
   renderDecisionStats(lastDecisionStats);
   renderAiBudget(lastAiBudget);
+  updateXNewsUi();
   if (latestTradesSnapshot) {
     renderHeroMetrics(latestTradesSnapshot.cumulative_stats, latestTradesSnapshot.stats);
   }
@@ -3338,6 +3397,15 @@ function renderConfig(env) {
   }
 }
 
+function setEnvInputValue(key, value) {
+  if (!envContainer) return;
+  const selector = `input[data-key="${key}"]`;
+  const input = envContainer.querySelector(selector);
+  if (input) {
+    input.value = value ?? '';
+  }
+}
+
 function updateDefaultNotionalInputs(value) {
   const textValue = value === undefined || value === null ? '' : value.toString();
   if (inputDefaultNotional) {
@@ -3378,12 +3446,33 @@ function renderCredentials(env) {
   syncAiChatAvailability();
 }
 
+function updateXNewsUi() {
+  if (!btnEnableXNews) return;
+  const env = currentConfig?.env || {};
+  const enabled = isTruthy(env.ASTER_X_NEWS_ENABLED);
+  const labelKey = enabled ? 'xNews.enabled' : 'xNews.enable';
+  const fallback = enabled ? 'X News enabled' : 'Enable X News';
+  btnEnableXNews.textContent = translate(labelKey, fallback);
+  btnEnableXNews.disabled = enabled;
+  btnEnableXNews.dataset.state = enabled ? 'enabled' : 'idle';
+  if (xNewsStatus) {
+    const hintKey = enabled ? 'xNews.hintActive' : 'xNews.hint';
+    const authPath = (env.ASTER_X_AUTH_FILE || 'xAuth.json').toString().trim() || 'xAuth.json';
+    const safeFile = escapeHtml(authPath);
+    const hintFallback = enabled
+      ? `X News is active. Keep your <code>${safeFile}</code> file next to the bot.`
+      : `Place your <code>${safeFile}</code> cookie export next to the bot directory before enabling.`;
+    xNewsStatus.innerHTML = translate(hintKey, hintFallback, { file: safeFile });
+  }
+}
+
 async function loadConfig() {
   const res = await fetch('/api/config');
   if (!res.ok) throw new Error('Unable to load configuration');
   currentConfig = await res.json();
   renderConfig(currentConfig.env);
   renderCredentials(currentConfig.env);
+  updateXNewsUi();
   syncPaperModeFromEnv(currentConfig.env);
   syncQuickSetupFromEnv(currentConfig.env);
   await syncModeFromEnv(currentConfig.env);
@@ -3453,6 +3542,7 @@ async function saveConfig() {
     currentConfig = await res.json();
     renderCredentials(currentConfig.env);
     syncQuickSetupFromEnv(currentConfig.env);
+    updateXNewsUi();
     btnSaveConfig.textContent = translate('common.saved', 'Saved ✓');
     btnSaveConfig.dataset.state = 'saved';
     setTimeout(() => {
@@ -3469,6 +3559,55 @@ async function saveConfig() {
     }, 2000);
   } finally {
     btnSaveConfig.disabled = false;
+  }
+}
+
+async function enableXNewsIntegration() {
+  if (!btnEnableXNews) return;
+  const env = currentConfig?.env || {};
+  if (isTruthy(env.ASTER_X_NEWS_ENABLED)) {
+    updateXNewsUi();
+    return;
+  }
+  btnEnableXNews.disabled = true;
+  btnEnableXNews.dataset.state = 'enabling';
+  btnEnableXNews.textContent = translate('xNews.enabling', 'Enabling…');
+  try {
+    const payload = { ASTER_X_NEWS_ENABLED: 'true' };
+    if (!env.ASTER_X_AUTH_FILE) {
+      payload.ASTER_X_AUTH_FILE = 'xAuth.json';
+    }
+    const res = await fetch('/api/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ env: payload }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = data && typeof data === 'object' ? data.detail || data.message : null;
+      throw new Error(detail || 'Unable to enable X News');
+    }
+    if (data && typeof data === 'object' && data.env) {
+      currentConfig = data;
+    } else {
+      currentConfig = currentConfig || {};
+      currentConfig.env = { ...(currentConfig.env || {}), ...payload };
+    }
+    const updatedEnv = currentConfig?.env || {};
+    setEnvInputValue('ASTER_X_NEWS_ENABLED', updatedEnv.ASTER_X_NEWS_ENABLED ?? 'true');
+    if (updatedEnv.ASTER_X_AUTH_FILE) {
+      setEnvInputValue('ASTER_X_AUTH_FILE', updatedEnv.ASTER_X_AUTH_FILE);
+    }
+    updateXNewsUi();
+    btnEnableXNews.dataset.state = 'enabled';
+  } catch (err) {
+    const base = translate('xNews.error', 'Unable to enable X News');
+    const message = err?.message && err.message !== base ? `${base}: ${err.message}` : base;
+    alert(message);
+    btnEnableXNews.disabled = false;
+    btnEnableXNews.dataset.state = 'idle';
+    btnEnableXNews.textContent = translate('xNews.enable', 'Enable X News');
+    updateXNewsUi();
   }
 }
 
@@ -11643,6 +11782,10 @@ async function stopBot() {
 }
 
 btnSaveConfig.addEventListener('click', saveConfig);
+btnEnableXNews?.addEventListener('click', () => {
+  if (btnEnableXNews.disabled) return;
+  enableXNewsIntegration();
+});
 btnSaveCredentials?.addEventListener('click', saveCredentials);
 btnStart.addEventListener('click', startBot);
 btnStop.addEventListener('click', stopBot);
