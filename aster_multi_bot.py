@@ -230,22 +230,22 @@ SIZE_MULT_L = float(os.getenv("ASTER_SIZE_MULT_L", str(1.9 * SIZE_MULT_BASE)))
 SIZE_MULT_FLOOR = max(0.0, min(5.0, float(os.getenv("ASTER_SIZE_MULT_FLOOR", "0.0"))))
 SIZE_MULT_CAP = max(0.1, float(os.getenv("ASTER_SIZE_MULT_CAP", "3.0")))
 
-CONFIDENCE_SIZING_ENABLED = os.getenv("ASTER_CONFIDENCE_SIZING", "false").lower() in (
+CONFIDENCE_SIZING_ENABLED = os.getenv("ASTER_CONFIDENCE_SIZING", "true").lower() in (
     "1",
     "true",
     "yes",
     "on",
 )
-CONFIDENCE_SIZING_MIN = max(0.0, float(os.getenv("ASTER_CONFIDENCE_SIZE_MIN", "0.6")))
+CONFIDENCE_SIZING_MIN = max(0.0, float(os.getenv("ASTER_CONFIDENCE_SIZE_MIN", "3.0")))
 CONFIDENCE_SIZING_MAX = max(
     CONFIDENCE_SIZING_MIN,
     float(os.getenv("ASTER_CONFIDENCE_SIZE_MAX", "3.0")),
 )
 CONFIDENCE_SIZING_BLEND = min(
     1.0,
-    max(0.0, float(os.getenv("ASTER_CONFIDENCE_SIZE_BLEND", "0.65"))),
+    max(0.0, float(os.getenv("ASTER_CONFIDENCE_SIZE_BLEND", "1"))),
 )
-CONFIDENCE_SIZING_EXP = max(0.2, float(os.getenv("ASTER_CONFIDENCE_SIZE_EXP", "1.0")))
+CONFIDENCE_SIZING_EXP = max(0.2, float(os.getenv("ASTER_CONFIDENCE_SIZE_EXP", "2.0")))
 
 ALPHA_ENABLED = os.getenv("ASTER_ALPHA_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 ALPHA_THRESHOLD = float(os.getenv("ASTER_ALPHA_THRESHOLD", "0.55"))
