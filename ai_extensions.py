@@ -125,7 +125,10 @@ class ParameterTuner:
         self,
         state: Dict[str, Any],
         *,
-        request_fn: Callable[[str, Dict[str, Any]], Optional[Dict[str, Any]]],
+        request_fn: Callable[
+            [str, Dict[str, Any], Optional[Callable[[Dict[str, Any], Optional[Dict[str, Any]]], None]]],
+            Optional[Dict[str, Any]],
+        ],
     ) -> None:
         self._root = state
         self._state = self._root.setdefault(
@@ -151,6 +154,12 @@ class ParameterTuner:
                 for item in list(existing_history)[-self._history_cap:]:
                     self._history.append(item)
         self._state["history"] = list(self._history)
+        pending_info = self._state.get("pending_request")
+        if isinstance(pending_info, dict):
+            self._pending_request: Dict[str, Any] = pending_info
+        else:
+            self._pending_request = {}
+            self._state["pending_request"] = self._pending_request
 
     def observe(self, trade: Dict[str, Any], features: Dict[str, float]) -> None:
         record = {
@@ -421,8 +430,37 @@ class ParameterTuner:
                 for key, value in anomaly.items()
                 if key not in {"signature", "ts"}
             }
-        suggestions = self._request_fn("tuning", payload)
-        if not suggestions:
+        anomaly_context = dict(anomaly) if isinstance(anomaly, dict) else {}
+        self._pending_request["anomaly"] = anomaly_context
+        suggestions = self._request_fn(
+            "tuning",
+            payload,
+            self._apply_ai_suggestions,
+        )
+        if isinstance(suggestions, dict):
+            if suggestions.get("_queued"):
+                self._pending_request["request_id"] = suggestions.get("request_id")
+                self._pending_request["ts"] = time.time()
+                self._state["last_ai"] = self._pending_request["ts"]
+                return
+            self._apply_ai_suggestions(suggestions, anomaly_context)
+            return
+        if suggestions:
+            # allow legacy responses to be processed immediately
+            self._apply_ai_suggestions(suggestions, anomaly_context)
+            return
+        self._clear_pending_request()
+
+    def _clear_pending_request(self) -> None:
+        self._pending_request.clear()
+        self._state["pending_request"] = self._pending_request
+
+    def _apply_ai_suggestions(
+        self,
+        suggestions: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if not isinstance(suggestions, dict):
             return
         overrides = dict(self._state.get("overrides", {}))
         size_bias = suggestions.get("size_bias") or {}
@@ -445,12 +483,20 @@ class ParameterTuner:
         )
         self._state["overrides"] = overrides
         self._root["tuning_overrides"] = overrides
-        self._state["last_ai"] = time.time()
+        now = time.time()
+        self._state["last_ai"] = now
         note = suggestions.get("note") if isinstance(suggestions, dict) else None
         if isinstance(note, str):
             self._state["ai_notes"] = note.strip()
-        anomaly["ts"] = time.time()
-        self._state["last_anomaly"] = anomaly
+        anomaly_context = context or self._pending_request.get("anomaly")
+        if isinstance(anomaly_context, dict):
+            tracked = dict(anomaly_context)
+            tracked["ts"] = now
+            self._state["last_anomaly"] = tracked
+        request_id = suggestions.get("request_id") if isinstance(suggestions, dict) else None
+        if request_id:
+            self._pending_request["request_id"] = request_id
+        self._clear_pending_request()
 
     def _build_context_snapshot(self) -> Dict[str, Any]:
         snapshot: Dict[str, Any] = {}
@@ -549,7 +595,10 @@ class PlaybookManager:
         self,
         state: Dict[str, Any],
         *,
-        request_fn: Callable[[str, Dict[str, Any]], Optional[Dict[str, Any]]],
+        request_fn: Callable[
+            [str, Dict[str, Any], Optional[Callable[[Dict[str, Any], Optional[Dict[str, Any]]], None]]],
+            Optional[Dict[str, Any]],
+        ],
         event_cb: Optional[
             Callable[[str, Dict[str, Any], Optional[Dict[str, Any]]], None]
         ] = None,
@@ -577,6 +626,9 @@ class PlaybookManager:
         self._bootstrap_cooldown_until = 0.0
         self._event_cb = event_cb
         self._state.setdefault("regime_snapshot", {})
+        self._pending_request_id: Optional[str] = None
+        self._pending_request_ts: float = 0.0
+        self._pending_snapshot: Optional[Dict[str, Any]] = None
 
     @staticmethod
     def _clean_string(value: Any) -> Optional[str]:
@@ -705,6 +757,10 @@ class PlaybookManager:
         if isinstance(active, dict) and last == 0.0 and last_raw not in (0, 0.0, None):
             active["refreshed"] = 0.0
         bootstrap_triggered = False
+        if self._pending_request_id:
+            if now - self._pending_request_ts < max(60.0, self._refresh_interval * 0.25):
+                return
+            self._clear_pending_request()
         if self._bootstrap_pending:
             if now < self._bootstrap_cooldown_until:
                 return
@@ -718,26 +774,27 @@ class PlaybookManager:
                 return
         if not bootstrap_triggered and now - last < self._refresh_interval:
             return
-        suggestions = self._request_fn("playbook", snapshot)
-        if not suggestions:
-            if bootstrap_triggered:
-                # retry once we either have data or hit the next deadline
-                self._bootstrap_cooldown_until = time.time() + self._bootstrap_retry
-                if self._bootstrap_deadline < self._bootstrap_cooldown_until:
-                    self._bootstrap_deadline = self._bootstrap_cooldown_until
+        suggestions = self._request_fn(
+            "playbook",
+            snapshot,
+            self._apply_playbook_update,
+        )
+        if isinstance(suggestions, dict):
+            if suggestions.get("_queued"):
+                self._pending_request_id = suggestions.get("request_id") or None
+                self._pending_request_ts = now
+                self._pending_snapshot = snapshot if isinstance(snapshot, dict) else None
+                return
+            self._apply_playbook_update(suggestions, {"snapshot": snapshot})
             return
-        active = self._normalize_playbook(suggestions, now)
-        self._state["active"] = active
-        self._root["ai_playbook"] = self._state
+        if suggestions:
+            self._apply_playbook_update(suggestions, {"snapshot": snapshot})
+            return
         if bootstrap_triggered:
-            self._bootstrap_pending = False
-            self._bootstrap_cooldown_until = 0.0
-        if self._event_cb:
-            try:
-                context = {"raw": suggestions, "snapshot": snapshot}
-                self._event_cb("applied", dict(active), context)
-            except Exception:
-                pass
+            # retry once we either have data or hit the next deadline
+            self._bootstrap_cooldown_until = time.time() + self._bootstrap_retry
+            if self._bootstrap_deadline < self._bootstrap_cooldown_until:
+                self._bootstrap_deadline = self._bootstrap_cooldown_until
 
     def _snapshot_ready(self, snapshot: Dict[str, Any]) -> bool:
         if not isinstance(snapshot, dict):
@@ -891,6 +948,37 @@ class PlaybookManager:
             if token:
                 active["request_id"] = token
         return active
+
+    def _clear_pending_request(self) -> None:
+        self._pending_request_id = None
+        self._pending_request_ts = 0.0
+        self._pending_snapshot = None
+
+    def _apply_playbook_update(
+        self,
+        payload: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if not isinstance(payload, dict):
+            return
+        snapshot = None
+        if isinstance(context, dict):
+            snapshot = context.get("snapshot")
+        if snapshot is None:
+            snapshot = self._pending_snapshot
+        now = time.time()
+        active = self._normalize_playbook(payload, now)
+        self._state["active"] = active
+        self._root["ai_playbook"] = self._state
+        self._bootstrap_pending = False
+        self._bootstrap_cooldown_until = 0.0
+        self._clear_pending_request()
+        if self._event_cb:
+            try:
+                event_ctx = {"raw": payload, "snapshot": snapshot}
+                self._event_cb("applied", dict(active), event_ctx)
+            except Exception:
+                pass
 
 
 class BudgetLearner:
