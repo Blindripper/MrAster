@@ -3378,6 +3378,70 @@ const LOG_LABEL_CATEGORY_MAP = {
   'fast tp': 'trade',
 };
 
+const LOG_CATEGORY_COLOR_MAP = {
+  ai: { base: '#1E1B4B', accent: '#6366F1', text: '#EDE9FE' },
+  trade: { base: '#064E3B', accent: '#10B981', text: '#ECFDF5' },
+  system: { base: '#0F172A', accent: '#334155', text: '#E2E8F0' },
+  scan: { base: '#0C4A6E', accent: '#38BDF8', text: '#E0F2FE' },
+  orders: { base: '#78350F', accent: '#F97316', text: '#FFFBEB' },
+  funding: { base: '#854D0E', accent: '#FBBF24', text: '#FEF3C7' },
+  sentinel: { base: '#831843', accent: '#F472B6', text: '#FCE7F3' },
+  volume: { base: '#065F46', accent: '#34D399', text: '#ECFDF5' },
+  spread: { base: '#312E81', accent: '#A78BFA', text: '#EEF2FF' },
+  oracle: { base: '#155E75', accent: '#38BDF8', text: '#ECFEFF' },
+  data: { base: '#1E293B', accent: '#64748B', text: '#E2E8F0' },
+  edge: { base: '#3F6212', accent: '#84CC16', text: '#F7FEE7' },
+  volatility: { base: '#86198F', accent: '#F472B6', text: '#FDF4FF' },
+};
+
+const AI_FEED_KIND_SEVERITY = {
+  alert: 'warning',
+  analysis: 'info',
+  budget: 'warning',
+  error: 'error',
+  exit: 'success',
+  failure: 'error',
+  fill: 'success',
+  plan: 'info',
+  query: 'info',
+  skip: 'warning',
+  take: 'success',
+  trade: 'success',
+  trend: 'info',
+  warning: 'warning',
+};
+
+const AI_FEED_KIND_LABELS = {
+  alert: 'Alert',
+  analysis: 'Analysis',
+  budget: 'Budget',
+  error: 'Issue',
+  exit: 'Exit',
+  failure: 'Issue',
+  fill: 'Trade',
+  plan: 'AI Plan',
+  query: 'AI Query',
+  skip: 'Skipped',
+  take: 'Decision',
+  trade: 'Trade',
+  trend: 'Trend',
+  warning: 'Warning',
+};
+
+const TECHNICAL_LOG_PATTERNS = [
+  /^send_request_/i,
+  /^receive_response_/i,
+  /^response_closed/i,
+  /^httpx\b/i,
+  /^urllib3\b/i,
+  /^http request:/i,
+  /^https?:\/\//i,
+];
+
+const TECHNICAL_LOG_KEYWORDS = ['request=<Request', 'return_value=(', 'SSL handshake'];
+
+const TECHNICAL_LOG_EXACT = new Set(['detail', 'debug']);
+
 const FRIENDLY_LEVEL_LABELS = {
   success: 'Trade',
   info: 'Update',
@@ -3428,6 +3492,174 @@ function extractSymbolFromLog(message) {
   return '';
 }
 
+function describeSkipExtra(extraRaw) {
+  if (!extraRaw) return '';
+  let extra = extraRaw.toString().trim();
+  if (!extra) return '';
+  const filteredMatch = extra.match(/filtered_signal'?\s*[:=]\s*'?([A-Z]+)'?/i);
+  if (filteredMatch && filteredMatch[1]) {
+    return `Filtered signal ${filteredMatch[1].toUpperCase()}`;
+  }
+  extra = extra.replace(/^[:,\s-]+/, '').replace(/^\{/, '').replace(/\}$/, '');
+  extra = extra.replace(/["']/g, '').replace(/_/g, ' ');
+  extra = extra.replace(/\s+/g, ' ').trim();
+  if (!extra) return '';
+  return extra.charAt(0).toUpperCase() + extra.slice(1);
+}
+
+function formatSentence(text) {
+  if (!text) return '';
+  const trimmed = text.toString().trim();
+  if (!trimmed) return '';
+  const normalized = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  return normalized.endsWith('.') ? normalized : `${normalized}.`;
+}
+
+function summariseHttpRequest(method, rawUrl, statusCode, statusText) {
+  let resource = rawUrl;
+  try {
+    const parsed = new URL(rawUrl);
+    const path = parsed.pathname.replace(/\/+$/, '') || '/';
+    resource = `${parsed.hostname}${path}`;
+  } catch (error) {
+    const match = rawUrl.match(/^https?:\/\/[^/]+(\/[\w\-./]*)/i);
+    if (match && match[1]) {
+      resource = match[1];
+    }
+  }
+  const trimmedStatus = (statusText || '').toString().trim();
+  const statusLabel = trimmedStatus && trimmedStatus.toLowerCase() !== 'none' ? trimmedStatus : '';
+  const severity = statusCode >= 500 ? 'error' : statusCode >= 400 ? 'warning' : 'info';
+  const success = statusCode < 400;
+  const prefix = success ? 'OpenAI request succeeded' : 'OpenAI request failed';
+  const descriptor = `${prefix} (${statusCode}${statusLabel ? ` ${statusLabel}` : ''})`;
+  const text = `${descriptor} on ${method} ${resource}`.trim();
+  return { text, severity, label: 'AI API', category: 'ai' };
+}
+
+function decorateFriendlyLogLine(friendly, rawLine) {
+  if (!friendly) return friendly;
+  const decorated = { ...friendly };
+  const textValue = (decorated.text || rawLine || '').toString();
+  const trimmed = textValue.trim();
+  const lower = trimmed.toLowerCase();
+
+  if (!trimmed) {
+    decorated.relevant = false;
+    return decorated;
+  }
+
+  const aiMatch = trimmed.match(/^AI_FEED\s+([A-Z0-9_-]+)\s*\|\s*(.+)$/i);
+  if (aiMatch) {
+    const kind = aiMatch[1].toLowerCase();
+    const headline = aiMatch[2].trim();
+    const severity = AI_FEED_KIND_SEVERITY[kind] || decorated.severity || 'info';
+    decorated.text = headline || trimmed;
+    decorated.severity = severity;
+    decorated.label = AI_FEED_KIND_LABELS[kind] || FRIENDLY_LEVEL_LABELS[severity] || 'Update';
+    decorated.category = 'ai';
+    if (!LOG_REASON_COLOR_MAP[decorated.reason]) {
+      decorated.reason = null;
+    }
+    decorated.relevant = true;
+    return decorated;
+  }
+
+  const httpMatch = trimmed.match(
+    /^HTTP Request:\s+([A-Z]+)\s+(\S+)\s+"HTTP\/1\.1\s+(\d+)\s+([^\"]*)"/i,
+  );
+  if (httpMatch) {
+    const method = httpMatch[1].toUpperCase();
+    const url = httpMatch[2];
+    const statusCode = parseInt(httpMatch[3], 10);
+    const statusText = httpMatch[4];
+    if (Number.isFinite(statusCode)) {
+      const summary = summariseHttpRequest(method, url, statusCode, statusText);
+      decorated.text = summary.text;
+      decorated.severity = summary.severity;
+      decorated.label = summary.label;
+      decorated.category = summary.category;
+      decorated.reason = null;
+      decorated.relevant = true;
+      return decorated;
+    }
+  }
+
+  if (TECHNICAL_LOG_EXACT.has(lower)) {
+    decorated.relevant = false;
+    return decorated;
+  }
+
+  for (const pattern of TECHNICAL_LOG_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      decorated.relevant = false;
+      return decorated;
+    }
+  }
+  for (const keyword of TECHNICAL_LOG_KEYWORDS) {
+    if (trimmed.includes(keyword)) {
+      decorated.relevant = false;
+      return decorated;
+    }
+  }
+
+  const skipColonMatch = trimmed.match(/^SKIP\s+([A-Z0-9._-]+):\s*([a-z0-9_]+)(?:\s*(.*))?$/i);
+  if (skipColonMatch) {
+    const symbol = skipColonMatch[1].toUpperCase();
+    const reasonCode = skipColonMatch[2].toLowerCase();
+    const extra = describeSkipExtra(skipColonMatch[3] || '');
+    const reasonLabel = friendlyReason(reasonCode);
+    const description = reasonLabel || reasonCode.replace(/[_-]+/g, ' ');
+    const baseMessage = `Skipped ${symbol} — ${description.trim()}`.trim();
+    decorated.text = extra ? `${baseMessage} (${extra}).` : `${baseMessage}.`;
+    decorated.label = 'Skipped';
+    decorated.severity = 'warning';
+    decorated.symbol = symbol;
+    decorated.reason = reasonCode;
+    decorated.category = LOG_REASON_CATEGORY_MAP[reasonCode] || decorated.category || 'ai';
+    decorated.relevant = true;
+    return decorated;
+  }
+
+  const skipDashMatch = trimmed.match(/^Skip\s+([A-Z0-9._-]+)\s*[—-]\s*(.+)$/);
+  if (skipDashMatch) {
+    const symbol = skipDashMatch[1].toUpperCase();
+    let detailRaw = skipDashMatch[2];
+    decorated.label = 'Skipped';
+    decorated.severity = 'warning';
+    decorated.symbol = symbol;
+    if (!decorated.reason) {
+      const inferred = deriveLogReasonFromMessage(detailRaw);
+      if (inferred) {
+        decorated.reason = inferred;
+      }
+    }
+    if (decorated.reason && LOG_REASON_CATEGORY_MAP[decorated.reason]) {
+      decorated.category = LOG_REASON_CATEGORY_MAP[decorated.reason];
+    } else {
+      decorated.category = decorated.category || 'ai';
+    }
+    if (decorated.reason) {
+      const label = friendlyReason(decorated.reason);
+      if (label) {
+        const pattern = new RegExp(decorated.reason.replace(/_/g, '[ _-]'), 'gi');
+        detailRaw = detailRaw.replace(pattern, label);
+      }
+    }
+    const detail = formatSentence(detailRaw);
+    decorated.text = `Skipped ${symbol} — ${detail}`;
+    decorated.relevant = true;
+    return decorated;
+  }
+
+  if (/^receive_response_headers\.complete/i.test(trimmed)) {
+    decorated.relevant = false;
+    return decorated;
+  }
+
+  return decorated;
+}
+
 function humanizeLogLine(line, level) {
   const parsed = parseStructuredLog(line, level);
   const message = parsed.message || line || '';
@@ -3461,7 +3693,7 @@ function humanizeLogLine(line, level) {
 
   const refreshTrades = /\b(exit|trade|filled|order|position|pnl)\b/i.test(message);
 
-  return {
+  const friendly = {
     raw: line,
     parsed,
     severity: normalizedSeverity,
@@ -3473,12 +3705,14 @@ function humanizeLogLine(line, level) {
     relevant: true,
     refreshTrades,
   };
+
+  return decorateFriendlyLogLine(friendly, line);
 }
 
 function getLogClassList(friendly) {
   if (!friendly) return [];
   const classes = [];
-  if (friendly.reason) {
+  if (friendly.reason && LOG_REASON_COLOR_MAP[friendly.reason]) {
     classes.push(`log-reason-${friendly.reason}`);
   }
   if (friendly.category) {
@@ -3487,9 +3721,11 @@ function getLogClassList(friendly) {
   return classes;
 }
 
-function applyLogReasonStyles(element, reason) {
-  if (!element || !reason) return;
-  const palette = LOG_REASON_COLOR_MAP[reason];
+function applyLogHighlight(element, friendly) {
+  if (!element || !friendly) return;
+  const reasonPalette = friendly.reason ? LOG_REASON_COLOR_MAP[friendly.reason] : null;
+  const categoryPalette = !reasonPalette && friendly.category ? LOG_CATEGORY_COLOR_MAP[friendly.category] : null;
+  const palette = reasonPalette || categoryPalette;
   if (!palette) return;
   element.style.background = `linear-gradient(135deg, ${palette.base}, ${palette.accent})`;
   element.style.borderColor = palette.accent;
@@ -3510,7 +3746,7 @@ function appendFullLog({ line, level, ts }) {
   if (classList.length > 0) {
     el.classList.add(...classList);
   }
-  applyLogReasonStyles(el, friendly?.reason);
+  applyLogHighlight(el, friendly);
 
   const meta = document.createElement('div');
   meta.className = 'log-meta';
@@ -8769,7 +9005,7 @@ function appendCompactLog({ line, level, ts }) {
   if (classificationClasses.length > 0) {
     el.classList.add(...classificationClasses);
   }
-  applyLogReasonStyles(el, friendly.reason);
+  applyLogHighlight(el, friendly);
 
   const meta = document.createElement('div');
   meta.className = 'log-meta';
