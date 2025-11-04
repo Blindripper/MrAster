@@ -10417,6 +10417,14 @@ async function restartBotIfNeeded(options = {}) {
     return false;
   }
 
+  await updateStatus();
+  if (!lastBotStatus.running) {
+    if (wantsRestore) {
+      lastModeBeforeStandard = null;
+    }
+    return false;
+  }
+
   if (wantsRestore && currentMode !== normalizedRestore) {
     try {
       await selectMode(normalizedRestore, { persist: true });
@@ -10424,14 +10432,6 @@ async function restartBotIfNeeded(options = {}) {
       console.warn('Unable to restore previous mode before restart', err);
       lastModeBeforeStandard = normalizedRestore;
     }
-  }
-
-  await updateStatus();
-  if (!lastBotStatus.running) {
-    if (wantsRestore) {
-      lastModeBeforeStandard = null;
-    }
-    return false;
   }
 
   if (btnApplyPreset) {
