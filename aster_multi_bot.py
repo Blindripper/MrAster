@@ -8314,6 +8314,7 @@ class Bot:
         self._ai_feed_pending_requests: Set[str] = set()
         self._symbol_score_cache: Dict[str, Dict[str, float]] = {}
         self._orderbook_activity_signature: Tuple[str, ...] = tuple()
+        self._sentinel_activity_signature: Dict[str, Tuple[str, float, float, float]] = {}
         self.policy: Optional[BanditPolicy] = None
         if BANDIT_ENABLED:
             pol_state = self.state.get("policy") if isinstance(self.state, dict) else None
@@ -9126,8 +9127,7 @@ class Bot:
     ) -> None:
         if not AI_MODE_ENABLED:
             return
-        if data and data.get("ai_request") is False:
-            return
+        skip_ai_tracking = isinstance(data, dict) and data.get("ai_request") is False
         request_id: Optional[str] = None
         if isinstance(data, dict):
             raw_request_id = data.get("request_id")
@@ -9157,6 +9157,11 @@ class Bot:
                 entry["data"] = json.loads(json.dumps(sanitized_data, default=lambda o: str(o)))
             except Exception:
                 entry["data"] = sanitized_data
+            if skip_ai_tracking:
+                if isinstance(entry.get("data"), dict):
+                    entry["data"]["ai_request"] = False
+                else:
+                    entry["data"] = {"value": entry.get("data"), "ai_request": False}
         feed = self.state.setdefault("ai_activity", [])
         feed.append(entry)
         if len(feed) > 250:
@@ -9175,6 +9180,100 @@ class Bot:
                 self.trade_mgr.save()
             except Exception as exc:
                 log.debug(f"ai activity persist failed: {exc}")
+
+    def _maybe_log_sentinel_update(
+        self,
+        symbol: str,
+        label: str,
+        event_risk: float,
+        hype_score: float,
+        size_factor: float,
+        sentinel_info: Optional[Dict[str, Any]],
+    ) -> None:
+        if not AI_MODE_ENABLED:
+            return
+        signature = (
+            str(label or "").lower(),
+            round(float(event_risk), 4),
+            round(float(hype_score), 4),
+            round(float(size_factor), 4),
+        )
+        if self._sentinel_activity_signature.get(symbol) == signature:
+            return
+        self._sentinel_activity_signature[symbol] = signature
+
+        summary = (
+            f"Risk {label.upper() if label else 'UNKNOWN'} "
+            f"(event={event_risk:.2f}, hype={hype_score:.2f}, size×{size_factor:.2f})"
+        )
+        ai_meta: Dict[str, Any] = {}
+        if isinstance(sentinel_info, dict):
+            raw_meta = sentinel_info.get("ai_meta")
+            if isinstance(raw_meta, dict):
+                ai_meta = raw_meta
+        rationale: Optional[str] = None
+        raw_rationale = None
+        if ai_meta:
+            raw_rationale = ai_meta.get("rationale")
+        if not isinstance(raw_rationale, str) or not raw_rationale.strip():
+            if isinstance(sentinel_info, dict):
+                fallback_rationale = sentinel_info.get("rationale")
+                if isinstance(fallback_rationale, str):
+                    raw_rationale = fallback_rationale
+        if isinstance(raw_rationale, str) and raw_rationale.strip():
+            rationale = raw_rationale.strip()
+
+        highlight_source = None
+        if isinstance(ai_meta.get("highlights"), list):
+            highlight_source = ai_meta.get("highlights")
+        elif isinstance(sentinel_info, dict) and isinstance(sentinel_info.get("highlights"), list):
+            highlight_source = sentinel_info.get("highlights")
+        highlights: List[str] = []
+        if isinstance(highlight_source, list):
+            for item in highlight_source:
+                if not isinstance(item, str):
+                    continue
+                cleaned = item.strip()
+                if cleaned:
+                    highlights.append(cleaned)
+                if len(highlights) >= 4:
+                    break
+
+        body_lines: List[str] = [summary]
+        if rationale:
+            body_lines.append(rationale)
+        if highlights:
+            body_lines.append("\n".join(f"• {text}" for text in highlights))
+        body_text = "\n".join(body_lines)
+
+        log.info(
+            "Sentinel update %s label=%s event=%.2f hype=%.2f size×%.2f",
+            symbol,
+            label,
+            event_risk,
+            hype_score,
+            size_factor,
+        )
+        payload: Dict[str, Any] = {
+            "ai_request": False,
+            "component": "sentinel",
+            "symbol": symbol,
+            "label": label,
+            "event_risk": float(event_risk),
+            "hype_score": float(hype_score),
+            "size_factor": float(size_factor),
+        }
+        if highlights:
+            payload["highlights"] = highlights
+        if rationale:
+            payload["rationale"] = rationale
+        self._log_ai_activity(
+            "analysis",
+            f"Sentinel update {symbol}",
+            body=body_text,
+            data=payload,
+            force=True,
+        )
 
     def _reset_decision_stats(self) -> None:
         baseline = {
@@ -9425,6 +9524,19 @@ class Bot:
         event_risk = float(sentinel_info.get("event_risk", 0.0) or 0.0)
         hype_score = float(sentinel_info.get("hype_score", 0.0) or 0.0)
 
+        try:
+            sentinel_size_factor = float(actions.get("size_factor", 1.0) or 1.0)
+        except (TypeError, ValueError):
+            sentinel_size_factor = 1.0
+        self._maybe_log_sentinel_update(
+            symbol,
+            str(sentinel_info.get("label", "green")),
+            event_risk,
+            hype_score,
+            sentinel_size_factor,
+            sentinel_info,
+        )
+
         if self.ai_advisor:
             try:
                 ctx.setdefault("side", sig)
@@ -9468,7 +9580,7 @@ class Bot:
         policy_size_mult = float(size_mult)
         ctx["policy_bucket"] = bucket
         ctx["policy_size_multiplier"] = policy_size_mult
-        sentinel_factor = float(actions.get("size_factor", 1.0) or 1.0)
+        sentinel_factor = sentinel_size_factor
         sentinel_factor *= max(0.35, 1.0 - event_risk * 0.65)
         if hype_score > 1.2:
             sentinel_factor *= min(1.4, 1.0 + (hype_score - 1.0) * 0.25)
@@ -9509,6 +9621,7 @@ class Bot:
                         "side": veto_target,
                         "event_risk": event_risk,
                         "hype_score": hype_score,
+                        "component": "sentinel",
                         "ai_request": False,
                     },
                     force=True,
@@ -9533,6 +9646,7 @@ class Bot:
                     "side": sig if sig != "NONE" else base_signal,
                     "event_risk": event_risk,
                     "hype_score": hype_score,
+                    "component": "sentinel",
                     "ai_request": False,
                 },
                 force=True,
@@ -10639,6 +10753,8 @@ class Bot:
             if len(orderbook_plan) > len(preview_plan):
                 body += " …"
             activity_payload = {
+                "ai_request": False,
+                "component": "orderbook",
                 "prefetch": preview_plan,
                 "prefetch_count": len(orderbook_plan),
                 "on_demand_budget": ORDERBOOK_ON_DEMAND,

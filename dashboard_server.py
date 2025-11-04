@@ -371,10 +371,31 @@ def _normalize_strategy_blob(payload: Any) -> Optional[Dict[str, Any]]:
 
 def _normalize_ai_budget(raw: Any) -> Dict[str, Any]:
     bucket: Dict[str, Any] = dict(raw) if isinstance(raw, dict) else {}
-    history = bucket.get("history")
-    if not isinstance(history, list):
-        history = []
+    history_raw = bucket.get("history")
+    if not isinstance(history_raw, list):
+        history_raw = []
+    history: List[Dict[str, Any]] = []
+    for item in history_raw:
+        if not isinstance(item, dict):
+            continue
+        entry = dict(item)
+        cost_val = _safe_float(entry.get("cost"))
+        if cost_val is not None:
+            entry["cost"] = float(cost_val)
+        ts_val = _safe_float(entry.get("ts"))
+        if ts_val is not None:
+            entry["ts"] = float(ts_val)
+        history.append(entry)
     bucket["history"] = history
+    for key in ("limit", "spent", "remaining"):
+        value = _safe_float(bucket.get(key))
+        if value is None:
+            bucket.pop(key, None)
+            continue
+        if key != "remaining":
+            bucket[key] = float(max(value, 0.0))
+        else:
+            bucket[key] = float(max(value, 0.0))
     count_val = bucket.get("count")
     try:
         count = int(count_val)

@@ -393,9 +393,15 @@ class OpenAIClient:
                         metadata=metadata,
                         max_output_tokens=max_output_tokens,
                     )
-                if traits.legacy_supported and is_responses_unsupported_error(exc.payload):
+                disable_responses = False
+                if traits.legacy_supported:
+                    if is_responses_unsupported_error(exc.payload):
+                        disable_responses = True
+                    elif exc.status_code in {400, 404, 415, 422}:
+                        disable_responses = True
+                if disable_responses:
                     self._responses_available[active_model] = False
-                if not traits.legacy_supported or not exc.allows_legacy_fallback:
+                if not traits.legacy_supported or (not exc.allows_legacy_fallback and not disable_responses):
                     raise
 
         return await self._legacy_chat_completion(

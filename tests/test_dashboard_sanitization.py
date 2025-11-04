@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 
 import dashboard_server as server
 
@@ -53,3 +54,26 @@ def test_append_ai_activity_entry_masks_state(monkeypatch, tmp_path):
     assert server._REDACTED_TOKEN in entry["body"]
     assert entry["data"]["ASTER_API_SECRET"] == server._REDACTED_TOKEN
     assert entry["data"]["details"][0] == server._REDACTED_TOKEN
+
+
+def test_normalize_ai_budget_coerces_numbers():
+    raw = {
+        "spent": "1,234.50",
+        "limit": "200",
+        "remaining": "-5",
+        "history": [
+            {"cost": "0.5", "ts": "1700000000"},
+            {"cost": "not-a-number", "ts": None},
+        ],
+        "count": "1",
+    }
+
+    bucket = server._normalize_ai_budget(raw)
+
+    assert math.isclose(bucket["spent"], 1234.5, rel_tol=1e-6)
+    assert math.isclose(bucket["limit"], 200.0, rel_tol=1e-6)
+    assert math.isclose(bucket.get("remaining", 0.0), 0.0, rel_tol=1e-6)
+    assert bucket["count"] >= len(bucket["history"])
+    assert len(bucket["history"]) == 2
+    assert math.isclose(bucket["history"][0]["cost"], 0.5, rel_tol=1e-6)
+    assert math.isfinite(bucket["history"][0]["ts"])
