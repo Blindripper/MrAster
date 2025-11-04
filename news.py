@@ -217,9 +217,40 @@ async def _extract_post(article) -> Optional[ScrapedPost]:
     metrics = {"likes": None, "retweets": None, "replies": None}
     for key, test_id in ("replies", "reply"), ("retweets", "retweet"), ("likes", "like"):
         metric_node = await article.query_selector(f"div[data-testid='{test_id}']")
-        if metric_node:
-            aria_label = await metric_node.get_attribute("aria-label")
-            metrics[key] = _parse_number(aria_label)
+        if not metric_node:
+            continue
+
+        value = None
+        aria_label = await metric_node.get_attribute("aria-label")
+        if aria_label:
+            value = _parse_number(aria_label)
+
+        if value is None:
+            button_node = await metric_node.query_selector("button")
+            if button_node:
+                aria_label = await button_node.get_attribute("aria-label")
+                if aria_label:
+                    value = _parse_number(aria_label)
+
+        if value is None:
+            text_content = ""
+            try:
+                text_content = (await metric_node.inner_text()).strip()
+            except Exception:
+                text_content = ""
+            if not text_content:
+                number_span = await metric_node.query_selector(
+                    "span[dir='auto'], span span"
+                )
+                if number_span:
+                    try:
+                        text_content = (await number_span.inner_text()).strip()
+                    except Exception:
+                        text_content = ""
+            if text_content:
+                value = _parse_number(text_content)
+
+        metrics[key] = value
 
     return ScrapedPost(
         text=text,
