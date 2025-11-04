@@ -2786,7 +2786,8 @@ async def update_config(update: ConfigUpdate) -> Dict[str, Any]:
     _refresh_sensitive_tokens()
     changes: List[Dict[str, Any]] = []
     pending_updates: List[Tuple[str, str]] = []
-    mask_tokens: Set[str] = set(_SENSITIVE_TOKEN_VALUES)
+    mask_tokens: List[str] = [token for token in _SENSITIVE_TOKEN_VALUES if token]
+    seen_tokens: Set[str] = set(mask_tokens)
     for key, value in update.env.items():
         if key not in ALLOWED_ENV_KEYS:
             raise HTTPException(status_code=400, detail=f"Unknown key: {key}")
@@ -2795,17 +2796,21 @@ async def update_config(update: ConfigUpdate) -> Dict[str, Any]:
         if old_value != new_value:
             changes.append({"key": key, "old": old_value, "new": new_value})
         if key in _SENSITIVE_ENV_KEYS:
-            if isinstance(old_value, str) and old_value:
-                mask_tokens.add(old_value)
-            if new_value:
-                mask_tokens.add(new_value)
+            if isinstance(old_value, str) and old_value and old_value not in seen_tokens:
+                mask_tokens.append(old_value)
+                seen_tokens.add(old_value)
+            if new_value and new_value not in seen_tokens:
+                mask_tokens.append(new_value)
+                seen_tokens.add(new_value)
         pending_updates.append((key, new_value))
     for key, new_value in pending_updates:
         env_cfg[key] = new_value
     _save_config(CONFIG)
     original_tokens = _SENSITIVE_TOKEN_VALUES
     try:
-        _SENSITIVE_TOKEN_VALUES = tuple(token for token in mask_tokens if token)
+        _SENSITIVE_TOKEN_VALUES = tuple(
+            sorted(mask_tokens, key=len, reverse=True)
+        )
         payload = _mask_sensitive_payload(_build_config_change_payload(changes))
     finally:
         _SENSITIVE_TOKEN_VALUES = original_tokens
