@@ -2764,6 +2764,90 @@ function syncModeUi() {
   updateAiBudgetModeLabel();
 }
 
+function formatBudgetAmount(value) {
+  if (!Number.isFinite(value)) return null;
+  const clamped = Math.max(value, 0);
+  return clamped.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function renderAiBudget(budget) {
+  lastAiBudget = budget && typeof budget === 'object' ? budget : null;
+  if (!aiBudgetCard || !aiBudgetMeta || !aiBudgetFill) {
+    return;
+  }
+
+  const limitRaw = Number(lastAiBudget?.limit);
+  const spentRaw = Number(lastAiBudget?.spent);
+  const hasLimit = Number.isFinite(limitRaw) && limitRaw > 0;
+  const hasSpent = Number.isFinite(spentRaw) && spentRaw >= 0;
+
+  const isAiActive = aiMode;
+  const isPaperActive = paperMode;
+  const hasBudgetData = hasLimit || hasSpent;
+
+  aiBudgetCard.classList.toggle('active', isAiActive && !isPaperActive && hasBudgetData);
+  aiBudgetCard.classList.remove('unlimited');
+
+  if (!isAiActive) {
+    aiBudgetFill.style.width = '0%';
+    aiBudgetMeta.textContent = translate('status.aiBudgetMeta.disabled', 'AI mode is disabled.');
+    return;
+  }
+
+  if (isPaperActive) {
+    aiBudgetFill.style.width = '0%';
+    aiBudgetMeta.textContent = translate(
+      'status.aiBudgetMeta.paper',
+      'Paper mode does not use budget.',
+    );
+    return;
+  }
+
+  if (!hasBudgetData) {
+    aiBudgetFill.style.width = '0%';
+    aiBudgetMeta.textContent = translate('status.aiBudgetMeta', 'Budget not configured.');
+    return;
+  }
+
+  const spent = hasSpent ? Math.max(spentRaw, 0) : 0;
+  const limit = hasLimit ? limitRaw : 0;
+
+  let fillPercent = 0;
+  if (hasLimit && limit > 0) {
+    const ratio = spent / limit;
+    fillPercent = Math.max(0, Math.min(Number.isFinite(ratio) ? ratio : 0, 1)) * 100;
+  } else if (spent > 0) {
+    fillPercent = 100;
+  }
+  aiBudgetFill.style.width = `${fillPercent.toFixed(0)}%`;
+
+  if (hasLimit && limit > 0) {
+    const remaining = Math.max(limit - spent, 0);
+    aiBudgetMeta.textContent = translate(
+      'status.aiBudgetMeta.limited',
+      "Today's spend {{spent}} / {{limit}} USD · {{remaining}} USD remaining",
+      {
+        spent: formatBudgetAmount(spent) || '0.00',
+        limit: formatBudgetAmount(limit) || '0.00',
+        remaining: formatBudgetAmount(remaining) || '0.00',
+      },
+    );
+    return;
+  }
+
+  aiBudgetCard.classList.add('unlimited');
+  aiBudgetMeta.textContent = translate(
+    'status.aiBudgetMeta.unlimited',
+    "Today's spend {{spent}} USD · no limit",
+    {
+      spent: formatBudgetAmount(spent) || '0.00',
+    },
+  );
+}
+
 function syncCollapseToggle(button, collapsed) {
   if (!button) return;
   const expandLabel = button.dataset.labelExpand || 'Expand';
