@@ -163,6 +163,42 @@ def _extract_text_from_legacy(data: Dict[str, Any]) -> str:
     return ""
 
 
+def is_responses_unsupported_error(payload: Optional[Dict[str, Any]]) -> bool:
+    """Return ``True`` if an error payload signals responses API incompatibility."""
+
+    if not isinstance(payload, dict):
+        return False
+
+    error = payload.get("error")
+    if not isinstance(error, dict):
+        return False
+
+    message = str(error.get("message") or "").lower()
+    code = str(error.get("code") or "").lower()
+    param = str(error.get("param") or "").lower()
+
+    incompatible_keywords = (
+        "does not support the responses api",
+        "is not currently supported on the responses api",
+        "use the chat.completions endpoint",
+        "beta responses api is not enabled",
+    )
+
+    if any(keyword in message for keyword in incompatible_keywords):
+        return True
+
+    if "responses" in message and "unsupported" in message:
+        return True
+
+    if code in {"model_not_supported", "model_not_enabled", "model_not_found"} and "responses" in message:
+        return True
+
+    if param == "response_format" and "not supported" in message:
+        return True
+
+    return False
+
+
 class OpenAIClient:
     """Async OpenAI client shared between components."""
 
@@ -182,6 +218,7 @@ class OpenAIClient:
         self._loop_thread = threading.Thread(target=self._run_loop, daemon=True)
         self._loop_thread.start()
         self._client: Optional[httpx.AsyncClient] = None
+        self._responses_available: Dict[str, bool] = {}
 
     @property
     def loop(self) -> asyncio.AbstractEventLoop:
@@ -274,6 +311,39 @@ class OpenAIClient:
             usage = None
         return text, usage, data
 
+    async def _legacy_chat_completion(
+        self,
+        *,
+        messages: List[Dict[str, Any]],
+        model: str,
+        temperature: Optional[float],
+    ) -> Tuple[str, Optional[Dict[str, Any]], Dict[str, Any]]:
+        normalized_messages, _ = build_responses_input(messages)
+        payload: Dict[str, Any] = {
+            "model": model,
+            "messages": [
+                {
+                    "role": entry["role"],
+                    "content": entry["content"][0]["text"],
+                }
+                if entry.get("content")
+                else {"role": entry.get("role", "user"), "content": ""}
+                for entry in normalized_messages
+            ],
+        }
+        if temperature is not None:
+            payload["temperature"] = float(temperature)
+
+        client = await self._client_instance()
+        response = await client.post("/v1/chat/completions", json=payload)
+        if response.status_code >= 400:
+            raise OpenAIError(response.status_code, response.text[:160])
+
+        data = response.json()
+        text = _extract_text_from_legacy(data)
+        usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
+        return text, usage, data
+
     async def _acreate_with_fallback(
         self,
         *,
@@ -286,38 +356,40 @@ class OpenAIClient:
     ) -> Tuple[str, Optional[Dict[str, Any]], Dict[str, Any]]:
         active_model = model or self.default_model
         traits = model_traits(active_model)
-        try:
-            return await self.acreate(
-                messages=messages,
-                model=active_model,
-                temperature=temperature,
-                response_format=response_format,
-                metadata=metadata,
-                max_output_tokens=max_output_tokens,
-            )
-        except OpenAIError as exc:
-            if not traits.legacy_supported or not exc.allows_legacy_fallback:
-                raise
-            normalized_messages, _ = build_responses_input(messages)
-            payload: Dict[str, Any] = {
-                "model": active_model,
-                "messages": [
-                    {"role": entry["role"], "content": entry["content"][0]["text"]}
-                    if entry.get("content")
-                    else {"role": entry.get("role", "user"), "content": ""}
-                    for entry in normalized_messages
-                ],
-            }
-            if temperature is not None:
-                payload["temperature"] = float(temperature)
-            client = await self._client_instance()
-            response = await client.post("/v1/chat/completions", json=payload)
-            if response.status_code >= 400:
-                raise OpenAIError(response.status_code, response.text[:160])
-            data = response.json()
-            text = _extract_text_from_legacy(data)
-            usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
-            return text, usage, data
+        use_responses = self._responses_available.get(active_model, True)
+
+        if use_responses:
+            try:
+                result = await self.acreate(
+                    messages=messages,
+                    model=active_model,
+                    temperature=temperature,
+                    response_format=response_format,
+                    metadata=metadata,
+                    max_output_tokens=max_output_tokens,
+                )
+                self._responses_available[active_model] = True
+                return result
+            except OpenAIError as exc:
+                if exc.should_retry_without_temperature and temperature is not None:
+                    return await self._acreate_with_fallback(
+                        messages=messages,
+                        model=active_model,
+                        temperature=None,
+                        response_format=response_format,
+                        metadata=metadata,
+                        max_output_tokens=max_output_tokens,
+                    )
+                if traits.legacy_supported and is_responses_unsupported_error(exc.payload):
+                    self._responses_available[active_model] = False
+                if not traits.legacy_supported or not exc.allows_legacy_fallback:
+                    raise
+
+        return await self._legacy_chat_completion(
+            messages=messages,
+            model=active_model,
+            temperature=temperature,
+        )
 
     def submit(
         self,
@@ -357,5 +429,6 @@ __all__ = [
     "model_traits",
     "beta_header_for_model",
     "build_responses_input",
+    "is_responses_unsupported_error",
 ]
 
