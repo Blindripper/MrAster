@@ -3803,7 +3803,6 @@ function createXNewsResultEntry(data, ts) {
     body.append(summaryEl);
   }
 
-  const events = Array.isArray(data.events) ? data.events : [];
   if (events.length > 0) {
     const list = document.createElement('ul');
     list.className = 'x-news-result__events';
