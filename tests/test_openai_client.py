@@ -21,6 +21,16 @@ def test_is_responses_unsupported_error_detects_common_messages() -> None:
     assert is_responses_unsupported_error({"error": {"message": "Unexpected"}}) is False
 
 
+def test_is_responses_unsupported_error_handles_endpoint_wording() -> None:
+    payload = {
+        "error": {
+            "message": "The model gpt-4.1 is only available on the Chat Completions API instead of the Responses endpoint.",
+            "code": "model_not_supported",
+        }
+    }
+    assert is_responses_unsupported_error(payload) is True
+
+
 def test_client_disables_responses_after_incompatible_error(monkeypatch: pytest.MonkeyPatch) -> None:
     client = OpenAIClient("test-key", default_model="gpt-4o-mini")
 
