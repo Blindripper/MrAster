@@ -2683,6 +2683,77 @@ def _parse_activity_ts(value: Any) -> Optional[datetime]:
     return None
 
 
+_SYMBOL_TOKEN_BLACKLIST = {
+    "HTTP",
+    "HTTPS",
+    "OPENAI",
+    "REQUEST",
+    "FAILED",
+    "SUCCESS",
+    "COMPLETE",
+    "DETAIL",
+    "STARTED",
+    "ERROR",
+    "INFO",
+}
+
+_SYMBOL_SUFFIXES = (
+    "USDT",
+    "USDC",
+    "USD",
+    "BTC",
+    "ETH",
+    "PERP",
+    "TRY",
+    "EUR",
+    "BUSD",
+)
+
+
+def _extract_symbol_hint(*candidates: Any) -> Optional[str]:
+    for candidate in candidates:
+        if not candidate:
+            continue
+        if isinstance(candidate, str):
+            tokens = re.findall(r"[A-Z0-9]{3,15}", candidate.upper())
+        else:
+            try:
+                tokens = re.findall(r"[A-Z0-9]{3,15}", str(candidate).upper())
+            except Exception:
+                tokens = []
+        for token in reversed(tokens):
+            if token in _SYMBOL_TOKEN_BLACKLIST:
+                continue
+            if token in SYMBOL_SYNONYMS:
+                return token
+            if any(token.endswith(suffix) and len(token) > len(suffix) for suffix in _SYMBOL_SUFFIXES):
+                return token
+            if token.isalpha() and 3 <= len(token) <= 5:
+                return token
+    return None
+
+
+def _extract_side_hint(*candidates: Any) -> Optional[str]:
+    for candidate in candidates:
+        if not candidate:
+            continue
+        text = candidate if isinstance(candidate, str) else str(candidate)
+        normalized = text.upper()
+        for side in ("BUY", "SELL", "LONG", "SHORT"):
+            if side in normalized:
+                return "BUY" if side == "LONG" else "SELL" if side == "SHORT" else side
+    return None
+
+
+def _auto_request_key(entry: Dict[str, Any], fallback_index: int) -> str:
+    ts = entry.get("ts") or ""
+    kind = str(entry.get("kind") or "")
+    headline = str(entry.get("headline") or "")
+    body = str(entry.get("body") or "")
+    digest = hashlib.sha1(f"{ts}|{kind}|{headline}|{body}|{fallback_index}".encode()).hexdigest()
+    return f"auto::{digest[:12]}"
+
+
 def _summarize_ai_requests(
     ai_activity: List[Dict[str, Any]],
     limit: int = 40,
@@ -2692,8 +2763,9 @@ def _summarize_ai_requests(
     for entry in ai_activity:
         if not isinstance(entry, dict):
             continue
-        data = entry.get("data")
-        if not isinstance(data, dict):
+        raw_data = entry.get("data")
+        data = raw_data if isinstance(raw_data, dict) else {}
+        if isinstance(raw_data, dict) and raw_data.get("ai_request") is False:
             continue
         raw_request_id = data.get("request_id")
         request_id = None
@@ -2701,8 +2773,14 @@ def _summarize_ai_requests(
             request_id = raw_request_id.strip() or None
         elif raw_request_id is not None:
             request_id = str(raw_request_id)
-        symbol_hint = str(data.get("symbol") or "").strip().upper()
-        side_hint = str(data.get("side") or "").strip().upper()
+        symbol_hint_raw = data.get("symbol") if isinstance(data, dict) else None
+        symbol_hint = (symbol_hint_raw or "").strip().upper() if symbol_hint_raw else None
+        if not symbol_hint:
+            symbol_hint = _extract_symbol_hint(entry.get("headline"), entry.get("body"))
+        side_hint_raw = data.get("side") if isinstance(data, dict) else None
+        side_hint = (side_hint_raw or "").strip().upper() if side_hint_raw else None
+        if not side_hint:
+            side_hint = _extract_side_hint(entry.get("headline"), entry.get("body"))
         origin_hint = str(
             data.get("origin") or data.get("plan_origin") or ""
         ).strip()
@@ -2719,16 +2797,26 @@ def _summarize_ai_requests(
 
         preferred_key = request_id or fallback_key or base_key
         if not preferred_key:
-            continue
+            if request_id or symbol_hint or side_hint or (isinstance(raw_data, dict) and raw_data.get("ai_request")):
+                preferred_key = _auto_request_key(entry, len(requests))
+            else:
+                continue
 
         record_key = None
         record = None
 
-        if request_id:
+        if preferred_key and preferred_key in requests:
+            record_key = preferred_key
+            record = requests.get(preferred_key)
+        if request_id and request_id in requests:
             record_key = request_id
             record = requests.get(request_id)
 
-        if record is None and fallback_key:
+        if record is None and request_id and preferred_key != request_id:
+            record_key = request_id
+            record = requests.get(request_id)
+
+        if record is None and fallback_key and fallback_key in requests:
             record_key = fallback_key
             record = requests.get(fallback_key)
 
@@ -2743,9 +2831,9 @@ def _summarize_ai_requests(
             record = {
                 "id": preferred_key,
                 "request_id": request_id,
-                "symbol": symbol_hint,
+                "symbol": symbol_hint if symbol_hint else None,
                 "side": side_hint or None,
-                "origin": origin_hint or None,
+                "origin": origin_hint or data.get("request_kind") or None,
                 "status": "pending",
                 "decision": None,
                 "take": None,
@@ -2766,7 +2854,6 @@ def _summarize_ai_requests(
             if request_id and not record.get("request_id"):
                 record["request_id"] = request_id
         if request_id and record_key != request_id:
-            # Re-key the record under the resolved request id to prevent duplicates
             requests.pop(record_key, None)
             record_key = request_id
             record["id"] = request_id
@@ -2777,12 +2864,14 @@ def _summarize_ai_requests(
             record_key = preferred_key
             record["id"] = preferred_key
             requests[record_key] = record
+
         if symbol_hint and not record.get("symbol"):
             record["symbol"] = symbol_hint
         if side_hint and not record.get("side"):
             record["side"] = side_hint
         if origin_hint and not record.get("origin"):
             record["origin"] = origin_hint
+
         ts = _parse_activity_ts(entry.get("ts"))
         ts_iso = ts.isoformat() if ts else None
         if ts_iso:
