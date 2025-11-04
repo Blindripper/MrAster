@@ -96,13 +96,6 @@ const heroTotalPnl = document.getElementById('hero-total-pnl');
 const heroTotalPnlNote = document.getElementById('hero-total-pnl-note');
 const heroTotalWinRate = document.getElementById('hero-total-win-rate');
 const shareFeedback = document.getElementById('share-feedback');
-const btnEnableXNews = document.getElementById('btn-enable-x-news');
-const xNewsStatus = document.getElementById('x-news-status');
-const xNewsLogContainer = document.getElementById('x-news-log');
-const xNewsLogList = document.getElementById('x-news-log-list');
-const xNewsLogEmpty = document.getElementById('x-news-log-empty');
-const xNewsTopCoins = document.getElementById('x-news-top-coins');
-const xNewsTopCoinsList = document.getElementById('x-news-top-coins-list');
 const MEME_COMPOSER_WINDOW_NAME = 'mraster-meme-composer';
 const MEME_COMPOSER_WINDOW_FEATURES =
   'width=920,height=1080,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes';
@@ -121,14 +114,6 @@ const DEFAULT_BOT_STATUS = { running: false, pid: null, started_at: null, uptime
 const DEFAULT_LANGUAGE = 'en';
 const SUPPORTED_LANGUAGES = ['en', 'ru', 'zh', 'ko', 'de', 'fr', 'es', 'tr'];
 const COMPACT_SKIP_AGGREGATION_WINDOW = 600; // seconds
-const X_NEWS_LOG_LIMIT = 80;
-const X_NEWS_COMPACT_FORMATTER = typeof Intl !== 'undefined'
-  ? new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 })
-  : null;
-const X_NEWS_TOP_LIMIT = 5;
-
-const xNewsEngagementTotals = new Map();
-
 const TRANSLATIONS = {
   ru: {
     'language.english': 'Английский',
@@ -377,18 +362,6 @@ const TRANSLATIONS = {
     'env.saved': 'Сохранено ✓',
     'env.error': 'Ошибка',
     'env.subtitle': 'Изменяйте любые параметры <code>ASTER_*</code> без перезапуска сервиса. Изменения сохраняются автоматически.',
-    'xNews.title': 'Интеграция X News',
-    'xNews.subtitle': 'X-API support coming soon!',
-    'xNews.enable': 'Активировать X News',
-    'xNews.disable': 'Отключить X News',
-    'xNews.enabling': 'Активация…',
-    'xNews.disabling': 'Отключение…',
-    'xNews.enabled': 'X News активированы',
-    'xNews.hint': 'X-API support coming soon!',
-    'xNews.hintActive': 'X-API support coming soon!',
-    'xNews.topCoins.label': 'Топ монет (❤️+🔁+💬)',
-    'xNews.error': 'Не удалось включить X News',
-    'xNews.errorDisable': 'Не удалось отключить X News',
     'logs.activity.title': 'Лента активности',
     'logs.activity.subtitle': 'Ключевые сделки, предупреждения и события высокого сигнала.',
     'logs.debug.title': 'Отладочные логи в реальном времени',
@@ -645,18 +618,6 @@ const TRANSLATIONS = {
     'env.error': 'Fehler',
     'env.subtitle':
       'Ändere beliebige <code>ASTER_*</code>-Parameter ohne Neustart des Dienstes. Anpassungen werden automatisch gespeichert.',
-    'xNews.title': 'X-News-Integration',
-    'xNews.subtitle': 'X-API support coming soon!',
-    'xNews.enable': 'X News aktivieren',
-    'xNews.disable': 'X News deaktivieren',
-    'xNews.enabling': 'Aktiviere…',
-    'xNews.disabling': 'Deaktiviere…',
-    'xNews.enabled': 'X News aktiviert',
-    'xNews.hint': 'X-API support coming soon!',
-    'xNews.hintActive': 'X-API support coming soon!',
-    'xNews.topCoins.label': 'Top-Coins (❤️+🔁+💬)',
-    'xNews.error': 'X News konnten nicht aktiviert werden',
-    'xNews.errorDisable': 'X News konnten nicht deaktiviert werden',
     'logs.activity.title': 'Aktivitätsfeed',
     'logs.activity.subtitle': 'Wichtige Trades, Warnungen und Hochsignal-Ereignisse.',
     'logs.debug.title': 'Debug-Logs in Echtzeit',
@@ -915,18 +876,6 @@ const TRANSLATIONS = {
     'env.error': '오류',
     'env.subtitle':
       '서비스를 재시작하지 않고도 모든 <code>ASTER_*</code> 파라미터를 변경하세요. 변경 사항은 자동으로 저장됩니다.',
-    'xNews.title': 'X News 연동',
-    'xNews.subtitle': 'X-API support coming soon!',
-    'xNews.enable': 'X News 활성화',
-    'xNews.disable': 'X News 비활성화',
-    'xNews.enabling': '활성화 중…',
-    'xNews.disabling': '비활성화 중…',
-    'xNews.enabled': 'X News 활성화됨',
-    'xNews.hint': 'X-API support coming soon!',
-    'xNews.hintActive': 'X-API support coming soon!',
-    'xNews.topCoins.label': '상위 코인 (❤️+🔁+💬)',
-    'xNews.error': 'X News를 활성화할 수 없습니다',
-    'xNews.errorDisable': 'X News를 비활성화할 수 없습니다',
     'logs.activity.title': '활동 피드',
     'logs.activity.subtitle': '핵심 거래, 경고, 하이 시그널 이벤트.',
     'logs.debug.title': '실시간 디버그 로그',
@@ -1185,18 +1134,6 @@ const TRANSLATIONS = {
     'env.error': 'Erreur',
     'env.subtitle':
       'Modifiez n’importe quel paramètre <code>ASTER_*</code> sans redémarrer le service. Les changements sont enregistrés automatiquement.',
-    'xNews.title': 'Intégration X News',
-    'xNews.subtitle': 'X-API support coming soon!',
-    'xNews.enable': 'Activer X News',
-    'xNews.disable': 'Désactiver X News',
-    'xNews.enabling': 'Activation…',
-    'xNews.disabling': 'Désactivation…',
-    'xNews.enabled': 'X News activé',
-    'xNews.hint': 'X-API support coming soon!',
-    'xNews.hintActive': 'X-API support coming soon!',
-    'xNews.topCoins.label': 'Meilleurs coins (❤️+🔁+💬)',
-    'xNews.error': 'Impossible d’activer X News',
-    'xNews.errorDisable': 'Impossible de désactiver X News',
     'logs.activity.title': 'Flux d’activité',
     'logs.activity.subtitle': 'Trades clés, alertes et événements à fort signal.',
     'logs.debug.title': 'Logs de débogage en temps réel',
@@ -1455,18 +1392,6 @@ const TRANSLATIONS = {
     'env.error': 'Error',
     'env.subtitle':
       'Modifica cualquier parámetro <code>ASTER_*</code> sin reiniciar el servicio. Los cambios se guardan automáticamente.',
-    'xNews.title': 'Integración con X News',
-    'xNews.subtitle': 'X-API support coming soon!',
-    'xNews.enable': 'Activar X News',
-    'xNews.disable': 'Desactivar X News',
-    'xNews.enabling': 'Activando…',
-    'xNews.disabling': 'Desactivando…',
-    'xNews.enabled': 'X News activado',
-    'xNews.hint': 'X-API support coming soon!',
-    'xNews.hintActive': 'X-API support coming soon!',
-    'xNews.topCoins.label': 'Monedas destacadas (❤️+🔁+💬)',
-    'xNews.error': 'No se pudo activar X News',
-    'xNews.errorDisable': 'No se pudo desactivar X News',
     'logs.activity.title': 'Feed de actividad',
     'logs.activity.subtitle': 'Operaciones clave, alertas y eventos de alta señal.',
     'logs.debug.title': 'Logs de depuración en tiempo real',
@@ -1717,18 +1642,6 @@ const TRANSLATIONS = {
     'env.saved': 'Kaydedildi ✓',
     'env.error': 'Hata',
     'env.subtitle': 'Servisi yeniden başlatmadan herhangi bir <code>ASTER_*</code> parametresini değiştirin. Değişiklikler otomatik kaydedilir.',
-    'xNews.title': 'X News entegrasyonu',
-    'xNews.subtitle': 'X-API support coming soon!',
-    'xNews.enable': 'X News’i etkinleştir',
-    'xNews.disable': 'X News’i devre dışı bırak',
-    'xNews.enabling': 'Etkinleştiriliyor…',
-    'xNews.disabling': 'Devre dışı bırakılıyor…',
-    'xNews.enabled': 'X News etkin',
-    'xNews.hint': 'X-API support coming soon!',
-    'xNews.hintActive': 'X-API support coming soon!',
-    'xNews.topCoins.label': 'En iyi coinler (❤️+🔁+💬)',
-    'xNews.error': 'X News etkinleştirilemedi',
-    'xNews.errorDisable': 'X News devre dışı bırakılamadı',
     'logs.activity.title': 'Aktivite akışı',
     'logs.activity.subtitle': 'Kilit işlemler, uyarılar ve yüksek sinyal olayları.',
     'logs.debug.title': 'Gerçek zamanlı debug logları',
@@ -1982,18 +1895,6 @@ const TRANSLATIONS = {
     'env.saved': '已保存 ✓',
     'env.error': '错误',
     'env.subtitle': '无需重启服务即可修改任意 <code>ASTER_*</code> 参数。更改会自动保存。',
-    'xNews.title': 'X 新闻整合',
-    'xNews.subtitle': 'X-API support coming soon!',
-    'xNews.enable': '启用 X News',
-    'xNews.disable': '禁用 X News',
-    'xNews.enabling': '正在启用…',
-    'xNews.disabling': '正在禁用…',
-    'xNews.enabled': 'X News 已启用',
-    'xNews.hint': 'X-API support coming soon!',
-    'xNews.hintActive': 'X-API support coming soon!',
-    'xNews.topCoins.label': '热门币种 (❤️+🔁+💬)',
-    'xNews.error': '无法启用 X News',
-    'xNews.errorDisable': '无法禁用 X News',
     'logs.activity.title': '活动信息流',
     'logs.activity.subtitle': '关键交易、预警和高信号事件。',
     'logs.debug.title': '实时调试日志',
@@ -2159,7 +2060,6 @@ function applyTranslations(lang) {
   renderTradeSummary(lastTradeStats);
   renderDecisionStats(lastDecisionStats);
   renderAiBudget(lastAiBudget);
-  updateXNewsUi();
   if (latestTradesSnapshot) {
     renderHeroMetrics(latestTradesSnapshot.cumulative_stats, latestTradesSnapshot.stats);
   }
@@ -3487,539 +3387,12 @@ function renderCredentials(env) {
   syncAiChatAvailability();
 }
 
-function setXNewsLogEmpty(key, fallback) {
-  if (!xNewsLogEmpty) return;
-  const message = translate(key, fallback);
-  xNewsLogEmpty.textContent = message;
-  xNewsLogEmpty.hidden = false;
-}
-
-function formatXNewsCompactNumber(value) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return null;
-  if (num === 0) return '0';
-  if (X_NEWS_COMPACT_FORMATTER) {
-    try {
-      return X_NEWS_COMPACT_FORMATTER.format(num);
-    } catch (err) {
-      console.warn('Compact formatter failed', err);
-    }
-  }
-  const abs = Math.abs(num);
-  if (abs >= 1_000_000_000) return `${(num / 1_000_000_000).toFixed(1)}B`;
-  if (abs >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
-  return num.toString();
-}
-
-function formatXNewsPercent(value) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return null;
-  const fraction = num > 1 ? num : num * 100;
-  const bounded = Math.max(0, Math.min(100, fraction));
-  const digits = bounded >= 10 ? 0 : 1;
-  return `${bounded.toFixed(digits)}%`;
-}
-
-function normalizeXNewsEngagement(value) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return 0;
-  if (num <= 0) return 0;
-  return Math.round(num);
-}
-
-function extractXNewsEngagementTotals(data, fallbackEvents = []) {
-  if (!data) return null;
-  const readTotals = (source) => {
-    if (!source || typeof source !== 'object') return null;
-    const likes = normalizeXNewsEngagement(source.likes);
-    const retweets = normalizeXNewsEngagement(source.retweets);
-    const replies = normalizeXNewsEngagement(source.replies);
-    const total = likes + retweets + replies;
-    return { likes, retweets, replies, total };
-  };
-  const events = Array.isArray(fallbackEvents) ? fallbackEvents : [];
-  const dataEvents = Array.isArray(data.events) ? data.events : [];
-  const hasEvents = events.length > 0 || dataEvents.length > 0;
-  const candidates = [data.engagement, data.meta?.engagement_totals, data.meta?.engagement];
-  for (const candidate of candidates) {
-    const totals = readTotals(candidate);
-    if (totals && (totals.total > 0 || hasEvents)) {
-      return totals;
-    }
-  }
-  if (!hasEvents) {
-    return null;
-  }
-  const sourceEvents = events.length > 0 ? events : dataEvents;
-  if (!sourceEvents.length) {
-    return { likes: 0, retweets: 0, replies: 0, total: 0 };
-  }
-  const totals = { likes: 0, retweets: 0, replies: 0 };
-  sourceEvents.forEach((event) => {
-    if (!event || typeof event !== 'object') return;
-    totals.likes += normalizeXNewsEngagement(event.likes);
-    totals.retweets += normalizeXNewsEngagement(event.retweets);
-    totals.replies += normalizeXNewsEngagement(event.replies);
-  });
-  totals.total = totals.likes + totals.retweets + totals.replies;
-  return totals;
-}
-
-function updateXNewsTopCoinsDisplay() {
-  if (!xNewsTopCoins || !xNewsTopCoinsList) return;
-  xNewsTopCoinsList.innerHTML = '';
-  const entries = Array.from(xNewsEngagementTotals.entries()).filter(([, totals]) => {
-    return totals && totals.total > 0;
-  });
-  entries.sort((a, b) => b[1].total - a[1].total);
-  const topEntries = entries.slice(0, X_NEWS_TOP_LIMIT);
-  if (!topEntries.length) {
-    xNewsTopCoins.hidden = true;
-    return;
-  }
-  topEntries.forEach(([symbol, totals]) => {
-    const item = document.createElement('li');
-    item.className = 'x-news-top__item';
-    const symbolEl = document.createElement('strong');
-    symbolEl.className = 'x-news-top__symbol';
-    symbolEl.textContent = symbol;
-    const statsEl = document.createElement('span');
-    statsEl.className = 'x-news-top__stats';
-    const statMeta = [
-      ['❤️', totals.likes],
-      ['🔁', totals.retweets],
-      ['💬', totals.replies],
-    ];
-    statMeta.forEach(([icon, value]) => {
-      const stat = document.createElement('span');
-      stat.className = 'x-news-top__stat';
-      stat.textContent = `${icon} ${formatXNewsCompactNumber(value) || value.toString()}`;
-      if (Number.isFinite(value)) {
-        try {
-          stat.title = `${value.toLocaleString()}`;
-        } catch (err) {
-          stat.title = `${value}`;
-        }
-      }
-      statsEl.append(stat);
-    });
-    item.append(symbolEl, statsEl);
-    xNewsTopCoinsList.append(item);
-  });
-  xNewsTopCoins.hidden = false;
-}
-
-function clearXNewsTopCoins() {
-  xNewsEngagementTotals.clear();
-  if (xNewsTopCoinsList) {
-    xNewsTopCoinsList.innerHTML = '';
-  }
-  if (xNewsTopCoins) {
-    xNewsTopCoins.hidden = true;
-  }
-}
-
-function registerXNewsEngagementTotals(result, events) {
-  if (!result) return;
-  const symbolRaw = (result.symbol || result.query || '').toString().trim();
-  if (!symbolRaw) return;
-  const symbol = symbolRaw.toUpperCase();
-  const totals = extractXNewsEngagementTotals(result, events);
-  if (!totals || totals.total <= 0) {
-    if (xNewsEngagementTotals.has(symbol)) {
-      xNewsEngagementTotals.delete(symbol);
-      updateXNewsTopCoinsDisplay();
-    }
-    return;
-  }
-  xNewsEngagementTotals.set(symbol, totals);
-  updateXNewsTopCoinsDisplay();
-}
-
-function parseXNewsResultPayload(raw) {
-  if (!raw) return null;
-  const trimmed = raw.toString().trim();
-  if (!trimmed.startsWith('X_NEWS_RESULT')) return null;
-  const payload = trimmed.slice('X_NEWS_RESULT'.length).trim();
-  if (!payload) return null;
-  try {
-    return JSON.parse(payload);
-  } catch (err) {
-    try {
-      const normalized = payload.replace(/'/g, '"');
-      return JSON.parse(normalized);
-    } catch (err2) {
-      console.warn('Failed to parse X news payload', err2);
-      return null;
-    }
-  }
-}
-
-function createXNewsMetaPill(label, value, options = {}) {
-  if (!label || value === undefined || value === null) return null;
-  const pill = document.createElement('span');
-  pill.className = 'x-news-result__meta-pill';
-  if (options.title) {
-    pill.title = options.title;
-  }
-  const labelEl = document.createElement('span');
-  labelEl.className = 'x-news-result__meta-label';
-  labelEl.textContent = label;
-  const valueEl = document.createElement('strong');
-  valueEl.textContent = value;
-  pill.append(labelEl, valueEl);
-  return pill;
-}
-
-function createXNewsEventStats(event) {
-  if (!event) return null;
-  const stats = [];
-  const addStat = (icon, raw, title) => {
-    const num = Number(raw);
-    if (!Number.isFinite(num) || num <= 0) return;
-    const formatted = formatXNewsCompactNumber(num) || num.toString();
-    stats.push({ icon, formatted, title });
-  };
-  addStat('❤️', event.likes, 'Likes');
-  addStat('🔁', event.retweets, 'Retweets');
-  addStat('💬', event.replies, 'Replies');
-  if (!stats.length) return null;
-  const container = document.createElement('span');
-  container.className = 'x-news-result__event-stats';
-  stats.forEach((stat) => {
-    const item = document.createElement('span');
-    item.className = 'x-news-result__event-stat';
-    if (stat.title) {
-      item.title = stat.title;
-    }
-    const iconEl = document.createElement('span');
-    iconEl.className = 'x-news-result__event-stat-icon';
-    iconEl.textContent = stat.icon;
-    const valueEl = document.createElement('strong');
-    valueEl.textContent = stat.formatted;
-    item.append(iconEl, valueEl);
-    container.append(item);
-  });
-  return container;
-}
-
-function getXNewsFeedLabel(feed) {
-  if (!feed) return '';
-  const normalized = feed.toString().trim().toLowerCase();
-  if (!normalized) return '';
-  if (normalized === 'top') return 'Top feed';
-  if (normalized === 'live') return 'Live feed';
-  return `${toTitleWords(normalized)} feed`;
-}
-
-function createXNewsResultEntry(data, ts) {
-  const entry = document.createElement('div');
-  entry.className = 'x-news-log__entry x-news-log__entry--result';
-  entry.dataset.level = 'info';
-  entry.dataset.kind = 'result';
-
-  const timeEl = document.createElement('span');
-  timeEl.className = 'x-news-log__time';
-  timeEl.textContent = ts ? new Date(ts * 1000).toLocaleTimeString() : '—';
-
-  const body = document.createElement('div');
-  body.className = 'x-news-result';
-  const events = Array.isArray(data.events) ? data.events : [];
-
-  const header = document.createElement('div');
-  header.className = 'x-news-result__header';
-
-  const symbolEl = document.createElement('div');
-  symbolEl.className = 'x-news-result__symbol';
-  const symbolRaw = (data.symbol || data.query || '').toString().trim();
-  symbolEl.textContent = symbolRaw ? symbolRaw.toUpperCase() : 'X News scrape';
-  header.append(symbolEl);
-
-  const metaWrap = document.createElement('div');
-  metaWrap.className = 'x-news-result__meta';
-  const feedLabel = getXNewsFeedLabel(data.feed || data.meta?.feed);
-  if (feedLabel) {
-    const feedPill = createXNewsMetaPill('Feed', feedLabel.replace(/\s+feed$/i, ''));
-    if (feedPill) metaWrap.append(feedPill);
-  }
-  const totalPosts = Number(data.count ?? data.meta?.post_count);
-  const displayedPosts = events.length;
-  const tweetLimit = Number(data.tweet_limit ?? data.meta?.tweet_limit);
-  const postsTitleParts = [];
-  if (Number.isFinite(displayedPosts)) {
-    postsTitleParts.push(`Displayed: ${displayedPosts}`);
-  }
-  if (Number.isFinite(totalPosts) && totalPosts !== displayedPosts) {
-    postsTitleParts.push(`Scraped: ${totalPosts}`);
-  }
-  if (Number.isFinite(tweetLimit)) {
-    postsTitleParts.push(`Limit: ${tweetLimit}`);
-  }
-  if (Number.isFinite(totalPosts) || Number.isFinite(displayedPosts)) {
-    const labelValue = Number.isFinite(totalPosts) ? totalPosts : displayedPosts;
-    const postsPill = createXNewsMetaPill('Posts', labelValue.toString(), {
-      title: postsTitleParts.join(' • '),
-    });
-    if (postsPill) metaWrap.append(postsPill);
-  }
-  const hypePercent = formatXNewsPercent(data.hype ?? data.meta?.hype);
-  if (hypePercent) {
-    const hypePill = createXNewsMetaPill('Hype', hypePercent);
-    if (hypePill) metaWrap.append(hypePill);
-  }
-  const engagementTotals = extractXNewsEngagementTotals(data, events);
-  if (engagementTotals) {
-    const likeValue = formatXNewsCompactNumber(engagementTotals.likes) || engagementTotals.likes.toString();
-    const retweetValue =
-      formatXNewsCompactNumber(engagementTotals.retweets) || engagementTotals.retweets.toString();
-    const replyValue =
-      formatXNewsCompactNumber(engagementTotals.replies) || engagementTotals.replies.toString();
-    const likePill = createXNewsMetaPill('❤️ Likes', likeValue);
-    const retweetPill = createXNewsMetaPill('🔁 Retweets', retweetValue);
-    const replyPill = createXNewsMetaPill('💬 Replies', replyValue);
-    [likePill, retweetPill, replyPill].forEach((pill) => {
-      if (pill) metaWrap.append(pill);
-    });
-  }
-  const topEngagement = formatXNewsCompactNumber(data.meta?.top_engagement);
-  if (topEngagement) {
-    const engagementPill = createXNewsMetaPill('Top eng.', topEngagement, {
-      title: 'Highest engagement score observed',
-    });
-    if (engagementPill) metaWrap.append(engagementPill);
-  }
-  if (data.cached) {
-    const cachePill = createXNewsMetaPill('Cache', 'Warm');
-    if (cachePill) metaWrap.append(cachePill);
-  }
-  if (metaWrap.children.length > 0) {
-    header.append(metaWrap);
-  }
-  body.append(header);
-
-  const summaryParts = [];
-  if (displayedPosts > 0) {
-    const base = `Showing ${displayedPosts}${
-      Number.isFinite(totalPosts) && totalPosts !== displayedPosts ? ` of ${totalPosts}` : ''
-    } post${displayedPosts === 1 ? '' : 's'}`;
-    summaryParts.push(base);
-  } else if (Number.isFinite(totalPosts)) {
-    summaryParts.push(`0 of ${totalPosts} posts matched the filters`);
-  }
-  if (feedLabel) {
-    summaryParts.push(feedLabel);
-  }
-  if (hypePercent) {
-    summaryParts.push(`Hype ${hypePercent}`);
-  }
-  const summaryText = summaryParts.join(' · ');
-  if (summaryText) {
-    const summaryEl = document.createElement('p');
-    summaryEl.className = 'x-news-result__summary';
-    summaryEl.textContent = summaryText;
-    body.append(summaryEl);
-  }
-
-  if (events.length > 0) {
-    const list = document.createElement('ul');
-    list.className = 'x-news-result__events';
-    events.forEach((event) => {
-      if (!event) return;
-      const item = document.createElement('li');
-      item.className = 'x-news-result__event';
-      const headlineText = (event.headline || '').toString().trim();
-      const url = (event.url || '').toString().trim();
-      const headlineEl = url ? document.createElement('a') : document.createElement('span');
-      headlineEl.className = 'x-news-result__event-headline';
-      headlineEl.textContent = headlineText || 'News update';
-      if (url) {
-        headlineEl.href = url;
-        headlineEl.target = '_blank';
-        headlineEl.rel = 'noopener noreferrer';
-      }
-      item.append(headlineEl);
-
-      const metaRow = document.createElement('div');
-      metaRow.className = 'x-news-result__event-meta';
-      const sourceRaw = (event.source || event.author || '').toString().trim();
-      if (sourceRaw) {
-        const sourceEl = document.createElement('span');
-        sourceEl.className = 'x-news-result__event-source';
-        sourceEl.textContent = sourceRaw;
-        metaRow.append(sourceEl);
-      }
-      const timestampText = formatTimeShort(event.timestamp || event.time || null);
-      if (timestampText && timestampText !== '–') {
-        const timeEl = document.createElement('span');
-        timeEl.className = 'x-news-result__event-time';
-        timeEl.textContent = timestampText;
-        metaRow.append(timeEl);
-      }
-      const statsEl = createXNewsEventStats(event);
-      if (statsEl) {
-        metaRow.append(statsEl);
-      }
-      if (metaRow.children.length > 0) {
-        item.append(metaRow);
-      }
-      list.append(item);
-    });
-    body.append(list);
-  } else {
-    const empty = document.createElement('div');
-    empty.className = 'x-news-result__empty';
-    empty.textContent = 'No posts extracted for this scrape.';
-    body.append(empty);
-  }
-
-  entry.append(timeEl, body);
-  return entry;
-}
-
-function resetXNewsLog(messageKey, fallback) {
-  if (xNewsLogList) {
-    xNewsLogList.innerHTML = '';
-  }
-  clearXNewsTopCoins();
-  if (messageKey) {
-    setXNewsLogEmpty(messageKey, fallback);
-  } else if (xNewsLogEmpty) {
-    xNewsLogEmpty.hidden = true;
-  }
-}
-
-function setXNewsLogState(enabled) {
-  if (!xNewsLogContainer) return;
-  xNewsLogContainer.dataset.state = enabled ? 'active' : 'disabled';
-  if (!enabled) {
-    clearXNewsTopCoins();
-  }
-  const hasEntries = Boolean(xNewsLogList && xNewsLogList.children.length > 0);
-  if (enabled) {
-    if (!hasEntries) {
-      setXNewsLogEmpty('xNews.log.emptyWaiting', 'Waiting for the next scrape…');
-    } else if (xNewsLogEmpty) {
-      xNewsLogEmpty.hidden = true;
-    }
-  } else if (!hasEntries) {
-    resetXNewsLog('xNews.log.emptyDisabled', 'Enable X News to start capturing activity logs.');
-  } else if (xNewsLogEmpty) {
-    xNewsLogEmpty.hidden = true;
-  }
-}
-
-function maybeAppendXNewsLogEntry({ parsed, rawLine, level, ts }) {
-  if (!xNewsLogList) return;
-  const structuredResult = parseXNewsResultPayload(parsed?.message || rawLine || '');
-  if (structuredResult) {
-    if (xNewsLogEmpty) {
-      xNewsLogEmpty.hidden = true;
-    }
-    const entry = createXNewsResultEntry(structuredResult, ts);
-    xNewsLogList.append(entry);
-    registerXNewsEngagementTotals(structuredResult, structuredResult.events);
-    while (xNewsLogList.children.length > X_NEWS_LOG_LIMIT) {
-      xNewsLogList.removeChild(xNewsLogList.firstChild);
-    }
-    xNewsLogList.scrollTop = xNewsLogList.scrollHeight;
-    return;
-  }
-  const loggerName = (parsed?.logger || '').toString();
-  const message = (parsed?.message || parsed?.raw || rawLine || '').toString();
-  const normalizedLogger = loggerName.toLowerCase();
-  const normalizedMessage = message.toLowerCase();
-  const combined = `${normalizedLogger} ${normalizedMessage}`.trim();
-  if (!combined) return;
-  const keywordMatches = [
-    'x news',
-    'x_news',
-    'sentinel x news',
-    'news scraper',
-    'newsscraper',
-    'news fetch',
-    'playwright',
-    'tweet',
-    'twitter',
-  ];
-  const hasKeyword = keywordMatches.some((keyword) => combined.includes(keyword));
-  const matchesLogger = normalizedLogger.includes('news');
-  if (!matchesLogger && !hasKeyword) {
-    return;
-  }
-
-  if (xNewsLogEmpty) {
-    xNewsLogEmpty.hidden = true;
-  }
-
-  const entry = document.createElement('div');
-  const effectiveLevel = level || 'info';
-  entry.className = 'x-news-log__entry';
-  entry.dataset.level = effectiveLevel;
-
-  const timeEl = document.createElement('span');
-  timeEl.className = 'x-news-log__time';
-  timeEl.textContent = ts ? new Date(ts * 1000).toLocaleTimeString() : '—';
-
-  const body = document.createElement('div');
-  body.className = 'x-news-log__body';
-
-  const meta = document.createElement('div');
-  meta.className = 'x-news-log__meta';
-  const levelBadge = document.createElement('span');
-  levelBadge.className = 'x-news-log__level';
-  levelBadge.textContent = effectiveLevel.toUpperCase();
-  meta.append(levelBadge);
-  if (loggerName) {
-    const source = document.createElement('span');
-    source.className = 'x-news-log__source';
-    source.textContent = loggerName;
-    meta.append(source);
-  }
-
-  const text = document.createElement('div');
-  text.className = 'x-news-log__text';
-  text.textContent = message || rawLine || '';
-
-  body.append(meta, text);
-  entry.append(timeEl, body);
-  xNewsLogList.append(entry);
-
-  while (xNewsLogList.children.length > X_NEWS_LOG_LIMIT) {
-    xNewsLogList.removeChild(xNewsLogList.firstChild);
-  }
-
-  xNewsLogList.scrollTop = xNewsLogList.scrollHeight;
-}
-
-function updateXNewsUi() {
-  if (!btnEnableXNews) return;
-  const env = currentConfig?.env || {};
-  const enabled = isTruthy(env.ASTER_X_NEWS_ENABLED);
-  const labelKey = enabled ? 'xNews.disable' : 'xNews.enable';
-  const fallback = enabled ? 'Disable X News' : 'Enable X News';
-  const isProcessing =
-    btnEnableXNews.dataset.state === 'enabling' || btnEnableXNews.dataset.state === 'disabling';
-  if (!isProcessing) {
-    btnEnableXNews.textContent = translate(labelKey, fallback);
-    btnEnableXNews.disabled = false;
-    btnEnableXNews.dataset.state = enabled ? 'enabled' : 'idle';
-  }
-  if (xNewsStatus) {
-    const hintKey = enabled ? 'xNews.hintActive' : 'xNews.hint';
-    const hintFallback = 'X-API support coming soon!';
-    xNewsStatus.innerHTML = translate(hintKey, hintFallback);
-  }
-  setXNewsLogState(enabled);
-}
-
 async function loadConfig() {
   const res = await fetch('/api/config');
   if (!res.ok) throw new Error('Unable to load configuration');
   currentConfig = await res.json();
   renderConfig(currentConfig.env);
   renderCredentials(currentConfig.env);
-  updateXNewsUi();
   syncPaperModeFromEnv(currentConfig.env);
   syncQuickSetupFromEnv(currentConfig.env);
   await syncModeFromEnv(currentConfig.env);
@@ -4089,7 +3462,6 @@ async function saveConfig() {
     currentConfig = await res.json();
     renderCredentials(currentConfig.env);
     syncQuickSetupFromEnv(currentConfig.env);
-    updateXNewsUi();
     btnSaveConfig.textContent = translate('common.saved', 'Saved ✓');
     btnSaveConfig.dataset.state = 'saved';
     setTimeout(() => {
@@ -4106,98 +3478,6 @@ async function saveConfig() {
     }, 2000);
   } finally {
     btnSaveConfig.disabled = false;
-  }
-}
-
-async function enableXNewsIntegration() {
-  if (!btnEnableXNews) return;
-  const env = currentConfig?.env || {};
-  if (isTruthy(env.ASTER_X_NEWS_ENABLED)) {
-    updateXNewsUi();
-    return;
-  }
-  btnEnableXNews.disabled = true;
-  btnEnableXNews.dataset.state = 'enabling';
-  btnEnableXNews.textContent = translate('xNews.enabling', 'Enabling…');
-  try {
-    const payload = { ASTER_X_NEWS_ENABLED: 'true' };
-    if (!env.ASTER_X_AUTH_FILE) {
-      payload.ASTER_X_AUTH_FILE = 'xAuth.json';
-    }
-    const res = await fetch('/api/config', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ env: payload }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const detail = data && typeof data === 'object' ? data.detail || data.message : null;
-      throw new Error(detail || 'Unable to enable X News');
-    }
-    if (data && typeof data === 'object' && data.env) {
-      currentConfig = data;
-    } else {
-      currentConfig = currentConfig || {};
-      currentConfig.env = { ...(currentConfig.env || {}), ...payload };
-    }
-    const updatedEnv = currentConfig?.env || {};
-    setEnvInputValue('ASTER_X_NEWS_ENABLED', updatedEnv.ASTER_X_NEWS_ENABLED ?? 'true');
-    if (updatedEnv.ASTER_X_AUTH_FILE) {
-      setEnvInputValue('ASTER_X_AUTH_FILE', updatedEnv.ASTER_X_AUTH_FILE);
-    }
-    btnEnableXNews.dataset.state = 'idle';
-    btnEnableXNews.disabled = false;
-    updateXNewsUi();
-  } catch (err) {
-    const base = translate('xNews.error', 'Unable to enable X News');
-    const message = err?.message && err.message !== base ? `${base}: ${err.message}` : base;
-    alert(message);
-    btnEnableXNews.disabled = false;
-    btnEnableXNews.dataset.state = 'idle';
-    updateXNewsUi();
-  }
-}
-
-async function disableXNewsIntegration() {
-  if (!btnEnableXNews) return;
-  const env = currentConfig?.env || {};
-  if (!isTruthy(env.ASTER_X_NEWS_ENABLED)) {
-    updateXNewsUi();
-    return;
-  }
-  btnEnableXNews.disabled = true;
-  btnEnableXNews.dataset.state = 'disabling';
-  btnEnableXNews.textContent = translate('xNews.disabling', 'Disabling…');
-  try {
-    const payload = { ASTER_X_NEWS_ENABLED: 'false' };
-    const res = await fetch('/api/config', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ env: payload }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const detail = data && typeof data === 'object' ? data.detail || data.message : null;
-      throw new Error(detail || 'Unable to disable X News');
-    }
-    if (data && typeof data === 'object' && data.env) {
-      currentConfig = data;
-    } else {
-      currentConfig = currentConfig || {};
-      currentConfig.env = { ...(currentConfig.env || {}), ...payload };
-    }
-    const updatedEnv = currentConfig?.env || {};
-    setEnvInputValue('ASTER_X_NEWS_ENABLED', updatedEnv.ASTER_X_NEWS_ENABLED ?? 'false');
-    btnEnableXNews.dataset.state = 'idle';
-    btnEnableXNews.disabled = false;
-    updateXNewsUi();
-  } catch (err) {
-    const base = translate('xNews.errorDisable', 'Unable to disable X News');
-    const message = err?.message && err.message !== base ? `${base}: ${err.message}` : base;
-    alert(message);
-    btnEnableXNews.disabled = false;
-    btnEnableXNews.dataset.state = 'enabled';
-    updateXNewsUi();
   }
 }
 
@@ -10310,15 +9590,6 @@ async function stopBot() {
 }
 
 btnSaveConfig.addEventListener('click', saveConfig);
-btnEnableXNews?.addEventListener('click', () => {
-  if (btnEnableXNews.disabled) return;
-  const env = currentConfig?.env || {};
-  if (isTruthy(env.ASTER_X_NEWS_ENABLED)) {
-    disableXNewsIntegration();
-  } else {
-    enableXNewsIntegration();
-  }
-});
 btnSaveCredentials?.addEventListener('click', saveCredentials);
 btnStart.addEventListener('click', startBot);
 btnStop.addEventListener('click', stopBot);
