@@ -2015,7 +2015,12 @@ class AITradeAdvisor:
         return str(value)
 
     def _structured_request(
-        self, kind: str, payload: Dict[str, Any]
+        self,
+        kind: str,
+        payload: Dict[str, Any],
+        callback: Optional[Callable[[Dict[str, Any], Optional[Dict[str, Any]]], None]] = None,
+        *,
+        throttle_key: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         if not self.enabled:
             return None
@@ -2079,37 +2084,137 @@ class AITradeAdvisor:
                 self._note_tuning_request(request_id, payload_with_id)
             except Exception:
                 pass
-        response = self._chat(
-            system_prompt,
-            user_prompt,
-            kind=kind,
-            budget_estimate=estimate,
-            request_meta=meta or None,
-        )
-        if not response:
+        if callback is None:
+            response = self._chat(
+                system_prompt,
+                user_prompt,
+                kind=kind,
+                budget_estimate=estimate,
+                request_meta=meta or None,
+            )
+            if not response:
+                if kind == "playbook":
+                    self._note_playbook_failure(
+                        request_id,
+                        "no_response",
+                        playbook_snapshot_meta,
+                    )
+                return None
+            parsed = self._parse_structured(response)
+            if isinstance(parsed, dict):
+                parsed.setdefault("request_id", request_id)
+                if kind == "tuning":
+                    try:
+                        self._note_tuning_response(parsed)
+                    except Exception:
+                        pass
+                return parsed
             if kind == "playbook":
                 self._note_playbook_failure(
                     request_id,
-                    "no_response",
+                    "invalid_response",
                     playbook_snapshot_meta,
                 )
             return None
-        parsed = self._parse_structured(response)
-        if isinstance(parsed, dict):
-            parsed.setdefault("request_id", request_id)
-            if kind == "tuning":
-                try:
-                    self._note_tuning_response(parsed)
-                except Exception:
-                    pass
-            return parsed
-        if kind == "playbook":
-            self._note_playbook_failure(
-                request_id,
-                "invalid_response",
-                playbook_snapshot_meta,
-            )
-        return None
+
+        meta.setdefault("kind", kind)
+        meta.setdefault("user_payload", payload_with_id)
+        meta.setdefault("user_prompt", user_prompt)
+        request_context: Optional[Dict[str, Any]]
+        if kind == "tuning":
+            request_context = {
+                "anomaly": payload.get("anomaly") if isinstance(payload, dict) else None,
+                "payload": payload_with_id,
+            }
+        else:
+            request_context = {
+                "snapshot": payload if isinstance(payload, dict) else None,
+                "snapshot_meta": playbook_snapshot_meta,
+            }
+        return self._queue_structured_request(
+            kind=kind,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            payload_with_id=payload_with_id,
+            request_id=request_id,
+            estimate=estimate,
+            meta=meta,
+            callback=callback,
+            throttle_key=throttle_key,
+            request_context=request_context,
+        )
+
+    def _queue_structured_request(
+        self,
+        *,
+        kind: str,
+        system_prompt: str,
+        user_prompt: str,
+        payload_with_id: Dict[str, Any],
+        request_id: str,
+        estimate: float,
+        meta: Dict[str, Any],
+        callback: Callable[[Dict[str, Any], Optional[Dict[str, Any]]], None],
+        throttle_key: Optional[str],
+        request_context: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        if not self.enabled or not self._client:
+            return None
+        if not throttle_key:
+            throttle_key = f"{kind}::{request_id}"
+        now = time.time()
+        if not self._has_pending_capacity(throttle_key):
+            if kind == "playbook":
+                self._note_playbook_failure(
+                    request_id,
+                    "queue_full",
+                    meta.get("snapshot_meta") if isinstance(meta, dict) else None,
+                )
+            return None
+        fallback = {"request_id": request_id, "kind": kind}
+        pending_info: Dict[str, Any] = {
+            "future": None,
+            "fallback": fallback,
+            "system_prompt": system_prompt,
+            "user_prompt": user_prompt,
+            "user_payload": payload_with_id,
+            "kind": kind,
+            "estimate": estimate,
+            "queued_at": now,
+            "ready_after": now,
+            "note": "Queued for structured request",
+            "notified": False,
+            "request_meta": meta,
+            "callback": callback,
+            "request_context": request_context,
+            "request_id": request_id,
+            "min_interval": 0.0,
+            "global_cooldown": 0.0,
+        }
+        self._pending_requests[throttle_key] = pending_info
+        self._register_pending_key(throttle_key)
+        status, payload = self._process_pending_request(
+            throttle_key,
+            fallback,
+            now,
+            min_interval=0.0,
+            global_cooldown=0.0,
+        )
+        if status == "response":
+            bundle = payload or {}
+            response_text = bundle.get("response") if isinstance(bundle, dict) else None
+            info = bundle.get("info") if isinstance(bundle, dict) else pending_info
+            self._finalize_structured(kind, fallback, info, response_text, now)
+            return None
+        if status == "fallback":
+            if kind == "playbook":
+                self._note_playbook_failure(
+                    request_id,
+                    "disabled",
+                    meta.get("snapshot_meta") if isinstance(meta, dict) else None,
+                )
+            return None
+        return {"_queued": True, "request_id": request_id}
 
     def inject_context_features(self, symbol: str, ctx: Dict[str, Any]) -> None:
         if not isinstance(ctx, dict):
@@ -2931,6 +3036,106 @@ class AITradeAdvisor:
         )
         return plan_ready
 
+    def _finalize_structured(
+        self,
+        kind: str,
+        fallback: Dict[str, Any],
+        info: Optional[Dict[str, Any]],
+        response_text: Optional[str],
+        now: Optional[float] = None,
+    ) -> None:
+        meta = info or {}
+        request_id: Optional[str] = None
+        if isinstance(meta, dict):
+            raw_id = meta.get("request_id")
+            if isinstance(raw_id, str):
+                request_id = raw_id.strip() or None
+            elif raw_id is not None:
+                request_id = str(raw_id)
+        if not request_id and isinstance(fallback, dict):
+            fallback_id = fallback.get("request_id")
+            if isinstance(fallback_id, str):
+                request_id = fallback_id.strip() or None
+            elif fallback_id is not None:
+                request_id = str(fallback_id)
+        callback = meta.get("callback") if isinstance(meta, dict) else None
+        request_context = meta.get("request_context") if isinstance(meta, dict) else None
+        snapshot_meta = None
+        if isinstance(request_context, dict):
+            snapshot_meta = request_context.get("snapshot_meta")
+        if not response_text:
+            if kind == "playbook":
+                self._note_playbook_failure(
+                    request_id or "",
+                    "no_response",
+                    snapshot_meta,
+                )
+            if kind == "tuning" and getattr(self, "parameter_tuner", None):
+                clear_fn = getattr(self.parameter_tuner, "_clear_pending_request", None)
+                if callable(clear_fn):
+                    try:
+                        clear_fn()
+                    except Exception:
+                        pass
+            if kind == "playbook" and getattr(self, "playbook_manager", None):
+                clear_fn = getattr(self.playbook_manager, "_clear_pending_request", None)
+                if callable(clear_fn):
+                    try:
+                        clear_fn()
+                    except Exception:
+                        pass
+            return
+        parsed = self._parse_structured(response_text)
+        if not isinstance(parsed, dict):
+            if kind == "playbook":
+                self._note_playbook_failure(
+                    request_id or "",
+                    "invalid_response",
+                    snapshot_meta,
+                )
+            if kind == "tuning" and getattr(self, "parameter_tuner", None):
+                clear_fn = getattr(self.parameter_tuner, "_clear_pending_request", None)
+                if callable(clear_fn):
+                    try:
+                        clear_fn()
+                    except Exception:
+                        pass
+            if kind == "playbook" and getattr(self, "playbook_manager", None):
+                clear_fn = getattr(self.playbook_manager, "_clear_pending_request", None)
+                if callable(clear_fn):
+                    try:
+                        clear_fn()
+                    except Exception:
+                        pass
+            return
+        if request_id:
+            parsed.setdefault("request_id", request_id)
+        if kind == "tuning":
+            try:
+                self._note_tuning_response(parsed)
+            except Exception:
+                pass
+        if callable(callback):
+            try:
+                callback(parsed, request_context if isinstance(request_context, dict) else None)
+                return
+            except Exception as exc:
+                log.debug(f"structured callback failed ({kind}): {exc}")
+        if kind == "tuning" and getattr(self, "parameter_tuner", None):
+            handler = getattr(self.parameter_tuner, "_apply_ai_suggestions", None)
+            if callable(handler):
+                try:
+                    handler(parsed, request_context if isinstance(request_context, dict) else None)
+                except Exception:
+                    pass
+        if kind == "playbook" and getattr(self, "playbook_manager", None):
+            handler = getattr(self.playbook_manager, "_apply_playbook_update", None)
+            if callable(handler):
+                try:
+                    handler(parsed, request_context if isinstance(request_context, dict) else None)
+                except Exception:
+                    pass
+
     def flush_pending(self) -> List[Tuple[str, Dict[str, Any]]]:
         ready: List[Tuple[str, Dict[str, Any]]] = []
         if not self._pending_requests:
@@ -2960,9 +3165,13 @@ class AITradeAdvisor:
             bundle = payload or {}
             response_text = bundle.get("response") if isinstance(bundle, dict) else None
             meta = bundle.get("info") if isinstance(bundle, dict) else info
-            plan_ready = self._finalize_response(throttle_key, fallback, meta, response_text, now)
-            if isinstance(plan_ready, dict):
-                ready.append((throttle_key, plan_ready))
+            kind = str((meta or {}).get("kind", "plan"))
+            if kind in {"plan", "trend"}:
+                plan_ready = self._finalize_response(throttle_key, fallback, meta, response_text, now)
+                if isinstance(plan_ready, dict):
+                    ready.append((throttle_key, plan_ready))
+                continue
+            self._finalize_structured(kind, fallback, meta, response_text, now)
         return ready
 
     def _normalize_symbol(self, symbol: Any) -> str:
