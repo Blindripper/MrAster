@@ -1380,6 +1380,11 @@ button:focus-visible {
   min-height: 0;
 }
 
+.layout > .skip-ranking,
+.layout > .chat-window {
+  grid-column: span 12;
+}
+
 @media (min-width: 901px) {
   body:not(.ai-mode):not(.pro-mode) .layout {
     grid-auto-rows: minmax(420px, auto);
@@ -1407,7 +1412,7 @@ button:focus-visible {
   }
 
   body.ai-mode .layout > .chat-window {
-    grid-column: span 8;
+    grid-column: span 12;
   }
 
   body.ai-mode .layout > .ai-config {
