@@ -1924,6 +1924,8 @@ const i18nRegistry = Array.from(i18nElements).map((element) => {
 
 let currentConfig = {};
 let reconnectTimer = null;
+let logSocket = null;
+let logReconnectAttempts = 0;
 let pnlChart = null;
 let pnlChartExpanded = null;
 let proMode = false;
@@ -3377,6 +3379,188 @@ const FRIENDLY_LEVEL_LABELS = {
   system: 'System',
   debug: 'Detail',
 };
+
+function scheduleTradesRefresh(delay = 500) {
+  if (tradesRefreshTimer) {
+    clearTimeout(tradesRefreshTimer);
+  }
+  tradesRefreshTimer = setTimeout(() => {
+    tradesRefreshTimer = null;
+    loadTrades().catch(() => {});
+  }, delay);
+}
+
+function deriveLogReasonFromMessage(message) {
+  if (!message) return null;
+  const text = message.toString();
+  const directMatch = text.match(/reason(?:=|:|\s)\s*([a-z0-9_]+)/i);
+  if (directMatch && directMatch[1]) {
+    return directMatch[1].toLowerCase();
+  }
+  const tokens = text.toLowerCase();
+  for (const key of Object.keys(LOG_REASON_COLOR_MAP)) {
+    const needle = key.replace(/_/g, ' ');
+    if (tokens.includes(key) || tokens.includes(needle)) {
+      return key;
+    }
+  }
+  return null;
+}
+
+function extractSymbolFromLog(message) {
+  if (!message) return '';
+  const text = message.toString();
+  const symbolMatch = text.match(/symbol(?:=|:)?\s*([A-Z0-9_\-]{3,})/i);
+  if (symbolMatch && symbolMatch[1]) {
+    return symbolMatch[1].toUpperCase();
+  }
+  const pairMatch = text.match(/\b([A-Z]{3,}USDT)\b/);
+  if (pairMatch && pairMatch[1]) {
+    return pairMatch[1].toUpperCase();
+  }
+  return '';
+}
+
+function humanizeLogLine(line, level) {
+  const parsed = parseStructuredLog(line, level);
+  const message = parsed.message || line || '';
+  const severity = (parsed.level || level || 'info').toString().toLowerCase();
+  const normalizedSeverity = ['success', 'warning', 'error', 'system', 'debug'].includes(severity)
+    ? severity
+    : severity === 'warn'
+      ? 'warning'
+      : severity === 'err'
+        ? 'error'
+        : 'info';
+  const reason = deriveLogReasonFromMessage(message);
+  const symbol = extractSymbolFromLog(message);
+
+  let category = null;
+  const logger = (parsed.logger || '').toString().toLowerCase();
+  if (logger && LOG_LABEL_CATEGORY_MAP[logger]) {
+    category = LOG_LABEL_CATEGORY_MAP[logger];
+  } else {
+    const lowerMessage = message.toString().toLowerCase();
+    for (const [label, mappedCategory] of Object.entries(LOG_LABEL_CATEGORY_MAP)) {
+      if (lowerMessage.includes(label)) {
+        category = mappedCategory;
+        break;
+      }
+    }
+    if (!category && reason && LOG_REASON_CATEGORY_MAP[reason]) {
+      category = LOG_REASON_CATEGORY_MAP[reason];
+    }
+  }
+
+  const refreshTrades = /\b(exit|trade|filled|order|position|pnl)\b/i.test(message);
+
+  return {
+    raw: line,
+    parsed,
+    severity: normalizedSeverity,
+    label: FRIENDLY_LEVEL_LABELS[normalizedSeverity] || normalizedSeverity.toUpperCase(),
+    text: message,
+    reason,
+    symbol,
+    category,
+    relevant: true,
+    refreshTrades,
+  };
+}
+
+function getLogClassList(friendly) {
+  if (!friendly) return [];
+  const classes = [];
+  if (friendly.reason) {
+    classes.push(`log-reason-${friendly.reason}`);
+  }
+  if (friendly.category) {
+    classes.push(`log-category-${friendly.category}`);
+  }
+  return classes;
+}
+
+function applyLogReasonStyles(element, reason) {
+  if (!element || !reason) return;
+  const palette = LOG_REASON_COLOR_MAP[reason];
+  if (!palette) return;
+  element.style.background = `linear-gradient(135deg, ${palette.base}, ${palette.accent})`;
+  element.style.borderColor = palette.accent;
+  const label = element.querySelector('.log-level');
+  if (label) {
+    label.style.backgroundColor = palette.accent;
+    label.style.color = palette.text;
+  }
+}
+
+function appendFullLog({ line, level, ts }) {
+  if (!logStream) return null;
+  const friendly = humanizeLogLine(line, level);
+  const severity = (friendly?.severity || level || 'info').toString().toLowerCase();
+  const el = document.createElement('div');
+  el.className = `log-line ${severity}`.trim();
+  const classList = getLogClassList(friendly);
+  if (classList.length > 0) {
+    el.classList.add(...classList);
+  }
+  applyLogReasonStyles(el, friendly?.reason);
+
+  const meta = document.createElement('div');
+  meta.className = 'log-meta';
+  const timestampSeconds = Number.isFinite(ts)
+    ? Number(ts)
+    : friendly?.parsed?.timestamp
+      ? Date.parse(friendly.parsed.timestamp) / 1000
+      : undefined;
+  if (Number.isFinite(timestampSeconds)) {
+    const time = document.createElement('span');
+    time.className = 'log-time';
+    time.textContent = new Date(timestampSeconds * 1000).toLocaleTimeString();
+    meta.append(time);
+  }
+
+  const label = document.createElement('span');
+  label.className = 'log-level';
+  label.textContent = friendly?.label || FRIENDLY_LEVEL_LABELS[severity] || severity.toUpperCase();
+  meta.append(label);
+
+  if (friendly?.symbol) {
+    const symbolEl = document.createElement('span');
+    symbolEl.className = 'log-symbol';
+    symbolEl.textContent = friendly.symbol;
+    meta.append(symbolEl);
+  }
+
+  el.append(meta);
+
+  const message = document.createElement('div');
+  message.className = 'log-message';
+  message.textContent = friendly?.text || line || '';
+  el.append(message);
+
+  logStream.append(el);
+  while (logStream.children.length > 400) {
+    logStream.removeChild(logStream.firstChild);
+  }
+  if (autoScrollEnabled) {
+    logStream.scrollTop = logStream.scrollHeight;
+  }
+
+  return friendly;
+}
+
+function handleLogPayload(payload) {
+  if (!payload || typeof payload !== 'object') return;
+  const friendly = appendFullLog(payload);
+  appendCompactLog(payload);
+  if (friendly) {
+    liveLogActivityEntries.push({ ...friendly });
+    const limit = Math.max(20, LIVE_LOG_ACTIVITY_LIMIT);
+    while (liveLogActivityEntries.length > limit) {
+      liveLogActivityEntries.shift();
+    }
+  }
+}
 
 function isTruthy(value) {
   if (typeof value === 'boolean') return value;
@@ -7348,6 +7532,574 @@ async function handlePostToX(event) {
   }
 }
 
+function normaliseTradeRecord(rawTrade) {
+  if (!rawTrade || typeof rawTrade !== 'object') {
+    return {};
+  }
+  return { ...rawTrade };
+}
+
+function parseNumeric(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === 'string') {
+    const cleaned = value.trim();
+    if (!cleaned) return null;
+    const numeric = Number(cleaned.replace(/[^0-9+-.eE]/g, ''));
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  return null;
+}
+
+function pickTradeField(trade, keys) {
+  if (!trade || typeof trade !== 'object') {
+    return undefined;
+  }
+  for (const key of keys) {
+    if (key in trade) {
+      const value = trade[key];
+      if (value !== undefined && value !== null && value !== '') {
+        return value;
+      }
+    }
+  }
+  return undefined;
+}
+
+function getTradeTimestamp(trade) {
+  const candidates = [
+    pickTradeField(trade, [
+      'closed_at_iso',
+      'closedAtIso',
+      'closed_at_ts',
+      'closed_ts',
+      'closed_time',
+      'closedAt',
+      'closed',
+      'exit_at',
+      'exitAt',
+    ]),
+    pickTradeField(trade, [
+      'opened_at_iso',
+      'openedAtIso',
+      'opened_at_ts',
+      'opened_ts',
+      'opened_at',
+      'openedAt',
+      'opened',
+      'entry_at',
+    ]),
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    if (typeof candidate === 'number') {
+      const value = candidate > 1e12 ? candidate : candidate * 1000;
+      if (Number.isFinite(value)) {
+        return value;
+      }
+    }
+    const parsed = Date.parse(candidate);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  const numeric = parseNumeric(pickTradeField(trade, ['closed_at', 'closedAt']));
+  if (numeric !== null) {
+    return numeric > 1e12 ? numeric : numeric * 1000;
+  }
+  const openedNumeric = parseNumeric(pickTradeField(trade, ['opened_at', 'openedAt']));
+  if (openedNumeric !== null) {
+    return openedNumeric > 1e12 ? openedNumeric : openedNumeric * 1000;
+  }
+  return null;
+}
+
+function extractTradeSide(trade) {
+  const raw = pickTradeField(trade, ['side', 'position_side', 'direction']);
+  if (!raw) return '';
+  const normalized = raw.toString().trim().toLowerCase();
+  if (!normalized) return '';
+  if (['buy', 'long'].includes(normalized)) return 'long';
+  if (['sell', 'short'].includes(normalized)) return 'short';
+  return normalized;
+}
+
+function extractTradePnl(trade) {
+  const candidates = ['pnl', 'realized_pnl', 'realized', 'pnl_usdt', 'net_pnl', 'pnl_value', 'pnl_usd'];
+  const value = pickTradeField(trade, candidates);
+  const numeric = parseNumeric(value);
+  return numeric !== null ? numeric : 0;
+}
+
+function extractTradeRMultiple(trade) {
+  const candidates = ['pnl_r', 'r_multiple', 'r', 'r_mult'];
+  const value = pickTradeField(trade, candidates);
+  const numeric = parseNumeric(value);
+  return numeric !== null ? numeric : null;
+}
+
+function extractTradeQuantity(trade) {
+  const candidates = ['qty', 'quantity', 'size', 'position_size', 'base_qty'];
+  const value = pickTradeField(trade, candidates);
+  const numeric = parseNumeric(value);
+  return numeric !== null ? numeric : null;
+}
+
+function extractTradePrice(trade, keys) {
+  const value = pickTradeField(trade, keys);
+  const numeric = parseNumeric(value);
+  if (numeric === null) return null;
+  return numeric;
+}
+
+function formatPrice(value) {
+  if (!Number.isFinite(value)) return '—';
+  const digits = value >= 100 ? 2 : value >= 10 ? 3 : value >= 1 ? 4 : 6;
+  return formatNumber(value, digits);
+}
+
+function formatQuantity(value) {
+  if (!Number.isFinite(value)) return '—';
+  if (Math.abs(value) >= 1) {
+    return formatNumber(value, 2);
+  }
+  return formatNumber(value, 4);
+}
+
+function determinePnlTone(pnl) {
+  if (!Number.isFinite(pnl) || pnl === 0) return 'neutral';
+  return pnl > 0 ? 'profit' : 'loss';
+}
+
+function buildTradeCard(trade) {
+  const normalized = normaliseTradeRecord(trade);
+  const symbol = (pickTradeField(normalized, ['symbol', 'ticker', 'pair']) || '—').toString().toUpperCase();
+  const side = extractTradeSide(normalized);
+  const sideLabel = side ? formatSideLabel(side) : '—';
+  const pnl = extractTradePnl(normalized);
+  const pnlTone = determinePnlTone(pnl);
+  const pnlDisplay = Number.isFinite(pnl) ? `${pnl > 0 ? '+' : ''}${formatNumber(pnl, 2)} USDT` : '—';
+  const rMultiple = extractTradeRMultiple(normalized);
+  const rDisplay = Number.isFinite(rMultiple) ? `${rMultiple > 0 ? '+' : ''}${formatNumber(rMultiple, 2)}R` : null;
+  const quantity = extractTradeQuantity(normalized);
+  const entryPrice = extractTradePrice(normalized, ['entry', 'avg_entry', 'average_entry', 'entry_price']);
+  const exitPrice = extractTradePrice(normalized, ['exit', 'exit_price', 'close', 'close_price', 'average_exit']);
+  const bucket = pickTradeField(normalized, ['bucket', 'mode', 'strategy']) || '';
+  const timestamp = getTradeTimestamp(normalized);
+  const timestampLabel = timestamp ? formatTimestamp(new Date(timestamp).toISOString()) : '—';
+
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'trade-card';
+  if (side) {
+    card.dataset.side = side.includes('short') ? 'short' : side.includes('long') ? 'long' : side;
+  }
+  if (pnlTone && pnlTone !== 'neutral') {
+    card.dataset.pnl = pnlTone;
+  }
+
+  const top = document.createElement('div');
+  top.className = 'trade-card-top';
+
+  const main = document.createElement('div');
+  main.className = 'trade-card-main';
+
+  const symbolEl = document.createElement('div');
+  symbolEl.className = 'trade-card-symbol';
+  symbolEl.textContent = symbol || '—';
+  main.append(symbolEl);
+
+  if (sideLabel && sideLabel !== '—') {
+    const sideEl = document.createElement('span');
+    sideEl.className = 'trade-card-side';
+    sideEl.textContent = sideLabel;
+    main.append(sideEl);
+  }
+
+  top.append(main);
+
+  const pnlWrapper = document.createElement('div');
+  pnlWrapper.className = 'trade-card-actions';
+  const pnlEl = document.createElement('span');
+  pnlEl.className = 'trade-card-pnl';
+  if (pnlTone === 'profit') pnlEl.classList.add('profit');
+  if (pnlTone === 'loss') pnlEl.classList.add('loss');
+  pnlEl.textContent = pnlDisplay;
+  pnlWrapper.append(pnlEl);
+
+  if (rDisplay) {
+    const rEl = document.createElement('span');
+    rEl.className = 'trade-card-r';
+    if (rMultiple > 0) rEl.classList.add('profit');
+    if (rMultiple < 0) rEl.classList.add('loss');
+    rEl.textContent = rDisplay;
+    pnlWrapper.append(rEl);
+  }
+
+  top.append(pnlWrapper);
+
+  const bottom = document.createElement('div');
+  bottom.className = 'trade-card-bottom';
+
+  const info = document.createElement('div');
+  info.className = 'trade-card-info';
+
+  if (timestampLabel && timestampLabel !== '–') {
+    const timeEl = document.createElement('span');
+    timeEl.textContent = timestampLabel;
+    timeEl.dataset.label = 'Timestamp';
+    info.append(timeEl);
+  }
+
+  if (bucket) {
+    const bucketEl = document.createElement('span');
+    bucketEl.textContent = bucket;
+    bucketEl.dataset.label = 'Bucket';
+    info.append(bucketEl);
+  }
+
+  if (Number.isFinite(quantity)) {
+    const qtyEl = document.createElement('span');
+    qtyEl.textContent = `${formatQuantity(quantity)} qty`;
+    qtyEl.dataset.label = 'Quantity';
+    info.append(qtyEl);
+  }
+
+  if (Number.isFinite(entryPrice) || Number.isFinite(exitPrice)) {
+    const priceEl = document.createElement('span');
+    const parts = [];
+    if (Number.isFinite(entryPrice)) {
+      parts.push(`E ${formatPrice(entryPrice)}`);
+    }
+    if (Number.isFinite(exitPrice)) {
+      parts.push(`X ${formatPrice(exitPrice)}`);
+    }
+    priceEl.textContent = parts.join(' · ');
+    priceEl.dataset.label = 'Prices';
+    info.append(priceEl);
+  }
+
+  if (info.children.length > 0) {
+    bottom.append(info);
+  }
+
+  const hintWrapper = document.createElement('div');
+  hintWrapper.className = 'trade-card-actions';
+  const hint = document.createElement('span');
+  hint.className = 'trade-card-hint';
+  hint.textContent = translate('trades.viewDetails', 'View details');
+  hintWrapper.append(hint);
+  bottom.append(hintWrapper);
+
+  card.append(top, bottom);
+
+  const accessibleParts = [symbol, sideLabel !== '—' ? sideLabel : null, pnlDisplay].filter(Boolean);
+  card.setAttribute('aria-label', accessibleParts.length ? accessibleParts.join(' · ') : 'View trade details');
+
+  card.addEventListener('click', () => openTradeModal(normalized, card));
+
+  return card;
+}
+
+function buildTradeMetric(label, value, { tone = 'neutral' } = {}) {
+  const metric = document.createElement('div');
+  metric.className = `trade-metric ${tone}`.trim();
+  const labelEl = document.createElement('span');
+  labelEl.className = 'metric-label';
+  labelEl.textContent = label;
+  const valueEl = document.createElement('span');
+  valueEl.className = 'metric-value';
+  valueEl.textContent = value;
+  metric.append(labelEl, valueEl);
+  return metric;
+}
+
+function buildTradeDetail(label, value, { tone = 'neutral', monospace = false } = {}) {
+  const detail = document.createElement('div');
+  detail.className = 'trade-detail';
+  if (tone === 'profit') detail.classList.add('profit');
+  if (tone === 'loss') detail.classList.add('loss');
+  if (monospace) detail.classList.add('monospace');
+  const labelEl = document.createElement('div');
+  labelEl.className = 'trade-detail-label';
+  labelEl.textContent = label;
+  const valueEl = document.createElement('div');
+  valueEl.className = 'trade-detail-value';
+  valueEl.textContent = value;
+  detail.append(labelEl, valueEl);
+  return detail;
+}
+
+function buildTradeModalContent(trade) {
+  const normalized = normaliseTradeRecord(trade);
+  const container = document.createElement('div');
+  container.className = 'trade-modal-content';
+
+  const pnl = extractTradePnl(normalized);
+  const pnlTone = determinePnlTone(pnl);
+  const rMultiple = extractTradeRMultiple(normalized);
+  const qty = extractTradeQuantity(normalized);
+  const entryPrice = extractTradePrice(normalized, ['entry', 'avg_entry', 'average_entry', 'entry_price']);
+  const exitPrice = extractTradePrice(normalized, ['exit', 'exit_price', 'close', 'close_price', 'average_exit']);
+  const bucket = pickTradeField(normalized, ['bucket', 'mode', 'strategy']);
+  const fees = parseNumeric(pickTradeField(normalized, ['fees', 'fees_total', 'commission', 'total_fees']));
+  const grossPnl = parseNumeric(pickTradeField(normalized, ['pnl_gross', 'gross_pnl']));
+
+  const metrics = document.createElement('div');
+  metrics.className = 'trade-metric-grid';
+  metrics.append(
+    buildTradeMetric('Realized PNL', Number.isFinite(pnl) ? `${pnl > 0 ? '+' : ''}${formatNumber(pnl, 2)} USDT` : '—', {
+      tone: pnlTone,
+    })
+  );
+  metrics.append(
+    buildTradeMetric(
+      'R multiple',
+      Number.isFinite(rMultiple) ? `${rMultiple > 0 ? '+' : ''}${formatNumber(rMultiple, 2)}R` : '—',
+      { tone: Number.isFinite(rMultiple) ? determinePnlTone(rMultiple) : 'neutral' }
+    )
+  );
+  metrics.append(
+    buildTradeMetric('Quantity', Number.isFinite(qty) ? formatQuantity(qty) : '—')
+  );
+  metrics.append(
+    buildTradeMetric('Bucket', bucket || '—')
+  );
+  container.append(metrics);
+
+  const detailGroup = document.createElement('div');
+  detailGroup.className = 'trade-detail-group';
+
+  detailGroup.append(buildTradeDetail('Entry price', Number.isFinite(entryPrice) ? formatPrice(entryPrice) : '—'));
+  detailGroup.append(buildTradeDetail('Exit price', Number.isFinite(exitPrice) ? formatPrice(exitPrice) : '—'));
+
+  const openedTs = getTradeTimestamp({ ...normalized, closed_at: undefined, closed_at_iso: undefined });
+  const closedTs = getTradeTimestamp(normalized);
+  const openedLabel = openedTs ? formatTimestamp(new Date(openedTs).toISOString()) : '—';
+  const closedLabel = closedTs ? formatTimestamp(new Date(closedTs).toISOString()) : '—';
+  detailGroup.append(buildTradeDetail('Opened at', openedLabel));
+  detailGroup.append(buildTradeDetail('Closed at', closedLabel));
+
+  if (openedTs && closedTs && Number.isFinite(closedTs - openedTs)) {
+    const durationSeconds = Math.max(0, Math.round((closedTs - openedTs) / 1000));
+    detailGroup.append(buildTradeDetail('Duration', formatDuration(durationSeconds)));
+  }
+
+  if (Number.isFinite(grossPnl)) {
+    detailGroup.append(
+      buildTradeDetail('Gross PNL', `${grossPnl > 0 ? '+' : ''}${formatNumber(grossPnl, 2)} USDT`, {
+        tone: determinePnlTone(grossPnl),
+      })
+    );
+  }
+
+  if (Number.isFinite(fees)) {
+    detailGroup.append(buildTradeDetail('Fees', `${fees > 0 ? '-' : ''}${formatNumber(Math.abs(fees), 2)} USDT`));
+  }
+
+  container.append(detailGroup);
+
+  const aiMeta = normalized.ai && typeof normalized.ai === 'object' ? normalized.ai : null;
+  if (aiMeta) {
+    const aiSection = document.createElement('section');
+    aiSection.className = 'trade-ai-section';
+    const header = document.createElement('div');
+    header.className = 'trade-ai-header';
+    const heading = document.createElement('h4');
+    heading.textContent = translate('ai.requests.title', 'AI decisions');
+    header.append(heading);
+    aiSection.append(header);
+
+    const notes = [];
+    ['decision_note', 'risk_note', 'explanation'].forEach((key) => {
+      const value = aiMeta[key];
+      if (typeof value === 'string') {
+        const cleaned = value.trim();
+        if (cleaned) {
+          notes.push(cleaned);
+        }
+      }
+    });
+    if (Array.isArray(aiMeta.notes)) {
+      aiMeta.notes.forEach((note) => {
+        if (typeof note === 'string') {
+          const cleaned = note.trim();
+          if (cleaned && !notes.includes(cleaned)) {
+            notes.push(cleaned);
+          }
+        }
+      });
+    }
+
+    if (notes.length > 0) {
+      const noteList = document.createElement('ul');
+      noteList.className = 'trade-ai-plan';
+      notes.slice(0, 8).forEach((note) => {
+        const li = document.createElement('li');
+        li.textContent = note;
+        noteList.append(li);
+      });
+      aiSection.append(noteList);
+    } else {
+      const empty = document.createElement('p');
+      empty.className = 'trade-ai-explanation';
+      empty.textContent = translate('trades.modal.noMetadata', 'No additional data available.');
+      aiSection.append(empty);
+    }
+
+    container.append(aiSection);
+  }
+
+  return container;
+}
+
+function openTradeModal(trade, returnTarget) {
+  if (!tradeModal || !tradeModalBody) return;
+  const normalized = normaliseTradeRecord(trade);
+  const symbol = (pickTradeField(normalized, ['symbol', 'ticker', 'pair']) || '—').toString().toUpperCase();
+  const sideLabel = formatSideLabel(extractTradeSide(normalized));
+  const pnl = extractTradePnl(normalized);
+  const pnlTone = determinePnlTone(pnl);
+  const timestamp = getTradeTimestamp(normalized);
+  const subtitleParts = [];
+  if (timestamp) {
+    const label = formatTimestamp(new Date(timestamp).toISOString());
+    if (label && label !== '–') {
+      subtitleParts.push(label);
+    }
+  }
+  if (Number.isFinite(pnl)) {
+    subtitleParts.push(`${pnl > 0 ? '+' : ''}${formatNumber(pnl, 2)} USDT`);
+  }
+  if (Number.isFinite(extractTradeRMultiple(normalized))) {
+    const r = extractTradeRMultiple(normalized);
+    subtitleParts.push(`${r > 0 ? '+' : ''}${formatNumber(r, 2)}R`);
+  }
+
+  const active =
+    returnTarget instanceof HTMLElement
+      ? returnTarget
+      : document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+  tradeModalReturnTarget = active && active !== document.body ? active : null;
+
+  if (tradeModalHideTimer) {
+    clearTimeout(tradeModalHideTimer);
+    tradeModalHideTimer = null;
+  }
+  if (tradeModalFinalizeHandler) {
+    tradeModal.removeEventListener('transitionend', tradeModalFinalizeHandler);
+    tradeModalFinalizeHandler = null;
+  }
+
+  if (tradeModalTitle) {
+    const parts = [symbol];
+    if (sideLabel && sideLabel !== '—') {
+      parts.push(sideLabel);
+    }
+    tradeModalTitle.textContent = parts.filter(Boolean).join(' · ') || translate('modals.trade.title', 'Trade details');
+  }
+  if (tradeModalSubtitle) {
+    tradeModalSubtitle.textContent = subtitleParts.filter(Boolean).join(' · ') ||
+      translate('trades.modal.noMetadata', 'No additional data available.');
+  }
+
+  tradeModalBody.innerHTML = '';
+  tradeModalBody.append(buildTradeModalContent(normalized));
+  tradeModalBody.scrollTop = 0;
+
+  tradeModal.removeAttribute('hidden');
+  tradeModal.removeAttribute('aria-hidden');
+  requestAnimationFrame(() => {
+    tradeModal.classList.add('is-active');
+  });
+  document.body.classList.add('modal-open');
+
+  document.addEventListener('keydown', handleTradeModalKeydown);
+  if (tradeModalClose) {
+    setTimeout(() => tradeModalClose.focus(), 120);
+  }
+}
+
+function closeTradeModal() {
+  if (!tradeModal) return;
+
+  if (tradeModalHideTimer) {
+    clearTimeout(tradeModalHideTimer);
+    tradeModalHideTimer = null;
+  }
+  if (tradeModalFinalizeHandler) {
+    tradeModal.removeEventListener('transitionend', tradeModalFinalizeHandler);
+    tradeModalFinalizeHandler = null;
+  }
+  if (tradeModal.hasAttribute('hidden')) {
+    return;
+  }
+
+  tradeModal.classList.remove('is-active');
+  tradeModal.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('modal-open');
+
+  const finalize = () => {
+    if (tradeModalHideTimer) {
+      clearTimeout(tradeModalHideTimer);
+      tradeModalHideTimer = null;
+    }
+    if (!tradeModal.hasAttribute('hidden')) {
+      tradeModal.setAttribute('hidden', '');
+    }
+    if (tradeModalFinalizeHandler) {
+      tradeModal.removeEventListener('transitionend', tradeModalFinalizeHandler);
+      tradeModalFinalizeHandler = null;
+    }
+    const restoreTarget =
+      tradeModalReturnTarget && typeof tradeModalReturnTarget.focus === 'function'
+        ? tradeModalReturnTarget
+        : null;
+    tradeModalReturnTarget = null;
+    if (restoreTarget) {
+      restoreTarget.focus({ preventScroll: true });
+    }
+  };
+
+  tradeModalFinalizeHandler = finalize;
+  tradeModal.addEventListener('transitionend', finalize);
+  tradeModalHideTimer = setTimeout(finalize, 280);
+
+  document.removeEventListener('keydown', handleTradeModalKeydown);
+}
+
+function handleTradeModalKeydown(event) {
+  if (event.key === 'Escape') {
+    closeTradeModal();
+  }
+}
+
+function renderTradeHistory(history) {
+  if (!tradeList) return;
+  tradeList.innerHTML = '';
+
+  const entries = Array.isArray(history) ? history.filter((item) => item && typeof item === 'object') : [];
+  if (entries.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'trade-empty';
+    empty.textContent = translate('trades.empty', 'No trades yet.');
+    tradeList.append(empty);
+    return;
+  }
+
+  const slice = entries.slice(0, 40);
+  slice.forEach((trade) => {
+    const card = buildTradeCard(trade);
+    tradeList.append(card);
+  });
+}
+
 function renderTradeSummary(stats) {
   lastTradeStats = stats || null;
   tradeSummary.innerHTML = '';
@@ -10100,6 +10852,78 @@ document.addEventListener('visibilitychange', () => {
     loadMostTradedCoins();
   }
 });
+
+function connectLogs() {
+  if (typeof WebSocket === 'undefined') {
+    console.warn('WebSocket not supported; live logs disabled.');
+    return;
+  }
+
+  if (logSocket) {
+    try {
+      logSocket.close();
+    } catch (closeError) {
+      console.warn('Failed to close previous log socket', closeError);
+    }
+    logSocket = null;
+  }
+
+  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const url = `${protocol}://${window.location.host}/ws/logs`;
+
+  const scheduleReconnect = (attempt = 0) => {
+    if (reconnectTimer) {
+      return;
+    }
+    const clampedAttempt = Math.min(attempt, 6);
+    const delay = Math.min(1000 * 2 ** clampedAttempt, 10000);
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      logReconnectAttempts = attempt + 1;
+      connectLogs();
+    }, delay);
+  };
+
+  try {
+    const socket = new WebSocket(url);
+    logSocket = socket;
+
+    socket.addEventListener('open', () => {
+      logReconnectAttempts = 0;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+    });
+
+    socket.addEventListener('message', (event) => {
+      if (!event || typeof event.data !== 'string') return;
+      try {
+        const data = JSON.parse(event.data);
+        if (data && typeof data === 'object' && data.type === 'log') {
+          handleLogPayload(data);
+        }
+      } catch (err) {
+        console.warn('Unable to parse log message', err);
+      }
+    });
+
+    socket.addEventListener('close', () => {
+      if (logSocket === socket) {
+        logSocket = null;
+      }
+      scheduleReconnect(logReconnectAttempts);
+    });
+
+    socket.addEventListener('error', (err) => {
+      console.warn('Log stream error', err);
+      scheduleReconnect(logReconnectAttempts);
+    });
+  } catch (err) {
+    console.warn('Unable to connect to log stream', err);
+    scheduleReconnect(logReconnectAttempts);
+  }
+}
 
 async function init() {
   configureChartDefaults();
