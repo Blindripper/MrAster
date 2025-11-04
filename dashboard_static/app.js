@@ -68,9 +68,8 @@ const aiBudgetCard = document.getElementById('ai-budget');
 const aiBudgetModeLabel = document.getElementById('ai-budget-mode');
 const aiBudgetMeta = document.getElementById('ai-budget-meta');
 const aiBudgetFill = document.getElementById('ai-budget-fill');
-const playbookSummaryContainer = document.getElementById('playbook-summary');
-const playbookProcessContainer = document.getElementById('playbook-process');
-const playbookActivityFeed = document.getElementById('playbook-activity');
+const skipRankingList = document.getElementById('skip-ranking-list');
+const skipRankingDetail = document.getElementById('skip-ranking-detail');
 const aiChatMessages = document.getElementById('ai-chat-messages');
 const aiChatForm = document.getElementById('ai-chat-form');
 const aiChatInput = document.getElementById('ai-chat-input');
@@ -2072,11 +2071,9 @@ let automationTargetTimestamp = null;
 let lastModeBeforeStandard = null;
 const decisionReasonEvents = new Map();
 const DECISION_REASON_EVENT_LIMIT = 40;
-let pendingPlaybookResponseCount = 0;
-let lastPlaybookState = null;
-let lastPlaybookActivity = [];
-let lastPlaybookProcess = [];
-let basePlaybookActivity = [];
+let skipRankingItems = [];
+let selectedSkipRankingId = null;
+let lastSkipRankingSnapshot = [];
 const liveLogActivityEntries = [];
 const liveLogActivitySignatures = new Set();
 const LIVE_LOG_ACTIVITY_LIMIT = 120;
@@ -6137,2492 +6134,6 @@ function parseStructuredLog(line, fallbackLevel = 'info') {
   };
 }
 
-function mergePlaybookActivityWithLive() {
-  return [...(Array.isArray(basePlaybookActivity) ? basePlaybookActivity : []), ...liveLogActivityEntries];
-}
-
-function buildLogActivitySignature(rawLine, tsEpoch) {
-  const base = (rawLine || '').toString().trim();
-  if (base) return base;
-  if (Number.isFinite(tsEpoch)) return `${tsEpoch}`;
-  return `${Date.now()}::${Math.random().toString(36).slice(2)}`;
-}
-
-function parseAiFeedLogDetail(detail) {
-  const parts = detail
-    .split('|')
-    .map((part) => part.trim())
-    .filter(Boolean);
-
-  if (!parts.length) {
-    return null;
-  }
-
-  const rawKind = parts.shift() || '';
-  const headline = parts.length > 0 ? parts.join(' | ') : '';
-
-  return { rawKind, headline };
-}
-
-function normalisePlaybookActivityKind(kind) {
-  const normalized = (kind || '').toString().trim().toLowerCase();
-  if (!normalized) return 'update';
-  switch (normalized) {
-    case 'query':
-    case 'playbook':
-    case 'warning':
-    case 'error':
-    case 'update':
-      return normalized;
-    default:
-      return 'update';
-  }
-}
-
-function normalizeLiveActivityEntry(entry) {
-  if (!entry || typeof entry !== 'object') return null;
-  const normalized = {
-    kind: entry.kind || 'update',
-    headline: entry.headline || '',
-  };
-  if (entry.body) normalized.body = entry.body;
-  if (entry.notes) normalized.notes = entry.notes;
-  if (entry.ts) normalized.ts = entry.ts;
-  if (Number.isFinite(entry.ts_epoch)) normalized.ts_epoch = entry.ts_epoch;
-  if (entry.request_id) normalized.request_id = entry.request_id;
-  if (entry._signature) normalized._signature = entry._signature;
-  return normalized;
-}
-
-function appendLiveActivityEntry(entry) {
-  const normalized = normalizeLiveActivityEntry(entry);
-  if (!normalized || !normalized.headline) return;
-  const signature = normalized._signature;
-  if (signature && liveLogActivitySignatures.has(signature)) return;
-  if (signature) {
-    liveLogActivitySignatures.add(signature);
-  }
-  liveLogActivityEntries.push(normalized);
-  while (liveLogActivityEntries.length > LIVE_LOG_ACTIVITY_LIMIT) {
-    const removed = liveLogActivityEntries.shift();
-    if (removed && removed._signature) {
-      liveLogActivitySignatures.delete(removed._signature);
-    }
-  }
-  lastPlaybookActivity = mergePlaybookActivityWithLive();
-  renderPlaybookActivitySection();
-  updatePlaybookPendingState();
-}
-
-function translateLogToActivity(parsed, rawLine, level, ts) {
-  if (!parsed) return null;
-  const message = parsed.message || parsed.raw || rawLine || '';
-  if (!message) return null;
-
-  const aiFeedMatch = message.match(/^AI_FEED\s+(.*)$/);
-  if (!aiFeedMatch) return null;
-
-  const detail = aiFeedMatch[1]?.trim() || '';
-  if (!detail) return null;
-
-  const parsedDetail = parseAiFeedLogDetail(detail);
-  if (!parsedDetail) return null;
-
-  const kind = normalisePlaybookActivityKind(parsedDetail.rawKind);
-  const headline = parsedDetail.headline || getPlaybookKindLabel(kind);
-
-  let tsEpoch = Number(ts);
-  if (!Number.isFinite(tsEpoch)) {
-    const parsedTs = parsed.timestamp ? Date.parse(parsed.timestamp) : Number.NaN;
-    if (!Number.isNaN(parsedTs)) {
-      tsEpoch = parsedTs / 1000;
-    }
-  }
-  const isoTs = Number.isFinite(tsEpoch)
-    ? new Date(tsEpoch * 1000).toISOString()
-    : new Date().toISOString();
-  const entry = {
-    kind,
-    headline,
-    ts: isoTs,
-  };
-  if (Number.isFinite(tsEpoch)) {
-    entry.ts_epoch = tsEpoch;
-  }
-  entry._signature = buildLogActivitySignature(rawLine || parsed.raw || detail, entry.ts_epoch);
-  return entry;
-}
-
-function maybeAppendActivityFromLog({ parsed, rawLine, level, ts }) {
-  const entry = translateLogToActivity(parsed, rawLine, level, ts);
-  if (!entry) return;
-  appendLiveActivityEntry(entry);
-}
-
-function toTitleWords(value) {
-  return (value || '')
-    .toString()
-    .replace(/[_-]+/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase())
-    .trim();
-}
-
-function formatExtraDetails(raw) {
-  if (!raw) return '';
-  const normalized = raw.replace(/[{}]/g, '').trim();
-  const pairs = [];
-  const quotedPairs = normalized.matchAll(/'([^']+)'\s*:\s*'([^']+)'/g);
-  for (const match of quotedPairs) {
-    const [, key, value] = match;
-    pairs.push([key, value]);
-  }
-  if (!pairs.length) {
-    const simplePairs = normalized.matchAll(/([A-Za-z_]+)=([\d.+-]+)/g);
-    for (const match of simplePairs) {
-      const [, key, value] = match;
-      pairs.push([key, value]);
-    }
-  }
-  if (!pairs.length) return '';
-  return pairs
-    .map(([key, value]) => `${toTitleWords(key)} ${value}`)
-    .join(' • ');
-}
-
-function formatConfigDeltaValue(value) {
-  if (value === null || value === undefined) return 'unset';
-  const raw = value.toString();
-  if (raw === '') return 'empty';
-  const singleLine = raw.replace(/\s+/g, ' ').trim();
-  if (!singleLine) return 'empty';
-  return singleLine.length > 80 ? `${singleLine.slice(0, 77)}…` : singleLine;
-}
-
-function resolveLogCategory(friendly) {
-  if (!friendly || typeof friendly !== 'object') return '';
-  const reasonKey = friendly.reason ? friendly.reason.toString().toLowerCase() : '';
-  if (reasonKey && LOG_REASON_CATEGORY_MAP[reasonKey]) {
-    return LOG_REASON_CATEGORY_MAP[reasonKey];
-  }
-  const labelKey = friendly.label ? friendly.label.toString().toLowerCase() : '';
-  if (labelKey && LOG_LABEL_CATEGORY_MAP[labelKey]) {
-    return LOG_LABEL_CATEGORY_MAP[labelKey];
-  }
-  return '';
-}
-
-function normaliseLogReasonKey(reason) {
-  return (reason || '')
-    .toString()
-    .trim()
-    .toLowerCase();
-}
-
-function getLogReasonClass(reason) {
-  const key = normaliseLogReasonKey(reason);
-  if (!key) return '';
-  const token = key.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-  return token ? `reason-${token}` : '';
-}
-
-function getLogClassList(friendly) {
-  const classes = [];
-  const category = resolveLogCategory(friendly);
-  if (category) {
-    classes.push(`category-${category}`);
-  }
-  const reasonClass = getLogReasonClass(friendly?.reason);
-  if (reasonClass) {
-    classes.push(reasonClass);
-  }
-  return classes;
-}
-
-function hexToRgba(hex, alpha = 1) {
-  if (!hex) return '';
-  const raw = hex.toString().trim().replace(/^#/, '');
-  if (!raw) return '';
-  const normalized = raw.length === 3 ? raw.split('').map((char) => char + char).join('') : raw;
-  if (normalized.length !== 6) return '';
-  const r = parseInt(normalized.slice(0, 2), 16);
-  const g = parseInt(normalized.slice(2, 4), 16);
-  const b = parseInt(normalized.slice(4, 6), 16);
-  if ([r, g, b].some((component) => Number.isNaN(component))) return '';
-  const clampedAlpha = Math.max(0, Math.min(1, Number(alpha)));
-  return `rgba(${r}, ${g}, ${b}, ${clampedAlpha})`;
-}
-
-function applyLogReasonStyles(element, reason) {
-  if (!element) return;
-  const key = normaliseLogReasonKey(reason);
-  if (!key) return;
-  const palette = LOG_REASON_COLOR_MAP[key];
-  if (!palette) return;
-  const base = palette.base || null;
-  const accent = palette.accent || base;
-  const background =
-    palette.background || (base ? hexToRgba(base, palette.backgroundAlpha ?? 0.18) : '');
-  const border = palette.border || (base ? hexToRgba(base, palette.borderAlpha ?? 0.36) : '');
-  const badge = palette.badge || (accent ? hexToRgba(accent, palette.badgeAlpha ?? 0.32) : '');
-  const badgeText = palette.badgeText || palette.text || '';
-
-  if (background) {
-    element.style.setProperty('--log-reason-bg', background);
-  }
-  if (border) {
-    element.style.setProperty('--log-reason-border', border);
-  }
-  if (badge) {
-    element.style.setProperty('--log-reason-badge-bg', badge);
-  }
-  if (badgeText) {
-    element.style.setProperty('--log-reason-badge-text', badgeText);
-  }
-
-  element.classList.add('log-reason-themed');
-}
-
-function humanizeLogLine(line, fallbackLevel = 'info') {
-  const parsed = parseStructuredLog(line, fallbackLevel);
-  const baseLevel = (parsed.level || fallbackLevel || 'info').toLowerCase();
-  let severity = baseLevel;
-  let label = FRIENDLY_LEVEL_LABELS[severity] || severity.toUpperCase();
-  let relevant = severity !== 'debug';
-  let text = parsed.message || parsed.raw;
-
-  const aiFeedMatch = parsed.message?.match(/^AI_FEED\s+(.*)$/);
-  if (aiFeedMatch) {
-    const detail = aiFeedMatch[1]?.trim();
-    let feedKind = '';
-    let headline = detail || '';
-    if (detail) {
-      const parts = detail.split('|').map((part) => part.trim()).filter(Boolean);
-      if (parts.length >= 2) {
-        [feedKind] = parts;
-        headline = parts.slice(1).join(' | ');
-      }
-    }
-    const normalizedKind = feedKind.toLowerCase();
-    const symbolMatch = headline.match(/\b([A-Z]{3,}(?:USDT|USDC|USD|BTC|ETH))\b/);
-    const symbol = symbolMatch ? symbolMatch[1] : undefined;
-    if (normalizedKind === 'query') {
-      text = headline ? `Sent to AI: ${headline}` : 'Sent to the strategy AI for review.';
-      label = 'AI request';
-      severity = 'info';
-    } else {
-      text = headline ? `AI activity: ${headline}` : 'AI activity updated.';
-      label = 'AI feed';
-      severity = 'system';
-    }
-    relevant = true;
-    return { text, label, severity, relevant, parsed, symbol, refreshTrades: true };
-  }
-
-  const bucketLabels = { S: 'small', M: 'medium', L: 'large' };
-  const entryMatch = parsed.message?.match(
-    /^ENTRY (\S+) (BUY|SELL) qty=([\d.]+) px≈([\d.]+) SL=([\d.]+) TP=([\d.]+) bucket=([A-Z])(?:\s+alpha=([\d.]+)\/([\d.]+))?/,
-  );
-  if (entryMatch) {
-    const [, symbol, side, qtyStr, pxStr, slStr, tpStr, bucket, alphaProb, alphaConf] = entryMatch;
-    const qtyNum = Number(qtyStr);
-    const qty = Number.isFinite(qtyNum)
-      ? qtyNum.toFixed(qtyNum >= 1 ? 2 : 4)
-      : qtyStr;
-    const price = formatNumber(pxStr, 4);
-    const sl = formatNumber(slStr, 4);
-    const tp = formatNumber(tpStr, 4);
-    const direction = side === 'BUY' ? 'long' : 'short';
-    const bucketLabel = bucketLabels[bucket] || bucket;
-    const extras = [`SL ${sl}`, `TP ${tp}`, `Size ${bucketLabel}`];
-    if (alphaProb) {
-      const prob = formatNumber(alphaProb, 2);
-      if (prob !== '–') {
-        extras.push(`AI ${prob} prob`);
-      }
-      const conf = formatNumber(alphaConf, 2);
-      if (conf !== '–') {
-        extras.push(`conf ${conf}`);
-      }
-    }
-    text = `Opened ${direction} on ${symbol} at ~${price} (${qty} units). ${extras.join(', ')}.`;
-    label = 'Trade placed';
-    severity = 'success';
-    relevant = true;
-    return { text, label, severity, relevant, parsed, refreshTrades: true };
-  }
-
-  const exitMatch = parsed.message?.match(
-    /^EXIT (\S+) (BUY|SELL) qty=([\d.]+) exit≈([\d.]+) PNL=([\-\d.]+)USDT R=([\-\d.]+)/,
-  );
-  if (exitMatch) {
-    const [, symbol, side, qtyStr, exitStr, pnlStr, rStr] = exitMatch;
-    const exitPrice = formatNumber(exitStr, 4);
-    const pnl = Number(pnlStr);
-    const pnlText = Number.isFinite(pnl) ? `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} USDT` : `${pnlStr} USDT`;
-    const r = Number(rStr);
-    const rText = Number.isFinite(r) ? r.toFixed(2) : rStr;
-    const direction = side === 'BUY' ? 'long' : 'short';
-    text = `Closed ${direction} on ${symbol} at ~${exitPrice} for ${pnlText} (${rText} R).`;
-    label = pnl >= 0 ? 'Trade win' : 'Trade loss';
-    severity = pnl >= 0 ? 'success' : 'warning';
-    relevant = true;
-    return { text, label, severity, relevant, parsed, refreshTrades: true };
-  }
-
-  const quoteVolumeBelowMatch = parsed.message?.match(
-    /^Skip\s+(\S+)\s+[—–-]\s+quote volume\s+([\d.]+)\s+below minimum\s+([\d.]+)/i,
-  );
-  if (quoteVolumeBelowMatch) {
-    const [, symbol, current, threshold] = quoteVolumeBelowMatch;
-    const currentText = formatNumber(current, 2);
-    const thresholdText = formatNumber(threshold, 2);
-    const detail = `Quote volume ${currentText} • Min ${thresholdText}`;
-    text = `Skipped ${symbol} — Quote volume ${currentText} below minimum ${thresholdText}.`;
-    label = 'Skipped trade';
-    severity = 'warning';
-    relevant = true;
-    return {
-      text,
-      label,
-      severity,
-      relevant,
-      parsed,
-      reason: 'quote_volume',
-      symbol: symbol ? symbol.toString().toUpperCase() : undefined,
-      detail,
-    };
-  }
-
-  const quoteVolumeCooldownMatch = parsed.message?.match(
-    /^Skip\s+(\S+)\s+[—–-]\s+quote volume cooldown active for\s+([\d.]+)\s+more cycles?\.?/i,
-  );
-  if (quoteVolumeCooldownMatch) {
-    const [, symbol, remaining] = quoteVolumeCooldownMatch;
-    const count = Number(remaining);
-    const cycles = Number.isFinite(count) ? `${count} more ${count === 1 ? 'cycle' : 'cycles'}` : `${remaining} more cycles`;
-    text = `Skipped ${symbol} — Quote volume cooldown active (${cycles}).`;
-    label = 'Skipped trade';
-    severity = 'warning';
-    relevant = true;
-    return {
-      text,
-      label,
-      severity,
-      relevant,
-      parsed,
-      reason: 'quote_volume_cooldown',
-      symbol: symbol ? symbol.toString().toUpperCase() : undefined,
-    };
-  }
-
-  const positionCapSymbolMatch = parsed.message?.match(
-    /^Skip\s+(\S+)\s+[—–-]\s+per-symbol position cap reached\s*\((\d+)\)\.?/i,
-  );
-  if (positionCapSymbolMatch) {
-    const [, symbol, cap] = positionCapSymbolMatch;
-    const capNum = Number(cap);
-    const capText = Number.isFinite(capNum) ? capNum.toString() : cap;
-    text = `Skipped ${symbol} — Per-symbol position cap reached (${capText}).`;
-    label = 'Skipped trade';
-    severity = 'warning';
-    relevant = true;
-    return {
-      text,
-      label,
-      severity,
-      relevant,
-      parsed,
-      reason: 'position_cap_symbol',
-      symbol: symbol ? symbol.toString().toUpperCase() : undefined,
-      detail: `Cap ${capText}`,
-    };
-  }
-
-  const positionCapGlobalMatch = parsed.message?.match(
-    /^Skip\s+(\S+)\s+[—–-]\s+global position cap reached\s*\((\d+)\/(\d+)\)\.?/i,
-  );
-  if (positionCapGlobalMatch) {
-    const [, symbol, current, limit] = positionCapGlobalMatch;
-    text = `Skipped ${symbol} — Global position cap reached (${current}/${limit}).`;
-    label = 'Skipped trade';
-    severity = 'warning';
-    relevant = true;
-    return {
-      text,
-      label,
-      severity,
-      relevant,
-      parsed,
-      reason: 'position_cap_global',
-      symbol: symbol ? symbol.toString().toUpperCase() : undefined,
-      detail: `Open ${current} / Limit ${limit}`,
-    };
-  }
-
-  const baseStrategySkipMatch = parsed.message?.match(
-    /^Skip\s+(\S+)\s+[—–-]\s+base strategy reported\s+([^;]+);\s+avoiding AI trend scan\.?/i,
-  );
-  if (baseStrategySkipMatch) {
-    const [, symbol, reasonText] = baseStrategySkipMatch;
-    const cleaned = reasonText ? reasonText.trim() : '';
-    text = `Skipped ${symbol} — Base strategy veto (${cleaned || 'no detail'}).`;
-    label = 'Skipped trade';
-    severity = 'warning';
-    relevant = true;
-    return {
-      text,
-      label,
-      severity,
-      relevant,
-      parsed,
-      reason: 'base_strategy_skip',
-      symbol: symbol ? symbol.toString().toUpperCase() : undefined,
-      detail: cleaned,
-    };
-  }
-
-  const skipMatch = parsed.message?.match(/^SKIP (\S+): ([\w_]+)(.*)$/);
-  if (skipMatch) {
-    const [, symbol, reason, extraRaw] = skipMatch;
-    const reasonKey = reason ? reason.toString().toLowerCase() : '';
-    const detail = formatExtraDetails(extraRaw);
-    const reasonLabel = friendlyReason(reasonKey || reason);
-    text = `Skipped ${symbol} — ${reasonLabel}${detail ? ` (${detail})` : ''}.`;
-    label = 'Skipped trade';
-    severity = 'warning';
-    relevant = true;
-    return {
-      text,
-      label,
-      severity,
-      relevant,
-      parsed,
-      reason: reasonKey || reason,
-      symbol: symbol ? symbol.toString().toUpperCase() : undefined,
-      detail,
-    };
-  }
-
-  const policyMatch = parsed.message?.match(/^policy skip (\S+):\s*alpha=([\d.]+)\s+conf=([\d.]+)/i);
-  if (policyMatch) {
-    const [, symbol, alpha, conf] = policyMatch;
-    const alphaText = Number.isFinite(Number(alpha)) ? Number(alpha).toFixed(2) : alpha;
-    const confText = Number.isFinite(Number(conf)) ? Number(conf).toFixed(2) : conf;
-    text = `AI filter skipped ${symbol} (alpha ${alphaText}, confidence ${confText}).`;
-    label = 'AI filter';
-    severity = 'warning';
-    relevant = true;
-    return {
-      text,
-      label,
-      severity,
-      relevant,
-      parsed,
-      reason: 'policy_filter',
-      symbol: symbol ? symbol.toString().toUpperCase() : undefined,
-    };
-  }
-
-  const entryFailMatch = parsed.message?.match(/^entry fail (\S+):\s*(.*)$/i);
-  if (entryFailMatch) {
-    const [, symbol, detail] = entryFailMatch;
-    text = `Order for ${symbol} failed${detail ? `: ${detail}` : '.'}`;
-    label = 'Order issue';
-    severity = 'error';
-    relevant = true;
-    return {
-      text,
-      label,
-      severity,
-      relevant,
-      parsed,
-      reason: 'order_failed',
-      symbol: symbol ? symbol.toString().toUpperCase() : undefined,
-    };
-  }
-
-  const fasttpOkMatch = parsed.message?.match(/^FASTTP (\S+) .*→ exit ([\d.]+)/);
-  if (fasttpOkMatch) {
-    const [, symbol] = fasttpOkMatch;
-    text = `Fast take-profit tightened for ${symbol} after a quick move.`;
-    label = 'Fast TP';
-    severity = 'info';
-    relevant = true;
-    return { text, label, severity, relevant, parsed, refreshTrades: true };
-  }
-
-  const fasttpErrMatch = parsed.message?.match(/^FASTTP (\S+) replace error: (.*)$/);
-  if (fasttpErrMatch) {
-    const [, symbol, detail] = fasttpErrMatch;
-    text = `Fast TP adjustment failed for ${symbol}: ${detail}`;
-    label = 'Fast TP';
-    severity = 'warning';
-    relevant = true;
-    return { text, label, severity, relevant, parsed };
-  }
-
-  const startMatch = parsed.message?.match(/^Starting bot \(mode=(\w+), loop=(\w+)\)/);
-  if (startMatch) {
-    const [, mode, loop] = startMatch;
-    const modeLabel = mode === 'PAPER' ? 'paper' : mode?.toLowerCase() || 'live';
-    const loopLabel = loop?.toLowerCase() === 'true' ? 'continuous' : 'single-run';
-    text = `Bot starting in ${modeLabel} mode (${loopLabel}).`;
-    label = 'Bot status';
-    severity = 'system';
-    relevant = true;
-    return { text, label, severity, relevant, parsed };
-  }
-
-  const stopMatch = parsed.message?.match(/^Bot stopped\. Safe to exit\.?$/);
-  if (stopMatch) {
-    text = 'Bot stopped safely. You can close the session.';
-    label = 'Bot status';
-    severity = 'system';
-    relevant = true;
-    return { text, label, severity, relevant, parsed };
-  }
-
-  const launchMatch = parsed.message?.match(/^Launching bot:/);
-  if (launchMatch) {
-    text = 'Launching the trading bot with your current settings.';
-    label = 'Bot status';
-    severity = 'system';
-    relevant = true;
-    return { text, label, severity, relevant, parsed };
-  }
-
-  const configPrefix = 'Configuration updated';
-  if (parsed.message?.startsWith(configPrefix)) {
-    const remainderRaw = parsed.message.slice(configPrefix.length).trim();
-    const remainder = remainderRaw.startsWith(':')
-      ? remainderRaw.slice(1).trim()
-      : remainderRaw;
-    let changeSummary = remainder;
-    if (remainder && remainder.startsWith('{')) {
-      try {
-        const payload = JSON.parse(remainder);
-        const changes = Array.isArray(payload?.changes) ? payload.changes : [];
-        if (changes.length) {
-          const formatted = changes
-            .map((change) => {
-              const key = change?.key || 'Setting';
-              const from = formatConfigDeltaValue(change?.old);
-              const to = formatConfigDeltaValue(change?.new);
-              return `${key} ${from} → ${to}`;
-            })
-            .join('; ');
-          const moreCountRaw = payload?.more ?? Math.max(0, (payload?.total || 0) - changes.length);
-          const moreCountValue = Number(moreCountRaw);
-          const moreCount = Number.isFinite(moreCountValue) ? moreCountValue : 0;
-          const prefix = changes.length === 1 ? 'Updated' : 'Updated settings';
-          changeSummary = `${prefix}: ${formatted}`;
-          if (moreCount > 0) {
-            changeSummary += `; +${moreCount} more change${moreCount === 1 ? '' : 's'}`;
-          }
-        } else if (typeof payload?.total === 'number' && payload.total === 0) {
-          changeSummary = 'Configuration saved (no changes detected).';
-        }
-      } catch (err) {
-        console.warn('Unable to parse config change payload', err);
-      }
-    } else if (!remainder) {
-      changeSummary = 'Configuration saved successfully.';
-    } else if (/^ASTER_[A-Z0-9_]/.test(remainder)) {
-      changeSummary = `Updated ${remainder}`;
-    }
-    text = changeSummary || 'Configuration saved successfully.';
-    label = 'Settings';
-    severity = 'system';
-    relevant = true;
-    return { text, label, severity, relevant, parsed };
-  }
-
-  const cycleMatch = parsed.message?.match(/^Cycle finished in ([\d.]+)s\./);
-  if (cycleMatch) {
-    const [, seconds] = cycleMatch;
-    const duration = Number(seconds);
-    const durationText = Number.isFinite(duration) ? `${duration.toFixed(1)}s` : `${seconds}s`;
-    text = `Scan finished in ${durationText}.`;
-    label = 'Scan complete';
-    severity = 'info';
-    relevant = false;
-    return { text, label, severity, relevant, parsed };
-  }
-
-  const scanningMatch = parsed.message?.match(/^Scanning (\d+) symbols?(?::\s*(.*))?/);
-  if (scanningMatch) {
-    const [, count, list] = scanningMatch;
-    const preview = list ? list.split(',').slice(0, 3).join(', ').trim() : '';
-    text = `Reviewing ${count} markets${preview ? ` (e.g. ${preview})` : ''}.`;
-    label = 'Scan';
-    severity = 'info';
-    relevant = false;
-    return { text, label, severity, relevant, parsed };
-  }
-
-  const shutdownMatch = parsed.message?.match(/^Shutdown signal received/);
-  if (shutdownMatch) {
-    text = 'Shutdown signal received — finishing the current cycle.';
-    label = 'Bot status';
-    severity = 'system';
-    relevant = true;
-    return { text, label, severity, relevant, parsed };
-  }
-
-  if (!text) {
-    text = parsed.raw || '';
-  }
-
-  if (parsed.level === 'error') {
-    relevant = true;
-  }
-
-  return { text, label, severity, relevant, parsed };
-}
-
-function scheduleTradesRefresh(delay = 0) {
-  if (tradesRefreshTimer) {
-    clearTimeout(tradesRefreshTimer);
-  }
-  const wait = Math.max(0, Number(delay) || 0);
-  tradesRefreshTimer = setTimeout(() => {
-    tradesRefreshTimer = null;
-    loadTrades().catch((err) => console.warn('Unable to refresh trades', err));
-  }, wait);
-}
-
-async function updateStatus() {
-  try {
-    const res = await fetch('/api/bot/status');
-    if (!res.ok) throw new Error();
-    const data = await res.json();
-    lastBotStatus = data;
-    const running = data.running;
-    statusIndicator.textContent = running
-      ? translate('status.indicator.running', 'Running')
-      : translate('status.indicator.stopped', 'Stopped');
-    statusIndicator.className = `pill ${running ? 'running' : 'stopped'}`;
-    statusPid.textContent = data.pid ?? '–';
-    statusStarted.textContent = data.started_at ? new Date(data.started_at * 1000).toLocaleString() : '–';
-    statusUptime.textContent = running ? formatDuration(data.uptime_s) : '–';
-    btnStart.disabled = running;
-    btnStop.disabled = !running;
-  } catch {
-    lastBotStatus = { ...DEFAULT_BOT_STATUS };
-    statusIndicator.textContent = translate('status.indicator.offline', 'Offline');
-    statusIndicator.className = 'pill stopped';
-    statusPid.textContent = '–';
-    statusStarted.textContent = '–';
-    statusUptime.textContent = '–';
-  }
-}
-
-function appendLogLine({ line, level, ts }) {
-  const normalizedLevel = (level || 'info').toLowerCase();
-  const parsed = parseStructuredLog(line, normalizedLevel);
-  const derivedLevel = (parsed.level || normalizedLevel).toLowerCase();
-  const el = document.createElement('div');
-  el.className = `log-line ${derivedLevel}`.trim();
-
-  const meta = document.createElement('div');
-  meta.className = 'log-meta';
-
-  if (ts) {
-    const time = document.createElement('span');
-    time.className = 'log-time';
-    time.textContent = new Date(ts * 1000).toLocaleTimeString();
-    meta.append(time);
-  }
-
-  const label = document.createElement('span');
-  label.className = 'log-level';
-  const labelMap = {
-    error: 'Error',
-    warning: 'Warning',
-    system: 'System',
-    debug: 'Debug',
-    info: 'Info',
-  };
-  label.textContent = labelMap[derivedLevel] || derivedLevel.toUpperCase();
-  meta.append(label);
-
-  const message = document.createElement('div');
-  message.className = 'log-message';
-  message.textContent = parsed.raw ?? line;
-
-  el.append(meta, message);
-  logStream.append(el);
-  while (logStream.children.length > 500) {
-    logStream.removeChild(logStream.firstChild);
-  }
-  if (autoScrollEnabled) {
-    logStream.scrollTop = logStream.scrollHeight;
-  }
-
-  appendCompactLog({ line: parsed.raw ?? line, level: derivedLevel, ts });
-  maybeAppendActivityFromLog({ parsed, rawLine: line, level: derivedLevel, ts });
-  maybeAppendXNewsLogEntry({ parsed, rawLine: line, level: derivedLevel, ts });
-}
-
-function connectLogs() {
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-  }
-  const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  const socket = new WebSocket(`${protocol}://${location.host}/ws/logs`);
-  socket.addEventListener('message', (event) => {
-    try {
-      const data = JSON.parse(event.data);
-      if (data.type === 'log') {
-        appendLogLine(data);
-      }
-    } catch (err) {
-      console.error('WebSocket parse error', err);
-    }
-  });
-  socket.addEventListener('close', () => {
-    reconnectTimer = setTimeout(connectLogs, 2000);
-  });
-  socket.addEventListener('error', () => {
-    socket.close();
-  });
-}
-
-function createMetric(label, value, tone = 'neutral') {
-  const metric = document.createElement('div');
-  metric.className = `trade-metric${tone && tone !== 'neutral' ? ` ${tone}` : ''}`;
-  const labelEl = document.createElement('span');
-  labelEl.className = 'metric-label';
-  labelEl.textContent = label;
-  const valueEl = document.createElement('span');
-  valueEl.className = 'metric-value';
-  valueEl.textContent = value ?? '–';
-  metric.append(labelEl, valueEl);
-  return metric;
-}
-
-function createTradeDetail(label, value, options = {}) {
-  const { tone = 'neutral', muted = false, monospace = false } = options;
-  const container = document.createElement('span');
-  container.className = 'trade-detail';
-  if (tone && tone !== 'neutral') {
-    container.classList.add(tone);
-  }
-  if (muted) {
-    container.classList.add('muted');
-  }
-  if (monospace) {
-    container.classList.add('monospace');
-  }
-
-  const labelEl = document.createElement('span');
-  labelEl.className = 'trade-detail-label';
-  labelEl.textContent = label;
-  const valueEl = document.createElement('span');
-  valueEl.className = 'trade-detail-value';
-  valueEl.textContent = value ?? '–';
-
-  container.append(labelEl, valueEl);
-  return container;
-}
-
-function buildTradeDetailContent(trade) {
-  const pnl = extractRealizedPnl(trade);
-  const pnlTone = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'neutral';
-  const pnlDisplay = `${pnl > 0 ? '+' : ''}${formatNumber(pnl, 2)} USDT`;
-  const rValue = Number(trade.pnl_r ?? 0);
-  const rTone = rValue > 0 ? 'profit' : rValue < 0 ? 'loss' : 'neutral';
-  const rDisplay = `${rValue > 0 ? '+' : ''}${formatNumber(rValue, 2)} R`;
-  const durationSeconds = computeDurationSeconds(trade.opened_at_iso, trade.closed_at_iso);
-
-  const container = document.createElement('div');
-  container.className = 'trade-modal-content';
-
-  const highlight = document.createElement('div');
-  highlight.className = 'trade-modal-highlight';
-
-  const priceGroup = document.createElement('div');
-  priceGroup.className = 'trade-detail-group';
-  priceGroup.append(
-    createTradeDetail('Entry', formatNumber(trade.entry, 4)),
-    createTradeDetail('Exit', formatNumber(trade.exit, 4))
-  );
-  highlight.append(priceGroup);
-
-  const resultGroup = document.createElement('div');
-  resultGroup.className = 'trade-detail-group';
-  const pnlLabel =
-    pnlTone === 'profit' ? 'Realized profit' : pnlTone === 'loss' ? 'Realized loss' : 'Realized PNL';
-  resultGroup.append(
-    createTradeDetail(pnlLabel, pnlDisplay, { tone: pnlTone }),
-    createTradeDetail('R multiple', rDisplay, { tone: rTone, muted: rTone === 'neutral' })
-  );
-  highlight.append(resultGroup);
-
-  const timeGroup = document.createElement('div');
-  timeGroup.className = 'trade-detail-group';
-  const windowStart = formatTimeShort(trade.opened_at_iso);
-  const windowEnd = formatTimeShort(trade.closed_at_iso);
-  if (windowStart !== '–' || windowEnd !== '–') {
-    timeGroup.append(
-      createTradeDetail('Window', `${windowStart} → ${windowEnd}`, {
-        monospace: true,
-      })
-    );
-  }
-  if (Number.isFinite(durationSeconds)) {
-    timeGroup.append(createTradeDetail('Duration', formatDuration(durationSeconds), { muted: true }));
-  }
-  if (timeGroup.children.length > 0) {
-    highlight.append(timeGroup);
-  }
-
-  container.append(highlight);
-
-  const metricGrid = document.createElement('div');
-  metricGrid.className = 'trade-metric-grid';
-  const metrics = [
-    createMetric('Realized PNL (USDT)', pnlDisplay, pnlTone),
-    createMetric('R multiple', rDisplay, rTone),
-    createMetric('Size', formatNumber(trade.qty, 4)),
-    createMetric('Bandit bucket', trade.bucket ? trade.bucket.toString().toUpperCase() : '–'),
-    createMetric('Opened', formatTimestamp(trade.opened_at_iso)),
-    createMetric('Closed', formatTimestamp(trade.closed_at_iso)),
-    createMetric('Entry', formatNumber(trade.entry, 4)),
-    createMetric('Exit', formatNumber(trade.exit, 4)),
-  ];
-  if (Number.isFinite(durationSeconds)) {
-    metrics.splice(6, 0, createMetric('Duration', formatDuration(durationSeconds)));
-  }
-  metrics.forEach((metric) => metricGrid.append(metric));
-  container.append(metricGrid);
-
-  const context = trade.context && typeof trade.context === 'object' ? trade.context : null;
-  if (context) {
-    const keys = CONTEXT_KEYS.filter((key) => context[key] !== undefined && context[key] !== null);
-    if (keys.length > 0) {
-      const contextWrapper = document.createElement('div');
-      contextWrapper.className = 'trade-context-wrapper';
-      const title = document.createElement('h4');
-      title.textContent = 'Signal context';
-      const dl = document.createElement('dl');
-      dl.className = 'trade-context';
-      keys.forEach((key) => {
-        const dt = document.createElement('dt');
-        dt.textContent = CONTEXT_LABELS[key] || key;
-        const dd = document.createElement('dd');
-        dd.textContent = formatContextValue(key, context[key]);
-        dl.append(dt, dd);
-      });
-      contextWrapper.append(title, dl);
-      container.append(contextWrapper);
-    }
-  }
-
-  const aiMeta = trade.ai && typeof trade.ai === 'object' ? trade.ai : null;
-  if (aiMeta) {
-    const aiSection = document.createElement('div');
-    aiSection.className = 'trade-ai-section';
-
-    const header = document.createElement('div');
-    header.className = 'trade-ai-header';
-    const title = document.createElement('h4');
-    title.textContent = 'AI rationale';
-    header.append(title);
-
-    const sentinel = aiMeta.sentinel && typeof aiMeta.sentinel === 'object' ? aiMeta.sentinel : null;
-    if (sentinel && sentinel.label) {
-      const badge = document.createElement('span');
-      badge.className = `sentinel-badge sentinel-${sentinel.label}`;
-      badge.textContent = sentinel.label.toString().toUpperCase();
-      header.append(badge);
-    }
-    aiSection.append(header);
-
-    if (aiMeta.explanation) {
-      const explanation = document.createElement('p');
-      explanation.className = 'trade-ai-explanation';
-      explanation.textContent = aiMeta.explanation;
-      aiSection.append(explanation);
-    }
-
-    const plan = aiMeta.plan && typeof aiMeta.plan === 'object' ? aiMeta.plan : null;
-    if (plan) {
-      const planList = document.createElement('ul');
-      planList.className = 'trade-ai-plan';
-      const planEntries = [
-        ['Size multiplier', plan.size_multiplier, '×'],
-        ['SL multiplier', plan.sl_multiplier, '×'],
-        ['TP multiplier', plan.tp_multiplier, '×'],
-        ['Leverage', plan.leverage, '×'],
-      ];
-      planEntries.forEach(([label, raw, suffix]) => {
-        if (raw === undefined || raw === null) return;
-        const value = Number(raw);
-        if (!Number.isFinite(value)) return;
-        const li = document.createElement('li');
-        li.innerHTML = `<span>${label}</span><strong>${value.toFixed(2)}${suffix || ''}</strong>`;
-        planList.append(li);
-      });
-      if (planList.children.length > 0) {
-        aiSection.append(planList);
-      }
-    }
-
-    if (sentinel) {
-      const sentinelMeta = document.createElement('div');
-      sentinelMeta.className = 'trade-sentinel-meta';
-      const risk = Number(sentinel.event_risk ?? sentinel.meta?.event_risk ?? 0);
-      const hype = Number(sentinel.hype_score ?? sentinel.meta?.hype_score ?? 0);
-      sentinelMeta.innerHTML = `Event risk ${(risk * 100).toFixed(1)}% · Hype ${(hype * 100).toFixed(1)}% · Size factor ${Number(
-        sentinel.actions?.size_factor ?? 1
-      ).toFixed(2)}×`;
-      aiSection.append(sentinelMeta);
-
-      if (Array.isArray(sentinel.events) && sentinel.events.length > 0) {
-        const eventList = document.createElement('ul');
-        eventList.className = 'trade-sentinel-events';
-        sentinel.events.slice(0, 3).forEach((event) => {
-          if (!event) return;
-          const item = document.createElement('li');
-          const severity = (event.severity || '').toString().toLowerCase();
-          item.className = severity ? `severity-${severity}` : '';
-          item.textContent = `${event.headline || 'Event'} (${event.source || 'news'})`;
-          eventList.append(item);
-        });
-        if (eventList.children.length > 0) {
-          aiSection.append(eventList);
-        }
-      }
-    }
-
-    if (Array.isArray(aiMeta.warnings) && aiMeta.warnings.length > 0) {
-      const warningList = document.createElement('ul');
-      warningList.className = 'trade-ai-warnings';
-      aiMeta.warnings.forEach((warning) => {
-        const li = document.createElement('li');
-        li.textContent = warning;
-        warningList.append(li);
-      });
-      aiSection.append(warningList);
-    }
-
-    const budget = aiMeta.budget && typeof aiMeta.budget === 'object' ? aiMeta.budget : null;
-    if (budget && budget.limit !== undefined) {
-      const budgetMeta = document.createElement('div');
-      budgetMeta.className = 'trade-ai-budget';
-      const limit = Number(budget.limit ?? 0);
-      const spent = Number(budget.spent ?? 0);
-      if (Number.isFinite(limit) && limit > 0) {
-        const remaining = Math.max(0, limit - spent);
-        budgetMeta.textContent = `Daily AI spend ${spent.toFixed(2)} / ${limit.toFixed(2)} USD · remaining ${remaining.toFixed(2)} USD`;
-      } else {
-        budgetMeta.textContent = `Daily AI spend ${spent.toFixed(2)} USD (no hard cap)`;
-      }
-      aiSection.append(budgetMeta);
-    }
-
-    container.append(aiSection);
-  }
-
-  const postmortem = trade.postmortem && typeof trade.postmortem === 'object' ? trade.postmortem : null;
-  if (postmortem && postmortem.analysis) {
-    const postSection = document.createElement('div');
-    postSection.className = 'trade-postmortem';
-    const heading = document.createElement('h4');
-    heading.textContent = 'Post-mortem coach';
-    const summary = document.createElement('p');
-    summary.textContent = postmortem.analysis;
-    postSection.append(heading, summary);
-    container.append(postSection);
-  }
-
-  return container;
-}
-
-function buildTradeSummaryCard(trade) {
-  const pnl = extractRealizedPnl(trade);
-  const pnlTone = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'neutral';
-  const pnlDisplay = `${pnl > 0 ? '+' : ''}${formatNumber(pnl, 2)} USDT`;
-  const rValue = Number(trade.pnl_r ?? 0);
-  const rTone = rValue > 0 ? 'profit' : rValue < 0 ? 'loss' : 'neutral';
-  const rDisplay = `${rValue > 0 ? '+' : ''}${formatNumber(rValue, 2)} R`;
-  const durationSeconds = computeDurationSeconds(trade.opened_at_iso, trade.closed_at_iso);
-
-  const card = document.createElement('button');
-  card.type = 'button';
-  card.className = 'trade-card';
-  if (trade.side) {
-    card.dataset.side = trade.side.toString().toLowerCase();
-  }
-  if (pnlTone && pnlTone !== 'neutral') {
-    card.dataset.pnl = pnlTone;
-  }
-
-  const top = document.createElement('div');
-  top.className = 'trade-card-top';
-
-  const main = document.createElement('div');
-  main.className = 'trade-card-main';
-
-  const symbol = document.createElement('span');
-  symbol.className = 'trade-card-symbol';
-  symbol.textContent = trade.symbol || '–';
-  main.append(symbol);
-
-  if (trade.side) {
-    const sideBadge = document.createElement('span');
-    sideBadge.className = 'trade-card-side';
-    sideBadge.textContent = formatSideLabel(trade.side);
-    main.append(sideBadge);
-  }
-
-  const pnlEl = document.createElement('span');
-  pnlEl.className = `trade-card-pnl ${pnlTone}`.trim();
-  pnlEl.textContent = pnlDisplay;
-  top.append(main, pnlEl);
-
-  const bottom = document.createElement('div');
-  bottom.className = 'trade-card-bottom';
-
-  const info = document.createElement('div');
-  info.className = 'trade-card-info';
-
-  const timestampLabel = formatTimestamp(trade.closed_at_iso || trade.opened_at_iso);
-  if (timestampLabel && timestampLabel !== '–') {
-    const timeSpan = document.createElement('span');
-    timeSpan.textContent = `Closed ${timestampLabel}`;
-    info.append(timeSpan);
-  }
-
-  const windowStart = formatTimeShort(trade.opened_at_iso);
-  const windowEnd = formatTimeShort(trade.closed_at_iso);
-  if (windowStart !== '–' || windowEnd !== '–') {
-    const windowSpan = document.createElement('span');
-    windowSpan.className = 'trade-card-window';
-    windowSpan.textContent = `Window ${windowStart} → ${windowEnd}`;
-    info.append(windowSpan);
-  }
-
-  if (Number.isFinite(durationSeconds)) {
-    const durationSpan = document.createElement('span');
-    durationSpan.textContent = `Held ${formatDuration(durationSeconds)}`;
-    info.append(durationSpan);
-  }
-
-  if (info.children.length === 0) {
-    const placeholder = document.createElement('span');
-    placeholder.textContent = 'Timing data unavailable';
-    info.append(placeholder);
-  }
-
-  const actions = document.createElement('div');
-  actions.className = 'trade-card-actions';
-
-  const rSpan = document.createElement('span');
-  rSpan.className = `trade-card-r ${rTone}`.trim();
-  rSpan.textContent = rDisplay;
-  actions.append(rSpan);
-
-  const hint = document.createElement('span');
-  hint.className = 'trade-card-hint';
-  hint.textContent = translate('trades.viewDetails', 'View details');
-  actions.append(hint);
-
-  bottom.append(info, actions);
-
-  card.append(top, bottom);
-
-  const symbolLabel = trade.symbol || 'trade';
-  const sideLabel = trade.side ? `${formatSideLabel(trade.side)} ` : '';
-  const accessibleTime =
-    timestampLabel && timestampLabel !== '–' ? `closed ${timestampLabel}` : 'timestamp unavailable';
-  card.setAttribute('aria-label', `View ${sideLabel}${symbolLabel} details (${accessibleTime})`);
-  card.addEventListener('click', () => openTradeModal(trade, card));
-
-  return card;
-}
-
-function formatContextValue(key, raw) {
-  const numeric = Number(raw);
-  if (Number.isFinite(numeric)) {
-    switch (key) {
-      case 'atr_pct':
-        return `${(numeric * 100).toFixed(2)}%`;
-      case 'spread_bps':
-        return `${(numeric * 100).toFixed(2)}%`;
-      case 'funding':
-        return `${(numeric * 100).toFixed(3)}%`;
-      case 'qv_score':
-        return numeric.toFixed(2);
-      case 'slope_htf':
-      case 'regime_slope':
-        return numeric.toFixed(3);
-      case 'adx':
-      case 'regime_adx':
-      case 'rsi':
-        return numeric.toFixed(1);
-      case 'trend':
-        return numeric > 0 ? 'Bullish' : numeric < 0 ? 'Bearish' : 'Neutral';
-      case 'alpha_prob':
-      case 'alpha_conf':
-        return `${(numeric * 100).toFixed(1)}%`;
-      case 'sentinel_event_risk':
-      case 'sentinel_hype':
-        return `${(numeric * 100).toFixed(1)}%`;
-      case 'sentinel_factor':
-        return `${numeric.toFixed(2)}×`;
-      default:
-        return numeric.toFixed(3);
-    }
-  }
-  if (key === 'sentinel_label') {
-    return (raw || '').toString().replace(/^[a-z]/, (char) => char.toUpperCase());
-  }
-  if (raw === undefined || raw === null) return '–';
-  return raw.toString();
-}
-
-function getTradeTimestamp(trade) {
-  if (!trade || typeof trade !== 'object') return 0;
-  const closed = Date.parse(trade.closed_at_iso);
-  if (Number.isFinite(closed)) return closed;
-  const opened = Date.parse(trade.opened_at_iso);
-  return Number.isFinite(opened) ? opened : 0;
-}
-
-function extractRealizedPnl(trade) {
-  if (!trade || typeof trade !== 'object') {
-    return 0;
-  }
-  const candidates = [
-    trade.realized_pnl,
-    trade.realizedPnl,
-    trade.realizedPNL,
-    trade.pnl,
-  ];
-  for (const candidate of candidates) {
-    if (candidate === undefined || candidate === null) {
-      continue;
-    }
-    const value = Number(candidate);
-    if (!Number.isNaN(value)) {
-      return value;
-    }
-  }
-  return 0;
-}
-
-function renderTradeHistory(history) {
-  if (!tradeList) return;
-  tradeList.innerHTML = '';
-
-  if (!history || history.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'trade-empty';
-    empty.textContent = translate('trades.empty', 'No trades yet.');
-    tradeList.append(empty);
-    tradeList.style.removeProperty('max-height');
-    tradeList.removeAttribute('data-viewport-locked');
-    return;
-  }
-
-  const sortedHistory = [...history].sort((a, b) => getTradeTimestamp(b) - getTradeTimestamp(a));
-
-  sortedHistory.forEach((trade) => {
-    const card = buildTradeSummaryCard(trade);
-    tradeList.append(card);
-  });
-
-  requestTradeListViewportSync();
-}
-
-function handleTradeModalKeydown(event) {
-  if (event.key === 'Escape') {
-    closeTradeModal();
-  }
-}
-
-function openTradeModal(trade, returnTarget) {
-  if (!tradeModal || !tradeModalBody) return;
-
-  const pnl = extractRealizedPnl(trade);
-  const pnlTone = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'neutral';
-  const pnlDisplay = `${pnl > 0 ? '+' : ''}${formatNumber(pnl, 2)} USDT`;
-  const durationSeconds = computeDurationSeconds(trade.opened_at_iso, trade.closed_at_iso);
-  const symbol = trade.symbol || 'Trade';
-  const sideLabel = trade.side ? formatSideLabel(trade.side) : null;
-  const titleParts = [symbol];
-  if (sideLabel) {
-    titleParts.push(sideLabel);
-  }
-  if (tradeModalTitle) {
-    tradeModalTitle.textContent = titleParts.join(' · ');
-  }
-
-  const outcomeLabel =
-    pnlTone === 'profit' ? 'Realized profit' : pnlTone === 'loss' ? 'Realized loss' : 'Flat';
-  const timestampLabel = formatTimestamp(trade.closed_at_iso || trade.opened_at_iso);
-  const subtitleParts = [];
-  if (timestampLabel && timestampLabel !== '–') {
-    subtitleParts.push(`Closed ${timestampLabel}`);
-  }
-  if (Number.isFinite(durationSeconds)) {
-    subtitleParts.push(`Held ${formatDuration(durationSeconds)}`);
-  }
-  subtitleParts.push(`${outcomeLabel} ${pnlDisplay}`);
-  if (tradeModalSubtitle) {
-    tradeModalSubtitle.textContent =
-      subtitleParts.filter(Boolean).join(' · ') ||
-      translate('trades.modal.noMetadata', 'No additional metadata available.');
-  }
-
-  const active =
-    returnTarget instanceof HTMLElement
-      ? returnTarget
-      : document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-  tradeModalReturnTarget = active && active !== document.body ? active : null;
-
-  if (tradeModalHideTimer) {
-    clearTimeout(tradeModalHideTimer);
-    tradeModalHideTimer = null;
-  }
-  if (tradeModalFinalizeHandler) {
-    tradeModal.removeEventListener('transitionend', tradeModalFinalizeHandler);
-    tradeModalFinalizeHandler = null;
-  }
-
-  tradeModalBody.innerHTML = '';
-  const content = buildTradeDetailContent(trade);
-  tradeModalBody.append(content);
-  tradeModalBody.scrollTop = 0;
-
-  tradeModal.removeAttribute('hidden');
-  tradeModal.removeAttribute('aria-hidden');
-  requestAnimationFrame(() => {
-    tradeModal.classList.add('is-active');
-  });
-  document.body.classList.add('modal-open');
-
-  document.addEventListener('keydown', handleTradeModalKeydown);
-  if (tradeModalClose) {
-    setTimeout(() => tradeModalClose.focus(), 120);
-  }
-}
-
-function closeTradeModal() {
-  if (!tradeModal) {
-    return;
-  }
-
-  if (tradeModalHideTimer) {
-    clearTimeout(tradeModalHideTimer);
-    tradeModalHideTimer = null;
-  }
-  if (tradeModalFinalizeHandler) {
-    tradeModal.removeEventListener('transitionend', tradeModalFinalizeHandler);
-    tradeModalFinalizeHandler = null;
-  }
-  if (tradeModal.hasAttribute('hidden')) {
-    return;
-  }
-
-  tradeModal.classList.remove('is-active');
-  tradeModal.setAttribute('aria-hidden', 'true');
-  document.body.classList.remove('modal-open');
-
-  const finalize = () => {
-    if (tradeModalHideTimer) {
-      clearTimeout(tradeModalHideTimer);
-      tradeModalHideTimer = null;
-    }
-    if (!tradeModal.hasAttribute('hidden')) {
-      tradeModal.setAttribute('hidden', '');
-    }
-    if (tradeModalFinalizeHandler) {
-      tradeModal.removeEventListener('transitionend', tradeModalFinalizeHandler);
-      tradeModalFinalizeHandler = null;
-    }
-    const restoreTarget =
-      tradeModalReturnTarget && typeof tradeModalReturnTarget.focus === 'function' ? tradeModalReturnTarget : null;
-    tradeModalReturnTarget = null;
-    if (restoreTarget) {
-      restoreTarget.focus({ preventScroll: true });
-    }
-  };
-
-  tradeModalFinalizeHandler = finalize;
-  tradeModal.addEventListener('transitionend', finalize);
-  tradeModalHideTimer = setTimeout(finalize, 280);
-
-  document.removeEventListener('keydown', handleTradeModalKeydown);
-}
-
-function handleDecisionModalKeydown(event) {
-  if (event.key === 'Escape') {
-    closeDecisionModal();
-  }
-}
-
-function renderDecisionModalEvents(events, reasonLabel) {
-  const list = document.createElement('ul');
-  list.className = 'decision-modal-list';
-
-  events.forEach((event) => {
-    const item = document.createElement('li');
-    item.className = 'decision-modal-event';
-
-    const header = document.createElement('div');
-    header.className = 'decision-modal-event-header';
-
-    const symbol = document.createElement('span');
-    symbol.className = 'decision-modal-symbol';
-    symbol.textContent = event.symbol || reasonLabel || '—';
-    header.append(symbol);
-
-    const time = document.createElement('span');
-    time.className = 'decision-modal-time';
-    if (event.occurredAtIso) {
-      time.textContent = formatRelativeTime(event.occurredAtIso);
-      time.title = new Date(event.occurredAtIso).toLocaleString();
-    } else if (Number.isFinite(event.occurredAt)) {
-      time.textContent = formatRelativeTime(event.occurredAt);
-      time.title = new Date(event.occurredAt * 1000).toLocaleString();
-    } else {
-      time.textContent = 'Time unavailable';
-    }
-    header.append(time);
-
-    item.append(header);
-
-    if (event.message) {
-      const message = document.createElement('p');
-      message.className = 'decision-modal-message';
-      message.textContent = event.message;
-      item.append(message);
-    }
-
-    if (event.detail) {
-      const detail = document.createElement('p');
-      detail.className = 'decision-modal-detail';
-      detail.textContent = event.detail;
-      item.append(detail);
-    }
-
-    if (event.trade) {
-      const actionRow = document.createElement('div');
-      actionRow.className = 'decision-modal-actions';
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'decision-modal-view-trade';
-      button.textContent = 'View trade details';
-      button.addEventListener('click', () => {
-        closeDecisionModal();
-        openTradeModal(event.trade, button);
-      });
-      actionRow.append(button);
-      item.append(actionRow);
-    }
-
-    list.append(item);
-  });
-
-  return list;
-}
-
-function openDecisionModal(reason, options = {}) {
-  if (!decisionModal || !decisionModalBody) return;
-  const { label: labelOverride, count, returnTarget } = options;
-  const reasonLabel = labelOverride || friendlyReason(reason);
-  const events = collectDecisionEvents(reason);
-
-  const active =
-    returnTarget instanceof HTMLElement
-      ? returnTarget
-      : document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-  decisionModalReturnTarget = active && active !== document.body ? active : null;
-
-  if (decisionModalHideTimer) {
-    clearTimeout(decisionModalHideTimer);
-    decisionModalHideTimer = null;
-  }
-  if (decisionModalFinalizeHandler) {
-    decisionModal.removeEventListener('transitionend', decisionModalFinalizeHandler);
-    decisionModalFinalizeHandler = null;
-  }
-
-  decisionModalBody.innerHTML = '';
-
-  if (decisionModalTitle) {
-    decisionModalTitle.textContent = reasonLabel || translate('modals.decision.title', 'Trade decision reason');
-  }
-
-  const subtitleParts = [];
-  if (Number.isFinite(count)) {
-    subtitleParts.push(`${count} total skips recorded`);
-  }
-  if (events.length > 0) {
-    subtitleParts.push(`Showing ${events.length} recent ${events.length === 1 ? 'entry' : 'entries'}`);
-  } else {
-    subtitleParts.push(translate('status.decisions.noReasonShort', 'No recorded trades for this reason yet.'));
-  }
-  if (decisionModalSubtitle) {
-    decisionModalSubtitle.textContent = subtitleParts.join(' · ');
-  }
-
-  if (events.length > 0) {
-    decisionModalBody.append(renderDecisionModalEvents(events, reasonLabel));
-  } else {
-    const empty = document.createElement('p');
-    empty.className = 'decision-modal-empty';
-    empty.textContent = translate(
-      'status.decisions.noReason',
-      'No recorded trades for this reason yet. Check back after the next decision.'
-    );
-    decisionModalBody.append(empty);
-  }
-
-  decisionModal.removeAttribute('hidden');
-  decisionModal.removeAttribute('aria-hidden');
-  requestAnimationFrame(() => {
-    decisionModal.classList.add('is-active');
-  });
-  document.body.classList.add('modal-open');
-  document.addEventListener('keydown', handleDecisionModalKeydown);
-  if (decisionModalClose) {
-    setTimeout(() => decisionModalClose.focus(), 120);
-  }
-}
-
-function closeDecisionModal() {
-  if (!decisionModal) {
-    return;
-  }
-
-  if (decisionModalHideTimer) {
-    clearTimeout(decisionModalHideTimer);
-    decisionModalHideTimer = null;
-  }
-
-  if (decisionModalFinalizeHandler) {
-    decisionModal.removeEventListener('transitionend', decisionModalFinalizeHandler);
-    decisionModalFinalizeHandler = null;
-  }
-
-  if (decisionModal.hasAttribute('hidden')) {
-    return;
-  }
-
-  decisionModal.classList.remove('is-active');
-  decisionModal.setAttribute('aria-hidden', 'true');
-  document.body.classList.remove('modal-open');
-
-  const finalize = () => {
-    if (decisionModalHideTimer) {
-      clearTimeout(decisionModalHideTimer);
-      decisionModalHideTimer = null;
-    }
-    if (!decisionModal.hasAttribute('hidden')) {
-      decisionModal.setAttribute('hidden', '');
-    }
-    if (decisionModalFinalizeHandler) {
-      decisionModal.removeEventListener('transitionend', decisionModalFinalizeHandler);
-      decisionModalFinalizeHandler = null;
-    }
-    const restoreTarget =
-      decisionModalReturnTarget && typeof decisionModalReturnTarget.focus === 'function'
-        ? decisionModalReturnTarget
-        : null;
-    decisionModalReturnTarget = null;
-    if (restoreTarget) {
-      restoreTarget.focus({ preventScroll: true });
-    }
-  };
-
-  decisionModalFinalizeHandler = finalize;
-  decisionModal.addEventListener('transitionend', finalize);
-  decisionModalHideTimer = setTimeout(finalize, 280);
-  document.removeEventListener('keydown', handleDecisionModalKeydown);
-}
-
-function renderAiBudget(budget) {
-  if (!aiBudgetCard || !aiBudgetModeLabel || !aiBudgetMeta || !aiBudgetFill) return;
-  lastAiBudget = budget || null;
-  aiBudgetCard.classList.toggle('active', aiMode);
-  updateAiBudgetModeLabel();
-  if (paperMode) {
-    aiBudgetFill.style.width = '0%';
-    aiBudgetMeta.textContent = translate('status.aiBudgetMeta.paper', 'Paper mode does not use a budget.');
-    return;
-  }
-  if (!aiMode) {
-    aiBudgetFill.style.width = '0%';
-    aiBudgetMeta.textContent = translate('status.aiBudgetMeta.disabled', 'AI-Mode disabled.');
-    return;
-  }
-  let limit = Number((budget && budget.limit) ?? 0);
-  let spent = Number((budget && budget.spent) ?? 0);
-  if (!Number.isFinite(spent) || spent < 0) {
-    spent = 0;
-  }
-  const presetMode = (currentConfig?.env?.ASTER_PRESET_MODE || '').toString().toLowerCase();
-  const presetForcesUnlimited = presetMode === 'high' || presetMode === 'att';
-  if (!Number.isFinite(limit) || limit <= 0) {
-    const envLimit = Number(currentConfig?.env?.ASTER_AI_DAILY_BUDGET_USD ?? 0);
-    if (!presetForcesUnlimited && Number.isFinite(envLimit) && envLimit > 0) {
-      limit = envLimit;
-    }
-  }
-  const hasLimit = Number.isFinite(limit) && limit > 0;
-  aiBudgetCard.classList.toggle('unlimited', !hasLimit);
-  if (!Number.isFinite(limit) || limit < 0) {
-    limit = 0;
-  }
-  let requestCount = Number((budget && budget.count) ?? 0);
-  if (!Number.isFinite(requestCount) || requestCount < 0) {
-    requestCount = 0;
-  }
-  requestCount = Math.floor(requestCount);
-  const requestLabel = translate(
-    requestCount === 1 ? 'status.aiBudgetMeta.requests.one' : 'status.aiBudgetMeta.requests.many',
-    `${requestCount} ${requestCount === 1 ? 'request' : 'requests'} today`,
-    { count: requestCount }
-  );
-  if (!hasLimit) {
-    const presetNote = presetForcesUnlimited
-      ? presetMode === 'high'
-        ? ' · High preset removes the AI spend cap.'
-        : ' · ATT preset removes the AI spend cap.'
-      : '';
-    aiBudgetFill.style.width = '0%';
-    aiBudgetMeta.textContent = translate(
-      presetForcesUnlimited ? 'status.aiBudgetMeta.unlimitedPreset' : 'status.aiBudgetMeta.unlimited',
-      `Spent ${spent.toFixed(2)} USD · unlimited budget${presetNote} · ${requestLabel}`,
-      { spent: spent.toFixed(2), note: presetNote, requests: requestCount, requests_label: requestLabel }
-    );
-    return;
-  }
-  const pct = clampValue(limit > 0 ? (spent / limit) * 100 : 0, 0, 100);
-  aiBudgetFill.style.width = `${pct.toFixed(1)}%`;
-  const remaining = Math.max(0, limit - spent);
-  aiBudgetMeta.textContent = translate(
-    'status.aiBudgetMeta.limited',
-    `Spent ${spent.toFixed(2)} / ${limit.toFixed(2)} USD · remaining ${remaining.toFixed(2)} USD · ${requestLabel}`,
-    {
-      spent: spent.toFixed(2),
-      limit: limit.toFixed(2),
-      remaining: remaining.toFixed(2),
-      requests: requestCount,
-      requests_label: requestLabel,
-    }
-  );
-}
-
-function isScrolledToBottom(element, threshold = 24) {
-  if (!element) return true;
-  return element.scrollHeight - element.clientHeight - element.scrollTop <= threshold;
-}
-
-function scrollToBottom(element, behavior = 'smooth') {
-  if (!element) return;
-  element.scrollTo({ top: element.scrollHeight, behavior });
-}
-
-function parsePxValue(value) {
-  if (typeof value !== 'string') return 0;
-  const parsed = parseFloat(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function syncTradeListViewport() {
-  if (!tradeList || typeof window === 'undefined') return;
-  const items = Array.from(tradeList.querySelectorAll('.trade-card'));
-  if (items.length <= 2) {
-    tradeList.style.removeProperty('max-height');
-    tradeList.removeAttribute('data-viewport-locked');
-    return;
-  }
-
-  const sample = items.slice(0, 2);
-  let visibleHeight = 0;
-  sample.forEach((item) => {
-    visibleHeight += item.getBoundingClientRect().height;
-  });
-
-  if (visibleHeight <= 0) {
-    tradeList.style.removeProperty('max-height');
-    tradeList.removeAttribute('data-viewport-locked');
-    return;
-  }
-
-  const style = window.getComputedStyle(tradeList);
-  const gapValue = parsePxValue(style.rowGap || style.gap || '0');
-  const paddingTop = parsePxValue(style.paddingTop);
-  const paddingBottom = parsePxValue(style.paddingBottom);
-  const totalHeight =
-    visibleHeight + gapValue * Math.max(0, sample.length - 1) + paddingTop + paddingBottom + 4;
-
-  tradeList.style.maxHeight = `${Math.round(Math.max(totalHeight, 0))}px`;
-  tradeList.setAttribute('data-viewport-locked', 'true');
-}
-
-function requestTradeListViewportSync() {
-  if (!tradeList) return;
-
-  if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
-    syncTradeListViewport();
-    return;
-  }
-
-  if (tradeViewportSyncHandle !== null) {
-    window.cancelAnimationFrame(tradeViewportSyncHandle);
-  }
-
-  tradeViewportSyncHandle = window.requestAnimationFrame(() => {
-    tradeViewportSyncHandle = null;
-    syncTradeListViewport();
-  });
-}
-
-if (typeof window !== 'undefined' && tradeList) {
-  window.addEventListener('resize', () => requestTradeListViewportSync());
-}
-
-function toTitleCase(value) {
-  const text = (value ?? '').toString().trim();
-  if (!text) return '';
-  return text
-    .replace(/[_\-]+/g, ' ')
-    .split(' ')
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-}
-
-const PLAYBOOK_PROCESS_STATUS_FALLBACKS = {
-  pending: 'Awaiting AI response',
-  applied: 'Playbook applied',
-  failed: 'Refresh failed',
-};
-
-const PLAYBOOK_PROCESS_STAGE_FALLBACKS = {
-  requested: 'Request sent',
-  applied: 'Applied',
-  failed: 'Failed',
-  info: 'Update logged',
-};
-
-const PLAYBOOK_SIZE_BIAS_PRIORITY = ['BUY', 'SELL', 'LONG', 'SHORT', 'S', 'M', 'L'];
-
-function formatPlaybookMultiplier(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return '–';
-  return `×${numeric.toFixed(2)}`;
-}
-
-function formatPlaybookSigned(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return '0.00';
-  const sign = numeric >= 0 ? '+' : '';
-  return `${sign}${numeric.toFixed(2)}`;
-}
-
-function formatPlaybookPercent(value, fractionDigits = 0) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return '–';
-  const percentage = numeric * 100;
-  return `${percentage.toFixed(fractionDigits)}%`;
-}
-
-function formatPlaybookSizeLabel(label) {
-  const text = (label ?? '').toString().trim();
-  if (!text) return '';
-  if (text.length <= 3) return text.toUpperCase();
-  return toTitleCase(text);
-}
-
-function normalizePlaybookSizeBiasEntries(map) {
-  if (!map || typeof map !== 'object') return [];
-  const entries = [];
-  Object.entries(map).forEach(([key, rawValue]) => {
-    const numeric = Number(rawValue);
-    if (!Number.isFinite(numeric)) return;
-    const label = formatPlaybookSizeLabel(key);
-    if (!label) return;
-    entries.push({ label, value: numeric });
-  });
-  entries.sort((a, b) => {
-    const aIndex = PLAYBOOK_SIZE_BIAS_PRIORITY.indexOf(a.label.toUpperCase());
-    const bIndex = PLAYBOOK_SIZE_BIAS_PRIORITY.indexOf(b.label.toUpperCase());
-    if (aIndex !== -1 || bIndex !== -1) {
-      if (aIndex === -1) return 1;
-      if (bIndex === -1) return -1;
-      if (aIndex !== bIndex) return aIndex - bIndex;
-    }
-    return a.label.localeCompare(b.label, undefined, { sensitivity: 'base' });
-  });
-  return entries;
-}
-
-function getPlaybookActivityTimestampMs(entry) {
-  if (!entry || typeof entry !== 'object') return Number.NEGATIVE_INFINITY;
-  const epoch = Number(entry.ts_epoch);
-  if (Number.isFinite(epoch)) {
-    return epoch * 1000;
-  }
-  const ts = entry.ts;
-  if (!ts) return Number.NEGATIVE_INFINITY;
-  const parsed = Date.parse(ts);
-  return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
-}
-
-function getPlaybookProcessStatusLabel(statusKey) {
-  const normalized = (statusKey || 'pending').toString().toLowerCase();
-  return translate(
-    `playbook.process.status.${normalized}`,
-    PLAYBOOK_PROCESS_STATUS_FALLBACKS[normalized] || PLAYBOOK_PROCESS_STATUS_FALLBACKS.pending
-  );
-}
-
-function getPlaybookProcessStageLabel(stageKey) {
-  const normalized = (stageKey || 'info').toString().toLowerCase();
-  return translate(
-    `playbook.process.stage.${normalized}`,
-    PLAYBOOK_PROCESS_STAGE_FALLBACKS[normalized] || PLAYBOOK_PROCESS_STAGE_FALLBACKS.info
-  );
-}
-
-function getPlaybookKindLabel(kind) {
-  const normalized = (kind || '').toString().toLowerCase();
-  switch (normalized) {
-    case 'query':
-      return translate('playbook.kind.query', 'Request');
-    case 'playbook':
-      return translate('playbook.kind.applied', 'Applied');
-    case 'error':
-      return translate('playbook.kind.error', 'Error');
-    case 'warning':
-      return translate('playbook.kind.warning', 'Warning');
-    default:
-      return translate('playbook.kind.update', 'Update');
-  }
-}
-
-function getPlaybookKindClass(kind) {
-  const normalized = (kind || '').toString().toLowerCase();
-  if (normalized === 'query') return 'kind--query';
-  if (normalized === 'error') return 'kind--error';
-  if (normalized === 'warning') return 'kind--warning';
-  if (normalized === 'playbook') return 'kind--applied';
-  return '';
-}
-
-function buildPlaybookMeta(entry) {
-  if (!entry || typeof entry !== 'object') return [];
-  const rows = [];
-  const requestId = entry.request_id ? String(entry.request_id).trim() : '';
-  if (requestId) {
-    rows.push({ label: translate('playbook.meta.requestId', 'Request ID'), value: requestId });
-  }
-  const modeLabel = toTitleCase(entry.mode || '');
-  const biasLabel = toTitleCase(entry.bias || '');
-  if (modeLabel || biasLabel) {
-    const modeValue = biasLabel ? `${modeLabel} (${biasLabel})` : modeLabel;
-    rows.push({ label: translate('playbook.meta.mode', 'Mode'), value: modeValue });
-  }
-  if (entry.size_bias && typeof entry.size_bias === 'object') {
-    const parts = normalizePlaybookSizeBiasEntries(entry.size_bias).map(
-      (item) => `${item.label} ${formatPlaybookMultiplier(item.value)}`
-    );
-    if (parts.length > 0) {
-      rows.push({
-        label: translate('playbook.meta.sizeBias', 'Size bias'),
-        value: parts.join(' · '),
-      });
-    }
-  }
-  if (Number.isFinite(Number(entry.sl_bias))) {
-    rows.push({ label: translate('playbook.meta.sl', 'SL bias'), value: formatPlaybookMultiplier(entry.sl_bias) });
-  }
-  if (Number.isFinite(Number(entry.tp_bias))) {
-    rows.push({ label: translate('playbook.meta.tp', 'TP bias'), value: formatPlaybookMultiplier(entry.tp_bias) });
-  }
-  if (Number.isFinite(Number(entry.confidence))) {
-    rows.push({
-      label: translate('playbook.meta.confidence', 'Confidence'),
-      value: formatPlaybookPercent(entry.confidence, entry.confidence < 0.1 ? 1 : 0),
-    });
-  }
-  if (Array.isArray(entry.features) && entry.features.length > 0) {
-    const focusText = entry.features
-      .slice(0, 3)
-      .map((feature) => {
-        const name = feature && typeof feature.name === 'string' ? feature.name : '';
-        return `${name} ${formatPlaybookSigned(feature.value)}`.trim();
-      })
-      .join(' · ');
-    if (focusText) {
-      rows.push({ label: translate('playbook.meta.features', 'Focus'), value: focusText });
-    }
-  }
-  if (entry.snapshot_summary) {
-    rows.push({
-      label: translate('playbook.meta.snapshot', 'Snapshot'),
-      value: String(entry.snapshot_summary),
-    });
-  }
-  if (entry.reason) {
-    rows.push({ label: translate('playbook.meta.reason', 'Reason'), value: entry.reason });
-  }
-  if (entry.notes && (!entry.body || !entry.body.includes(entry.notes))) {
-    rows.push({ label: translate('playbook.meta.notes', 'Notes'), value: entry.notes });
-  }
-  return rows;
-}
-
-function renderPlaybookOverview(playbook, activity, process) {
-  lastPlaybookState = playbook && typeof playbook === 'object' ? { ...playbook } : null;
-  basePlaybookActivity = Array.isArray(activity) ? activity.slice() : [];
-  lastPlaybookActivity = mergePlaybookActivityWithLive();
-  lastPlaybookProcess = Array.isArray(process) ? process.slice() : [];
-  renderPlaybookSummarySection();
-  renderPlaybookProcessSection();
-  renderPlaybookActivitySection();
-  updatePlaybookPendingState();
-}
-
-function renderPlaybookSummarySection() {
-  if (!playbookSummaryContainer) return;
-  const hintNode = aiHint && playbookSummaryContainer.contains(aiHint) ? aiHint : null;
-  playbookSummaryContainer.innerHTML = '';
-
-  if (!aiMode) {
-    const disabled = document.createElement('p');
-    disabled.className = 'playbook-empty';
-    disabled.textContent = translate('playbook.disabled', 'Enable AI mode to view the playbook overview.');
-    playbookSummaryContainer.append(disabled);
-    if (hintNode) playbookSummaryContainer.append(hintNode);
-    return;
-  }
-
-  if (!lastPlaybookState) {
-    const empty = document.createElement('p');
-    empty.className = 'playbook-empty';
-    empty.textContent = translate('playbook.empty', 'No playbook has been applied yet.');
-    playbookSummaryContainer.append(empty);
-    if (hintNode) playbookSummaryContainer.append(hintNode);
-    return;
-  }
-
-  const header = document.createElement('div');
-  header.className = 'playbook-summary-header';
-  const activeLabel = document.createElement('span');
-  activeLabel.textContent = translate('playbook.active', 'Active playbook:');
-  header.append(activeLabel);
-  const activeValue = document.createElement('strong');
-  const modeText = toTitleCase(lastPlaybookState.mode || 'baseline');
-  const biasText = toTitleCase(lastPlaybookState.bias || 'neutral');
-  activeValue.textContent = biasText ? `${modeText} (${biasText})` : modeText;
-  header.append(activeValue);
-  const refreshedValue = lastPlaybookState.refreshed_ts || lastPlaybookState.refreshed;
-  if (refreshedValue) {
-    const refreshed = document.createElement('span');
-    refreshed.textContent = `${translate('playbook.refreshed', 'Refreshed')} ${formatRelativeTime(refreshedValue)}`;
-    header.append(refreshed);
-  }
-  playbookSummaryContainer.append(header);
-
-  const stats = [];
-  if (Number.isFinite(Number(lastPlaybookState.sl_bias))) {
-    stats.push({ label: translate('playbook.sl', 'SL bias'), value: formatPlaybookMultiplier(lastPlaybookState.sl_bias) });
-  }
-  if (Number.isFinite(Number(lastPlaybookState.tp_bias))) {
-    stats.push({ label: translate('playbook.tp', 'TP bias'), value: formatPlaybookMultiplier(lastPlaybookState.tp_bias) });
-  }
-  if (Number.isFinite(Number(lastPlaybookState.confidence))) {
-    stats.push({
-      label: translate('playbook.confidence', 'Confidence'),
-      value: formatPlaybookPercent(lastPlaybookState.confidence, lastPlaybookState.confidence < 0.1 ? 1 : 0),
-    });
-  }
-
-  if (stats.length > 0) {
-    const grid = document.createElement('div');
-    grid.className = 'playbook-summary-grid';
-    stats.forEach((stat) => {
-      const item = document.createElement('div');
-      item.className = 'playbook-summary-item';
-      const label = document.createElement('span');
-      label.className = 'label';
-      label.textContent = stat.label;
-      const value = document.createElement('span');
-      value.className = 'value';
-      value.textContent = stat.value;
-      item.append(label, value);
-      grid.append(item);
-    });
-    playbookSummaryContainer.append(grid);
-  }
-
-  const sizeBias = lastPlaybookState.size_bias;
-  const sizeEntries = normalizePlaybookSizeBiasEntries(sizeBias);
-  if (sizeEntries.length > 0) {
-    const sizeSection = document.createElement('div');
-    sizeSection.className = 'playbook-size-bias';
-    const label = document.createElement('span');
-    label.className = 'label';
-    label.textContent = translate('playbook.sizeBias', 'Size bias');
-    sizeSection.append(label);
-    const values = document.createElement('div');
-    values.className = 'playbook-size-bias-values';
-    sizeEntries.forEach((entry) => {
-      const chip = document.createElement('span');
-      chip.textContent = `${entry.label} ${formatPlaybookMultiplier(entry.value)}`;
-      values.append(chip);
-    });
-    sizeSection.append(values);
-    playbookSummaryContainer.append(sizeSection);
-  }
-
-  if (Array.isArray(lastPlaybookState.features) && lastPlaybookState.features.length > 0) {
-    const featuresSection = document.createElement('div');
-    featuresSection.className = 'playbook-features';
-    const title = document.createElement('div');
-    title.className = 'playbook-features-title';
-    title.textContent = translate('playbook.features', 'Focus signals');
-    featuresSection.append(title);
-    const list = document.createElement('div');
-    list.className = 'playbook-feature-list';
-    lastPlaybookState.features.forEach((feature) => {
-      if (!feature) return;
-      const chip = document.createElement('span');
-      chip.className = 'playbook-feature';
-      const name = feature && typeof feature.name === 'string' ? feature.name : '';
-      chip.textContent = `${name} ${formatPlaybookSigned(feature.value)}`.trim();
-      list.append(chip);
-    });
-    featuresSection.append(list);
-    playbookSummaryContainer.append(featuresSection);
-  }
-
-  const strategy = lastPlaybookState.strategy && typeof lastPlaybookState.strategy === 'object' ? lastPlaybookState.strategy : null;
-  if (strategy) {
-    const strategySection = document.createElement('div');
-    strategySection.className = 'playbook-strategy';
-
-    const strategyTitle = document.createElement('h3');
-    strategyTitle.className = 'playbook-strategy-title';
-    strategyTitle.textContent = translate('playbook.strategy.title', 'Strategy in play');
-    strategySection.append(strategyTitle);
-
-    const strategyName = document.createElement('div');
-    strategyName.className = 'playbook-strategy-name';
-    strategyName.textContent = strategy.name || translate('playbook.strategy.untitled', 'Unnamed strategy');
-    strategySection.append(strategyName);
-
-    const metaContainer = document.createElement('div');
-    metaContainer.className = 'playbook-strategy-meta';
-    const addMetaRow = (labelText, valueText) => {
-      if (!valueText || typeof valueText !== 'string' || !valueText.trim()) return;
-      const row = document.createElement('div');
-      row.className = 'playbook-strategy-meta-row';
-      const labelEl = document.createElement('span');
-      labelEl.className = 'label';
-      labelEl.textContent = labelText;
-      const valueEl = document.createElement('span');
-      valueEl.className = 'value';
-      valueEl.textContent = valueText.trim();
-      row.append(labelEl, valueEl);
-      metaContainer.append(row);
-    };
-
-    addMetaRow(
-      translate('playbook.strategy.objective', 'Objective'),
-      typeof strategy.objective === 'string' ? strategy.objective : null
-    );
-    const reasonText =
-      (typeof lastPlaybookState.reason === 'string' && lastPlaybookState.reason.trim())
-        ? lastPlaybookState.reason
-        : typeof strategy.why_active === 'string'
-        ? strategy.why_active
-        : null;
-    addMetaRow(translate('playbook.strategy.reason', 'Why it is active'), reasonText);
-    if (metaContainer.childElementCount > 0) {
-      strategySection.append(metaContainer);
-    }
-
-    const normalizedSignals = Array.isArray(strategy.market_signals)
-      ? strategy.market_signals.filter((item) => typeof item === 'string' && item.trim())
-      : [];
-    if (normalizedSignals.length > 0) {
-      const signalsSection = document.createElement('div');
-      signalsSection.className = 'playbook-strategy-section';
-      const sectionTitle = document.createElement('div');
-      sectionTitle.className = 'playbook-strategy-section-title';
-      sectionTitle.textContent = translate('playbook.strategy.signals', 'Key market signals');
-      signalsSection.append(sectionTitle);
-      const list = document.createElement('ul');
-      list.className = 'playbook-strategy-list';
-      normalizedSignals.forEach((signal) => {
-        const item = document.createElement('li');
-        item.textContent = signal.trim();
-        list.append(item);
-      });
-      signalsSection.append(list);
-      strategySection.append(signalsSection);
-    }
-
-    const normalizedActions = Array.isArray(strategy.actions)
-      ? strategy.actions.filter(
-          (action) =>
-            action &&
-            typeof action === 'object' &&
-            ((typeof action.title === 'string' && action.title.trim()) ||
-              (typeof action.detail === 'string' && action.detail.trim()))
-        )
-      : [];
-    if (normalizedActions.length > 0) {
-      const actionsSection = document.createElement('div');
-      actionsSection.className = 'playbook-strategy-section';
-      const sectionTitle = document.createElement('div');
-      sectionTitle.className = 'playbook-strategy-section-title';
-      sectionTitle.textContent = translate('playbook.strategy.actions', 'Execution steps');
-      actionsSection.append(sectionTitle);
-      const list = document.createElement('ol');
-      list.className = 'playbook-strategy-actions';
-      normalizedActions.forEach((action) => {
-        const item = document.createElement('li');
-        item.className = 'playbook-strategy-action';
-        if (typeof action.title === 'string' && action.title.trim()) {
-          const titleEl = document.createElement('span');
-          titleEl.className = 'playbook-strategy-action-title';
-          titleEl.textContent = action.title.trim();
-          item.append(titleEl);
-        }
-        if (typeof action.detail === 'string' && action.detail.trim()) {
-          const detailEl = document.createElement('p');
-          detailEl.className = 'playbook-strategy-action-detail';
-          detailEl.textContent = action.detail.trim();
-          item.append(detailEl);
-        }
-        if (typeof action.trigger === 'string' && action.trigger.trim()) {
-          const triggerEl = document.createElement('div');
-          triggerEl.className = 'playbook-strategy-action-trigger';
-          triggerEl.textContent = `${translate('playbook.strategy.trigger', 'Trigger')}: ${action.trigger.trim()}`;
-          item.append(triggerEl);
-        }
-        list.append(item);
-      });
-      actionsSection.append(list);
-      strategySection.append(actionsSection);
-    }
-
-    const normalizedRisk = Array.isArray(strategy.risk_controls)
-      ? strategy.risk_controls.filter((item) => typeof item === 'string' && item.trim())
-      : [];
-    if (normalizedRisk.length > 0) {
-      const riskSection = document.createElement('div');
-      riskSection.className = 'playbook-strategy-section';
-      const sectionTitle = document.createElement('div');
-      sectionTitle.className = 'playbook-strategy-section-title';
-      sectionTitle.textContent = translate('playbook.strategy.risk', 'Risk controls');
-      riskSection.append(sectionTitle);
-      const list = document.createElement('ul');
-      list.className = 'playbook-strategy-list';
-      normalizedRisk.forEach((itemText) => {
-        const item = document.createElement('li');
-        item.textContent = itemText.trim();
-        list.append(item);
-      });
-      riskSection.append(list);
-      strategySection.append(riskSection);
-    }
-
-    playbookSummaryContainer.append(strategySection);
-  }
-
-  if (lastPlaybookState.notes) {
-    const notes = document.createElement('p');
-    notes.className = 'playbook-notes';
-    notes.textContent = lastPlaybookState.notes;
-    playbookSummaryContainer.append(notes);
-  }
-
-  if (hintNode) {
-    playbookSummaryContainer.append(hintNode);
-  }
-}
-
-function resolveTimestampMs(epochValue, isoValue) {
-  if (epochValue !== undefined && epochValue !== null) {
-    const numeric = Number(epochValue);
-    if (Number.isFinite(numeric)) {
-      return numeric > 1e12 ? numeric : numeric * 1000;
-    }
-  }
-  if (isoValue) {
-    const parsed = Date.parse(isoValue);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return null;
-}
-
-function renderPlaybookProcessSection() {
-  if (!playbookProcessContainer) return;
-  playbookProcessContainer.innerHTML = '';
-
-  if (!aiMode) {
-    const disabled = document.createElement('p');
-    disabled.className = 'playbook-process-empty';
-    disabled.textContent = translate('playbook.disabled', 'Enable AI mode to view the playbook overview.');
-    playbookProcessContainer.append(disabled);
-    return;
-  }
-
-  const entries = Array.isArray(lastPlaybookProcess) ? lastPlaybookProcess.slice(0, 6) : [];
-  if (!entries.length) {
-    const empty = document.createElement('p');
-    empty.className = 'playbook-process-empty';
-    empty.textContent = translate('playbook.process.empty', 'No refresh activity recorded yet.');
-    playbookProcessContainer.append(empty);
-    return;
-  }
-
-  entries.forEach((entry) => {
-    const item = createPlaybookProcessItem(entry);
-    if (item) {
-      playbookProcessContainer.append(item);
-    }
-  });
-}
-
-function createPlaybookProcessItem(entry) {
-  if (!entry || typeof entry !== 'object') return null;
-
-  const wrapper = document.createElement('article');
-  wrapper.className = 'playbook-process-item';
-
-  const header = document.createElement('div');
-  header.className = 'playbook-process-item-header';
-
-  const statusKey = (entry.status || 'pending').toString().toLowerCase();
-  const status = document.createElement('span');
-  status.className = `playbook-process-status status-${statusKey}`;
-  status.textContent = getPlaybookProcessStatusLabel(statusKey);
-  header.append(status);
-
-  const headline = document.createElement('span');
-  headline.className = 'playbook-process-headline';
-  const modeText = toTitleCase(entry.mode || '');
-  const biasText = toTitleCase(entry.bias || '');
-  if (modeText && biasText) {
-    headline.textContent = `${modeText} (${biasText})`;
-  } else if (modeText) {
-    headline.textContent = modeText;
-  } else if (biasText) {
-    headline.textContent = biasText;
-  } else {
-    headline.textContent = translate('playbook.process.untitled', 'Playbook update');
-  }
-  header.append(headline);
-
-  const metaParts = [];
-  const referenceTs = entry.completed_ts || entry.failed_ts || entry.requested_ts;
-  const timeText = formatRelativeTime(referenceTs);
-  if (timeText) metaParts.push(timeText);
-  if (entry.request_id) metaParts.push(`#${entry.request_id}`);
-  if (entry.snapshot_summary) metaParts.push(entry.snapshot_summary);
-  if (metaParts.length > 0) {
-    const meta = document.createElement('span');
-    meta.className = 'playbook-process-meta';
-    meta.textContent = metaParts.join(' · ');
-    header.append(meta);
-  }
-
-  wrapper.append(header);
-
-  const referenceIso = entry.completed_ts_iso || entry.failed_ts_iso || entry.requested_ts_iso;
-  const referenceTimestampMs =
-    resolveTimestampMs(entry.completed_ts, entry.completed_ts_iso) ||
-    resolveTimestampMs(entry.failed_ts, entry.failed_ts_iso) ||
-    resolveTimestampMs(entry.requested_ts, referenceIso);
-
-  const stepEntries = Array.isArray(entry.steps)
-    ? entry.steps
-        .map((step) => (step && typeof step === 'object' ? { ...step } : null))
-        .filter(Boolean)
-    : [];
-  if (entry.notes) {
-    stepEntries.push({
-      stage: 'info',
-      headline: translate('playbook.process.notes', 'Notes'),
-      body: entry.notes,
-      ts_epoch: entry.completed_ts || entry.failed_ts || entry.requested_ts,
-      ts: referenceIso,
-    });
-  }
-
-  if (stepEntries.length > 0) {
-    const decoratedSteps = stepEntries
-      .map((step, index) => {
-        const tsMs = resolveTimestampMs(step.ts_epoch, step.ts) || referenceTimestampMs;
-        return { step, index, tsMs };
-      })
-      .sort((a, b) => {
-        const aHasTs = Number.isFinite(a.tsMs);
-        const bHasTs = Number.isFinite(b.tsMs);
-        if (aHasTs && bHasTs) return a.tsMs - b.tsMs;
-        if (aHasTs) return -1;
-        if (bHasTs) return 1;
-        return a.index - b.index;
-      })
-      .map((entry) => entry.step);
-
-    const list = document.createElement('ol');
-    list.className = 'playbook-process-steps';
-
-    decoratedSteps.forEach((step, position) => {
-      if (!step || typeof step !== 'object') return;
-
-      const item = document.createElement('li');
-      item.className = 'playbook-process-step';
-
-      const label = document.createElement('div');
-      label.className = 'playbook-process-step-label';
-
-      const stepPrefix = translate('playbook.process.stepLabel', 'Step');
-      const number = document.createElement('span');
-      number.className = 'playbook-process-step-number';
-      number.textContent = `${stepPrefix} ${position + 1}`;
-      label.append(number);
-
-      const stage = document.createElement('span');
-      stage.className = 'playbook-process-step-stage';
-      stage.textContent = getPlaybookProcessStageLabel(step.stage);
-      label.append(stage);
-
-      item.append(label);
-
-      const body = document.createElement('div');
-      body.className = 'playbook-process-step-body';
-
-      const headlineText = typeof step.headline === 'string' ? step.headline.trim() : '';
-      const summaryText = typeof step.snapshot_summary === 'string' ? step.snapshot_summary.trim() : '';
-      const bodyText = typeof step.body === 'string' ? step.body.trim() : '';
-
-      const detailLines = [];
-      if (headlineText) detailLines.push({ className: 'playbook-process-step-headline', text: headlineText });
-      if (summaryText && summaryText !== headlineText)
-        detailLines.push({ className: 'playbook-process-step-summary', text: summaryText });
-      if (bodyText && bodyText !== headlineText && bodyText !== summaryText)
-        detailLines.push({ className: 'playbook-process-step-description', text: bodyText });
-
-      if (detailLines.length === 0) {
-        detailLines.push({
-          className: 'playbook-process-step-description',
-          text: translate('playbook.process.step.noDetails', 'No additional context provided.'),
-        });
-      }
-
-      detailLines.forEach((line) => {
-        const lineEl = document.createElement('p');
-        lineEl.className = `playbook-process-step-text ${line.className}`.trim();
-        lineEl.textContent = line.text;
-        body.append(lineEl);
-      });
-
-      const metaRow = document.createElement('div');
-      metaRow.className = 'playbook-process-step-meta';
-
-      const kindValue = typeof step.kind === 'string' ? step.kind.trim() : '';
-      if (kindValue) {
-        const kindLabel = getPlaybookKindLabel(kindValue);
-        const kindChip = document.createElement('span');
-        kindChip.className = 'playbook-process-step-kind';
-        kindChip.textContent = kindLabel;
-        metaRow.append(kindChip);
-      }
-
-      const tsMs = resolveTimestampMs(step.ts_epoch, step.ts) || referenceTimestampMs;
-      const timeText = formatRelativeTime(step.ts_epoch || step.ts || referenceTs);
-      if (timeText) {
-        const timeEl = document.createElement('time');
-        timeEl.className = 'playbook-process-step-time';
-        timeEl.textContent = timeText;
-        if (Number.isFinite(tsMs)) {
-          timeEl.dateTime = new Date(tsMs).toISOString();
-        }
-        metaRow.append(timeEl);
-      }
-
-      if (metaRow.childElementCount > 0) {
-        body.append(metaRow);
-      }
-
-      item.append(body);
-      list.append(item);
-    });
-
-    wrapper.append(list);
-  }
-
-  return wrapper;
-}
-
-function renderPlaybookActivitySection() {
-  if (!playbookActivityFeed) return;
-  const shouldAutoScroll = autoScrollEnabled && isScrolledToBottom(playbookActivityFeed);
-  playbookActivityFeed.innerHTML = '';
-
-  if (!aiMode) {
-    const disabled = document.createElement('p');
-    disabled.className = 'playbook-empty';
-    disabled.textContent = translate('playbook.disabled', 'Enable AI mode to view the playbook overview.');
-    playbookActivityFeed.append(disabled);
-    return;
-  }
-
-  const entries = Array.isArray(lastPlaybookActivity)
-    ? lastPlaybookActivity
-        .slice()
-        .sort((a, b) => getPlaybookActivityTimestampMs(b) - getPlaybookActivityTimestampMs(a))
-        .slice(0, 30)
-    : [];
-  if (!entries.length) {
-    const empty = document.createElement('p');
-    empty.className = 'playbook-empty';
-    empty.textContent = translate('playbook.activity.empty', 'No playbook communications recorded yet.');
-    playbookActivityFeed.append(empty);
-    return;
-  }
-
-  entries.forEach((entry) => {
-    const item = createPlaybookActivityItem(entry);
-    if (item) {
-      playbookActivityFeed.append(item);
-    }
-  });
-
-  if (shouldAutoScroll) {
-    const behavior = playbookActivityFeed.scrollHeight > playbookActivityFeed.clientHeight ? 'smooth' : 'auto';
-    scrollToBottom(playbookActivityFeed, behavior);
-  }
-}
-
-function createPlaybookActivityItem(entry) {
-  if (!entry || typeof entry !== 'object') return null;
-  const wrapper = document.createElement('article');
-  wrapper.className = 'playbook-activity-item';
-
-  const headerRow = document.createElement('div');
-  headerRow.className = 'playbook-activity-header-row';
-  const titleWrap = document.createElement('div');
-  titleWrap.className = 'playbook-activity-title-wrap';
-  const kindEl = document.createElement('span');
-  const kindClass = getPlaybookKindClass(entry.kind);
-  kindEl.className = ['playbook-activity-kind', kindClass].filter(Boolean).join(' ');
-  kindEl.textContent = getPlaybookKindLabel(entry.kind);
-  titleWrap.append(kindEl);
-  const title = document.createElement('h4');
-  title.className = 'playbook-activity-title';
-  title.textContent = entry.headline || getPlaybookKindLabel(entry.kind);
-  titleWrap.append(title);
-  headerRow.append(titleWrap);
-  const time = document.createElement('time');
-  time.className = 'playbook-activity-time';
-  const timestampMs = getPlaybookActivityTimestampMs(entry);
-  if (Number.isFinite(timestampMs) && timestampMs > Number.NEGATIVE_INFINITY) {
-    const iso = new Date(timestampMs).toISOString();
-    const timestampLabel = formatTimestamp(iso);
-    if (timestampLabel && timestampLabel !== '–') {
-      time.textContent = timestampLabel;
-      time.dateTime = iso;
-      time.title = formatRelativeTime(timestampMs / 1000);
-      headerRow.append(time);
-    }
-  }
-  wrapper.append(headerRow);
-
-  const body = document.createElement('div');
-  body.className = 'playbook-activity-body';
-  const detailLines = [];
-  const bodyText = typeof entry.body === 'string' ? entry.body.trim() : '';
-  if (bodyText) {
-    bodyText
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .forEach((line) => detailLines.push(line));
-  }
-  const noteText = typeof entry.notes === 'string' ? entry.notes.trim() : '';
-  if (noteText && !detailLines.includes(noteText)) {
-    detailLines.push(noteText);
-  }
-  detailLines.forEach((line) => {
-    const paragraph = document.createElement('p');
-    paragraph.textContent = line;
-    body.append(paragraph);
-  });
-
-  const metaItems = buildPlaybookMeta(entry);
-  if (metaItems.length > 0) {
-    const metaList = document.createElement('ul');
-    metaList.className = 'playbook-activity-meta';
-    metaItems.forEach((item) => {
-      const li = document.createElement('li');
-      const label = document.createElement('span');
-      label.className = 'label';
-      label.textContent = item.label;
-      const value = document.createElement('span');
-      value.className = 'value';
-      value.textContent = item.value;
-      li.append(label, value);
-      metaList.append(li);
-    });
-    body.append(metaList);
-  }
-
-  if (body.childElementCount > 0) {
-    wrapper.append(body);
-  }
-  return wrapper;
-}
-
-function updatePlaybookPendingState() {
-  if (!aiMode) {
-    pendingPlaybookResponseCount = 0;
-    return;
-  }
-  const pendingIds = new Set();
-  for (const entry of lastPlaybookActivity) {
-    if (!entry || typeof entry !== 'object') continue;
-    const rawId = entry.request_id;
-    const requestId = rawId === undefined || rawId === null ? '' : String(rawId).trim();
-    if (!requestId) continue;
-    const kind = (entry.kind || '').toString().toLowerCase();
-    if (kind === 'query') {
-      pendingIds.add(requestId);
-    } else if (pendingIds.has(requestId)) {
-      pendingIds.delete(requestId);
-    }
-  }
-  const awaitingResponses = pendingIds.size;
-  if (awaitingResponses > 0) {
-    const changed = pendingPlaybookResponseCount !== awaitingResponses;
-    pendingPlaybookResponseCount = awaitingResponses;
-    const delay = awaitingResponses > 2 ? 900 : 600;
-    if (changed || !tradesRefreshTimer) {
-      scheduleTradesRefresh(delay);
-    }
-  } else if (pendingPlaybookResponseCount !== 0) {
-    pendingPlaybookResponseCount = 0;
-  }
-}
 
 const AI_REQUEST_STATUS_FALLBACKS = {
   pending: 'Awaiting response',
@@ -8783,6 +6294,344 @@ function buildAiRequestDetailContent(item) {
 
   container.append(body);
   return container;
+}
+
+function parseSkipTimestamp(item) {
+  if (!item || typeof item !== 'object') {
+    return { seconds: null, iso: null, label: '' };
+  }
+  let seconds = Number(item.ts);
+  if (!Number.isFinite(seconds)) {
+    const isoCandidate = item.ts_iso || item.tsISO || item.timestamp || item.ts_string;
+    if (isoCandidate) {
+      const parsed = Date.parse(isoCandidate);
+      if (Number.isFinite(parsed)) {
+        seconds = parsed / 1000;
+      }
+    }
+  }
+  let iso = typeof item.ts_iso === 'string' && item.ts_iso ? item.ts_iso : null;
+  if (Number.isFinite(seconds) && !iso) {
+    try {
+      iso = new Date(seconds * 1000).toISOString();
+    } catch (err) {
+      iso = null;
+    }
+  }
+  const label = Number.isFinite(seconds)
+    ? formatRelativeTime(seconds)
+    : iso
+    ? formatRelativeTime(iso)
+    : '';
+  return { seconds: Number.isFinite(seconds) ? seconds : null, iso, label };
+}
+
+function renderSkipRanking(items) {
+  skipRankingItems = Array.isArray(items) ? items.filter((entry) => entry && typeof entry === 'object') : [];
+  lastSkipRankingSnapshot = skipRankingItems.slice();
+  if (skipRankingList) {
+    skipRankingList.innerHTML = '';
+    if (skipRankingItems.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'skip-ranking-empty';
+      empty.textContent = translate(
+        'skipRanking.empty',
+        'No skipped trades have been recorded yet. When the bot declines a setup, it will appear here.'
+      );
+      skipRankingList.append(empty);
+    } else {
+      skipRankingItems.forEach((item, index) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'skip-ranking-item';
+        const itemId = item.id || `skip-${index}`;
+        button.dataset.id = itemId;
+
+        const rank = document.createElement('div');
+        rank.className = 'skip-ranking-rank';
+        rank.textContent = `${index + 1}`;
+        button.append(rank);
+
+        const main = document.createElement('div');
+        main.className = 'skip-ranking-item-main';
+        const header = document.createElement('div');
+        header.className = 'skip-ranking-item-header';
+
+        const symbol = document.createElement('span');
+        symbol.className = 'skip-ranking-symbol';
+        const symbolLabel = (item.symbol || '').toString().toUpperCase();
+        const sideLabel = formatSideLabel(item.side || item.direction || '');
+        symbol.textContent = sideLabel && sideLabel !== '—' ? `${symbolLabel} · ${sideLabel}`.trim() : symbolLabel || '—';
+        header.append(symbol);
+
+        const score = document.createElement('span');
+        score.className = 'skip-ranking-score';
+        const numericScore = Number(item.score);
+        score.textContent = Number.isFinite(numericScore)
+          ? translate('skipRanking.scoreLabel', 'Score {{score}}', {
+              score: numericScore.toFixed(1),
+            })
+          : translate('skipRanking.scoreUnknown', 'Score n/a');
+        header.append(score);
+
+        main.append(header);
+
+        const chips = document.createElement('div');
+        chips.className = 'skip-ranking-meta';
+
+        const confidence = Number(item.confidence);
+        if (Number.isFinite(confidence) && confidence > 0) {
+          const chip = document.createElement('span');
+          chip.className = 'skip-ranking-chip positive';
+          chip.textContent = translate('skipRanking.confidenceChip', 'Confidence {{value}}', {
+            value: formatNumber(confidence, 2),
+          });
+          chips.append(chip);
+        }
+
+        const sizeMultiplier = Number(item.size_multiplier);
+        if (Number.isFinite(sizeMultiplier) && sizeMultiplier > 0) {
+          const chip = document.createElement('span');
+          chip.className = 'skip-ranking-chip positive';
+          chip.textContent = translate('skipRanking.sizeChip', 'Size ×{{value}}', {
+            value: formatNumber(sizeMultiplier, 2),
+          });
+          chips.append(chip);
+        }
+
+        const eventRisk = Number(item.event_risk);
+        if (Number.isFinite(eventRisk)) {
+          const chip = document.createElement('span');
+          chip.className = `skip-ranking-chip ${eventRisk > 0.55 ? 'negative' : ''}`.trim();
+          chip.textContent = translate('skipRanking.eventRiskChip', 'Event risk {{percent}}%', {
+            percent: (clampValue(eventRisk, 0, 1) * 100).toFixed(0),
+          });
+          chips.append(chip);
+        }
+
+        const originLabel = (item.origin || item.plan_origin || '').toString().trim();
+        if (originLabel) {
+          const chip = document.createElement('span');
+          chip.className = 'skip-ranking-chip';
+          chip.textContent = translate('skipRanking.originChip', 'Origin {{origin}}', { origin: originLabel });
+          chips.append(chip);
+        }
+
+        if (chips.children.length > 0) {
+          main.append(chips);
+        }
+
+        const noteText = (item.decision_note || item.risk_note || item.reason_label || '').toString().trim();
+        if (noteText) {
+          const note = document.createElement('p');
+          note.className = 'skip-ranking-note';
+          note.textContent = noteText.length > 160 ? `${noteText.slice(0, 157).trimEnd()}…` : noteText;
+          main.append(note);
+        }
+
+        button.append(main);
+
+        const tsInfo = parseSkipTimestamp(item);
+        if (tsInfo.label) {
+          const time = document.createElement('time');
+          time.className = 'skip-ranking-item-time';
+          time.textContent = tsInfo.label;
+          if (tsInfo.iso) time.dateTime = tsInfo.iso;
+          button.append(time);
+        }
+
+        button.addEventListener('click', () => selectSkipRankingItem(itemId));
+        skipRankingList.append(button);
+      });
+    }
+  }
+
+  const nextSelection = skipRankingItems.find((entry) => entry.id === selectedSkipRankingId) || skipRankingItems[0] || null;
+  selectSkipRankingItem(nextSelection ? nextSelection.id : null);
+}
+
+function selectSkipRankingItem(id) {
+  if (!skipRankingItems.length) {
+    selectedSkipRankingId = null;
+    renderSkipRankingDetail(null);
+    return;
+  }
+  const target = skipRankingItems.find((entry) => entry.id === id) || skipRankingItems[0];
+  selectedSkipRankingId = target ? target.id : null;
+  if (skipRankingList) {
+    const nodes = skipRankingList.querySelectorAll('.skip-ranking-item');
+    nodes.forEach((node) => {
+      node.classList.toggle('is-active', node.dataset.id === selectedSkipRankingId);
+    });
+  }
+  renderSkipRankingDetail(target || null);
+}
+
+function renderSkipRankingDetail(item) {
+  if (!skipRankingDetail) return;
+  skipRankingDetail.innerHTML = '';
+  if (!item || typeof item !== 'object') {
+    const empty = document.createElement('div');
+    empty.className = 'skip-detail-empty';
+    empty.textContent = translate(
+      'skipRanking.selectHint',
+      'Select a skipped trade from the ranking to inspect its metadata and score breakdown.'
+    );
+    skipRankingDetail.append(empty);
+    return;
+  }
+
+  const header = document.createElement('div');
+  header.className = 'skip-detail-header';
+
+  const heading = document.createElement('div');
+  heading.className = 'skip-detail-heading';
+  const symbol = document.createElement('div');
+  symbol.className = 'skip-detail-symbol';
+  const symbolLabel = (item.symbol || '').toString().toUpperCase();
+  const sideLabel = formatSideLabel(item.side || item.direction || '');
+  symbol.textContent = sideLabel && sideLabel !== '—' ? `${symbolLabel} · ${sideLabel}`.trim() : symbolLabel || '—';
+  heading.append(symbol);
+
+  const score = document.createElement('div');
+  score.className = 'skip-detail-score';
+  const numericScore = Number(item.score);
+  score.textContent = Number.isFinite(numericScore)
+    ? translate('skipRanking.detailScore', 'Score {{score}}', { score: numericScore.toFixed(1) })
+    : translate('skipRanking.scoreUnknown', 'Score n/a');
+  heading.append(score);
+  header.append(heading);
+
+  const tsInfo = parseSkipTimestamp(item);
+  if (tsInfo.iso || tsInfo.label) {
+    const time = document.createElement('time');
+    time.className = 'skip-detail-time';
+    time.textContent = tsInfo.label || tsInfo.iso;
+    if (tsInfo.iso) time.dateTime = tsInfo.iso;
+    header.append(time);
+  }
+
+  skipRankingDetail.append(header);
+
+  const metricsGrid = document.createElement('div');
+  metricsGrid.className = 'skip-detail-metrics';
+  const metricDefinitions = [
+    { key: 'confidence', label: translate('skipRanking.metric.confidence', 'Confidence'), formatter: (v) => formatNumber(v, 2) },
+    { key: 'size_multiplier', label: translate('skipRanking.metric.size', 'Size multiplier'), formatter: (v) => formatNumber(v, 2) },
+    { key: 'expected_r', label: translate('skipRanking.metric.expectedR', 'Expected R'), formatter: (v) => formatNumber(v, 2) },
+    {
+      key: 'event_risk',
+      label: translate('skipRanking.metric.eventRisk', 'Event risk'),
+      formatter: (v) => `${(clampValue(v, 0, 1) * 100).toFixed(0)}%`,
+    },
+    {
+      key: 'hype_score',
+      label: translate('skipRanking.metric.hype', 'Hype'),
+      formatter: (v) => `${(clampValue(v, 0, 1) * 100).toFixed(0)}%`,
+    },
+    {
+      key: 'sentinel_factor',
+      label: translate('skipRanking.metric.sentinelFactor', 'Sentinel factor'),
+      formatter: (v) => formatNumber(v, 2),
+    },
+    {
+      key: 'budget_ratio',
+      label: translate('skipRanking.metric.budgetLoad', 'Budget load'),
+      formatter: (v) => `${(Math.max(0, Number(v)) * 100).toFixed(0)}%`,
+    },
+  ];
+
+  const metricsSource = item.metrics && typeof item.metrics === 'object' ? item.metrics : item;
+  metricDefinitions.forEach((definition) => {
+    const rawValue = metricsSource ? metricsSource[definition.key] : undefined;
+    const numeric = Number(rawValue);
+    if (!Number.isFinite(numeric)) return;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'skip-detail-metric';
+    const label = document.createElement('span');
+    label.className = 'label';
+    label.textContent = definition.label;
+    const value = document.createElement('span');
+    value.className = 'value';
+    value.textContent = definition.formatter(numeric);
+    wrapper.append(label, value);
+    metricsGrid.append(wrapper);
+  });
+
+  if (metricsGrid.children.length > 0) {
+    skipRankingDetail.append(metricsGrid);
+  }
+
+  const reasons = [];
+  if (item.reason_label) reasons.push(item.reason_label);
+  if (item.decision_note) reasons.push(item.decision_note);
+  if (item.risk_note && item.risk_note !== item.decision_note) reasons.push(item.risk_note);
+  const uniqueReasons = Array.from(new Set(reasons.map((text) => (text || '').toString().trim()).filter(Boolean)));
+  if (uniqueReasons.length > 0) {
+    const reasonSection = document.createElement('div');
+    reasonSection.className = 'skip-detail-reasons';
+    const title = document.createElement('h3');
+    title.textContent = translate('skipRanking.reasons', 'Skip reasons');
+    reasonSection.append(title);
+    uniqueReasons.forEach((text) => {
+      const paragraph = document.createElement('p');
+      paragraph.className = 'skip-detail-reason';
+      paragraph.textContent = text;
+      reasonSection.append(paragraph);
+    });
+    skipRankingDetail.append(reasonSection);
+  }
+
+  const breakdownList = Array.isArray(item.score_components) ? item.score_components : [];
+  if (breakdownList.length > 0) {
+    const breakdown = document.createElement('div');
+    breakdown.className = 'skip-detail-breakdown';
+    const title = document.createElement('h3');
+    title.textContent = translate('skipRanking.breakdown', 'Score breakdown');
+    breakdown.append(title);
+    const list = document.createElement('ul');
+    breakdownList.forEach((component) => {
+      if (!component || typeof component !== 'object') return;
+      const li = document.createElement('li');
+      const label = document.createElement('span');
+      label.textContent = component.label || translate('skipRanking.breakdown.unknown', 'Contribution');
+      const value = document.createElement('span');
+      value.className = 'value';
+      const numeric = Number(component.value);
+      if (Number.isFinite(numeric)) {
+        value.textContent = `${numeric > 0 ? '+' : ''}${numeric.toFixed(1)}`;
+        if (numeric > 0) {
+          value.classList.add('positive');
+        } else if (numeric < 0) {
+          value.classList.add('negative');
+        }
+      } else {
+        value.textContent = component.value ?? '0';
+      }
+      li.append(label, value);
+      list.append(li);
+    });
+    breakdown.append(list);
+    skipRankingDetail.append(breakdown);
+  }
+
+  const planSection = document.createElement('div');
+  planSection.className = 'skip-detail-json';
+  const planTitle = document.createElement('h3');
+  planTitle.textContent = translate('skipRanking.planMeta', 'Plan metadata');
+  const planPre = document.createElement('pre');
+  planPre.textContent = JSON.stringify(item.plan ?? {}, null, 2);
+  planSection.append(planTitle, planPre);
+  skipRankingDetail.append(planSection);
+
+  const contextSection = document.createElement('div');
+  contextSection.className = 'skip-detail-json';
+  const contextTitle = document.createElement('h3');
+  contextTitle.textContent = translate('skipRanking.contextMeta', 'Entry context');
+  const contextPre = document.createElement('pre');
+  contextPre.textContent = JSON.stringify(item.context ?? {}, null, 2);
+  contextSection.append(contextTitle, contextPre);
+  skipRankingDetail.append(contextSection);
 }
 
 function renderAiRequests(requests) {
@@ -11299,54 +9148,6 @@ function scaleRange(value, inputRange = [0, 1], outputRange = [0, 1]) {
   return outMin + (outMax - outMin) * clamped;
 }
 
-function getPlaybookFeatureValue(playbook, key, fallback = null) {
-  if (!playbook || !key) return fallback;
-  const normalized = key.toString().toLowerCase();
-  const toNumeric = (candidate) => {
-    const numeric = Number(candidate);
-    return Number.isFinite(numeric) ? numeric : null;
-  };
-
-  const direct = toNumeric(playbook[key]);
-  if (direct !== null) {
-    return direct;
-  }
-
-  if (typeof playbook === 'object' && playbook) {
-    for (const [candidateKey, candidateValue] of Object.entries(playbook)) {
-      if (typeof candidateKey === 'string' && candidateKey.toLowerCase() === normalized) {
-        const numeric = toNumeric(candidateValue);
-        if (numeric !== null) return numeric;
-      }
-    }
-  }
-
-  if (Array.isArray(playbook.features)) {
-    for (const feature of playbook.features) {
-      if (!feature || typeof feature !== 'object') continue;
-      const name = (feature.name || feature.key || feature.label || '').toString().toLowerCase();
-      if (name !== normalized) continue;
-      const numeric = toNumeric(feature.value ?? feature.score ?? feature.weight ?? feature.amount);
-      if (numeric !== null) return numeric;
-    }
-  }
-
-  const extraBuckets = [playbook.context, playbook.meta, playbook.snapshot, playbook.metrics];
-  for (const bucket of extraBuckets) {
-    if (!bucket || typeof bucket !== 'object') continue;
-    const bucketDirect = toNumeric(bucket[key]);
-    if (bucketDirect !== null) return bucketDirect;
-    for (const [candidateKey, candidateValue] of Object.entries(bucket)) {
-      if (typeof candidateKey === 'string' && candidateKey.toLowerCase() === normalized) {
-        const numeric = toNumeric(candidateValue);
-        if (numeric !== null) return numeric;
-      }
-    }
-  }
-
-  return fallback;
-}
-
 function deriveConfidenceSizingContext(preset, env = {}) {
   if (!preset || !preset.confidenceSizing) {
     return null;
@@ -11366,41 +9167,6 @@ function deriveConfidenceSizingContext(preset, env = {}) {
     budgetSpent: null,
   };
 
-  const playbook = lastPlaybookState && typeof lastPlaybookState === 'object' ? lastPlaybookState : null;
-
-  if (playbook) {
-    const playbookConfidence = getPlaybookFeatureValue(playbook, 'confidence', null);
-    const directConfidence = Number(playbook.confidence);
-    if (Number.isFinite(directConfidence)) {
-      context.confidence = clampValue(directConfidence, 0, 1);
-      context.confidenceSource = 'playbook';
-    } else if (playbookConfidence !== null) {
-      context.confidence = clampValue(playbookConfidence, 0, 1);
-      context.confidenceSource = 'playbook';
-    }
-    const eventRisk = getPlaybookFeatureValue(playbook, 'sentinel_event_risk', null);
-    if (eventRisk !== null) {
-      context.eventRisk = clampValue(eventRisk, 0, 1);
-    }
-    const hype = getPlaybookFeatureValue(playbook, 'sentinel_hype', null);
-    if (hype !== null) {
-      context.hype = clampValue(hype, 0, 1);
-    }
-    const sentinelFactor = getPlaybookFeatureValue(playbook, 'sentinel_factor', null);
-    if (sentinelFactor !== null) {
-      context.sentinelFactor = clampValue(sentinelFactor, 0.2, 3.0);
-    }
-    const regimeSlope = getPlaybookFeatureValue(playbook, 'regime_slope', null);
-    if (regimeSlope !== null) {
-      context.regimeSlope = clampValue(regimeSlope, -2, 2);
-    }
-    const regimeAdx = getPlaybookFeatureValue(playbook, 'regime_adx', null);
-    if (regimeAdx !== null) {
-      const normalizedAdx = clampValue(regimeAdx, 0, 100) / 100;
-      context.regimeAdx = clampValue(normalizedAdx, 0, 1);
-    }
-  }
-
   const fallbackConfidence = Number(config.fallbackConfidence ?? 0.5);
   if (context.confidence === null) {
     context.confidence = clampValue(
@@ -11409,9 +9175,7 @@ function deriveConfidenceSizingContext(preset, env = {}) {
       1,
     );
   }
-  if (context.confidenceSource !== 'playbook') {
-    context.confidenceSource = 'fallback';
-  }
+  context.confidenceSource = 'fallback';
 
   const fallbackHype = Number(config.fallbackHype ?? 0.18);
   if (context.hype === null) {
@@ -11668,7 +9432,7 @@ function computeConfidenceSizingTargets(preset, context, env = {}) {
 
   const noteParts = [];
   if (Number.isFinite(metrics.confidence)) {
-    const confidenceLabel = safeContext.confidenceSource === 'playbook' ? ' (playbook)' : '';
+    const confidenceLabel = safeContext.confidenceSource ? ` (${safeContext.confidenceSource})` : '';
     noteParts.push(`Confidence ${formatNumber(metrics.confidence, 2)}${confidenceLabel}`);
   }
   if (Number.isFinite(metrics.eventRisk)) {
@@ -12208,7 +9972,7 @@ function setAiMode(state) {
   }
   document.body.classList.toggle('ai-mode', aiMode);
   renderAiBudget(lastAiBudget);
-  renderPlaybookOverview(lastPlaybookState, lastPlaybookActivity, lastPlaybookProcess);
+  renderSkipRanking(lastSkipRankingSnapshot);
   syncAiChatAvailability();
 }
 
@@ -12403,7 +10167,7 @@ async function loadTrades() {
     renderPnlChart(data.history);
     renderAiBudget(data.ai_budget);
     renderAiRequests(data.ai_requests);
-    renderPlaybookOverview(data.playbook, data.playbook_activity, data.playbook_process);
+    renderSkipRanking(data.skip_ranking);
     renderActivePositions(data.open);
     const proposals = Array.isArray(data.ai_trade_proposals) ? data.ai_trade_proposals : [];
     proposals.forEach((proposal) => appendTradeProposalCard(proposal));

@@ -360,38 +360,21 @@
     </header>
 
     <main class="layout">
-      <section class="card playbook-overview" data-ai-only>
-        <div class="playbook-overview-header">
-          <div class="playbook-overview-header-main">
-            <span class="playbook-badge" data-i18n="playbook.label">Playbook</span>
-            <div class="playbook-overview-title">
-              <h2 data-i18n="playbook.title">Playbook Overview</h2>
-              <p class="playbook-overview-subtitle" data-i18n="playbook.subtitle">
-                Track the active playbook regime, its bias multipliers, and every AI-driven step that keeps it fresh.
+      <section class="card skip-ranking">
+        <div class="skip-ranking-header">
+          <div class="skip-ranking-header-main">
+            <span class="skip-ranking-badge" data-i18n="skipRanking.label">Skip ranking</span>
+            <div class="skip-ranking-title">
+              <h2 data-i18n="skipRanking.title">Skip ranking</h2>
+              <p class="skip-ranking-subtitle" data-i18n="skipRanking.subtitle">
+                Inspect the trades that almost passed the heuristics before being skipped by the bot.
               </p>
             </div>
           </div>
         </div>
-        <div class="playbook-overview-body">
-          <div class="playbook-summary" id="playbook-summary"></div>
-          <div class="playbook-process">
-            <div class="playbook-process-header">
-              <h3 data-i18n="playbook.process.title">Playbook refresh timeline</h3>
-              <p class="playbook-process-subtitle" data-i18n="playbook.process.subtitle">
-                Follow each stage in the refresh pipeline — from the initial request to the final applied update.
-              </p>
-            </div>
-            <div class="playbook-process-feed" id="playbook-process" role="list"></div>
-          </div>
-          <div class="playbook-activity">
-            <div class="playbook-activity-header">
-              <h3 data-i18n="playbook.activity.title">Playbook communications</h3>
-              <p class="playbook-activity-subtitle" data-i18n="playbook.activity.subtitle">
-                Requests, updates, and diagnostics between the bot and the AI.
-              </p>
-            </div>
-            <div class="playbook-activity-feed" id="playbook-activity" role="log" aria-live="polite"></div>
-          </div>
+        <div class="skip-ranking-body">
+          <div class="skip-ranking-list" id="skip-ranking-list" role="list"></div>
+          <div class="skip-ranking-detail" id="skip-ranking-detail"></div>
         </div>
       </section>
 
