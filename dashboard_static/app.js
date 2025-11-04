@@ -9541,6 +9541,65 @@ async function loadTrades() {
   }
 }
 
+async function updateStatus() {
+  let payload = null;
+  try {
+    const res = await fetch('/api/bot/status');
+    if (!res.ok) {
+      throw new Error('Unable to load status');
+    }
+    payload = await res.json();
+  } catch (err) {
+    console.warn('Failed to update bot status', err);
+  }
+
+  if (payload) {
+    lastBotStatus = { ...DEFAULT_BOT_STATUS, ...payload };
+  }
+
+  const isOffline = !payload;
+  const running = Boolean(payload ? payload.running : lastBotStatus.running);
+
+  if (statusIndicator) {
+    statusIndicator.classList.remove('running', 'stopped', 'neutral');
+    if (isOffline) {
+      statusIndicator.classList.add('neutral');
+      statusIndicator.textContent = translate('status.indicator.offline', 'Offline');
+    } else if (running) {
+      statusIndicator.classList.add('running');
+      statusIndicator.textContent = translate('status.indicator.running', 'Running');
+    } else {
+      statusIndicator.classList.add('stopped');
+      statusIndicator.textContent = translate('status.indicator.stopped', 'Stopped');
+    }
+  }
+
+  if (statusPid) {
+    statusPid.textContent = !isOffline && payload?.pid != null ? payload.pid.toString() : '–';
+  }
+
+  if (statusStarted) {
+    const startedAt =
+      !isOffline && payload?.started_at != null ? Number(payload.started_at) * 1000 : null;
+    statusStarted.textContent = startedAt ? formatTimestamp(startedAt) : '–';
+  }
+
+  if (statusUptime) {
+    const uptimeRaw = !isOffline ? Number(payload?.uptime_s) : NaN;
+    const uptimeSeconds = Number.isFinite(uptimeRaw) ? Math.max(0, Math.floor(uptimeRaw)) : null;
+    statusUptime.textContent = uptimeSeconds != null ? formatDuration(uptimeSeconds) : '–';
+  }
+
+  if (btnStart) {
+    btnStart.disabled = isOffline ? true : running;
+  }
+  if (btnStop) {
+    btnStop.disabled = isOffline ? true : !running;
+  }
+
+  return lastBotStatus;
+}
+
 async function handleTakeTradeProposals() {
   const pending = getPendingTradeProposals();
   if (pending.length === 0) {
