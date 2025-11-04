@@ -103,6 +103,13 @@ const MEME_COMPOSER_WINDOW_FEATURES =
 const languageButtons = document.querySelectorAll('.language-button[data-lang]');
 const i18nElements = document.querySelectorAll('[data-i18n]');
 
+const SENSITIVE_ENV_KEYS = new Set([
+  'ASTER_API_KEY',
+  'ASTER_API_SECRET',
+  'ASTER_OPENAI_API_KEY',
+  'ASTER_CHAT_OPENAI_API_KEY',
+]);
+
 if (btnSaveConfig) btnSaveConfig.dataset.state = 'idle';
 if (btnSaveCredentials) btnSaveCredentials.dataset.state = 'idle';
 if (btnSaveAi) btnSaveAi.dataset.state = 'idle';
@@ -3591,7 +3598,9 @@ function configureChartDefaults() {
 
 function renderConfig(env) {
   envContainer.innerHTML = '';
-  const entries = Object.entries(env || {}).sort(([a], [b]) => a.localeCompare(b));
+  const entries = Object.entries(env || {})
+    .filter(([key]) => !SENSITIVE_ENV_KEYS.has(key))
+    .sort(([a], [b]) => a.localeCompare(b));
   for (const [key, value] of entries) {
     const label = document.createElement('label');
     label.dataset.key = key;
@@ -3669,7 +3678,11 @@ async function loadConfig() {
 function gatherConfigPayload() {
   const payload = {};
   envContainer.querySelectorAll('input[data-key]').forEach((input) => {
-    payload[input.dataset.key] = input.value.trim();
+    const key = input.dataset.key;
+    if (SENSITIVE_ENV_KEYS.has(key)) {
+      return;
+    }
+    payload[key] = input.value.trim();
   });
   return payload;
 }
@@ -10427,7 +10440,7 @@ async function restartBotIfNeeded(options = {}) {
 
   if (wantsRestore && currentMode !== normalizedRestore) {
     try {
-      await selectMode(normalizedRestore, { persist: true });
+      await selectMode(normalizedRestore, { persist: false });
     } catch (err) {
       console.warn('Unable to restore previous mode before restart', err);
       lastModeBeforeStandard = normalizedRestore;
@@ -10589,12 +10602,12 @@ if (decisionModal) {
 
 modeButtons.forEach((button) => {
   button.addEventListener('click', () => {
-    selectMode(button.dataset.modeSelect, { persist: true }).catch(() => {});
+    selectMode(button.dataset.modeSelect).catch(() => {});
   });
   button.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      selectMode(button.dataset.modeSelect, { persist: true }).catch(() => {});
+      selectMode(button.dataset.modeSelect).catch(() => {});
     }
   });
 });
