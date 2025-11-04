@@ -390,620 +390,276 @@ def _normalize_ai_budget(raw: Any) -> Dict[str, Any]:
     return bucket
 
 
-def _summarize_playbook_snapshot_meta(meta: Optional[Dict[str, Any]]) -> Optional[str]:
-    if not isinstance(meta, dict) or not meta:
-        return None
-
-    parts: List[str] = []
-
-    technical = meta.get("technical")
-    if isinstance(technical, (int, float)):
-        try:
-            parts.append(f"technical={int(technical)}")
-        except Exception:
-            pass
-
-    sentinel = meta.get("sentinel")
-    if isinstance(sentinel, (int, float)):
-        try:
-            parts.append(f"sentinel={int(sentinel)}")
-        except Exception:
-            pass
-
-    trades = meta.get("recent_trades")
-    if isinstance(trades, (int, float)):
-        try:
-            parts.append(f"trades={int(trades)}")
-        except Exception:
-            pass
-
-    remaining = _safe_float(meta.get("budget_remaining"))
-    limit = _safe_float(meta.get("budget_limit"))
-    if remaining is not None and limit is not None:
-        parts.append(f"budget {remaining:.2f}/{limit:.2f}")
-    elif remaining is not None:
-        parts.append(f"budget remaining={remaining:.2f}")
-
-    if not parts:
-        return None
-    return " · ".join(parts)
-
-
-def _normalize_playbook_state(raw: Any) -> Optional[Dict[str, Any]]:
-    if not isinstance(raw, dict):
-        return None
-
-    active = raw.get("active")
-    if not isinstance(active, dict):
-        return None
-
-    mode = str(active.get("mode") or "baseline")
-    bias = str(active.get("bias") or "neutral")
-
-    size_bias_raw = active.get("size_bias")
-    size_bias: Dict[str, float] = {}
-    if isinstance(size_bias_raw, dict):
-        for key, raw_value in size_bias_raw.items():
-            label = str(key or "").strip()
-            if not label:
-                continue
-            value = _safe_float(raw_value)
-            if value is None:
-                continue
-            size_bias[label.upper()] = value
-
-    sl_bias = _safe_float(active.get("sl_bias"))
-    if sl_bias is None:
-        sl_bias = _safe_float(active.get("sl_atr_mult"))
-    tp_bias = _safe_float(active.get("tp_bias"))
-    if tp_bias is None:
-        tp_bias = _safe_float(active.get("tp_atr_mult"))
-
-    features_raw = active.get("features")
-    features: List[Dict[str, Any]] = []
-    if isinstance(features_raw, dict):
-        for key, value in features_raw.items():
-            numeric = _safe_float(value)
-            if numeric is None:
-                continue
-            features.append({"name": str(key), "value": numeric})
-        features.sort(key=lambda item: abs(item["value"]), reverse=True)
-        features = features[:5]
-
-    refreshed_raw = active.get("refreshed")
-    if isinstance(refreshed_raw, (int, float)):
-        if refreshed_raw <= 0:
-            refreshed_raw = None
-    elif isinstance(refreshed_raw, str):
-        token = refreshed_raw.strip()
-        if not token:
-            refreshed_raw = None
-        else:
-            try:
-                if float(token) <= 0:
-                    refreshed_raw = None
-            except (TypeError, ValueError):
-                # keep non-numeric strings such as ISO timestamps
-                pass
-    refreshed_dt = _parse_activity_ts(refreshed_raw)
-    refreshed_iso = refreshed_dt.isoformat() if refreshed_dt else None
-    refreshed_epoch = refreshed_dt.timestamp() if refreshed_dt else None
-
-    notes = active.get("notes") or active.get("note")
-    note_text = None
-    if isinstance(notes, str):
-        stripped = notes.strip()
-        note_text = stripped or None
-
-    confidence = _safe_float(active.get("confidence"))
-    if confidence is None:
-        confidence = _safe_float(active.get("confidence_score"))
-
-    strategy = _normalize_strategy_blob(active.get("strategy"))
-
-    reason_text = _clean_string(active.get("reason"))
-    if not reason_text and strategy:
-        reason_text = strategy.get("why_active")
-
-    result: Dict[str, Any] = {
-        "mode": mode,
-        "bias": bias,
-    }
-    if size_bias:
-        result["size_bias"] = size_bias
-    if sl_bias is not None:
-        result["sl_bias"] = sl_bias
-    if tp_bias is not None:
-        result["tp_bias"] = tp_bias
-    if features:
-        result["features"] = features
-    if refreshed_iso:
-        result["refreshed"] = refreshed_iso
-    if refreshed_epoch is not None:
-        result["refreshed_ts"] = refreshed_epoch
-    if note_text:
-        result["notes"] = note_text
-    if confidence is not None:
-        result["confidence"] = confidence
-    if reason_text:
-        result["reason"] = reason_text
-    if strategy:
-        result["strategy"] = strategy
-
-    return result
-
-
-def _derive_playbook_state_from_activity(
-    activity: List[Dict[str, Any]]
-) -> Optional[Dict[str, Any]]:
-    if not isinstance(activity, list):
-        return None
-
-    for entry in reversed(activity):
-        if not isinstance(entry, dict):
-            continue
-
-        mode_raw = entry.get("mode")
-        bias_raw = entry.get("bias")
-        size_bias_raw = entry.get("size_bias")
-        sl_bias = entry.get("sl_bias")
-        tp_bias = entry.get("tp_bias")
-        features = entry.get("features")
-        notes = entry.get("notes")
-        confidence = entry.get("confidence")
-        reason = entry.get("reason")
-        strategy_raw = entry.get("strategy")
-
-        has_details = any(
-            value
-            for value in (
-                mode_raw,
-                bias_raw,
-                size_bias_raw,
-                sl_bias,
-                tp_bias,
-                features,
-                notes,
-                confidence,
-                reason,
-                strategy_raw,
-            )
-        )
-        if not has_details:
-            continue
-
-        result: Dict[str, Any] = {}
-        if isinstance(mode_raw, str) and mode_raw.strip():
-            result["mode"] = mode_raw.strip()
-        if isinstance(bias_raw, str) and bias_raw.strip():
-            result["bias"] = bias_raw.strip()
-
-        if isinstance(size_bias_raw, dict):
-            normalized_size: Dict[str, float] = {}
-            for key, raw_value in size_bias_raw.items():
-                label = str(key or "").strip()
-                if not label:
-                    continue
-                value = _safe_float(raw_value)
-                if value is None:
-                    continue
-                normalized_size[label.upper()] = value
-            if normalized_size:
-                result["size_bias"] = normalized_size
-
-        for key, value in (("sl_bias", sl_bias), ("tp_bias", tp_bias)):
-            numeric = _safe_float(value)
-            if numeric is not None:
-                result[key] = numeric
-
-        if isinstance(features, list):
-            filtered = [item for item in features if isinstance(item, dict)]
-            if filtered:
-                result["features"] = filtered
-
-        if isinstance(notes, str) and notes.strip():
-            result["notes"] = notes.strip()
-
-        normalized_strategy = _normalize_strategy_blob(strategy_raw)
-        if normalized_strategy:
-            result["strategy"] = normalized_strategy
-
-        reason_text = _clean_string(reason)
-        if not reason_text and normalized_strategy:
-            reason_text = normalized_strategy.get("why_active")
-        if reason_text:
-            result["reason"] = reason_text
-
-        numeric_confidence = _safe_float(confidence)
-        if numeric_confidence is not None:
-            result["confidence"] = numeric_confidence
-
-        result.setdefault("mode", "baseline")
-        result.setdefault("bias", "neutral")
-
-        ts_epoch = entry.get("ts_epoch")
-        refreshed_iso = entry.get("ts")
-        if not refreshed_iso and entry.get("ts"):
-            try:
-                refreshed_iso = str(entry.get("ts"))
-            except Exception:
-                refreshed_iso = None
-        if ts_epoch is None and refreshed_iso:
-            parsed = _parse_activity_ts(refreshed_iso)
-            if parsed:
-                ts_epoch = parsed.timestamp()
-                refreshed_iso = parsed.isoformat()
-        if ts_epoch is not None:
-            result["refreshed_ts"] = float(ts_epoch)
-        if refreshed_iso:
-            result["refreshed"] = refreshed_iso
-
-        if result:
-            return result
-
-    return None
-
-
-def _is_placeholder_playbook(state: Optional[Dict[str, Any]]) -> bool:
-    if not state:
-        return True
-
-    if state.get("refreshed_ts") or state.get("refreshed"):
-        return False
-
-    mode = str(state.get("mode") or "").strip().lower()
-    bias = str(state.get("bias") or "").strip().lower()
-
-    if mode and mode not in {"baseline"}:
-        return False
-    if bias and bias not in {"neutral"}:
-        return False
-
-    size_bias = state.get("size_bias")
-    if isinstance(size_bias, dict):
-        for value in size_bias.values():
-            numeric = _safe_float(value)
-            if numeric is None:
-                continue
-            if abs(numeric - 1.0) > 1e-6:
-                return False
-
-    if state.get("features") or state.get("notes") or state.get("confidence"):
-        return False
-
-    return True
-
-
-def _resolve_playbook_state(
-    raw_state: Any, activity: List[Dict[str, Any]]
-) -> Optional[Dict[str, Any]]:
-    normalized = _normalize_playbook_state(raw_state)
-    if not _is_placeholder_playbook(normalized):
-        return normalized
-
-    fallback = _derive_playbook_state_from_activity(activity)
-    if not fallback:
-        return normalized
-
-    merged: Dict[str, Any] = dict(normalized) if isinstance(normalized, dict) else {}
-    merged.update(fallback)
-    return merged if merged else fallback
-
-
-def _collect_playbook_activity(ai_activity: List[Any]) -> List[Dict[str, Any]]:
-    if not isinstance(ai_activity, list):
-        return []
-
-    items: List[Dict[str, Any]] = []
-    allowed_request_prefixes = ("playbook", "tuning")
-    allowed_kind_prefixes = ("playbook", "tuning")
-    disallowed_mode_prefixes = ("analysis", "strategy")
-    for entry in ai_activity:
-        if not isinstance(entry, dict):
-            continue
-        data = entry.get("data")
-        headline = str(entry.get("headline") or "")
-        normalized_headline = headline.lower()
-        kind_label = str(entry.get("kind") or "")
-        kind_normalized = kind_label.strip().lower()
-
-        relevant = "playbook" in normalized_headline
-        if not relevant and kind_normalized:
-            if kind_normalized.startswith(allowed_kind_prefixes) or "playbook" in kind_normalized:
-                relevant = True
-
-        request_kind = None
-        normalized_request_kind = ""
-        request_id_hint: Optional[str] = None
-        disallowed_mode = False
-        normalized_mode = ""
-
-        if isinstance(data, dict):
-            raw_request_kind = data.get("request_kind")
-            if isinstance(raw_request_kind, str):
-                request_kind = raw_request_kind.strip() or None
-            elif raw_request_kind is not None:
-                request_kind = str(raw_request_kind)
-            if request_kind:
-                normalized_request_kind = request_kind.strip().lower()
-                if normalized_request_kind.startswith(allowed_request_prefixes):
-                    relevant = True
-                else:
-                    # Explicitly tagged as a different request – skip it entirely
-                    continue
-            raw_request_id = data.get("request_id")
-            if isinstance(raw_request_id, str):
-                request_id_hint = raw_request_id.strip() or None
-            elif raw_request_id is not None:
-                request_id_hint = str(raw_request_id)
-
-            raw_mode = data.get("mode")
-            if isinstance(raw_mode, str):
-                normalized_mode = raw_mode.strip().lower()
-                if normalized_mode.startswith(disallowed_mode_prefixes):
-                    disallowed_mode = True
-
-        if (
-            not relevant
-            and request_id_hint
-            and request_id_hint.strip().lower().startswith(allowed_request_prefixes)
-        ):
-            relevant = True
-
-        if request_id_hint:
-            normalized_request_id = request_id_hint.strip().lower()
-            if "::" in normalized_request_id:
-                prefix = normalized_request_id.split("::", 1)[0]
-                if prefix and prefix not in allowed_request_prefixes:
-                    continue
-
-        if not relevant and isinstance(data, dict):
-            playbook_keys = {
-                "mode",
-                "bias",
-                "size_bias",
-                "sl_bias",
-                "tp_bias",
-                "sl_atr_mult",
-                "tp_atr_mult",
-                "snapshot_meta",
-                "features",
-            }
-            if any(key in data for key in playbook_keys) and not disallowed_mode:
-                relevant = True
-
-        if not relevant:
-            continue
-
-        if disallowed_mode and not normalized_request_kind.startswith(allowed_request_prefixes):
-            if not (request_id_hint and request_id_hint.strip().lower().startswith(allowed_request_prefixes)):
-                if "playbook" not in normalized_headline and "playbook" not in kind_normalized:
-                    continue
-
-        record: Dict[str, Any] = {
-            "kind": entry.get("kind"),
-            "headline": headline,
-        }
-
-        timestamp = entry.get("ts")
-        parsed_ts = _parse_activity_ts(timestamp)
-        if parsed_ts:
-            record["ts"] = parsed_ts.isoformat()
-            record["ts_epoch"] = parsed_ts.timestamp()
-        elif isinstance(timestamp, str):
-            record["ts"] = timestamp
-
-        body = entry.get("body")
-        if isinstance(body, str):
-            stripped_body = body.strip()
-            if stripped_body:
-                record["body"] = stripped_body
-
-        if isinstance(data, dict):
-            raw_request_id = data.get("request_id")
-            request_id: Optional[str] = None
-            if isinstance(raw_request_id, str):
-                request_id = raw_request_id.strip() or None
-            elif raw_request_id is not None:
-                request_id = str(raw_request_id)
-            if request_id:
-                record["request_id"] = request_id
-
-            if request_kind:
-                record["request_kind"] = normalized_request_kind or request_kind
-
-            reason = data.get("reason")
-            if isinstance(reason, str):
-                stripped_reason = reason.strip()
-                if stripped_reason:
-                    record["reason"] = stripped_reason
-
-            notes = data.get("notes")
-            if isinstance(notes, str):
-                stripped_note = notes.strip()
-                if stripped_note:
-                    record["notes"] = stripped_note
-            if "notes" not in record:
-                note = data.get("note")
-                if isinstance(note, str):
-                    stripped_note = note.strip()
-                    if stripped_note:
-                        record["notes"] = stripped_note
-
-            for key in ("mode", "bias"):
-                value = data.get(key)
-                if isinstance(value, str):
-                    record[key] = value.strip()
-
-            size_bias_raw = data.get("size_bias")
-            if isinstance(size_bias_raw, dict):
-                size_bias: Dict[str, float] = {}
-                for key, raw_value in size_bias_raw.items():
-                    label = str(key or "").strip()
-                    if not label:
-                        continue
-                    value = _safe_float(raw_value)
-                    if value is None:
-                        continue
-                    size_bias[label.upper()] = value
-                if size_bias:
-                    record["size_bias"] = size_bias
-
-            sl_bias = _safe_float(data.get("sl_bias"))
-            if sl_bias is None:
-                sl_bias = _safe_float(data.get("sl_atr_mult"))
-            if sl_bias is not None:
-                record["sl_bias"] = sl_bias
-
-            tp_bias = _safe_float(data.get("tp_bias"))
-            if tp_bias is None:
-                tp_bias = _safe_float(data.get("tp_atr_mult"))
-            if tp_bias is not None:
-                record["tp_bias"] = tp_bias
-
-            confidence = _safe_float(data.get("confidence"))
-            if confidence is None:
-                confidence = _safe_float(data.get("confidence_score"))
-            if confidence is not None:
-                record["confidence"] = confidence
-
-            features_raw = data.get("features")
-            if isinstance(features_raw, dict):
-                features: List[Dict[str, Any]] = []
-                for key, value in features_raw.items():
-                    numeric = _safe_float(value)
-                    if numeric is None:
-                        continue
-                    features.append({"name": str(key), "value": numeric})
-                features.sort(key=lambda item: abs(item["value"]), reverse=True)
-                if features:
-                    record["features"] = features[:5]
-
-            strategy_blob = _normalize_strategy_blob(data.get("strategy"))
-            if strategy_blob:
-                record["strategy"] = strategy_blob
-                if "reason" not in record and strategy_blob.get("why_active"):
-                    record["reason"] = strategy_blob.get("why_active")
-
-            snapshot_meta = data.get("snapshot_meta")
-            summary = _summarize_playbook_snapshot_meta(snapshot_meta)
-            if summary:
-                record["snapshot_summary"] = summary
-
-        items.append(record)
-
-    return items[-40:]
-
-
-def _build_playbook_process(
-    activity: List[Dict[str, Any]]
-) -> List[Dict[str, Any]]:
-    if not isinstance(activity, list):
-        return []
-
-    def _resolve_stage(entry: Dict[str, Any]) -> str:
-        kind = str(entry.get("kind") or "").strip().lower()
-        headline = str(entry.get("headline") or "").strip().lower()
-        if kind == "query" or "refresh requested" in headline:
-            return "requested"
-        if kind in {"error", "alert"} or "failed" in headline:
-            return "failed"
-        if kind in {"playbook", "info"} and (
-            entry.get("mode")
-            or entry.get("bias")
-            or entry.get("size_bias")
-            or entry.get("sl_bias")
-            or entry.get("tp_bias")
-        ):
-            return "applied"
-        return "info"
-
-    grouped: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
-    anonymous_counter = 0
-
-    for raw_entry in activity:
-        if not isinstance(raw_entry, dict):
-            continue
-        entry = dict(raw_entry)
-        request_id = entry.get("request_id")
-        if isinstance(request_id, str):
-            request_id = request_id.strip() or None
-        if not request_id:
-            anonymous_counter += 1
-            key = f"anonymous:{anonymous_counter}"
-        else:
-            key = request_id
-
-        record = grouped.setdefault(
-            key,
-            {
-                "request_id": request_id,
-                "steps": [],
-                "status": "pending",
-            },
-        )
-
-        stage = _resolve_stage(entry)
-        if stage == "failed":
-            record["status"] = "failed"
-        elif stage == "applied" and record.get("status") != "failed":
-            record["status"] = "applied"
-
-        ts_epoch = entry.get("ts_epoch")
-        ts = entry.get("ts")
-        if ts_epoch is not None:
-            try:
-                epoch = float(ts_epoch)
-            except (TypeError, ValueError):
-                epoch = None
-            if epoch is not None:
-                record.setdefault("requested_ts", epoch)
-                if stage == "applied":
-                    record["completed_ts"] = epoch
-                elif stage == "failed":
-                    record["failed_ts"] = epoch
-        elif ts and record.get("requested_ts") is None:
-            parsed = _parse_activity_ts(ts)
-            if parsed:
-                record["requested_ts"] = parsed.timestamp()
-                record["requested_ts_iso"] = parsed.isoformat()
-
-        for key_name in ("mode", "bias", "size_bias", "sl_bias", "tp_bias"):
-            value = entry.get(key_name)
-            if value is not None:
-                record[key_name] = value
-
-        snapshot_summary = entry.get("snapshot_summary")
-        if snapshot_summary:
-            record.setdefault("snapshot_summary", snapshot_summary)
-        notes = entry.get("notes")
-        if notes:
-            record.setdefault("notes", notes)
-
-        step = {
-            "stage": stage,
-            "kind": entry.get("kind"),
-            "headline": entry.get("headline"),
-            "body": entry.get("body"),
-            "snapshot_summary": entry.get("snapshot_summary"),
-            "ts": ts,
-            "ts_epoch": ts_epoch,
-        }
-        record["steps"].append(step)
-
-    process: List[Dict[str, Any]] = []
-    for key, record in grouped.items():
-        record["steps"] = record.get("steps", [])
-        process.append(record)
-
-    process.sort(
-        key=lambda item: (
-            -float(item.get("requested_ts") or 0.0),
-            item.get("request_id") or "",
-        )
+def _sanitize_for_json(value: Any) -> Any:
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, datetime):
+        return value.astimezone(timezone.utc).isoformat()
+    if isinstance(value, dict):
+        return {str(key): _sanitize_for_json(val) for key, val in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_sanitize_for_json(item) for item in value]
+    return str(value)
+
+
+def _coerce_plan_timestamp(entry: Dict[str, Any]) -> Tuple[Optional[float], Optional[str]]:
+    ts_candidates: Tuple[Any, ...] = (
+        entry.get("ts"),
+        entry.get("timestamp"),
+        entry.get("ts_ms"),
+        entry.get("ts_iso"),
     )
-    return process[:12]
+    ts_seconds: Optional[float] = None
+    ts_iso: Optional[str] = None
+    for candidate in ts_candidates:
+        if candidate is None or candidate == "":
+            continue
+        numeric_candidate = _safe_float(candidate)
+        if numeric_candidate is not None:
+            ts_seconds = numeric_candidate / 1000.0 if numeric_candidate > 1e12 else numeric_candidate
+            try:
+                ts_iso = datetime.fromtimestamp(ts_seconds, tz=timezone.utc).isoformat()
+            except (OverflowError, OSError, ValueError):
+                ts_iso = None
+            break
+        if isinstance(candidate, str):
+            token = candidate.strip()
+            if not token:
+                continue
+            try:
+                dt = datetime.fromisoformat(token.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            ts_seconds = dt.timestamp()
+            ts_iso = dt.astimezone(timezone.utc).isoformat()
+            break
+    return ts_seconds, ts_iso
 
+
+def _extract_symbol_and_side(entry: Dict[str, Any], plan: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    symbol = plan.get("symbol") or entry.get("symbol")
+    side = plan.get("side") or entry.get("side") or plan.get("direction")
+    key = str(entry.get("key") or "")
+    parts = [part for part in key.split("::") if part]
+    if not symbol and len(parts) >= 2:
+        symbol = parts[1]
+    if not side and len(parts) >= 3:
+        side = parts[2]
+    symbol_text = str(symbol).upper() if symbol else None
+    side_text = str(side).upper() if side else None
+    return symbol_text, side_text
+
+
+def _score_component(components: List[Dict[str, Any]], label: str, delta: float) -> float:
+    if not isinstance(delta, (int, float)):
+        return 0.0
+    if abs(delta) < 1e-6:
+        return 0.0
+    entry = {
+        "label": label,
+        "value": round(float(delta), 2),
+        "kind": "penalty" if delta < 0 else "bonus",
+    }
+    components.append(entry)
+    return float(delta)
+
+
+def _humanize_reason(reason: Optional[str]) -> Optional[str]:
+    if not reason:
+        return None
+    normalized = str(reason).strip().lower()
+    if not normalized:
+        return None
+    labels = {
+        "sentinel_block": "Sentinel guardrail",
+        "sentinel_bias": "Sentinel bias",
+        "budget_bias": "Budget guard bias",
+        "budget_spend": "Budget spend limit",
+        "cooldown": "Cooldown active",
+        "throttle": "Throttle protection",
+        "duplicate": "Duplicate request",
+        "duplicate_signal": "Duplicate signal",
+        "duplicate_plan": "Duplicate plan",
+        "recent_fill": "Recent fill",
+        "risk": "Risk filter",
+    }
+    if normalized in labels:
+        return labels[normalized]
+    return normalized.replace("_", " ").strip().title()
+
+
+def _build_skip_ranking(state: Dict[str, Any]) -> List[Dict[str, Any]]:
+    raw_recent = state.get("ai_recent_plans") if isinstance(state, dict) else None
+    if not isinstance(raw_recent, list):
+        return []
+
+    now = time.time()
+    ranking: List[Dict[str, Any]] = []
+    for entry in reversed(raw_recent[-200:]):
+        if not isinstance(entry, dict):
+            continue
+        plan = entry.get("plan")
+        if not isinstance(plan, dict):
+            continue
+
+        take_flag = plan.get("take")
+        if isinstance(take_flag, str):
+            normalized_take = take_flag.strip().lower()
+            take = normalized_take in {"true", "1", "yes", "take"}
+        else:
+            take = bool(take_flag)
+        decision = str(plan.get("decision") or "").strip().lower()
+        if take and decision not in {"skip", "reject", "decline"}:
+            continue
+        if not take and decision in {"enter trade", "take"}:
+            continue
+
+        components: List[Dict[str, Any]] = []
+        score = 0.0
+        score += _score_component(components, "Baseline opportunity", 10.0)
+
+        confidence = _safe_float(plan.get("confidence") or plan.get("confidence_score"))
+        if confidence is None:
+            confidence = 0.0
+        confidence = max(0.0, min(float(confidence), 1.0))
+        score += _score_component(components, "Confidence alignment", confidence * 40.0)
+
+        size_multiplier = (
+            _safe_float(plan.get("size_multiplier"))
+            or _safe_float(plan.get("size_factor"))
+            or _safe_float(plan.get("position_multiplier"))
+            or 0.0
+        )
+        size_multiplier = max(0.0, float(size_multiplier or 0.0))
+        size_norm = min(size_multiplier, 3.0) / 3.0 if size_multiplier else 0.0
+        score += _score_component(components, "Sizing alignment", size_norm * 25.0)
+        if size_multiplier <= 0.0:
+            score += _score_component(components, "Penalty · zero sizing", -18.0)
+
+        expected_r: Optional[float] = None
+        for key in ("expected_r", "expected_return", "edge", "expected_r_multiple"):
+            value = _safe_float(plan.get(key))
+            if value is not None:
+                expected_r = float(value)
+                break
+        if expected_r is not None:
+            expected_r = max(expected_r, 0.0)
+            normalized_r = min(expected_r, 3.0) / 3.0
+            score += _score_component(components, "Expected R multiple", normalized_r * 15.0)
+
+        event_risk = _safe_float(plan.get("event_risk") or plan.get("sentinel_event_risk"))
+        if event_risk is not None:
+            event_risk = min(max(float(event_risk), 0.0), 1.0)
+            score += _score_component(components, "Low event risk bonus", (1.0 - event_risk) * 10.0)
+
+        hype_score = _safe_float(plan.get("hype_score") or plan.get("sentinel_hype"))
+        if hype_score is not None:
+            hype_score = min(max(float(hype_score), 0.0), 1.0)
+            score += _score_component(components, "Low hype bonus", (1.0 - hype_score) * 4.0)
+
+        sentinel_factor = _safe_float(plan.get("sentinel_factor"))
+        if sentinel_factor is not None:
+            sentinel_factor = min(max(float(sentinel_factor), 0.0), 1.0)
+            score += _score_component(components, "Sentinel clearance", (1.0 - sentinel_factor) * 4.0)
+
+        budget_ratio = _safe_float(plan.get("budget_ratio"))
+        budget_bonus = None
+        if budget_ratio is not None:
+            ratio_value = max(0.0, float(budget_ratio))
+            if ratio_value <= 1.0:
+                budget_bonus = (1.0 - min(ratio_value, 1.0)) * 6.0
+            else:
+                budget_bonus = -(min(ratio_value, 2.0) - 1.0) * 12.0
+        if budget_bonus is not None:
+            score += _score_component(components, "Budget headroom", budget_bonus)
+
+        ts_seconds, ts_iso = _coerce_plan_timestamp(entry)
+        if ts_seconds is not None:
+            age_minutes = max(0.0, (now - ts_seconds) / 60.0)
+            recency = max(0.0, 1.0 - min(age_minutes, 720.0) / 720.0)
+            score += _score_component(components, "Recency bonus", recency * 6.0)
+        else:
+            ts_iso = None
+            age_minutes = None
+
+        reason_code_raw = plan.get("decision_reason") or plan.get("reason")
+        reason_label = _humanize_reason(reason_code_raw)
+        penalty_labels = {
+            "Sentinel guardrail": 22.0,
+            "Sentinel bias": 12.0,
+            "Budget guard bias": 14.0,
+            "Budget spend limit": 12.0,
+            "Cooldown active": 10.0,
+            "Throttle protection": 9.0,
+            "Duplicate request": 6.0,
+            "Duplicate signal": 6.0,
+            "Duplicate plan": 6.0,
+            "Recent fill": 6.0,
+            "Risk filter": 10.0,
+        }
+        if reason_label:
+            penalty_value = None
+            for key, value in penalty_labels.items():
+                if reason_label.lower() == key.lower():
+                    penalty_value = value
+                    break
+            if penalty_value is None:
+                penalty_value = 6.0
+            score += _score_component(components, f"Penalty · {reason_label}", -penalty_value)
+
+        sentinel_label = str(plan.get("sentinel_label") or "").strip().upper()
+        if sentinel_label == "RED":
+            score += _score_component(components, "Penalty · Sentinel red", -18.0)
+        elif sentinel_label == "AMBER":
+            score += _score_component(components, "Penalty · Sentinel amber", -8.0)
+
+        score = max(score, 0.0)
+
+        symbol, side = _extract_symbol_and_side(entry, plan)
+        context_payload = {k: v for k, v in entry.items() if k != "plan"}
+        metrics: Dict[str, Any] = {
+            "confidence": confidence,
+            "size_multiplier": size_multiplier,
+            "expected_r": expected_r,
+            "event_risk": event_risk,
+            "hype_score": hype_score,
+            "sentinel_factor": sentinel_factor,
+            "budget_ratio": budget_ratio,
+            "age_minutes": age_minutes,
+            "sentinel_label": sentinel_label or None,
+        }
+
+        ranking.append(
+            {
+                "id": str(entry.get("key") or f"skip::{len(ranking)}"),
+                "symbol": symbol,
+                "side": side,
+                "score": round(score, 2),
+                "score_components": components,
+                "reason_code": str(reason_code_raw).strip().lower() if reason_code_raw else None,
+                "reason_label": reason_label,
+                "decision_note": plan.get("decision_note"),
+                "risk_note": plan.get("risk_note"),
+                "origin": plan.get("origin") or plan.get("ai_plan_origin"),
+                "plan_origin": plan.get("ai_plan_origin") or plan.get("origin"),
+                "confidence": confidence,
+                "size_multiplier": size_multiplier,
+                "expected_r": expected_r,
+                "event_risk": event_risk,
+                "hype_score": hype_score,
+                "sentinel_factor": sentinel_factor,
+                "sentinel_label": sentinel_label or None,
+                "budget_ratio": budget_ratio,
+                "ts": ts_seconds,
+                "ts_iso": ts_iso,
+                "plan": _sanitize_for_json(plan),
+                "context": _sanitize_for_json(context_payload),
+                "metrics": _sanitize_for_json(metrics),
+            }
+        )
+
+    ranking.sort(key=lambda item: (-(item.get("score") or 0.0), -(item.get("ts") or 0.0)))
+    return ranking[:20]
 
 def _ai_request_count(ai_budget: Dict[str, Any]) -> Optional[int]:
     if not isinstance(ai_budget, dict):
@@ -4931,66 +4587,24 @@ class AIChatEngine:
         ai_budget: Dict[str, Any],
     ) -> Dict[str, Any]:
         overlay: Dict[str, Any] = {}
-        playbook_bucket = state.get("ai_playbook") if isinstance(state, dict) else None
-        activity_source = state.get("ai_activity") if isinstance(state, dict) else None
-        if isinstance(activity_source, list):
-            playbook_activity = _collect_playbook_activity(activity_source)
-        else:
-            playbook_activity = []
-        resolved_playbook = _resolve_playbook_state(playbook_bucket, playbook_activity)
-        if not resolved_playbook and isinstance(playbook_bucket, dict):
-            resolved_playbook = playbook_bucket.get("active")
-
-        if isinstance(resolved_playbook, dict) and resolved_playbook:
-            mode = str(resolved_playbook.get("mode") or "baseline")
-            bias = str(resolved_playbook.get("bias") or "neutral")
-            size_bias = resolved_playbook.get("size_bias") or {}
-            try:
-                buy_bias = float((size_bias or {}).get("BUY", 1.0) or 1.0)
-            except (TypeError, ValueError):
-                buy_bias = 1.0
-            try:
-                sell_bias = float((size_bias or {}).get("SELL", 1.0) or 1.0)
-            except (TypeError, ValueError):
-                sell_bias = 1.0
-            try:
-                sl_bias = float(resolved_playbook.get("sl_bias", 1.0) or 1.0)
-            except (TypeError, ValueError):
-                sl_bias = 1.0
-            try:
-                tp_bias = float(resolved_playbook.get("tp_bias", 1.0) or 1.0)
-            except (TypeError, ValueError):
-                tp_bias = 1.0
-            features = resolved_playbook.get("features")
-            feature_blurbs: List[str] = []
-            if isinstance(features, dict):
-                ranked_pairs = [
-                    (name, value)
-                    for name, value in features.items()
-                    if isinstance(value, (int, float))
-                ]
-            elif isinstance(features, list):
-                ranked_pairs = [
-                    (str(item.get("name")), item.get("value"))
-                    for item in features
-                    if isinstance(item, dict)
-                ]
-            else:
-                ranked_pairs = []
-            ranked_pairs = [
-                (name, float(value))
-                for name, value in ranked_pairs
-                if name and isinstance(value, (int, float))
-            ]
-            ranked_pairs.sort(key=lambda pair: abs(pair[1]), reverse=True)
-            for name, value in ranked_pairs[:2]:
-                feature_blurbs.append(f"{name} {value:+.2f}")
-            snippet = (
-                f"Active playbook: {mode} ({bias}) · size BUY {buy_bias:.2f}/SELL {sell_bias:.2f} · SL×{sl_bias:.2f} · TP×{tp_bias:.2f}"
-            )
-            if feature_blurbs:
-                snippet += " · " + ", ".join(feature_blurbs)
-            overlay["playbook_line"] = snippet
+        skip_candidates = _build_skip_ranking(state if isinstance(state, dict) else {})
+        if skip_candidates:
+            top = skip_candidates[0]
+            parts: List[str] = []
+            if top.get("symbol"):
+                direction = top.get("side") or "—"
+                parts.append(f"{top['symbol']} {direction}")
+            parts.append(f"score {top.get('score', 0.0):.1f}")
+            reason_label = top.get("reason_label") or top.get("reason_code")
+            if reason_label:
+                parts.append(str(reason_label))
+            confidence = top.get("confidence")
+            if isinstance(confidence, (int, float)):
+                parts.append(f"confidence {float(confidence):.2f}")
+            size_mult = top.get("size_multiplier")
+            if isinstance(size_mult, (int, float)) and size_mult > 0:
+                parts.append(f"size×{float(size_mult):.2f}")
+            overlay["skip_ranking_line"] = "Closest skips: " + " · ".join(parts)
         sentinel_state = state.get("sentinel") if isinstance(state, dict) else None
         if isinstance(sentinel_state, dict) and sentinel_state:
             counts: Dict[str, int] = {}
@@ -5146,7 +4760,7 @@ class AIChatEngine:
         ]
         if extra_context:
             for key in (
-                "playbook_line",
+                "skip_ranking_line",
                 "sentinel_line",
                 "budget_trend_line",
                 "tuning_line",
@@ -6485,9 +6099,7 @@ async def trades() -> Dict[str, Any]:
     else:
         ai_activity = []
     ai_requests = _summarize_ai_requests(ai_activity)
-    playbook_activity = _collect_playbook_activity(ai_activity)
-    playbook_state = _resolve_playbook_state(state.get("ai_playbook"), playbook_activity)
-    playbook_process = _build_playbook_process(playbook_activity)
+    skip_ranking = _build_skip_ranking(state)
     proposals: List[Dict[str, Any]] = []
     raw_proposals = state.get("ai_trade_proposals")
     if isinstance(raw_proposals, list):
@@ -6513,9 +6125,7 @@ async def trades() -> Dict[str, Any]:
         "ai_budget": ai_budget,
         "ai_activity": ai_activity,
         "ai_requests": ai_requests,
-        "playbook": playbook_state,
-        "playbook_activity": playbook_activity,
-        "playbook_process": playbook_process,
+        "skip_ranking": skip_ranking,
         "ai_trade_proposals": proposals,
     }
 
