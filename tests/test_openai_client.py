@@ -31,6 +31,16 @@ def test_is_responses_unsupported_error_handles_endpoint_wording() -> None:
     assert is_responses_unsupported_error(payload) is True
 
 
+def test_is_responses_unsupported_error_detects_access_restriction() -> None:
+    payload = {
+        "error": {
+            "message": "This project is not allowed to use the Responses API. Access to the Responses API is denied.",
+            "code": "invalid_request_error",
+        }
+    }
+    assert is_responses_unsupported_error(payload) is True
+
+
 def test_client_disables_responses_after_incompatible_error(monkeypatch: pytest.MonkeyPatch) -> None:
     client = OpenAIClient("test-key", default_model="gpt-4o-mini")
 
