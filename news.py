@@ -138,22 +138,37 @@ def _ensure_playwright_available() -> None:
 def _parse_number(value: Optional[str]) -> Optional[int]:
     if not value:
         return None
-    match = re.search(r"([0-9]+(?:[.,][0-9]+)?)([KMB]?)", value)
+
+    cleaned = (
+        value.replace("\u202f", "")
+        .replace("\u00a0", "")
+        .replace("·", " ")
+    )
+    match = re.search(r"([0-9]+(?:[.,][0-9]+)?)([KMB]?)", cleaned)
     if not match:
         return None
-    number = match.group(1).replace(",", "")
-    try:
-        count = float(number)
-    except ValueError:
-        return None
+
+    number = match.group(1)
     suffix = match.group(2)
-    if suffix == "K":
-        count *= 1_000
-    elif suffix == "M":
-        count *= 1_000_000
-    elif suffix == "B":
-        count *= 1_000_000_000
-    return int(count)
+
+    if suffix:
+        normalized = number.replace(",", ".")
+        try:
+            count = float(normalized)
+        except ValueError:
+            return None
+        if suffix == "K":
+            count *= 1_000
+        elif suffix == "M":
+            count *= 1_000_000
+        elif suffix == "B":
+            count *= 1_000_000_000
+        return int(count)
+
+    digits = re.sub(r"[^0-9]", "", number)
+    if not digits:
+        return None
+    return int(digits)
 
 
 async def load_cookies(path: str) -> List[dict]:
