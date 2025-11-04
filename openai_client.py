@@ -61,7 +61,7 @@ def model_traits(model: str) -> ModelTraits:
     if normalized.startswith("o1"):
         return ModelTraits(legacy_supported=False, modalities=("text",), reasoning={"effort": "medium"})
     if normalized.startswith("gpt-4.1"):
-        return ModelTraits(legacy_supported=True)
+        return ModelTraits(legacy_supported=True, modalities=("text",))
     return traits
 
 
@@ -179,8 +179,10 @@ def is_responses_unsupported_error(payload: Optional[Dict[str, Any]]) -> bool:
 
     incompatible_keywords = (
         "does not support the responses api",
+        "does not support the responses endpoint",
         "is not currently supported on the responses api",
         "use the chat.completions endpoint",
+        "chat completions api instead",
         "beta responses api is not enabled",
     )
 
@@ -188,6 +190,9 @@ def is_responses_unsupported_error(payload: Optional[Dict[str, Any]]) -> bool:
         return True
 
     if "responses" in message and "unsupported" in message:
+        return True
+
+    if "responses" in message and "only available" in message and "chat" in message:
         return True
 
     if code in {"model_not_supported", "model_not_enabled", "model_not_found"} and "responses" in message:

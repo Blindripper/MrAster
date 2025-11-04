@@ -32,6 +32,7 @@ def test_gpt41_allows_legacy_fallback(engine: AIChatEngine) -> None:
     traits = engine._model_traits("gpt-4.1")
     assert traits["legacy_supported"] is True
     assert traits["reasoning"] is None
+    assert traits["modalities"] == ["text"]
 
 
 def test_responses_payload_normalises_text() -> None:
