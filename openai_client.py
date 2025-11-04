@@ -184,6 +184,11 @@ def is_responses_unsupported_error(payload: Optional[Dict[str, Any]]) -> bool:
         "use the chat.completions endpoint",
         "chat completions api instead",
         "beta responses api is not enabled",
+        "responses api is not enabled",
+        "responses api is not available",
+        "responses api is disabled",
+        "not allowed to use the responses api",
+        "does not have access to the responses api",
     )
 
     if any(keyword in message for keyword in incompatible_keywords):
@@ -193,6 +198,9 @@ def is_responses_unsupported_error(payload: Optional[Dict[str, Any]]) -> bool:
         return True
 
     if "responses" in message and "only available" in message and "chat" in message:
+        return True
+
+    if "responses api" in message and "access" in message and "denied" in message:
         return True
 
     if code in {"model_not_supported", "model_not_enabled", "model_not_found"} and "responses" in message:
