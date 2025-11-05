@@ -188,7 +188,7 @@ EXCLUDE = set(_split_env_symbols(os.getenv("ASTER_EXCLUDE_SYMBOLS", "")))
 UNIVERSE_MAX = int(os.getenv("ASTER_UNIVERSE_MAX", "0"))
 UNIVERSE_ROTATE = os.getenv("ASTER_UNIVERSE_ROTATE", "true").lower() in ("1", "true", "yes", "on")
 
-ORDERBOOK_DEPTH_LIMIT = max(5, min(1000, int(os.getenv("ASTER_ORDERBOOK_DEPTH_LIMIT", "60") or 60)))
+ORDERBOOK_DEPTH_LIMIT = max(5, min(1000, int(os.getenv("ASTER_ORDERBOOK_DEPTH_LIMIT", "100") or 100)))
 ORDERBOOK_PREFETCH = max(0, int(os.getenv("ASTER_ORDERBOOK_PREFETCH", "14") or 14))
 ORDERBOOK_TTL = max(0.5, float(os.getenv("ASTER_ORDERBOOK_TTL", "2.5") or 2.5))
 ORDERBOOK_ON_DEMAND = max(0, int(os.getenv("ASTER_ORDERBOOK_ON_DEMAND", "6") or 6))
