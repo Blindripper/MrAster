@@ -6643,10 +6643,21 @@ class TradeManager:
         size_factor = max(0.35, min(1.6, size_factor))
 
         cooldown = False
+        cooldown_reason: Optional[str] = None
+        cooldown_duration = 0.0
         if loss_streak >= 4 and expectancy_r < 0 and profit_factor < 0.9:
             cooldown = True
+            cooldown_reason = "loss_streak"
+            cooldown_duration = max(
+                cooldown_duration,
+                600.0 + max(0, loss_streak - 4) * 180.0,
+            )
         if drawdown_ratio > 0.5 and expectancy_r < 0:
             cooldown = True
+            extra = 900.0 + max(0.0, drawdown_ratio - 0.5) * 1800.0
+            cooldown_duration = max(cooldown_duration, extra)
+            if cooldown_reason is None:
+                cooldown_reason = "drawdown"
 
         payload: Dict[str, Any] = {
             "size_factor": round(size_factor, 4),
@@ -6660,6 +6671,32 @@ class TradeManager:
         }
         if cooldown:
             payload["cooldown"] = True
+            now = time.time()
+            prev_bias = self.state.get("performance_bias") if hasattr(self, "state") else None
+            prev_start = 0.0
+            prev_expiry = 0.0
+            if isinstance(prev_bias, dict) and prev_bias.get("cooldown"):
+                try:
+                    prev_start = float(prev_bias.get("cooldown_started_at") or 0.0)
+                except (TypeError, ValueError):
+                    prev_start = 0.0
+                try:
+                    prev_expiry = float(prev_bias.get("cooldown_expires_at") or 0.0)
+                except (TypeError, ValueError):
+                    prev_expiry = 0.0
+            if cooldown_duration <= 0:
+                cooldown_duration = 900.0
+            proposed_expiry = now + cooldown_duration
+            if prev_expiry > now and prev_start:
+                cooldown_started_at = prev_start
+                cooldown_expires_at = max(prev_expiry, proposed_expiry)
+            else:
+                cooldown_started_at = now
+                cooldown_expires_at = proposed_expiry
+            payload["cooldown_started_at"] = cooldown_started_at
+            payload["cooldown_expires_at"] = cooldown_expires_at
+            payload["cooldown_reason"] = cooldown_reason or "risk"
+            payload["cooldown_duration"] = round(cooldown_expires_at - cooldown_started_at, 2)
         return payload
 
     def _update_performance_profile(self) -> Dict[str, Any]:
@@ -8502,17 +8539,51 @@ class Bot:
         performance_bias = self.state.get("performance_bias")
         if isinstance(performance_bias, dict):
             if not manual_override and performance_bias.get("cooldown"):
-                loss_streak = performance_bias.get("loss_streak")
-                expectancy_r = performance_bias.get("expectancy_r")
-                log.info(
-                    "Skip %s — performance cooldown active (loss streak=%s expectancy=%.2fR)",
-                    symbol,
-                    loss_streak if loss_streak is not None else "?",
-                    float(expectancy_r or 0.0),
-                )
-                if self.decision_tracker:
-                    self.decision_tracker.record_rejection("performance_cooldown")
-                return
+                expires_at: Optional[float]
+                try:
+                    expires_at = float(performance_bias.get("cooldown_expires_at") or 0.0)
+                except (TypeError, ValueError):
+                    expires_at = None
+                if expires_at and expires_at <= time.time():
+                    cleaned_bias = dict(performance_bias)
+                    for key in (
+                        "cooldown",
+                        "cooldown_expires_at",
+                        "cooldown_started_at",
+                        "cooldown_reason",
+                        "cooldown_duration",
+                    ):
+                        cleaned_bias.pop(key, None)
+                    self.state["performance_bias"] = cleaned_bias
+                    performance_bias = cleaned_bias
+                    log.info(
+                        "Performance cooldown expired after rest period; resuming evaluations.")
+                else:
+                    loss_streak = performance_bias.get("loss_streak")
+                    expectancy_r = performance_bias.get("expectancy_r")
+                    remaining = None
+                    if expires_at:
+                        remaining = max(0.0, expires_at - time.time())
+                    reason = performance_bias.get("cooldown_reason")
+                    if remaining is not None:
+                        log.info(
+                            "Skip %s — performance cooldown active (loss streak=%s expectancy=%.2fR remaining=%.0fs reason=%s)",
+                            symbol,
+                            loss_streak if loss_streak is not None else "?",
+                            float(expectancy_r or 0.0),
+                            remaining,
+                            reason or "risk",
+                        )
+                    else:
+                        log.info(
+                            "Skip %s — performance cooldown active (loss streak=%s expectancy=%.2fR)",
+                            symbol,
+                            loss_streak if loss_streak is not None else "?",
+                            float(expectancy_r or 0.0),
+                        )
+                    if self.decision_tracker:
+                        self.decision_tracker.record_rejection("performance_cooldown")
+                    return
             raw_factor = performance_bias.get("size_factor")
             try:
                 if raw_factor is not None:

@@ -2,6 +2,8 @@ import os
 import sys
 from typing import Any, Dict, List
 
+import time
+
 import pytest
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
@@ -52,6 +54,8 @@ def test_trade_manager_derives_bias_and_cooldown() -> None:
     assert bias["size_factor"] <= 0.6
     assert bias.get("cooldown") is True
     assert bias["loss_streak"] >= 4
+    assert bias.get("cooldown_expires_at") > time.time()
+    assert bias.get("cooldown_started_at") <= bias["cooldown_expires_at"]
 
 
 def test_performance_bias_rewards_positive_expectancy() -> None:
@@ -70,3 +74,29 @@ def test_performance_bias_rewards_positive_expectancy() -> None:
     bias = manager._derive_performance_bias(metrics)
     assert bias["size_factor"] > 1.0
     assert bias.get("cooldown") is None
+
+
+def test_cooldown_reuses_previous_window() -> None:
+    state: Dict[str, Any] = {"trade_history": []}
+    manager = TradeManager(exchange=object(), policy=None, state=state)
+
+    metrics = {
+        "sample": 6,
+        "expectancy_r": -0.7,
+        "profit_factor": 0.6,
+        "win_rate": 0.2,
+        "drawdown_ratio": 0.55,
+        "current_loss_streak": 4,
+    }
+
+    initial = manager._derive_performance_bias(metrics)
+    state["performance_bias"] = initial
+    time.sleep(0.01)
+    follow_up = manager._derive_performance_bias(metrics)
+
+    assert follow_up.get("cooldown") is True
+    assert follow_up.get("cooldown_started_at") == pytest.approx(
+        initial.get("cooldown_started_at"),
+        rel=0.01,
+    )
+    assert follow_up.get("cooldown_expires_at") >= initial.get("cooldown_expires_at")
