@@ -5867,6 +5867,7 @@ class Strategy:
         ctx_base["atr_pct"] = float(atrp)
 
         order_features = self._order_book_features(symbol, book_ticker=bt, order_book=order_book)
+        orderbook_sampled = bool(order_features)
         if order_features:
             ctx_base.update(order_features)
             lob_bias = order_features.get("lob_bias")
@@ -5874,7 +5875,8 @@ class Strategy:
                 ctx_base["orderbook_bias"] = float(lob_bias)
             ctx_base["orderbook_levels"] = float(order_features.get("lob_levels", 0.0) or 0.0)
         else:
-            ctx_base["orderbook_levels"] = 0.0
+            ctx_base.pop("orderbook_bias", None)
+            ctx_base["orderbook_levels"] = None
 
         # Wickiness
         try:
@@ -6009,7 +6011,7 @@ class Strategy:
             ctx_base["lob_gap_alert"] = float(lob_gap_score)
             sig = "NONE"
         lob_levels = ctx_base.get("orderbook_levels")
-        if isinstance(lob_levels, (int, float)) and lob_levels < 3:
+        if orderbook_sampled and isinstance(lob_levels, (int, float)) and lob_levels < 3:
             ctx_base["lob_depth_issue"] = float(lob_levels)
             sig = "NONE"
 
