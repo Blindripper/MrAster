@@ -2612,6 +2612,31 @@ class AITradeAdvisor:
             summary["hype_score"] = hype_score
         return summary
 
+    def _extract_position_cap(self, ctx: Dict[str, Any]) -> Tuple[Optional[int], Optional[int]]:
+        if not isinstance(ctx, dict):
+            return None, None
+        limit_raw = ctx.get("max_active_positions")
+        limit: Optional[int] = None
+        if isinstance(limit_raw, (int, float)):
+            if math.isfinite(limit_raw) and int(limit_raw) > 0:
+                limit = int(limit_raw)
+        elif isinstance(limit_raw, str):
+            token = limit_raw.strip().lower()
+            if token and token not in {"0", "zero", "none", "unbounded", "unlimited", "inf", "infinite", "∞"}:
+                try:
+                    numeric = float(token)
+                except (TypeError, ValueError):
+                    numeric = None
+                if numeric is not None and math.isfinite(numeric) and int(numeric) > 0:
+                    limit = int(numeric)
+        active_raw = ctx.get("active_positions")
+        active: Optional[int] = None
+        if isinstance(active_raw, dict):
+            active = len(active_raw)
+        elif isinstance(active_raw, (int, float)) and math.isfinite(active_raw):
+            active = int(active_raw)
+        return limit, active
+
     def _pricing(self) -> Dict[str, float]:
         return self.MODEL_PRICING.get(self.model, self.MODEL_PRICING["default"])
 
@@ -3427,6 +3452,21 @@ class AITradeAdvisor:
             self._recent_plan_store(plan_key, fallback)
             return fallback
 
+        limit, active = self._extract_position_cap(ctx)
+        if limit is not None and active is not None and active >= limit:
+            note = f"Global position cap reached ({active}/{limit}); skipping before AI call."
+            fallback.update(
+                {
+                    "take": False,
+                    "decision": "skip",
+                    "decision_reason": "position_cap",
+                    "decision_note": note,
+                    "explanation": "",
+                }
+            )
+            self._recent_plan_store(plan_key, fallback)
+            return fallback
+
         throttle_key = plan_key
         now = time.time()
         status, payload = self._process_pending_request(throttle_key, fallback, now)
@@ -3492,6 +3532,7 @@ class AITradeAdvisor:
             "budget_spent",
             "open_positions",
             "active_positions",
+            "max_active_positions",
         ):
             if key not in ctx:
                 continue
@@ -3743,6 +3784,21 @@ class AITradeAdvisor:
             self._recent_plan_store(trend_key, fallback)
             return fallback
 
+        limit, active = self._extract_position_cap(ctx)
+        if limit is not None and active is not None and active >= limit:
+            note = f"Global position cap reached ({active}/{limit}); skipping before AI call."
+            fallback.update(
+                {
+                    "take": False,
+                    "decision": "skip",
+                    "decision_reason": "position_cap",
+                    "decision_note": note,
+                    "explanation": "",
+                }
+            )
+            self._recent_plan_store(trend_key, fallback)
+            return fallback
+
         throttle_key = trend_key
         now = time.time()
         status, payload = self._process_pending_request(throttle_key, fallback, now)
@@ -3800,6 +3856,7 @@ class AITradeAdvisor:
             "budget_spent",
             "open_positions",
             "active_positions",
+            "max_active_positions",
         ):
             if key not in ctx:
                 continue
@@ -8809,7 +8866,13 @@ class Bot:
         else:
             ctx.pop("budget_remaining", None)
             ctx.pop("budget_spent", None)
-        open_positions_ctx = {k: float(v) for k, v in pos_map.items() if abs(float(v or 0.0)) > 1e-12}
+        open_positions_ctx = {
+            k: float(v) for k, v in pos_map.items() if abs(float(v or 0.0)) > 1e-12
+        }
+        if MAX_OPEN_GLOBAL > 0:
+            ctx["max_active_positions"] = int(MAX_OPEN_GLOBAL)
+        else:
+            ctx["max_active_positions"] = "unbounded"
         if open_positions_ctx:
             ctx["open_positions"] = open_positions_ctx
             ctx["active_positions"] = len(open_positions_ctx)
