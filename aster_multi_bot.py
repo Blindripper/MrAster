@@ -251,6 +251,214 @@ def _coerce_int(value: Any, default: Optional[int] = None) -> Optional[int]:
             return default
 
 
+def _compute_trade_performance_summary(
+    trades: Sequence[Dict[str, Any]],
+    *,
+    tolerance: float = 1e-9,
+) -> Dict[str, Any]:
+    """Aggregate rolling performance metrics for the provided trades."""
+
+    sample = len(trades)
+    if sample == 0:
+        return {"sample": 0, "total_pnl": 0.0, "avg_pnl": 0.0, "avg_r": 0.0}
+
+    wins: List[float] = []
+    losses: List[float] = []
+    r_wins: List[float] = []
+    r_losses: List[float] = []
+    pnls: List[float] = []
+
+    per_symbol: Dict[str, Dict[str, float]] = {}
+    per_bucket: Dict[str, Dict[str, float]] = {}
+
+    total_pnl = 0.0
+    total_r = 0.0
+    draws = 0
+    current_loss_streak = 0
+    max_loss_streak = 0
+
+    cumulative = 0.0
+    peak = 0.0
+    trough = 0.0
+    max_drawdown = 0.0
+
+    for trade in trades:
+        pnl = _coerce_float(trade.get("pnl"), 0.0) or 0.0
+        pnl_r = _coerce_float(trade.get("pnl_r"), 0.0) or 0.0
+        pnls.append(pnl)
+
+        total_pnl += pnl
+        total_r += pnl_r
+
+        cumulative += pnl
+        if cumulative > peak:
+            peak = cumulative
+        if cumulative < trough:
+            trough = cumulative
+        drawdown = peak - cumulative
+        if drawdown > max_drawdown:
+            max_drawdown = drawdown
+
+        if pnl > tolerance:
+            wins.append(pnl)
+            r_wins.append(pnl_r)
+            current_loss_streak = 0
+        elif pnl < -tolerance:
+            losses.append(pnl)
+            r_losses.append(pnl_r)
+            current_loss_streak += 1
+            if current_loss_streak > max_loss_streak:
+                max_loss_streak = current_loss_streak
+        else:
+            draws += 1
+            current_loss_streak = 0
+
+        symbol = str(trade.get("symbol") or "*").upper()
+        bucket = str(trade.get("bucket") or "").upper() or "?"
+
+        sym_stats = per_symbol.setdefault(
+            symbol,
+            {"trades": 0.0, "wins": 0.0, "losses": 0.0, "pnl": 0.0, "pnl_r": 0.0},
+        )
+        sym_stats["trades"] += 1.0
+        sym_stats["pnl"] += pnl
+        sym_stats["pnl_r"] += pnl_r
+        if pnl > tolerance:
+            sym_stats["wins"] += 1.0
+        elif pnl < -tolerance:
+            sym_stats["losses"] += 1.0
+
+        bucket_stats = per_bucket.setdefault(
+            bucket,
+            {"trades": 0.0, "wins": 0.0, "losses": 0.0, "pnl_r": 0.0},
+        )
+        bucket_stats["trades"] += 1.0
+        bucket_stats["pnl_r"] += pnl_r
+        if pnl > tolerance:
+            bucket_stats["wins"] += 1.0
+        elif pnl < -tolerance:
+            bucket_stats["losses"] += 1.0
+
+    win_rate = len(wins) / sample
+    loss_rate = len(losses) / sample
+    draw_rate = draws / sample
+
+    avg_win = sum(wins) / len(wins) if wins else 0.0
+    avg_loss = sum(losses) / len(losses) if losses else 0.0
+    avg_r_win = sum(r_wins) / len(r_wins) if r_wins else 0.0
+    avg_r_loss = sum(r_losses) / len(r_losses) if r_losses else 0.0
+
+    profit_factor: float
+    pnl_wins = sum(wins)
+    pnl_losses = abs(sum(losses))
+    if pnl_losses <= tolerance:
+        profit_factor = pnl_wins / max(tolerance, 1.0)
+    else:
+        profit_factor = pnl_wins / pnl_losses
+    profit_factor = max(0.0, min(profit_factor, 99.0))
+
+    expectancy = total_pnl / sample
+    expectancy_r = total_r / sample
+    payoff_ratio = abs(avg_win / avg_loss) if avg_loss else (abs(avg_win) if avg_win else 0.0)
+    volatility = statistics.pstdev(pnls) if len(pnls) > 1 else 0.0
+
+    denom = max(peak, max_drawdown, 1e-6)
+    drawdown_ratio = max(0.0, min(1.0, max_drawdown / denom))
+    recovery_factor = 0.0
+    if max_drawdown > tolerance:
+        recovery_factor = max(-99.0, min(99.0, total_pnl / max_drawdown))
+
+    def _symbol_snapshot(symbol_key: str, stats: Dict[str, float]) -> Dict[str, Any]:
+        trades_count = int(stats.get("trades", 0.0)) or 0
+        wins_count = int(stats.get("wins", 0.0)) or 0
+        losses_count = int(stats.get("losses", 0.0)) or 0
+        win_r = wins_count / trades_count if trades_count else 0.0
+        loss_r = losses_count / trades_count if trades_count else 0.0
+        pnl_sum = float(stats.get("pnl", 0.0) or 0.0)
+        pnl_r_sum = float(stats.get("pnl_r", 0.0) or 0.0)
+        avg_r_local = pnl_r_sum / trades_count if trades_count else 0.0
+        return {
+            "symbol": symbol_key,
+            "trades": trades_count,
+            "win_rate": round(win_r, 4),
+            "loss_rate": round(loss_r, 4),
+            "pnl": round(pnl_sum, 6),
+            "pnl_r": round(pnl_r_sum, 6),
+            "avg_r": round(avg_r_local, 4),
+        }
+
+    ordered_symbols = sorted(
+        per_symbol.items(),
+        key=lambda item: (item[1].get("pnl", 0.0), item[1].get("trades", 0.0)),
+        reverse=True,
+    )
+    best_symbol = _symbol_snapshot(*ordered_symbols[0]) if ordered_symbols else None
+    worst_symbol = _symbol_snapshot(*ordered_symbols[-1]) if ordered_symbols else None
+
+    bucket_summary: Dict[str, Dict[str, Any]] = {}
+    for bucket_key, stats in per_bucket.items():
+        trades_count = int(stats.get("trades", 0.0)) or 0
+        wins_count = int(stats.get("wins", 0.0)) or 0
+        losses_count = int(stats.get("losses", 0.0)) or 0
+        bucket_summary[bucket_key] = {
+            "trades": trades_count,
+            "win_rate": round(wins_count / trades_count, 4) if trades_count else 0.0,
+            "loss_rate": round(losses_count / trades_count, 4) if trades_count else 0.0,
+            "avg_r": round(
+                float(stats.get("pnl_r", 0.0) or 0.0) / trades_count, 4
+            )
+            if trades_count
+            else 0.0,
+        }
+
+    lagging_symbols = [
+        symbol_key
+        for symbol_key, stats in sorted(
+            per_symbol.items(), key=lambda entry: entry[1].get("pnl", 0.0)
+        )
+        if stats.get("trades", 0.0) >= 2 and stats.get("pnl", 0.0) < 0
+    ][:5]
+
+    summary: Dict[str, Any] = {
+        "sample": sample,
+        "total_pnl": round(total_pnl, 6),
+        "avg_pnl": round(expectancy, 6),
+        "avg_r": round(expectancy_r, 4),
+        "win_rate": round(win_rate, 4),
+        "loss_rate": round(loss_rate, 4),
+        "draw_rate": round(draw_rate, 4),
+        "profit_factor": round(profit_factor, 4),
+        "expectancy": round(expectancy, 6),
+        "expectancy_r": round(expectancy_r, 4),
+        "avg_win": round(avg_win, 6),
+        "avg_loss": round(avg_loss, 6),
+        "avg_r_win": round(avg_r_win, 4),
+        "avg_r_loss": round(avg_r_loss, 4),
+        "payoff_ratio": round(payoff_ratio, 4),
+        "pnl_wins": round(pnl_wins, 6),
+        "pnl_losses": round(-pnl_losses, 6),
+        "current_loss_streak": current_loss_streak,
+        "max_loss_streak": max_loss_streak,
+        "max_drawdown": round(max_drawdown, 6),
+        "drawdown_ratio": round(drawdown_ratio, 4),
+        "recovery_factor": round(recovery_factor, 4),
+        "volatility": round(volatility, 6),
+        "best_symbol": best_symbol,
+        "worst_symbol": worst_symbol,
+        "bucket_stats": bucket_summary,
+        "lagging_symbols": lagging_symbols,
+        "updated_at": time.time(),
+    }
+
+    if ordered_symbols:
+        breakdown: Dict[str, Dict[str, Any]] = {}
+        for sym, stats in ordered_symbols[:12]:
+            breakdown[sym] = _symbol_snapshot(sym, stats)
+        summary["symbol_breakdown"] = breakdown
+
+    return summary
+
+
 MIN_QUOTE_VOL = float(os.getenv("ASTER_MIN_QUOTE_VOL_USDT", "150000"))
 SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.0030"))  # 0.30 %
 WICKINESS_MAX = float(os.getenv("ASTER_WICKINESS_MAX", "0.97"))
@@ -6270,12 +6478,13 @@ class TradeManager:
         self.state.setdefault("live_trades", {})
         self.state.setdefault("fast_tp_cooldown", {})
         self.state.setdefault("fail_skip_until", {})
-        self.state.setdefault("trade_history", [])
-        self._ensure_cumulative_metrics()
         try:
             self.history_max = int(os.getenv("ASTER_HISTORY_MAX", "250"))
         except Exception:
             self.history_max = 250
+        self.state.setdefault("trade_history", [])
+        self._ensure_cumulative_metrics()
+        self._update_performance_profile()
 
     @staticmethod
     def _boolish(value: Any) -> bool:
@@ -6397,6 +6606,81 @@ class TradeManager:
         else:
             metrics["draws"] += 1
         metrics["updated_at"] = time.time()
+        self._update_performance_profile()
+
+    def _derive_performance_bias(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
+        sample = int(metrics.get("sample", 0) or 0)
+        if sample <= 0:
+            return {}
+
+        expectancy_r = float(metrics.get("expectancy_r", 0.0) or 0.0)
+        profit_factor = float(metrics.get("profit_factor", 1.0) or 1.0)
+        win_rate = float(metrics.get("win_rate", 0.0) or 0.0)
+        drawdown_ratio = float(metrics.get("drawdown_ratio", 0.0) or 0.0)
+        loss_streak = int(metrics.get("current_loss_streak", metrics.get("loss_streak", 0)) or 0)
+
+        bounded_expectancy = max(-3.5, min(3.5, expectancy_r))
+        size_factor = 1.0 + bounded_expectancy * 0.12
+
+        if profit_factor < 1.0:
+            penalty = min(0.9, (1.0 - profit_factor) * 0.45)
+            size_factor *= max(0.55, 1.0 - penalty)
+        elif profit_factor > 1.2:
+            boost = min(2.0, profit_factor - 1.0) * 0.08
+            size_factor *= min(1.35, 1.0 + boost)
+
+        if win_rate < 0.42:
+            size_factor *= max(0.5, 0.9 - (0.42 - win_rate) * 0.8)
+        elif win_rate > 0.62:
+            size_factor *= min(1.4, 1.0 + (win_rate - 0.62) * 0.6)
+
+        if drawdown_ratio > 0.3:
+            size_factor *= max(0.45, 1.0 - (drawdown_ratio - 0.3) * 0.8)
+
+        if loss_streak >= 3 and expectancy_r <= 0:
+            size_factor *= max(0.4, 1.0 - 0.12 * (loss_streak - 2))
+
+        size_factor = max(0.35, min(1.6, size_factor))
+
+        cooldown = False
+        if loss_streak >= 4 and expectancy_r < 0 and profit_factor < 0.9:
+            cooldown = True
+        if drawdown_ratio > 0.5 and expectancy_r < 0:
+            cooldown = True
+
+        payload: Dict[str, Any] = {
+            "size_factor": round(size_factor, 4),
+            "expectancy_r": round(expectancy_r, 4),
+            "profit_factor": round(profit_factor, 4),
+            "win_rate": round(win_rate, 4),
+            "loss_streak": loss_streak,
+            "drawdown_ratio": round(drawdown_ratio, 4),
+            "sample": sample,
+            "updated_at": time.time(),
+        }
+        if cooldown:
+            payload["cooldown"] = True
+        return payload
+
+    def _update_performance_profile(self) -> Dict[str, Any]:
+        history = self.state.get("trade_history")
+        if not isinstance(history, list) or not history:
+            self.state.pop("performance_profile", None)
+            self.state.pop("performance_bias", None)
+            return {}
+
+        window = history[-max(self.history_max, 1) :]
+        metrics = _compute_trade_performance_summary(window)
+        metrics["window"] = len(window)
+        metrics["total_trades"] = len(history)
+        self.state["performance_profile"] = metrics
+
+        bias = self._derive_performance_bias(metrics)
+        if bias:
+            self.state["performance_bias"] = bias
+        else:
+            self.state.pop("performance_bias", None)
+        return metrics
 
     def save(self) -> None:
         if self.policy and BANDIT_ENABLED:
@@ -8214,6 +8498,28 @@ class Bot:
         playbook_sl_factor = 1.0
         playbook_tp_factor = 1.0
         sentinel_soft_block = False
+        performance_factor = 1.0
+        performance_bias = self.state.get("performance_bias")
+        if isinstance(performance_bias, dict):
+            if not manual_override and performance_bias.get("cooldown"):
+                loss_streak = performance_bias.get("loss_streak")
+                expectancy_r = performance_bias.get("expectancy_r")
+                log.info(
+                    "Skip %s — performance cooldown active (loss streak=%s expectancy=%.2fR)",
+                    symbol,
+                    loss_streak if loss_streak is not None else "?",
+                    float(expectancy_r or 0.0),
+                )
+                if self.decision_tracker:
+                    self.decision_tracker.record_rejection("performance_cooldown")
+                return
+            raw_factor = performance_bias.get("size_factor")
+            try:
+                if raw_factor is not None:
+                    performance_factor = max(0.35, min(1.6, float(raw_factor)))
+            except (TypeError, ValueError):
+                performance_factor = 1.0
+        ctx["performance_multiplier"] = float(performance_factor)
         if actions.get("hard_block") and not manual_override:
             if event_risk >= 0.85:
                 veto_target = (
@@ -8315,6 +8621,7 @@ class Bot:
                     playbook_tp_factor = 1.0
         size_mult = policy_size_mult * sentinel_factor
         if not manual_override:
+            size_mult *= performance_factor
             size_mult *= tuning_bucket_factor
             size_mult *= playbook_size_factor
             budget_factor = ctx.get("budget_bias")
