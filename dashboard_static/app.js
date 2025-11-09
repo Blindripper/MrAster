@@ -4834,7 +4834,7 @@ function extractTpSlEntry(position, kind) {
   return { price: Number.isFinite(price) && price > 0 ? price : null, meta };
 }
 
-function computePositionProgressValue(takeEntry, stopEntry, markPrice) {
+function computePositionProgressValue(takeEntry, stopEntry, markPrice, side) {
   const takePrice = Number.isFinite(takeEntry?.price) ? takeEntry.price : null;
   const stopPrice = Number.isFinite(stopEntry?.price) ? stopEntry.price : null;
   const mark = Number.isFinite(markPrice) ? markPrice : null;
@@ -4850,7 +4850,20 @@ function computePositionProgressValue(takeEntry, stopEntry, markPrice) {
   const max = Math.max(takePrice, stopPrice);
   const clamped = Math.min(Math.max(mark, min), max);
   const relative = (clamped - min) / (max - min);
-  const profitIsMax = takePrice >= stopPrice;
+  let profitIsMax = null;
+
+  if (side) {
+    const normalized = side.toString().toLowerCase();
+    if (normalized === 'buy' || normalized === 'long') {
+      profitIsMax = true;
+    } else if (normalized === 'sell' || normalized === 'short') {
+      profitIsMax = false;
+    }
+  }
+
+  if (profitIsMax === null) {
+    profitIsMax = takePrice >= stopPrice;
+  }
   const ratio = profitIsMax ? relative : 1 - relative;
 
   return Math.max(0, Math.min(1, ratio));
@@ -4877,7 +4890,7 @@ function computeProgressIndicatorColor(progressValue) {
   };
 }
 
-function buildPositionProgressBar({ takeEntry, stopEntry, markPrice }) {
+function buildPositionProgressBar({ takeEntry, stopEntry, markPrice, side }) {
   const container = document.createElement('div');
   container.className = 'position-progress-container';
 
@@ -4889,7 +4902,7 @@ function buildPositionProgressBar({ takeEntry, stopEntry, markPrice }) {
   indicator.className = 'position-progress-indicator';
   track.append(indicator);
 
-  const progressValue = computePositionProgressValue(takeEntry, stopEntry, markPrice);
+  const progressValue = computePositionProgressValue(takeEntry, stopEntry, markPrice, side);
   if (progressValue === null) {
     container.classList.add('is-inactive');
   } else {
@@ -4997,6 +5010,7 @@ function updateActivePositionsView() {
         takeEntry,
         stopEntry,
         markPrice: markField.numeric,
+        side: sideValue,
       }),
     );
     applyActivePositionLabel(symbolCell, 'symbol');
