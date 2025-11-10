@@ -3200,6 +3200,36 @@ def _friendly_decision_reason(reason: Optional[str]) -> Optional[str]:
     return token.replace("_", " ").strip().capitalize()
 
 
+def _extract_alpha_confidence(state: Dict[str, Any]) -> Optional[float]:
+    policy = state.get("policy")
+    if not isinstance(policy, dict):
+        return None
+
+    alpha_state = policy.get("alpha")
+    if not isinstance(alpha_state, dict):
+        return None
+
+    train_count = _safe_float(alpha_state.get("train_count"))
+    conf_scale = _safe_float(alpha_state.get("conf_scale"))
+    min_conf = _safe_float(alpha_state.get("min_conf"))
+
+    if train_count is None or train_count < 0:
+        return None
+
+    if conf_scale is None or conf_scale <= 0:
+        conf_scale = 40.0
+
+    baseline = 1.0 - math.exp(-train_count / conf_scale)
+    if not math.isfinite(baseline):
+        return None
+
+    if min_conf is None:
+        min_conf = 0.0
+
+    confidence = max(float(min_conf), baseline)
+    return max(0.0, min(1.0, confidence))
+
+
 def _cumulative_summary(
     state: Dict[str, Any],
     *,
@@ -3237,6 +3267,10 @@ def _cumulative_summary(
     summary["total_pnl"] = net_total
     summary["realized_pnl"] = float(realized_total or 0.0)
     summary["ai_budget_spent"] = spent
+
+    confidence = _extract_alpha_confidence(state)
+    if confidence is not None:
+        summary["alpha_confidence"] = confidence
 
     updated_at = metrics.get("updated_at")
     if updated_at is not None:
