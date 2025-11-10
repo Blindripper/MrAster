@@ -4200,10 +4200,13 @@ function hasClosedTimestamp(position) {
   return false;
 }
 
-function sizeLooksClosed(position) {
+function inspectPositionSize(position) {
+  const info = { hasZero: false, hasNonZero: false };
   const sizeKeys = ACTIVE_POSITION_ALIASES.size || [];
-  let sawZeroSized = false;
-  let sawNonZero = false;
+
+  if (!position || typeof position !== 'object') {
+    return info;
+  }
 
   for (const key of sizeKeys) {
     if (!(key in position)) continue;
@@ -4211,29 +4214,38 @@ function sizeLooksClosed(position) {
       const numeric = toNumeric(value);
       if (!Number.isFinite(numeric)) return;
       if (Math.abs(numeric) < 1e-9) {
-        sawZeroSized = true;
+        info.hasZero = true;
       } else {
-        sawNonZero = true;
+        info.hasNonZero = true;
       }
     };
 
     const direct = unwrapPositionValue(position[key]);
     considerNumeric(direct);
-    if (sawNonZero) return false;
+    if (info.hasNonZero) {
+      return info;
+    }
 
     const raw = position[key];
     if (Array.isArray(raw) && raw.length > 0) {
       for (const candidate of raw) {
         considerNumeric(unwrapPositionValue(candidate));
-        if (sawNonZero) return false;
+        if (info.hasNonZero) {
+          return info;
+        }
       }
     }
   }
 
-  if (sawNonZero) {
+  return info;
+}
+
+function sizeLooksClosed(position, sizeInfo) {
+  const info = sizeInfo ?? inspectPositionSize(position);
+  if (info.hasNonZero) {
     return false;
   }
-  return sawZeroSized;
+  return info.hasZero;
 }
 
 function isPositionLikelyClosed(position) {
@@ -4241,10 +4253,16 @@ function isPositionLikelyClosed(position) {
     return false;
   }
 
+  const sizeInfo = inspectPositionSize(position);
+  const hasOpenSize = sizeInfo.hasNonZero;
+
   for (const key of POSITION_CLOSED_FLAG_KEYS) {
     if (!(key in position)) continue;
     const flag = parseFlagValue(position[key], CLOSED_FLAG_POSITIVE_TOKENS, CLOSED_FLAG_NEGATIVE_TOKENS);
     if (flag === true) {
+      if (hasOpenSize) {
+        continue;
+      }
       return true;
     }
     if (flag === false) {
@@ -4259,6 +4277,9 @@ function isPositionLikelyClosed(position) {
       return false;
     }
     if (flag === false) {
+      if (hasOpenSize) {
+        continue;
+      }
       return true;
     }
   }
@@ -4268,6 +4289,9 @@ function isPositionLikelyClosed(position) {
     const tokens = tokeniseTextValue(position[key]);
     if (!tokens.length) continue;
     if (tokens.some((token) => POSITION_CLOSED_STATUS_TOKENS.includes(token))) {
+      if (hasOpenSize) {
+        continue;
+      }
       return true;
     }
     if (tokens.some((token) => POSITION_OPEN_STATUS_TOKENS.includes(token))) {
@@ -4275,11 +4299,11 @@ function isPositionLikelyClosed(position) {
     }
   }
 
-  if (hasClosedTimestamp(position)) {
+  if (hasClosedTimestamp(position) && !hasOpenSize) {
     return true;
   }
 
-  if (sizeLooksClosed(position)) {
+  if (sizeLooksClosed(position, sizeInfo)) {
     return true;
   }
 
