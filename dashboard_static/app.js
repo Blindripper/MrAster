@@ -116,6 +116,7 @@ const DEFAULT_BOT_STATUS = { running: false, pid: null, started_at: null, uptime
 const DEFAULT_LANGUAGE = 'en';
 const SUPPORTED_LANGUAGES = ['en', 'ru', 'zh', 'ko', 'de', 'fr', 'es', 'tr'];
 const COMPACT_SKIP_AGGREGATION_WINDOW = 600; // seconds
+const MAX_MANAGEMENT_EVENTS = 50;
 
 const TRANSLATIONS = {
   ru: {
@@ -414,6 +415,19 @@ const TRANSLATIONS = {
     'active.table.leverage': 'Hebel',
     'active.table.margin': 'Margin',
     'active.table.pnl': 'PNL (ROE%)',
+    'active.management.fasttp': 'FastTP-Ausstieg angepasst',
+    'active.management.breakeven': 'Stop auf Break-even gesetzt',
+    'active.management.trail': 'Trailing-Stop nachgezogen',
+    'active.management.autoHalf': 'Automatischer Teilverkauf ausgelöst',
+    'active.management.scaleHalf': 'Positionsabbau eingeleitet',
+    'active.management.timeCut': 'Zeitbasierter Exit ausgeführt',
+    'active.management.reduceOnly': 'Reduce-Only-Order gesendet',
+    'active.management.generic': 'Bot hat die Position angepasst',
+    'active.management.justNow': 'gerade eben',
+    'active.management.oneMinuteAgo': 'vor 1 Min.',
+    'active.management.minutesAgo': 'vor {{value}} Min.',
+    'active.management.hoursAgo': 'vor {{value}} Std.',
+    'active.management.daysAgo': 'vor {{value}} Tg.',
     'status.title': 'Status',
     'status.state': 'Zustand',
     'status.pid': 'PID',
@@ -4916,6 +4930,162 @@ function computeProgressIndicatorColor(progressValue) {
   };
 }
 
+const MANAGEMENT_EVENT_LABELS = {
+  fasttp_exit: () => translate('active.management.fasttp', 'FastTP exit adjusted'),
+  breakeven: () => translate('active.management.breakeven', 'Stop moved to breakeven'),
+  trail: () => translate('active.management.trail', 'Trailing stop tightened'),
+  auto_half_take_profit: () =>
+    translate('active.management.autoHalf', 'Auto take-profit scaled position'),
+  scale_half: () => translate('active.management.scaleHalf', 'Slow scale-out executed'),
+  time_cut: () => translate('active.management.timeCut', 'Time-based reduction executed'),
+  reduce_only: () => translate('active.management.reduceOnly', 'Reduce-only order placed'),
+};
+
+function formatManagementEventLabel(action) {
+  if (!action) return translate('active.management.generic', 'Bot adjusted this position');
+  const normalized = action.toString().toLowerCase();
+  const resolver = MANAGEMENT_EVENT_LABELS[normalized];
+  if (typeof resolver === 'function') {
+    return resolver();
+  }
+  return translate('active.management.generic', 'Bot adjusted this position');
+}
+
+function parseManagementEventTimestamp(rawTs) {
+  if (rawTs == null) return null;
+  let ts = Number(rawTs);
+  if (Number.isFinite(ts)) {
+    if (ts > 1e12) {
+      return ts / 1000;
+    }
+    return ts;
+  }
+  const numeric = toNumeric(rawTs);
+  if (Number.isFinite(numeric)) {
+    return numeric > 1e12 ? numeric / 1000 : numeric;
+  }
+  const parsed = Date.parse(rawTs);
+  if (Number.isFinite(parsed)) {
+    return parsed / 1000;
+  }
+  return null;
+}
+
+function normaliseManagementEvents(position) {
+  if (!position || typeof position !== 'object') {
+    return [];
+  }
+
+  const pools = [];
+  const direct = position.management_events || position.managementEvents;
+  if (Array.isArray(direct)) {
+    pools.push(...direct);
+  }
+  const management = position.management;
+  if (management && Array.isArray(management.events)) {
+    pools.push(...management.events);
+  }
+
+  const normalized = pools
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const rawAction =
+        entry.action || entry.event || entry.type || entry.kind || entry.reason || entry.name;
+      if (!rawAction) return null;
+      const ts = parseManagementEventTimestamp(entry.ts || entry.time || entry.timestamp || entry.at);
+      return {
+        action: rawAction.toString().toLowerCase(),
+        rawAction,
+        ts,
+        data: entry,
+      };
+    })
+    .filter(Boolean);
+
+  normalized.sort((a, b) => {
+    const aTs = Number.isFinite(a.ts) ? a.ts : -Infinity;
+    const bTs = Number.isFinite(b.ts) ? b.ts : -Infinity;
+    return bTs - aTs;
+  });
+
+  if (normalized.length > MAX_MANAGEMENT_EVENTS) {
+    return normalized.slice(0, MAX_MANAGEMENT_EVENTS);
+  }
+  return normalized;
+}
+
+function formatManagementRelativeTime(ts) {
+  if (!Number.isFinite(ts)) return null;
+  const now = Date.now() / 1000;
+  const delta = Math.max(0, now - ts);
+  if (delta < 45) {
+    return translate('active.management.justNow', 'just now');
+  }
+  if (delta < 90) {
+    return translate('active.management.oneMinuteAgo', '1m ago');
+  }
+  const minutes = Math.floor(delta / 60);
+  if (minutes < 60) {
+    return translate('active.management.minutesAgo', '{{value}}m ago', { value: minutes });
+  }
+  const hours = Math.floor(delta / 3600);
+  if (hours < 24) {
+    return translate('active.management.hoursAgo', '{{value}}h ago', { value: hours });
+  }
+  const days = Math.floor(delta / 86400);
+  return translate('active.management.daysAgo', '{{value}}d ago', { value: days });
+}
+
+function buildPositionManagementSummary(position) {
+  const events = normaliseManagementEvents(position);
+  if (!events.length) return null;
+
+  const latest = events[0];
+  const container = document.createElement('div');
+  container.className = 'active-position-management';
+  container.dataset.action = latest.action || '';
+
+  const label = document.createElement('span');
+  label.className = 'active-position-management-label';
+  label.textContent = formatManagementEventLabel(latest.action);
+  container.append(label);
+
+  const relative = formatManagementRelativeTime(latest.ts);
+  if (relative) {
+    const time = document.createElement('span');
+    time.className = 'active-position-management-time';
+    time.textContent = relative;
+    container.append(time);
+  }
+
+  const detailParts = [];
+  const { data } = latest;
+  if (data && typeof data === 'object') {
+    const pctGain = toNumeric(data.pct_gain);
+    if (Number.isFinite(pctGain)) {
+      const pctText = `${(pctGain * 100).toFixed(1)}%`;
+      detailParts.push(`Δ ${pctText}`);
+    }
+    const rNow = toNumeric(data.r);
+    if (Number.isFinite(rNow)) {
+      detailParts.push(`R ${rNow.toFixed(2)}`);
+    }
+    const stopPrice = toNumeric(data.stop);
+    if (Number.isFinite(stopPrice) && stopPrice > 0) {
+      detailParts.push(`Stop ${formatPriceDisplay(stopPrice, { maximumFractionDigits: 6 })}`);
+    }
+    const exitPrice = toNumeric(data.exit || data.price || data.target);
+    if (Number.isFinite(exitPrice) && exitPrice > 0) {
+      detailParts.push(`Exit ${formatPriceDisplay(exitPrice, { maximumFractionDigits: 6 })}`);
+    }
+  }
+  if (detailParts.length) {
+    container.title = detailParts.join(' · ');
+  }
+
+  return container;
+}
+
 function buildPositionProgressBar({ takeEntry, stopEntry, markPrice, side }) {
   const container = document.createElement('div');
   container.className = 'position-progress-container';
@@ -5039,6 +5209,10 @@ function updateActivePositionsView() {
         side: sideValue,
       }),
     );
+    const managementSummary = buildPositionManagementSummary(position);
+    if (managementSummary) {
+      symbolCell.append(managementSummary);
+    }
     applyActivePositionLabel(symbolCell, 'symbol');
     row.append(symbolCell);
 

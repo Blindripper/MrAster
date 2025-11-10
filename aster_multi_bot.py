@@ -7976,6 +7976,33 @@ class FastTP:
             ok = False
 
         if ok:
+            rec = self.state.get("live_trades", {}).get(symbol)
+            if isinstance(rec, dict):
+                events = rec.setdefault("management_events", [])
+                if not isinstance(events, list):
+                    events = []
+                    rec["management_events"] = events
+                event_entry: Dict[str, Any] = {
+                    "ts": time.time(),
+                    "action": "fasttp_exit",
+                    "exit": float(new_exit),
+                    "r": float(r_now),
+                }
+                try:
+                    event_entry["ret1"] = float(ret1)
+                except (TypeError, ValueError):
+                    pass
+                try:
+                    event_entry["ret3"] = float(ret3)
+                except (TypeError, ValueError):
+                    pass
+                try:
+                    event_entry["snap"] = float(snap)
+                except (TypeError, ValueError):
+                    pass
+                events.append(event_entry)
+                if len(events) > 50:
+                    del events[:-50]
             self.state.setdefault("fast_tp_cooldown", {})[symbol] = time.time() + FASTTP_COOLDOWN_S
             try:
                 with open(STATE_FILE, "w") as f:
