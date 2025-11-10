@@ -4382,6 +4382,42 @@ class PaperBroker:
         side = str(pos.get("side") or "").upper()
         if not side:
             return
+        entry_price = float(pos.get("entry_price", 0.0) or 0.0)
+        qty_abs = abs(float(pos.get("qty", 0.0) or 0.0))
+        if (
+            entry_price > 0
+            and qty_abs > 0
+            and not bool(pos.get("auto_half_take_profit"))
+        ):
+            ref_price = 0.0
+            if side == "BUY":
+                ref_price = bid if bid > 0 else (mid if mid > 0 else 0.0)
+                gain = (
+                    (ref_price - entry_price) / entry_price
+                    if ref_price > 0
+                    else 0.0
+                )
+            else:
+                ref_price = ask if ask > 0 else (mid if mid > 0 else 0.0)
+                gain = (
+                    (entry_price - ref_price) / entry_price
+                    if ref_price > 0
+                    else 0.0
+                )
+            if gain >= 0.10:
+                close_qty = qty_abs * 0.5
+                if close_qty > 1e-12:
+                    fill_price = ref_price if ref_price > 0 else entry_price
+                    self._close_partial(
+                        symbol,
+                        float(fill_price),
+                        close_qty,
+                        "auto_half_take_profit",
+                    )
+                    updated = self.positions.get(symbol)
+                    if updated:
+                        updated["auto_half_take_profit"] = True
+                    return
         stop_loss = pos.get("stop_loss")
         take_profit = pos.get("take_profit")
         triggered: Optional[Tuple[str, float]] = None
@@ -6935,7 +6971,9 @@ class TradeManager:
         metrics["updated_at"] = time.time()
         self._update_performance_profile()
 
-    def _derive_performance_bias(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
+    def _derive_performance_bias(
+        self, metrics: Dict[str, Any], prev_bias: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         sample = int(metrics.get("sample", 0) or 0)
         if sample <= 0:
             return {}
@@ -6999,9 +7037,10 @@ class TradeManager:
         if cooldown:
             payload["cooldown"] = True
             now = time.time()
-            prev_bias = self.state.get("performance_bias") if hasattr(self, "state") else None
             prev_start = 0.0
             prev_expiry = 0.0
+            if prev_bias is None and hasattr(self, "state"):
+                prev_bias = self.state.get("performance_bias")
             if isinstance(prev_bias, dict) and prev_bias.get("cooldown"):
                 try:
                     prev_start = float(prev_bias.get("cooldown_started_at") or 0.0)
@@ -7039,7 +7078,40 @@ class TradeManager:
         metrics["total_trades"] = len(history)
         self.state["performance_profile"] = metrics
 
-        bias = self._derive_performance_bias(metrics)
+        prev_symbol_bias = self.state.get("symbol_performance_bias")
+        if not isinstance(prev_symbol_bias, dict):
+            prev_symbol_bias = {}
+
+        symbol_windows: Dict[str, List[Dict[str, Any]]] = {}
+        for trade in window:
+            sym = str(trade.get("symbol") or "").upper()
+            if not sym:
+                continue
+            symbol_windows.setdefault(sym, []).append(trade)
+
+        symbol_profiles: Dict[str, Dict[str, Any]] = {}
+        symbol_bias_map: Dict[str, Dict[str, Any]] = {}
+        for sym, trades in symbol_windows.items():
+            sym_metrics = _compute_trade_performance_summary(trades)
+            sym_metrics["symbol"] = sym
+            symbol_profiles[sym] = sym_metrics
+            prev_bias = prev_symbol_bias.get(sym) if isinstance(prev_symbol_bias, dict) else None
+            sym_bias = self._derive_performance_bias(sym_metrics, prev_bias=prev_bias)
+            if sym_bias:
+                symbol_bias_map[sym] = sym_bias
+
+        if symbol_profiles:
+            self.state["symbol_performance_profile"] = symbol_profiles
+        else:
+            self.state.pop("symbol_performance_profile", None)
+
+        if symbol_bias_map:
+            self.state["symbol_performance_bias"] = symbol_bias_map
+        else:
+            self.state.pop("symbol_performance_bias", None)
+
+        prev_global_bias = self.state.get("performance_bias")
+        bias = self._derive_performance_bias(metrics, prev_bias=prev_global_bias)
         if bias:
             self.state["performance_bias"] = bias
         else:
@@ -7876,6 +7948,26 @@ class Bot:
         if not isinstance(mgmt, dict):
             mgmt = {}
             rec["management"] = mgmt
+        if (
+            entry > 0
+            and qty_abs > 0
+            and mid > 0
+            and not mgmt.get("auto_half_take_profit")
+        ):
+            pct_gain = (mid - entry) / entry if amount > 0 else (entry - mid) / entry
+            if pct_gain >= 0.10:
+                scale_qty = max(0.0, qty_abs * 0.5)
+                if scale_qty > step and self._submit_reduce_only(
+                    symbol, side, scale_qty, "auto_half_take_profit"
+                ):
+                    mgmt["auto_half_take_profit"] = True
+                    self._management_dirty = True
+                    self._log_management_event(
+                        rec,
+                        "auto_half_take_profit",
+                        {"pct_gain": float(pct_gain)},
+                    )
+                    qty_abs = max(0.0, qty_abs - scale_qty)
         current_sl = rec.get("sl")
         try:
             current_sl_val = float(current_sl if current_sl is not None else initial_sl)
@@ -9082,6 +9174,62 @@ class Bot:
         sentinel_soft_block = False
         performance_factor = 1.0
         performance_bias = self.state.get("performance_bias")
+        symbol_bias_map = self.state.get("symbol_performance_bias")
+        symbol_bias: Optional[Dict[str, Any]] = None
+        if isinstance(symbol_bias_map, dict):
+            raw_symbol_bias = symbol_bias_map.get(symbol)
+            if isinstance(raw_symbol_bias, dict):
+                symbol_bias = raw_symbol_bias
+                if not manual_override and symbol_bias.get("cooldown"):
+                    expires_at: Optional[float]
+                    try:
+                        expires_at = float(symbol_bias.get("cooldown_expires_at") or 0.0)
+                    except (TypeError, ValueError):
+                        expires_at = None
+                    if expires_at and expires_at <= time.time():
+                        cleaned_bias = dict(symbol_bias)
+                        for key in (
+                            "cooldown",
+                            "cooldown_expires_at",
+                            "cooldown_started_at",
+                            "cooldown_reason",
+                            "cooldown_duration",
+                        ):
+                            cleaned_bias.pop(key, None)
+                        symbol_bias_map[symbol] = cleaned_bias
+                        symbol_bias = cleaned_bias
+                        self.state["symbol_performance_bias"] = symbol_bias_map
+                        log.info(
+                            "Performance cooldown for %s expired after rest period; resuming symbol evaluations.",
+                            symbol,
+                        )
+                    else:
+                        loss_streak = int(symbol_bias.get("loss_streak", 0) or 0)
+                        expectancy_r = symbol_bias.get("expectancy_r")
+                        remaining = None
+                        if expires_at:
+                            remaining = max(0.0, expires_at - time.time())
+                        reason = symbol_bias.get("cooldown_reason")
+                        if loss_streak >= 2:
+                            if remaining is not None:
+                                log.info(
+                                    "Skip %s — performance cooldown active (loss streak=%s expectancy=%.2fR remaining=%.0fs reason=%s)",
+                                    symbol,
+                                    loss_streak,
+                                    float(expectancy_r or 0.0),
+                                    remaining,
+                                    reason or "risk",
+                                )
+                            else:
+                                log.info(
+                                    "Skip %s — performance cooldown active (loss streak=%s expectancy=%.2fR)",
+                                    symbol,
+                                    loss_streak,
+                                    float(expectancy_r or 0.0),
+                                )
+                            if self.decision_tracker:
+                                self.decision_tracker.record_rejection("performance_cooldown")
+                            return
         if isinstance(performance_bias, dict):
             if not manual_override and performance_bias.get("cooldown"):
                 expires_at: Optional[float]
@@ -9102,34 +9250,19 @@ class Bot:
                     self.state["performance_bias"] = cleaned_bias
                     performance_bias = cleaned_bias
                     log.info(
-                        "Performance cooldown expired after rest period; resuming evaluations.")
-                else:
-                    loss_streak = performance_bias.get("loss_streak")
-                    expectancy_r = performance_bias.get("expectancy_r")
-                    remaining = None
-                    if expires_at:
-                        remaining = max(0.0, expires_at - time.time())
-                    reason = performance_bias.get("cooldown_reason")
-                    if remaining is not None:
-                        log.info(
-                            "Skip %s — performance cooldown active (loss streak=%s expectancy=%.2fR remaining=%.0fs reason=%s)",
-                            symbol,
-                            loss_streak if loss_streak is not None else "?",
-                            float(expectancy_r or 0.0),
-                            remaining,
-                            reason or "risk",
-                        )
-                    else:
-                        log.info(
-                            "Skip %s — performance cooldown active (loss streak=%s expectancy=%.2fR)",
-                            symbol,
-                            loss_streak if loss_streak is not None else "?",
-                            float(expectancy_r or 0.0),
-                        )
-                    if self.decision_tracker:
-                        self.decision_tracker.record_rejection("performance_cooldown")
-                    return
-            raw_factor = performance_bias.get("size_factor")
+                        "Global performance cooldown expired after rest period; resuming evaluations.")
+            raw_factor = None
+            try:
+                raw_factor = performance_bias.get("size_factor")
+            except AttributeError:
+                raw_factor = None
+            try:
+                if raw_factor is not None:
+                    performance_factor = max(0.35, min(1.6, float(raw_factor)))
+            except (TypeError, ValueError):
+                performance_factor = 1.0
+        if isinstance(symbol_bias, dict):
+            raw_factor = symbol_bias.get("size_factor")
             try:
                 if raw_factor is not None:
                     performance_factor = max(0.35, min(1.6, float(raw_factor)))

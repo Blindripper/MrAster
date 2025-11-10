@@ -58,6 +58,26 @@ def test_trade_manager_derives_bias_and_cooldown() -> None:
     assert bias.get("cooldown_started_at") <= bias["cooldown_expires_at"]
 
 
+def test_symbol_specific_performance_bias_isolated() -> None:
+    history = [
+        _make_trade("BTCUSDT", -4.0, -0.5, "S"),
+        _make_trade("BTCUSDT", -5.0, -0.6, "S"),
+        _make_trade("ETHUSDT", 3.5, 0.4, "S"),
+    ]
+    state: Dict[str, Any] = {"trade_history": history.copy()}
+
+    TradeManager(exchange=object(), policy=None, state=state)
+
+    symbol_bias = state.get("symbol_performance_bias")
+    assert isinstance(symbol_bias, dict)
+    assert "BTCUSDT" in symbol_bias
+    btc_bias = symbol_bias["BTCUSDT"]
+    assert btc_bias.get("loss_streak") >= 2
+    symbol_profiles = state.get("symbol_performance_profile")
+    assert isinstance(symbol_profiles, dict)
+    assert symbol_profiles.get("BTCUSDT", {}).get("sample") == 2
+
+
 def test_performance_bias_rewards_positive_expectancy() -> None:
     state: Dict[str, Any] = {"trade_history": []}
     manager = TradeManager(exchange=object(), policy=None, state=state)
