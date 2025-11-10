@@ -182,8 +182,31 @@ def _resolve_include_symbols(default_quote: str) -> List[str]:
     return symbols
 
 
-INCLUDE = _resolve_include_symbols(QUOTE)
-EXCLUDE = set(_split_env_symbols(os.getenv("ASTER_EXCLUDE_SYMBOLS", "")))
+DEFAULT_SYMBOL_WHITELIST = [
+    "ICPUSDT",
+    "AAVEUSDT",
+    "FARTCOINUSDT",
+    "HYPEUSDT",
+    "TRUMPUSDT",
+]
+DEFAULT_SYMBOL_BLACKLIST = [
+    "FILUSDT",
+    "ZKUSDT",
+    "MMTUSDT",
+    "TRUSTUSDT",
+]
+SYMBOL_WHITELIST = _split_env_symbols(
+    os.getenv("ASTER_SYMBOL_WHITELIST", ",".join(DEFAULT_SYMBOL_WHITELIST))
+)
+SYMBOL_BLACKLIST = set(
+    _split_env_symbols(os.getenv("ASTER_SYMBOL_BLACKLIST", ",".join(DEFAULT_SYMBOL_BLACKLIST)))
+)
+
+if SYMBOL_WHITELIST:
+    INCLUDE = SYMBOL_WHITELIST
+else:
+    INCLUDE = _resolve_include_symbols(QUOTE)
+EXCLUDE = set(_split_env_symbols(os.getenv("ASTER_EXCLUDE_SYMBOLS", ""))) | SYMBOL_BLACKLIST
 # Standardmäßig alle Symbole scannen; via ENV begrenzen
 UNIVERSE_MAX = int(os.getenv("ASTER_UNIVERSE_MAX", "0"))
 UNIVERSE_ROTATE = os.getenv("ASTER_UNIVERSE_ROTATE", "true").lower() in ("1", "true", "yes", "on")
@@ -459,8 +482,8 @@ def _compute_trade_performance_summary(
     return summary
 
 
-MIN_QUOTE_VOL = float(os.getenv("ASTER_MIN_QUOTE_VOL_USDT", "150000"))
-SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.0030"))  # 0.30 %
+MIN_QUOTE_VOL = float(os.getenv("ASTER_MIN_QUOTE_VOL_USDT", "1000000"))
+SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.0006"))  # 0.06 %
 WICKINESS_MAX = float(os.getenv("ASTER_WICKINESS_MAX", "0.97"))
 MIN_EDGE_R = float(os.getenv("ASTER_MIN_EDGE_R", "0.30"))
 
@@ -502,28 +525,28 @@ ALPHA_REWARD_MARGIN = float(os.getenv("ASTER_ALPHA_REWARD_MARGIN", "0.05"))
 DEFAULT_NOTIONAL = float(os.getenv("ASTER_DEFAULT_NOTIONAL", "250"))
 RISK_PER_TRADE = float(os.getenv("ASTER_RISK_PER_TRADE", "0.006"))
 _PRESET_LEVERAGE_DEFAULTS = {
-    "low": "4",
-    "mid": "10",
-    "high": "max",
+    "low": "3",
+    "mid": "5",
+    "high": "10",
     "att": "max",
 }
 _leverage_seed = os.getenv("ASTER_LEVERAGE")
 if not _leverage_seed:
-    _leverage_seed = _PRESET_LEVERAGE_DEFAULTS.get(PRESET_MODE, "10")
-LEVERAGE_SOURCE = str(_leverage_seed or "10")
-LEVERAGE = _parse_leverage_env(LEVERAGE_SOURCE, 10.0)
+    _leverage_seed = _PRESET_LEVERAGE_DEFAULTS.get(PRESET_MODE, "5")
+LEVERAGE_SOURCE = str(_leverage_seed or "5")
+LEVERAGE = _parse_leverage_env(LEVERAGE_SOURCE, 5.0)
 LEVERAGE_IS_UNLIMITED = not math.isfinite(LEVERAGE)
 EQUITY_FRACTION = float(os.getenv("ASTER_EQUITY_FRACTION", "0.66"))
 MIN_NOTIONAL_ENV = float(os.getenv("ASTER_MIN_NOTIONAL_USDT", "5"))
 MAX_NOTIONAL_USDT = float(os.getenv("ASTER_MAX_NOTIONAL_USDT", "0"))  # 0 = kein Cap
 
-SL_ATR_MULT = float(os.getenv("ASTER_SL_ATR_MULT", "1.00"))
-TP_ATR_MULT = float(os.getenv("ASTER_TP_ATR_MULT", "1.60"))
+SL_ATR_MULT = float(os.getenv("ASTER_SL_ATR_MULT", "1.50"))
+TP_ATR_MULT = float(os.getenv("ASTER_TP_ATR_MULT", "2.10"))
 
 FAST_TP_ENABLED = os.getenv("FAST_TP_ENABLED", "true").lower() in ("1", "true", "yes", "on")
-FASTTP_MIN_R = float(os.getenv("FASTTP_MIN_R", "0.30"))
-FAST_TP_RET1 = float(os.getenv("FAST_TP_RET1", "-0.0010"))
-FAST_TP_RET3 = float(os.getenv("FAST_TP_RET3", "-0.0020"))
+FASTTP_MIN_R = float(os.getenv("FASTTP_MIN_R", "0.10"))
+FAST_TP_RET1 = float(os.getenv("FAST_TP_RET1", "0.06"))
+FAST_TP_RET3 = float(os.getenv("FAST_TP_RET3", "0.18"))
 FASTTP_SNAP_ATR = float(os.getenv("FASTTP_SNAP_ATR", "0.25"))
 FASTTP_COOLDOWN_S = int(os.getenv("FASTTP_COOLDOWN_S", "15"))
 
@@ -562,6 +585,15 @@ ALLOW_ALIGN = os.getenv("ASTER_ALLOW_TREND_ALIGN", "false").lower() in ("1", "tr
 ALIGN_RSI_PAD = float(os.getenv("ASTER_ALIGN_RSI_PAD", "1.0"))
 TREND_BIAS = os.getenv("ASTER_TREND_BIAS", "with").strip().lower()
 CONTRARIAN = TREND_BIAS in ("against", "att", "contrarian")
+ADX_MIN_THRESHOLD = float(os.getenv("ASTER_ADX_MIN", "30.0"))
+ADX_DELTA_MIN = float(os.getenv("ASTER_ADX_DELTA_MIN", "0.0"))
+LONG_RSI_MAX = float(os.getenv("ASTER_LONG_RSI_MAX", "70.0"))
+SHORT_RSI_MIN = float(os.getenv("ASTER_SHORT_RSI_MIN", "30.0"))
+STOCHRSI_LONG_MAX = float(os.getenv("ASTER_STOCHRSI_LONG_MAX", "20.0"))
+STOCHRSI_SHORT_MIN = float(os.getenv("ASTER_STOCHRSI_SHORT_MIN", "80.0"))
+BB_LONG_MIN = float(os.getenv("ASTER_BB_LONG_MIN", "0.5"))
+FUNDING_EDGE_MIN = float(os.getenv("ASTER_FUNDING_EDGE_MIN", "0.0"))
+QUALITY_LEVERAGE = float(os.getenv("ASTER_QUALITY_LEVERAGE", "9.0"))
 
 # ========= Utils =========
 def ema(data: List[float], period: int) -> List[float]:
@@ -3049,19 +3081,23 @@ class AITradeAdvisor:
                 baseline = LEVERAGE
             else:
                 baseline = 10.0
-        leverage_target = float(baseline) * (
-            0.5 if event_risk > 0.6 else (1.0 + hype_score * 0.25)
-        )
+        quality_boost = ctx.get("quality_gate_pass", 0.0) >= 0.5
+        if quality_boost:
+            baseline = max(float(baseline or 0.0), QUALITY_LEVERAGE)
+        leverage_mult = 0.5 if event_risk > 0.6 else (1.0 + hype_score * 0.25)
+        if quality_boost and leverage_mult < 1.0:
+            leverage_mult = max(leverage_mult, 0.8)
+        leverage_target = float(baseline) * leverage_mult
         leverage = self._clamp_leverage_value(symbol, leverage_target, fallback=baseline)
 
         fasttp_overrides: Optional[Dict[str, Any]] = None
-        if event_risk > 0.55:
+        if event_risk >= 0.6 or hype_score >= 0.9:
             fasttp_overrides = {
                 "enabled": True,
-                "min_r": min(FASTTP_MIN_R, 0.28),
-                "ret1": FAST_TP_RET1 * 0.7,
-                "ret3": FAST_TP_RET3 * 0.7,
-                "snap_atr": max(FASTTP_SNAP_ATR * 0.8, 0.1),
+                "min_r": max(FASTTP_MIN_R, 0.10),
+                "ret1": FAST_TP_RET1,
+                "ret3": FAST_TP_RET3,
+                "snap_atr": max(FASTTP_SNAP_ATR, 0.25),
             }
 
         explanation = (
@@ -6114,6 +6150,17 @@ class Strategy:
             }
         )
 
+        if spread_bps > self.spread_bps_max:
+            ctx_base["spread_limit"] = float(self.spread_bps_max)
+            return self._skip(
+                "spread_tight",
+                symbol,
+                {"spread": f"{spread_bps:.5f}", "max": f"{self.spread_bps_max:.5f}"},
+                ctx=ctx_base,
+                price=mid,
+                atr=atr,
+            )
+
         atr = atr_abs_from_klines(kl, 14)
         atrp = atr / max(1e-9, last)
         dyn_spread_max = max(self.spread_bps_max, 0.5 * atrp)
@@ -6133,15 +6180,18 @@ class Strategy:
 
         order_features = self._order_book_features(symbol, book_ticker=bt, order_book=order_book)
         orderbook_sampled = bool(order_features)
+        lob_bias_value: Optional[float] = None
         if order_features:
             ctx_base.update(order_features)
-            lob_bias = order_features.get("lob_bias")
-            if isinstance(lob_bias, (int, float)):
-                ctx_base["orderbook_bias"] = float(lob_bias)
+            lob_bias_value = order_features.get("lob_bias")
+            if isinstance(lob_bias_value, (int, float)):
+                ctx_base["orderbook_bias"] = float(lob_bias_value)
             ctx_base["orderbook_levels"] = float(order_features.get("lob_levels", 0.0) or 0.0)
         else:
             ctx_base.pop("orderbook_bias", None)
             ctx_base["orderbook_levels"] = None
+
+        lob_bias_value = ctx_base.get("orderbook_bias") if "orderbook_bias" in ctx_base else lob_bias_value
 
         # Wickiness
         try:
@@ -6213,6 +6263,29 @@ class Strategy:
             }
         )
 
+        if adx_val < ADX_MIN_THRESHOLD:
+            quality_gate_pass = False
+            ctx_base["adx_filter"] = float(adx_val)
+            return self._skip(
+                "adx_strength",
+                symbol,
+                {"adx": f"{adx_val:.2f}", "min": f"{ADX_MIN_THRESHOLD:.2f}"},
+                ctx=ctx_base,
+                price=mid,
+                atr=atr,
+            )
+        if adx_delta <= ADX_DELTA_MIN:
+            quality_gate_pass = False
+            ctx_base["adx_delta_filter"] = float(adx_delta)
+            return self._skip(
+                "adx_momentum",
+                symbol,
+                {"delta": f"{adx_delta:.2f}", "min": f"{ADX_DELTA_MIN:.2f}"},
+                ctx=ctx_base,
+                price=mid,
+                atr=atr,
+            )
+
         htf_trend_up = ema_htf[-1] > ema_htf[-5]
         htf_trend_down = ema_htf[-1] < ema_htf[-5]
         ctx_base.update(
@@ -6222,6 +6295,7 @@ class Strategy:
             }
         )
 
+        quality_gate_pass = True
         sig = "NONE"
         if cross_up and rsi14[-1] > RSI_BUY_MIN and htf_trend_up:
             sig = "BUY"
@@ -6281,7 +6355,23 @@ class Strategy:
             sig = "NONE"
 
         if sig == "BUY":
-            if supertrend_gate_enabled and supertrend_dir_last < 0.0:
+            if stoch_d_last > STOCHRSI_LONG_MAX:
+                quality_gate_pass = False
+                ctx_base["stoch_rsi_gate"] = float(stoch_d_last)
+                sig = "NONE"
+            elif rsi14[-1] >= LONG_RSI_MAX:
+                quality_gate_pass = False
+                ctx_base["rsi_gate"] = float(rsi14[-1])
+                sig = "NONE"
+            elif bb_position < BB_LONG_MIN:
+                quality_gate_pass = False
+                ctx_base["bb_position_gate"] = float(bb_position)
+                sig = "NONE"
+            elif not orderbook_sampled or not isinstance(lob_bias_value, (int, float)) or lob_bias_value <= 0.0:
+                quality_gate_pass = False
+                ctx_base["orderbook_bias_required"] = float(lob_bias_value or 0.0)
+                sig = "NONE"
+            elif supertrend_gate_enabled and supertrend_dir_last < 0.0:
                 ctx_base["supertrend_conflict"] = float(supertrend_dir_last)
                 sig = "NONE"
             elif stoch_d_last >= 85.0:
@@ -6291,7 +6381,15 @@ class Strategy:
                 ctx_base["bb_overextended"] = float(bb_position)
                 sig = "NONE"
         elif sig == "SELL":
-            if supertrend_gate_enabled and supertrend_dir_last > 0.0:
+            if stoch_d_last < STOCHRSI_SHORT_MIN:
+                quality_gate_pass = False
+                ctx_base["stoch_rsi_gate"] = float(stoch_d_last)
+                sig = "NONE"
+            elif rsi14[-1] < SHORT_RSI_MIN:
+                quality_gate_pass = False
+                ctx_base["rsi_gate"] = float(rsi14[-1])
+                sig = "NONE"
+            elif supertrend_gate_enabled and supertrend_dir_last > 0.0:
                 ctx_base["supertrend_conflict"] = float(supertrend_dir_last)
                 sig = "NONE"
             elif stoch_d_last <= 15.0:
@@ -6353,11 +6451,42 @@ class Strategy:
             if isinstance(stoch_under, (int, float)):
                 filter_meta["stoch_rsi"] = f"{float(stoch_under):.1f} (too low)"
 
+            if "stoch_rsi" not in filter_meta:
+                stoch_gate = ctx_base.get("stoch_rsi_gate")
+                if isinstance(stoch_gate, (int, float)):
+                    filter_meta["stoch_rsi"] = f"{float(stoch_gate):.1f} (gate)"
+
+            rsi_gate = ctx_base.get("rsi_gate")
+            if isinstance(rsi_gate, (int, float)):
+                filter_meta["rsi"] = f"{float(rsi_gate):.1f} (gate)"
+
             bb_ext = ctx_base.get("bb_overextended")
             if isinstance(bb_ext, (int, float)):
                 position = float(bb_ext)
                 side = "top" if position >= 0.5 else "bottom"
                 filter_meta["bollinger_pos"] = f"{position:.2f} (near {side})"
+
+            bb_gate = ctx_base.get("bb_position_gate")
+            if isinstance(bb_gate, (int, float)):
+                filter_meta["bollinger_gate"] = f"{float(bb_gate):.2f}"
+
+            ob_req = ctx_base.get("orderbook_bias_required")
+            if isinstance(ob_req, (int, float)):
+                filter_meta["orderbook_bias"] = f"{float(ob_req):+.2f}"
+
+            adx_gate = ctx_base.get("adx_filter")
+            if isinstance(adx_gate, (int, float)):
+                filter_meta["adx"] = f"{float(adx_gate):.1f} (<{ADX_MIN_THRESHOLD:.1f})"
+
+            adx_delta_gate = ctx_base.get("adx_delta_filter")
+            if isinstance(adx_delta_gate, (int, float)):
+                filter_meta["adx_delta"] = f"{float(adx_delta_gate):.2f}"
+
+            spread_limit = ctx_base.get("spread_limit")
+            if isinstance(spread_limit, (int, float)):
+                spread_val = ctx_base.get("spread_bps")
+                if isinstance(spread_val, (int, float)):
+                    filter_meta["spread"] = f"{float(spread_val):.5f} (>{float(spread_limit):.5f})"
 
             extra_detail: Optional[Dict[str, str]] = None
             if filter_meta:
@@ -6517,6 +6646,39 @@ class Strategy:
                     price=mid,
                     atr=atr,
                 )
+
+        arb_gate_pass = False
+        if non_arb_region >= 1.0:
+            arb_gate_pass = True
+            ctx_base["arb_gate_source"] = "non_arb"
+        elif funding_edge is not None and funding_edge >= FUNDING_EDGE_MIN:
+            arb_gate_pass = True
+            ctx_base["arb_gate_source"] = "funding_edge"
+
+        if not arb_gate_pass:
+            quality_gate_pass = False
+            ctx_base["arb_gate_required"] = float(funding_edge or 0.0)
+            ctx_base["arb_non_arb_region"] = float(non_arb_region)
+            detail = {
+                "funding_edge": f"{(funding_edge or 0.0):.6f}",
+                "min_edge": f"{FUNDING_EDGE_MIN:.6f}",
+                "non_arb_region": f"{non_arb_region:.1f}",
+            }
+            return self._skip(
+                "arb_gate",
+                symbol,
+                detail,
+                ctx=ctx_base,
+                price=mid,
+                atr=atr,
+            )
+
+        ctx_base["arb_gate_pass"] = 1.0
+
+        if sig in {"BUY", "SELL"}:
+            ctx_base["quality_gate_pass"] = 1.0 if quality_gate_pass else 0.0
+        else:
+            ctx_base["quality_gate_pass"] = 0.0
 
         ctx: Dict[str, float] = {
             **ctx_base,
@@ -6861,6 +7023,7 @@ class TradeManager:
             "atr_abs": float(atr_abs),
             "opened_at": time.time(),
             "filled_qty": 0.0,
+            "initial_sl": float(sl),
         }
         if meta:
             sanitized = self._sanitize_meta(meta)
@@ -7339,12 +7502,12 @@ class FastTP:
 
         ret1 = self._ret(symbol, 60)
         ret3 = self._ret(symbol, 180)
-        ret1_cut = overrides.get("ret1") if overrides else FAST_TP_RET1
-        ret3_cut = overrides.get("ret3") if overrides else FAST_TP_RET3
+        ret1_cut = abs(overrides.get("ret1") if overrides else FAST_TP_RET1)
+        ret3_cut = abs(overrides.get("ret3") if overrides else FAST_TP_RET3)
         reversal = (
-            (ret1 <= ret1_cut or ret3 <= ret3_cut)
+            (ret1 <= -ret1_cut or ret3 <= -ret3_cut)
             if pos_amt > 0
-            else (ret1 >= -ret1_cut or ret3 >= -ret3_cut)
+            else (ret1 >= ret1_cut or ret3 >= ret3_cut)
         )
         if not reversal:
             return False
@@ -7432,6 +7595,7 @@ class Bot:
         self._manual_state_dirty = False
         self._quote_volume_cooldown_dirty = False
         self._universe_state_dirty = False
+        self._management_dirty = False
         self._ai_wakeup_event = threading.Event()
         self._ai_priority_lock = threading.Lock()
         self._ai_priority_queue: deque[Tuple[str, Optional[str]]] = deque()
@@ -7523,6 +7687,137 @@ class Bot:
                 activity_logger=self._emit_ai_budget_alert,
                 leverage_lookup=self._symbol_leverage_cap,
             )
+
+    def _log_management_event(self, rec: Dict[str, Any], action: str, payload: Optional[Dict[str, Any]] = None) -> None:
+        events = rec.setdefault("management_events", [])
+        if not isinstance(events, list):
+            events = []
+            rec["management_events"] = events
+        entry: Dict[str, Any] = {"ts": time.time(), "action": action}
+        if payload:
+            entry.update(payload)
+        events.append(entry)
+
+    def _submit_reduce_only(self, symbol: str, side: str, quantity: float, reason: str) -> bool:
+        step = float(self.risk.symbol_filters.get(symbol, {}).get("stepSize", 0.0001) or 0.0001)
+        qty_abs = max(0.0, abs(quantity))
+        floored = max(0.0, math.floor(qty_abs / step) * step)
+        if floored <= 0:
+            return False
+        qty_text = format_qty(floored, step)
+        params = {
+            "symbol": symbol,
+            "side": "SELL" if side == "BUY" else "BUY",
+            "type": "MARKET",
+            "quantity": qty_text,
+            "reduceOnly": True,
+        }
+        try:
+            self.exchange.post_order(params)
+            log.info("Management %s reduced %s by %s", reason, symbol, qty_text)
+            return True
+        except Exception as exc:
+            log.debug(f"management {reason} reduce fail {symbol}: {exc}")
+            return False
+
+    def _adjust_exit(self, symbol: str, side: str, quantity: float, price: float, tag: str) -> bool:
+        if not getattr(self, "guard", None):
+            return False
+        try:
+            self.guard.replace_exit(symbol, abs(quantity), price, side=side)
+            log.debug(f"Management {tag} adjusted {symbol} exit to {price:.6f}")
+            return True
+        except Exception as exc:
+            log.debug(f"management {tag} adjust fail {symbol}: {exc}")
+            return False
+
+    def _manage_open_position(self, symbol: str, amount: float, mid: float, atr_abs: float) -> None:
+        if mid <= 0:
+            return
+        rec = self.state.get("live_trades", {}).get(symbol)
+        if not isinstance(rec, dict):
+            return
+        try:
+            entry = float(rec.get("entry", 0.0) or 0.0)
+            initial_sl = float(rec.get("initial_sl", rec.get("sl", 0.0)) or 0.0)
+        except (TypeError, ValueError):
+            return
+        if entry <= 0 or initial_sl <= 0:
+            return
+        risk = abs(entry - initial_sl)
+        if risk <= 1e-9:
+            return
+        opened_at = rec.get("opened_at")
+        try:
+            opened_ts = float(opened_at or 0.0)
+        except (TypeError, ValueError):
+            opened_ts = 0.0
+        elapsed = max(0.0, time.time() - opened_ts) if opened_ts > 0 else 0.0
+        side = str(rec.get("side") or ("BUY" if amount > 0 else "SELL")).upper()
+        qty_abs = abs(amount)
+        if qty_abs <= 1e-12:
+            return
+        r_now = (mid - entry) / risk if amount > 0 else (entry - mid) / risk
+        step = float(self.risk.symbol_filters.get(symbol, {}).get("stepSize", 0.0001) or 0.0001)
+        tick = float(self.risk.symbol_filters.get(symbol, {}).get("tickSize", 0.0001) or 0.0001)
+        mgmt = rec.setdefault("management", {})
+        if not isinstance(mgmt, dict):
+            mgmt = {}
+            rec["management"] = mgmt
+        current_sl = rec.get("sl")
+        try:
+            current_sl_val = float(current_sl if current_sl is not None else initial_sl)
+        except (TypeError, ValueError):
+            current_sl_val = initial_sl
+
+        # Time-based exit: cut loser
+        if elapsed >= 1500 and r_now <= 0.0 and not mgmt.get("time_cut_executed"):
+            if self._submit_reduce_only(symbol, side, qty_abs, "time_cut"):
+                mgmt["time_cut_executed"] = True
+                self._management_dirty = True
+                self._log_management_event(rec, "time_cut", {"r": float(r_now), "elapsed": elapsed})
+                return
+
+        # Scale out if stagnant
+        if elapsed >= 2100 and r_now < 0.05 and not mgmt.get("slow_scaleout"):
+            scale_qty = max(0.0, qty_abs * 0.5)
+            if scale_qty > step and self._submit_reduce_only(symbol, side, scale_qty, "scale_half"):
+                mgmt["slow_scaleout"] = True
+                self._management_dirty = True
+                self._log_management_event(rec, "scale_half", {"r": float(r_now), "elapsed": elapsed})
+                qty_abs = max(0.0, qty_abs - scale_qty)
+
+        # Breakeven stop
+        if r_now >= 0.20 and not mgmt.get("breakeven_set"):
+            new_stop = entry
+            if self._adjust_exit(symbol, side, qty_abs, new_stop, "breakeven"):
+                rec["sl"] = float(new_stop)
+                mgmt["breakeven_set"] = True
+                self._management_dirty = True
+                self._log_management_event(rec, "breakeven", {"r": float(r_now)})
+                current_sl_val = float(new_stop)
+
+        # ATR trailing stop
+        if r_now >= 0.40 and atr_abs > 0.0:
+            target_stop: Optional[float]
+            if amount > 0:
+                target_stop = max(entry, mid - atr_abs)
+                if target_stop > current_sl_val + tick and target_stop <= mid - tick:
+                    if self._adjust_exit(symbol, side, qty_abs, target_stop, "trail"):
+                        rec["sl"] = float(target_stop)
+                        mgmt["trail_active"] = True
+                        mgmt["trail_price"] = float(target_stop)
+                        self._management_dirty = True
+                        self._log_management_event(rec, "trail", {"r": float(r_now), "stop": float(target_stop)})
+            else:
+                target_stop = min(entry, mid + atr_abs)
+                if target_stop < current_sl_val - tick and target_stop >= mid + tick:
+                    if self._adjust_exit(symbol, side, qty_abs, target_stop, "trail"):
+                        rec["sl"] = float(target_stop)
+                        mgmt["trail_active"] = True
+                        mgmt["trail_price"] = float(target_stop)
+                        self._management_dirty = True
+                        self._log_management_event(rec, "trail", {"r": float(r_now), "stop": float(target_stop)})
 
     @property
     def strategy(self) -> Strategy:
@@ -8581,10 +8876,19 @@ class Bot:
         ctx["policy_size_multiplier"] = policy_size_mult
         sentinel_factor = float(actions.get("size_factor", 1.0) or 1.0)
         sentinel_factor *= max(0.35, 1.0 - event_risk * 0.65)
+        if event_risk < 0.30:
+            sentinel_factor *= 0.75
+            ctx["sentinel_low_risk_penalty"] = 1.0
         if hype_score > 1.2:
             sentinel_factor *= min(1.4, 1.0 + (hype_score - 1.0) * 0.25)
         elif hype_score < 0.4:
             sentinel_factor *= max(0.55, 0.85 + hype_score * 0.3)
+        if (
+            sentinel_info.get("label", "green") == "yellow"
+            and ctx.get("quality_gate_pass", 0.0) >= 0.5
+        ):
+            sentinel_factor = max(sentinel_factor, 0.9)
+            ctx["sentinel_yellow_quality_boost"] = 1.0
         tuning_bucket_factor = 1.0
         overrides_sl_mult: Optional[float] = None
         overrides_tp_mult: Optional[float] = None
@@ -9858,6 +10162,7 @@ class Bot:
                     atr_abs = float(rec.get("atr_abs", 0.0))
                     if atr_abs > 0.0:
                         self.fasttp.maybe_apply(sym, amt, float(rec.get("entry")), float(rec.get("sl")), mid, atr_abs)
+                    self._manage_open_position(sym, amt, mid, atr_abs)
                 continue
 
             try:
@@ -9899,11 +10204,13 @@ class Bot:
             self._manual_state_dirty
             or self._quote_volume_cooldown_dirty
             or self._universe_state_dirty
+            or self._management_dirty
         ):
             self.trade_mgr.save()
             self._manual_state_dirty = False
             self._quote_volume_cooldown_dirty = False
             self._universe_state_dirty = False
+            self._management_dirty = False
 
     def run(self, loop: bool = True):
         log.info("Starting bot (mode=%s, loop=%s)", "PAPER" if PAPER else "LIVE", loop)
