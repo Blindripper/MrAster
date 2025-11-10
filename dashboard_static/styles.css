@@ -970,6 +970,35 @@ body.paper-mode .hero-paper-toggle span {
   gap: 0.32rem;
 }
 
+.active-position-management {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.72rem;
+  color: var(--text-subtle);
+  letter-spacing: 0.01em;
+}
+
+.active-position-management-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.16rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.active-position-management-time {
+  font-size: 0.68rem;
+  color: rgba(199, 206, 225, 0.78);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
 .active-positions-symbol-wrapper {
   display: inline-flex;
   align-items: center;
