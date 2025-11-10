@@ -5480,6 +5480,153 @@ class RiskManager:
     def attach_state(self, state: Optional[Dict[str, Any]]) -> None:
         self.state = state if isinstance(state, dict) else None
 
+    @staticmethod
+    def _try_float(value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(numeric):
+            return None
+        return numeric
+
+    def _state_record(self, key: str, symbol: str) -> Optional[Dict[str, Any]]:
+        if not self.state or not isinstance(self.state, dict):
+            return None
+        bucket = self.state.get(key)
+        if not isinstance(bucket, dict):
+            return None
+        sym_key = str(symbol or "").upper()
+        record = bucket.get(sym_key)
+        if not isinstance(record, dict) and sym_key != symbol:
+            record = bucket.get(symbol)
+        if not isinstance(record, dict):
+            return None
+        return record
+
+    def _symbol_performance_factor(self, symbol: str) -> Optional[float]:
+        record = self._state_record("symbol_performance_bias", symbol)
+        if not record:
+            return None
+        factor = self._try_float(record.get("size_factor"))
+        if factor is None:
+            return None
+        return max(0.35, min(1.6, factor))
+
+    def _technical_snapshot(self, symbol: str) -> Optional[Dict[str, Any]]:
+        record = self._state_record("technical_snapshot", symbol)
+        if not record:
+            return None
+        return record
+
+    def _universe_score(self, symbol: str) -> Optional[Dict[str, Any]]:
+        record = self._state_record("universe_scores", symbol)
+        if not record:
+            return None
+        hydrated: Dict[str, Any] = {}
+        for key, value in record.items():
+            coerced = self._try_float(value)
+            if coerced is not None:
+                hydrated[key] = coerced
+        return hydrated
+
+    def _adaptive_size_multiplier(self, symbol: str, entry: float, sl: float) -> float:
+        multiplier = 1.0
+        components: Dict[str, float] = {}
+
+        universe = self._universe_score(symbol) or {}
+        qv_raw = universe.get("qv") if "qv" in universe else universe.get("qv_score")
+        if isinstance(qv_raw, (int, float)):
+            qv_score = max(0.0, min(2.5, float(qv_raw)))
+            liquidity_mult = clamp(0.65 + qv_score * 0.15, 0.65, 1.45)
+            components["liquidity"] = liquidity_mult
+            multiplier *= liquidity_mult
+
+        perf_bias = universe.get("perf_bias")
+        if isinstance(perf_bias, (int, float)) and perf_bias > 0:
+            perf_mult = clamp(float(perf_bias), 0.55, 1.45)
+            components["performance_bias"] = perf_mult
+            multiplier *= perf_mult
+
+        budget_bias = universe.get("budget_bias")
+        if isinstance(budget_bias, (int, float)) and budget_bias > 0:
+            budget_norm = clamp(float(budget_bias), 0.3, 2.0)
+            budget_mult = clamp(0.6 + 0.4 * budget_norm, 0.6, 1.4)
+            components["budget_bias"] = budget_mult
+            multiplier *= budget_mult
+
+        perf_factor = self._symbol_performance_factor(symbol)
+        if perf_factor is not None:
+            components["performance_factor"] = perf_factor
+            multiplier *= perf_factor
+
+        tech_snapshot = self._technical_snapshot(symbol)
+        if tech_snapshot:
+            atr_pct = self._try_float(tech_snapshot.get("atr_pct"))
+            if atr_pct is not None and atr_pct > 0:
+                if atr_pct > 0.03:
+                    vol_mult = clamp(0.55, 1.0, 1.0 - (atr_pct - 0.03) * 4.5)
+                    components["volatility"] = vol_mult
+                    multiplier *= vol_mult
+                elif atr_pct < 0.008:
+                    vol_mult = clamp(1.0, 1.18, 1.0 + (0.008 - atr_pct) * 7.5)
+                    components["volatility"] = vol_mult
+                    multiplier *= vol_mult
+
+        equity = self._equity_cached()
+        if equity > 0 and self.default_notional > 0:
+            risk_budget = equity * EQUITY_FRACTION
+            ratio = clamp(risk_budget / max(self.default_notional, 1e-9), 0.25, 2.5)
+            if ratio < 1.0:
+                equity_mult = clamp(0.5, 1.0, 0.55 + ratio * 0.45)
+            else:
+                equity_mult = clamp(1.0, 1.25, 1.0 + (ratio - 1.0) * 0.18)
+            components["equity"] = equity_mult
+            multiplier *= equity_mult
+
+        leverage_cap = self.max_leverage_for(symbol)
+        if leverage_cap > 0:
+            if leverage_cap < 3.0:
+                lev_mult = 0.75
+            elif leverage_cap < 5.0:
+                lev_mult = 0.9
+            else:
+                lev_mult = 1.0
+            if lev_mult != 1.0:
+                components["leverage"] = lev_mult
+                multiplier *= lev_mult
+
+        stop_ratio = None
+        try:
+            stop_ratio = abs(entry - sl) / max(entry, 1e-9)
+        except Exception:
+            stop_ratio = None
+        if stop_ratio is not None and stop_ratio > 0:
+            if stop_ratio > 0.05:
+                stop_mult = clamp(0.55, 1.0, 1.0 - (stop_ratio - 0.05) * 3.0)
+                components["stop"] = stop_mult
+                multiplier *= stop_mult
+            elif stop_ratio < 0.01:
+                stop_mult = clamp(1.0, 1.2, 1.0 + (0.01 - stop_ratio) * 3.5)
+                components["stop"] = stop_mult
+                multiplier *= stop_mult
+
+        if components and isinstance(self.state, dict):
+            try:
+                sizing_state = self.state.setdefault("risk_sizing", {})
+                if isinstance(sizing_state, dict):
+                    sizing_state[str(symbol).upper()] = {
+                        "multiplier": round(multiplier, 4),
+                        "components": {k: round(v, 4) for k, v in components.items()},
+                        "ts": time.time(),
+                    }
+            except Exception:
+                pass
+
+        return clamp(multiplier, 0.35, 2.5)
+
     def _drawdown_factor(self) -> float:
         if not self.state:
             return 1.0
@@ -5527,7 +5674,8 @@ class RiskManager:
     def compute_qty(self, symbol: str, entry: float, sl: float, size_mult: float) -> float:
         step = float(self.symbol_filters.get(symbol, {}).get("stepSize", 0.0001) or 0.0001)
         # a) Basiskapital
-        notional_base = self.default_notional * max(0.0, size_mult)
+        adaptive_mult = self._adaptive_size_multiplier(symbol, entry, sl)
+        notional_base = self.default_notional * max(0.0, size_mult) * adaptive_mult
         # b) risiko-konsistent (1R = Entry–SL)
         risk_notional = 0.0
         preset_min = self._preset_min_notional

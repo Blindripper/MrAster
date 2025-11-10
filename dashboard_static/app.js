@@ -43,6 +43,7 @@ const presetDescription = document.getElementById('preset-description');
 const presetFundingDetails = document.getElementById('preset-funding-details');
 const presetMlDetails = document.getElementById('preset-ml-details');
 const presetLeverageDetails = document.getElementById('preset-leverage-details');
+const presetNotionalDetails = document.getElementById('preset-notional-details');
 const riskSlider = document.getElementById('risk-slider');
 const leverageSlider = document.getElementById('leverage-slider');
 const riskValue = document.getElementById('risk-value');
@@ -333,6 +334,9 @@ const TRANSLATIONS = {
     'quick.presets.att.subtitle': 'Против тренда',
     'quick.leverage.title': 'Плечо',
     'quick.leverage.placeholder': 'Базовое плечо: –',
+    'quick.notional.title': 'Диапазон размера',
+    'quick.notional.details': 'Адаптивный размер позиции: {{min}} – {{max}} за сделку.',
+    'quick.notional.unlimited': 'баланс счёта',
     'quick.description': 'Выберите профиль, чтобы загрузить рекомендованные параметры риска.',
     'quick.risk.label': 'Риск на сделку',
     'quick.risk.aria': 'Риск на сделку (%)',
@@ -584,6 +588,9 @@ const TRANSLATIONS = {
     'quick.presets.att.subtitle': 'Counter-Trend-Setup',
     'quick.leverage.title': 'Hebel',
     'quick.leverage.placeholder': 'Basishebel: –',
+    'quick.notional.title': 'Größenbereich',
+    'quick.notional.details': 'Adaptive Positionsgröße: {{min}} – {{max}} je Trade.',
+    'quick.notional.unlimited': 'Kontoeigenkapital',
     'quick.description': 'Wähle eine Konfiguration, um empfohlene Risiko-Parameter zu laden.',
     'quick.risk.label': 'Risiko pro Trade',
     'quick.risk.aria': 'Risiko pro Trade (%)',
@@ -838,6 +845,9 @@ const TRANSLATIONS = {
     'quick.presets.att.subtitle': '역추세 세팅',
     'quick.leverage.title': '레버리지',
     'quick.leverage.placeholder': '기준 레버리지: –',
+    'quick.notional.title': '포지션 범위',
+    'quick.notional.details': '적응형 포지션 범위: {{min}} – {{max}} 거래당.',
+    'quick.notional.unlimited': '계정 자본',
     'quick.description': '추천 위험 파라미터를 불러오려면 프로파일을 선택하세요.',
     'quick.risk.label': '거래당 위험',
     'quick.risk.aria': '거래당 위험 (%)',
@@ -1092,6 +1102,9 @@ const TRANSLATIONS = {
     'quick.presets.att.subtitle': 'Configuration contrarienne',
     'quick.leverage.title': 'Effet de levier',
     'quick.leverage.placeholder': 'Effet de levier de base : –',
+    'quick.notional.title': 'Plage de taille',
+    'quick.notional.details': 'Taille adaptative : {{min}} – {{max}} par trade.',
+    'quick.notional.unlimited': 'capitaux du compte',
     'quick.description': 'Choisissez une configuration pour charger les paramètres de risque recommandés.',
     'quick.risk.label': 'Risque par trade',
     'quick.risk.aria': 'Risque par trade (%)',
@@ -1346,6 +1359,9 @@ const TRANSLATIONS = {
     'quick.presets.att.subtitle': 'Configuración contra tendencia',
     'quick.leverage.title': 'Apalancamiento',
     'quick.leverage.placeholder': 'Apalancamiento base: –',
+    'quick.notional.title': 'Rango de tamaño',
+    'quick.notional.details': 'Tamaño adaptativo: {{min}} – {{max}} por operación.',
+    'quick.notional.unlimited': 'capital de la cuenta',
     'quick.description': 'Elige una configuración para cargar los parámetros de riesgo recomendados.',
     'quick.risk.label': 'Riesgo por operación',
     'quick.risk.aria': 'Riesgo por operación (%)',
@@ -1594,6 +1610,9 @@ const TRANSLATIONS = {
     'quick.presets.att.subtitle': 'Trend karşıtı kurulum',
     'quick.leverage.title': 'Kaldıraç',
     'quick.leverage.placeholder': 'Temel kaldıraç: –',
+    'quick.notional.title': 'Pozisyon aralığı',
+    'quick.notional.details': 'Uyarlanabilir pozisyon aralığı: {{min}} – {{max}} işlem başına.',
+    'quick.notional.unlimited': 'hesap sermayesi',
     'quick.description': 'Önerilen risk parametrelerini yüklemek için bir profil seçin.',
     'quick.risk.label': 'İşlem başına risk',
     'quick.risk.aria': 'İşlem başına risk (%)',
@@ -1843,6 +1862,9 @@ const TRANSLATIONS = {
     'quick.presets.att.subtitle': '逆势策略',
     'quick.leverage.title': '杠杆',
     'quick.leverage.placeholder': '基础杠杆：–',
+    'quick.notional.title': '仓位范围',
+    'quick.notional.details': '自适应仓位范围：每笔交易 {{min}} – {{max}}。',
+    'quick.notional.unlimited': '账户权益',
     'quick.description': '选择一个配置以载入推荐的风险参数。',
     'quick.risk.label': '单笔风险',
     'quick.risk.aria': '单笔风险 (%)',
@@ -2810,6 +2832,7 @@ const PRESETS = {
     maxOpenGlobal: 0,
     maxOpenPerSymbol: 1,
     trendBias: 'with',
+    notional: { min: 1, max: 200 },
   },
   mid: {
     label: 'Mid',
@@ -2851,6 +2874,7 @@ const PRESETS = {
     maxOpenGlobal: 0,
     maxOpenPerSymbol: 1,
     trendBias: 'with',
+    notional: { min: 200, max: 1500 },
   },
   high: {
     label: 'High',
@@ -2893,6 +2917,7 @@ const PRESETS = {
     maxOpenGlobal: 0,
     maxOpenPerSymbol: 1,
     trendBias: 'with',
+    notional: { min: 1500, max: Infinity },
   },
   att: {
     label: 'ATT',
@@ -2935,6 +2960,7 @@ const PRESETS = {
     maxOpenGlobal: 0,
     maxOpenPerSymbol: 1,
     trendBias: 'against',
+    notional: { min: 1500, max: Infinity },
   },
 };
 
@@ -10266,6 +10292,28 @@ function renderPresetMeta(presetKey = selectedPreset) {
       const display = Number.isFinite(baseLev) && baseLev > 0 ? `${Math.round(baseLev)}×` : `${Math.round(safeLeverage)}×`;
       presetLeverageDetails.textContent = `Leverage base: ${display} (capped by symbol limits).`;
     }
+  }
+
+  if (presetNotionalDetails) {
+    const coerce = (value) => {
+      if (value === undefined || value === null) return NaN;
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? numeric : NaN;
+    };
+    const minValue = coerce(preset?.notional?.min);
+    const maxValue = coerce(preset?.notional?.max);
+    const unlimitedLabel = translate('quick.notional.unlimited', 'account equity');
+    const minDisplay = Number.isFinite(minValue)
+      ? `${formatNumber(minValue, minValue >= 100 ? 0 : 2)} USDT`
+      : unlimitedLabel;
+    const maxDisplay = Number.isFinite(maxValue)
+      ? `${formatNumber(maxValue, maxValue >= 100 ? 0 : 2)} USDT`
+      : unlimitedLabel;
+    presetNotionalDetails.textContent = translate(
+      'quick.notional.details',
+      'Adaptive position size: {{min}} – {{max}} per trade.',
+      { min: minDisplay, max: maxDisplay },
+    );
   }
 
   const fundingTarget = {
