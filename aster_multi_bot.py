@@ -182,25 +182,20 @@ def _resolve_include_symbols(default_quote: str) -> List[str]:
     return symbols
 
 
-DEFAULT_SYMBOL_WHITELIST = [
-    "ICPUSDT",
-    "AAVEUSDT",
-    "FARTCOINUSDT",
-    "HYPEUSDT",
-    "TRUMPUSDT",
-]
-DEFAULT_SYMBOL_BLACKLIST = [
-    "FILUSDT",
-    "ZKUSDT",
-    "MMTUSDT",
-    "TRUSTUSDT",
-]
-SYMBOL_WHITELIST = _split_env_symbols(
-    os.getenv("ASTER_SYMBOL_WHITELIST", ",".join(DEFAULT_SYMBOL_WHITELIST))
-)
-SYMBOL_BLACKLIST = set(
-    _split_env_symbols(os.getenv("ASTER_SYMBOL_BLACKLIST", ",".join(DEFAULT_SYMBOL_BLACKLIST)))
-)
+DEFAULT_SYMBOL_WHITELIST: List[str] = []
+DEFAULT_SYMBOL_BLACKLIST: List[str] = []
+
+_SYMBOL_WHITELIST_ENV_RAW = os.getenv("ASTER_SYMBOL_WHITELIST")
+SYMBOL_WHITELIST_MANUAL = _SYMBOL_WHITELIST_ENV_RAW is not None
+if _SYMBOL_WHITELIST_ENV_RAW is None:
+    _SYMBOL_WHITELIST_ENV_RAW = ",".join(DEFAULT_SYMBOL_WHITELIST)
+SYMBOL_WHITELIST = _split_env_symbols(_SYMBOL_WHITELIST_ENV_RAW)
+
+_SYMBOL_BLACKLIST_ENV_RAW = os.getenv("ASTER_SYMBOL_BLACKLIST")
+SYMBOL_BLACKLIST_MANUAL = _SYMBOL_BLACKLIST_ENV_RAW is not None
+if _SYMBOL_BLACKLIST_ENV_RAW is None:
+    _SYMBOL_BLACKLIST_ENV_RAW = ",".join(DEFAULT_SYMBOL_BLACKLIST)
+SYMBOL_BLACKLIST = set(_split_env_symbols(_SYMBOL_BLACKLIST_ENV_RAW))
 
 if SYMBOL_WHITELIST:
     INCLUDE = SYMBOL_WHITELIST
@@ -7562,6 +7557,9 @@ class Bot:
             )
         self.exchange = Exchange(BASE, API_KEY, API_SECRET, RECV_WINDOW)
         self.universe = SymbolUniverse(self.exchange, QUOTE, UNIVERSE_MAX, EXCLUDE, UNIVERSE_ROTATE, include=INCLUDE)
+        self._base_include: List[str] = list(self.universe.include or [])
+        self._dynamic_include: Set[str] = set()
+        self._dynamic_exclude: Set[str] = set()
         self.risk = RiskManager(self.exchange, DEFAULT_NOTIONAL)
         self.risk.load_filters()
         self.state = {}
@@ -7582,6 +7580,7 @@ class Bot:
         except Exception:
             pass
         self._ensure_banned_state()
+        self._apply_dynamic_universe_preferences()
         cooldown_map = self.state.get("quote_volume_cooldown")
         if not isinstance(cooldown_map, dict):
             cooldown_map = {}
@@ -8122,6 +8121,77 @@ class Bot:
             self._ai_priority_keys.clear()
         return items
 
+    def _apply_dynamic_universe_preferences(
+        self,
+        preferred: Optional[Sequence[str]] = None,
+        ignored: Optional[Sequence[str]] = None,
+    ) -> None:
+        if not getattr(self, "universe", None):
+            return
+        if not isinstance(getattr(self, "_base_include", None), list):
+            self._base_include = list(self.universe.include or [])
+        if not isinstance(getattr(self, "_dynamic_include", None), set):
+            self._dynamic_include = set()
+        if not isinstance(getattr(self, "_dynamic_exclude", None), set):
+            self._dynamic_exclude = set()
+
+        dynamic_state = self.state.get("dynamic_universe") if isinstance(self.state, dict) else None
+        if preferred is None and isinstance(dynamic_state, dict):
+            preferred = dynamic_state.get("preferred")
+        if ignored is None and isinstance(dynamic_state, dict):
+            ignored = dynamic_state.get("ignored")
+
+        normalized_preferred: List[str] = []
+        if isinstance(preferred, (list, tuple, set)):
+            seen_pref: Set[str] = set()
+            for sym in preferred:
+                token = str(sym or "").upper().strip()
+                if token and token not in seen_pref:
+                    normalized_preferred.append(token)
+                    seen_pref.add(token)
+
+        normalized_ignored: Set[str] = set()
+        if isinstance(ignored, (list, tuple, set)):
+            for sym in ignored:
+                token = str(sym or "").upper().strip()
+                if token:
+                    normalized_ignored.add(token)
+
+        if normalized_preferred and not SYMBOL_WHITELIST_MANUAL:
+            combined: List[str] = []
+            seen: Set[str] = set()
+            for sym in normalized_preferred:
+                if sym not in seen:
+                    combined.append(sym)
+                    seen.add(sym)
+            for sym in self._base_include:
+                token = str(sym or "").upper().strip()
+                if token and token not in seen:
+                    combined.append(token)
+                    seen.add(token)
+            if list(self.universe.include or []) != combined:
+                self.universe.include = combined
+            self._dynamic_include = set(normalized_preferred)
+        elif not normalized_preferred and getattr(self, "_dynamic_include", None):
+            if self._dynamic_include and not SYMBOL_WHITELIST_MANUAL:
+                combined: List[str] = []
+                seen: Set[str] = set()
+                for sym in self._base_include:
+                    token = str(sym or "").upper().strip()
+                    if token and token not in seen:
+                        combined.append(token)
+                        seen.add(token)
+                if list(self.universe.include or []) != combined:
+                    self.universe.include = combined
+            self._dynamic_include = set()
+
+        previous_dynamic = set(getattr(self, "_dynamic_exclude", set()))
+        for sym in previous_dynamic - normalized_ignored:
+            self.universe.exclude.discard(sym)
+        for sym in normalized_ignored:
+            self.universe.exclude.add(sym)
+        self._dynamic_exclude = normalized_ignored
+
     def _rank_symbols(
         self,
         symbols: Sequence[str],
@@ -8230,6 +8300,7 @@ class Bot:
             dynamic_state["preferred"] = preferred
             dynamic_state["ignored"] = ignored
             self._universe_state_dirty = True
+        self._apply_dynamic_universe_preferences(preferred, ignored)
         return ranked
 
     def _drain_ai_ready_queue(self, *, clear_event: bool = False) -> None:
