@@ -5714,10 +5714,13 @@ class RiskManager:
         adaptive_mult = self._adaptive_size_multiplier(symbol, entry, sl)
         tier, tier_base, tier_min, tier_max = self._ai_notional_tier(adaptive_mult)
         size_factor = max(0.0, size_mult)
-        notional_base = tier_base * size_factor
-        notional_base = max(tier_min, notional_base)
-        if math.isfinite(tier_max):
-            notional_base = min(tier_max, notional_base)
+        if size_factor <= 0.0:
+            notional_base = 0.0
+        else:
+            notional_base = tier_base * size_factor
+            notional_base = max(tier_min, notional_base)
+            if math.isfinite(tier_max):
+                notional_base = min(tier_max, notional_base)
         # b) risiko-konsistent (1R = Entry–SL)
         risk_notional = 0.0
         preset_min = self._preset_min_notional
