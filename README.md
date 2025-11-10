@@ -205,7 +205,7 @@ All variables can be edited via environment overrides or through the dashboard (
 | `ASTER_SPREAD_BPS_MAX` | `0.0030` | Maximum tolerated bid/ask spread (bps). |
 | `ASTER_WICKINESS_MAX` | `0.97` | Filter against overly volatile candles. |
 | `ASTER_MIN_EDGE_R` | `0.30` | Minimum edge (in R) required to approve a trade. |
-| `ASTER_DEFAULT_NOTIONAL` | `250` | Fallback notional when sizing fails. |
+| `ASTER_DEFAULT_NOTIONAL` | `0` | Baseline notional for trades when no adaptive sizing data is available (0 lets the AI compute from scratch). |
 | `ASTER_SIZE_MULT_FLOOR` | `0` | Minimum position-size multiplier for autonomous trades (set to `1.0` to enforce the baseline notional before risk caps). |
 | `ASTER_MAX_NOTIONAL_USDT` | `0` | Optional hard cap on order notional (set to `0` to let leverage and equity guards decide). |
 | `ASTER_SIZE_MULT_CAP` | `3.0` | Maximum position-size multiplier allowed after all adjustments. |

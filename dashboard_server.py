@@ -69,7 +69,7 @@ ENV_DEFAULTS: Dict[str, str] = {
     "ASTER_SPREAD_BPS_MAX": "0.009",
     "ASTER_WICKINESS_MAX": "0.985",
     "ASTER_MIN_EDGE_R": "0.06",
-    "ASTER_DEFAULT_NOTIONAL": "120",
+    "ASTER_DEFAULT_NOTIONAL": "0",
     "ASTER_RISK_PER_TRADE": "0.007",
     "ASTER_LEVERAGE": "10",
     "ASTER_PRESET_MODE": "mid",
@@ -3654,8 +3654,12 @@ class AIChatEngine:
         )
         for raw in candidates:
             value = self._safe_float(raw)
-            if value and value > 0:
+            if value is None:
+                continue
+            if value > 0:
                 return value
+            if value == 0:
+                return 0.0
         return None
 
     @staticmethod
