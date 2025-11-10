@@ -5627,6 +5627,43 @@ class RiskManager:
 
         return clamp(multiplier, 0.35, 2.5)
 
+    def _ai_notional_tier(self, multiplier: float) -> Tuple[str, float, float, float]:
+        score = clamp(multiplier, 0.35, 2.5)
+        low_cut = 0.85
+        high_cut = 1.35
+
+        low_floor = max(MIN_NOTIONAL_ENV, 1.0)
+        low_ceiling = 200.0
+        normal_floor = max(low_ceiling, 200.0)
+        normal_ceiling = max(self.default_notional, 1500.0)
+        high_floor = max(normal_ceiling, 1500.0)
+
+        def _blend(ratio: float, start: float, end: float) -> float:
+            ratio = max(0.0, min(1.0, ratio))
+            return start + ratio * (end - start)
+
+        if score <= low_cut:
+            span = max(low_cut - 0.35, 1e-9)
+            ratio = (score - 0.35) / span
+            base = _blend(ratio, low_floor, low_ceiling)
+            return "low", base, low_floor, low_ceiling
+
+        if score < high_cut:
+            span = max(high_cut - low_cut, 1e-9)
+            ratio = (score - low_cut) / span
+            base = _blend(ratio, normal_floor, normal_ceiling)
+            return "normal", base, normal_floor, normal_ceiling
+
+        span = max(2.5 - high_cut, 1e-9)
+        ratio = (score - high_cut) / span
+        equity = self._equity_cached()
+        if equity > 0:
+            high_ceiling = max(high_floor, equity * EQUITY_FRACTION)
+        else:
+            high_ceiling = high_floor * 2.0
+        base = _blend(ratio, high_floor, high_ceiling)
+        return "high", base, high_floor, float("inf")
+
     def _drawdown_factor(self) -> float:
         if not self.state:
             return 1.0
@@ -5675,7 +5712,12 @@ class RiskManager:
         step = float(self.symbol_filters.get(symbol, {}).get("stepSize", 0.0001) or 0.0001)
         # a) Basiskapital
         adaptive_mult = self._adaptive_size_multiplier(symbol, entry, sl)
-        notional_base = self.default_notional * max(0.0, size_mult) * adaptive_mult
+        tier, tier_base, tier_min, tier_max = self._ai_notional_tier(adaptive_mult)
+        size_factor = max(0.0, size_mult)
+        notional_base = tier_base * size_factor
+        notional_base = max(tier_min, notional_base)
+        if math.isfinite(tier_max):
+            notional_base = min(tier_max, notional_base)
         # b) risiko-konsistent (1R = Entry–SL)
         risk_notional = 0.0
         preset_min = self._preset_min_notional
@@ -5702,6 +5744,9 @@ class RiskManager:
                 notional = (notional * 0.7) + (notional_base * 0.3)
         else:
             notional = notional_base
+        notional = max(tier_min, notional)
+        if math.isfinite(tier_max):
+            notional = min(notional, tier_max)
         if preset_min > 0:
             notional = max(notional, preset_min)
         notional = max(MIN_NOTIONAL_ENV, notional)
@@ -5709,6 +5754,9 @@ class RiskManager:
         notional = max(MIN_NOTIONAL_ENV, notional)
         if preset_min > 0:
             notional = max(notional, preset_min)
+        notional = max(tier_min, notional)
+        if math.isfinite(tier_max):
+            notional = min(notional, tier_max)
         # c) Cap via Leverage & Equity-Fraction
         equity = self._equity_cached()
         leverage_cap = self.max_leverage_for(symbol)
@@ -5733,6 +5781,26 @@ class RiskManager:
         if maxQty and qty > maxQty:
             qty = maxQty
             qty = max(0.0, math.floor(qty / step) * step)
+        if isinstance(self.state, dict):
+            try:
+                sizing_state = self.state.setdefault("risk_sizing", {})
+                if isinstance(sizing_state, dict):
+                    sym_key = str(symbol).upper()
+                    entry_state = sizing_state.get(sym_key)
+                    record = {
+                        "tier": tier,
+                        "tier_base": round(tier_base, 2),
+                        "tier_min": round(tier_min, 2),
+                        "tier_max": None if not math.isfinite(tier_max) else round(tier_max, 2),
+                        "pre_risk_notional": round(notional_base, 2),
+                        "ts": time.time(),
+                    }
+                    if isinstance(entry_state, dict):
+                        entry_state.update(record)
+                    else:
+                        sizing_state[sym_key] = record
+            except Exception:
+                pass
         return qty
 
 # ========= Strategy =========
