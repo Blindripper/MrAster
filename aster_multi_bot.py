@@ -585,8 +585,10 @@ _default_notional_fallback = float(
 DEFAULT_NOTIONAL = _env_float(
     "ASTER_DEFAULT_NOTIONAL",
     _default_notional_fallback,
-    allow_zero=False,
+    allow_zero=True,
 )
+if DEFAULT_NOTIONAL < 0:
+    DEFAULT_NOTIONAL = float(_default_notional_fallback)
 RISK_PER_TRADE = float(os.getenv("ASTER_RISK_PER_TRADE", "0.006"))
 PRESET_NOTIONAL_BOUNDS = {
     key: (
