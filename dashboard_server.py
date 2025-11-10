@@ -3219,12 +3219,18 @@ def _extract_alpha_confidence(state: Dict[str, Any]) -> Optional[float]:
     if conf_scale is None or conf_scale <= 0:
         conf_scale = 40.0
 
+    if min_conf is None:
+        env_cfg = CONFIG.get("env") if isinstance(CONFIG, dict) else None
+        fallback = None
+        if isinstance(env_cfg, dict):
+            fallback = _safe_float(env_cfg.get("ASTER_ALPHA_MIN_CONF"))
+        if fallback is None:
+            fallback = _safe_float(ENV_DEFAULTS.get("ASTER_ALPHA_MIN_CONF"))
+        min_conf = float(fallback or 0.0)
+
     baseline = 1.0 - math.exp(-train_count / conf_scale)
     if not math.isfinite(baseline):
         return None
-
-    if min_conf is None:
-        min_conf = 0.0
 
     confidence = max(float(min_conf), baseline)
     return max(0.0, min(1.0, confidence))
