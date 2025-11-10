@@ -5714,7 +5714,8 @@ class RiskManager:
         adaptive_mult = self._adaptive_size_multiplier(symbol, entry, sl)
         tier, tier_base, tier_min, tier_max = self._ai_notional_tier(adaptive_mult)
         size_factor = max(0.0, size_mult)
-        if size_factor <= 0.0:
+        multiplier_disabled = size_factor <= 0.0
+        if multiplier_disabled:
             notional_base = 0.0
         else:
             notional_base = tier_base * size_factor
@@ -5737,7 +5738,7 @@ class RiskManager:
                 risk_notional = target_loss / max(stop_dist / max(entry, 1e-9), 1e-9)
         except Exception:
             risk_notional = 0.0
-        if risk_notional > 0:
+        if risk_notional > 0 and not multiplier_disabled:
             notional = risk_notional
             if notional_base > 0:
                 lower = notional_base * 0.4
@@ -5747,19 +5748,22 @@ class RiskManager:
                 notional = (notional * 0.7) + (notional_base * 0.3)
         else:
             notional = notional_base
-        notional = max(tier_min, notional)
-        if math.isfinite(tier_max):
-            notional = min(notional, tier_max)
-        if preset_min > 0:
-            notional = max(notional, preset_min)
-        notional = max(MIN_NOTIONAL_ENV, notional)
-        notional *= self._drawdown_factor()
-        notional = max(MIN_NOTIONAL_ENV, notional)
-        if preset_min > 0:
-            notional = max(notional, preset_min)
-        notional = max(tier_min, notional)
-        if math.isfinite(tier_max):
-            notional = min(notional, tier_max)
+        if multiplier_disabled:
+            notional = 0.0
+        else:
+            notional = max(tier_min, notional)
+            if math.isfinite(tier_max):
+                notional = min(notional, tier_max)
+            if preset_min > 0:
+                notional = max(notional, preset_min)
+            notional = max(MIN_NOTIONAL_ENV, notional)
+            notional *= self._drawdown_factor()
+            notional = max(MIN_NOTIONAL_ENV, notional)
+            if preset_min > 0:
+                notional = max(notional, preset_min)
+            notional = max(tier_min, notional)
+            if math.isfinite(tier_max):
+                notional = min(notional, tier_max)
         # c) Cap via Leverage & Equity-Fraction
         equity = self._equity_cached()
         leverage_cap = self.max_leverage_for(symbol)
