@@ -6510,6 +6510,11 @@ class Strategy:
             }
         )
 
+        atr = atr_abs_from_klines(kl, 14)
+        atrp = atr / max(1e-9, last)
+        ctx_base["atr_abs"] = float(atr)
+        ctx_base["atr_pct"] = float(atrp)
+
         if spread_bps > self.spread_bps_max:
             ctx_base["spread_limit"] = float(self.spread_bps_max)
             return self._skip(
@@ -6521,12 +6526,8 @@ class Strategy:
                 atr=atr,
             )
 
-        atr = atr_abs_from_klines(kl, 14)
-        atrp = atr / max(1e-9, last)
         dyn_spread_max = max(self.spread_bps_max, 0.5 * atrp)
         if spread_bps > dyn_spread_max:
-            ctx_base["atr_abs"] = float(atr)
-            ctx_base["atr_pct"] = float(atrp)
             return self._skip(
                 "spread",
                 symbol,
@@ -6535,8 +6536,6 @@ class Strategy:
                 price=mid,
                 atr=atr,
             )
-        ctx_base["atr_abs"] = float(atr)
-        ctx_base["atr_pct"] = float(atrp)
 
         order_features = self._order_book_features(symbol, book_ticker=bt, order_book=order_book)
         orderbook_sampled = bool(order_features)
