@@ -104,6 +104,41 @@ AI_PENDING_LIMIT = max(
     int(os.getenv("ASTER_AI_PENDING_LIMIT", str(_default_pending_limit)) or _default_pending_limit),
 )
 
+_PRESET_SIZING_FALLBACK = {
+    "default_notional": 250.0,
+    "confidence_min": 1.0,
+    "confidence_max": 3.0,
+    "notional_min": 0.0,
+    "notional_max": float("inf"),
+}
+
+_PRESET_SIZING_DEFAULTS = {
+    "low": {
+        "default_notional": 200.0,
+        "confidence_min": 0.005,
+        "confidence_max": 1.0,
+        "notional_min": 1.0,
+        "notional_max": 200.0,
+    },
+    "mid": {
+        "default_notional": 1500.0,
+        "confidence_min": 200.0 / 1500.0,
+        "confidence_max": 1.0,
+        "notional_min": 200.0,
+        "notional_max": 1500.0,
+    },
+    "high": {
+        "default_notional": 3000.0,
+        "confidence_min": 0.5,
+        "confidence_max": 3.0,
+        "notional_min": 1500.0,
+        "notional_max": float("inf"),
+    },
+}
+_PRESET_SIZING_DEFAULTS["att"] = dict(_PRESET_SIZING_DEFAULTS["high"])
+
+_active_sizing_defaults = _PRESET_SIZING_DEFAULTS.get(PRESET_MODE, _PRESET_SIZING_FALLBACK)
+
 if AI_MODE_ENABLED and not OPENAI_API_KEY:
     log.warning(
         "AI mode is enabled but no OpenAI API key was provided via ASTER_OPENAI_API_KEY or OPENAI_API_KEY."
@@ -122,6 +157,24 @@ DEFAULT_MARKETS_URL = os.getenv(
 
 def _split_env_symbols(value: str) -> List[str]:
     return [s.strip().upper() for s in value.split(",") if s.strip()]
+
+
+def _env_float(key: str, fallback: float, *, allow_zero: bool = True) -> float:
+    raw = os.getenv(key)
+    if raw is None:
+        return float(fallback)
+    token = str(raw).strip()
+    if token == "":
+        return float(fallback)
+    try:
+        value = float(token)
+    except (TypeError, ValueError):
+        return float(fallback)
+    if not math.isfinite(value):
+        return float(fallback)
+    if not allow_zero and value <= 0:
+        return float(fallback)
+    return float(value)
 
 
 def _parse_symbols_from_html(text: str, default_quote: str) -> List[str]:
@@ -491,16 +544,25 @@ SIZE_MULT_L = float(os.getenv("ASTER_SIZE_MULT_L", str(1.9 * SIZE_MULT_BASE)))
 SIZE_MULT_FLOOR = max(0.0, min(5.0, float(os.getenv("ASTER_SIZE_MULT_FLOOR", "0.0"))))
 SIZE_MULT_CAP = max(0.1, float(os.getenv("ASTER_SIZE_MULT_CAP", "3.0")))
 
+_confidence_min_default = float(
+    _active_sizing_defaults.get("confidence_min", _PRESET_SIZING_FALLBACK["confidence_min"])
+)
+_confidence_max_default = float(
+    _active_sizing_defaults.get("confidence_max", _PRESET_SIZING_FALLBACK["confidence_max"])
+)
 CONFIDENCE_SIZING_ENABLED = os.getenv("ASTER_CONFIDENCE_SIZING", "true").lower() in (
     "1",
     "true",
     "yes",
     "on",
 )
-CONFIDENCE_SIZING_MIN = max(0.0, float(os.getenv("ASTER_CONFIDENCE_SIZE_MIN", "1.0")))
+CONFIDENCE_SIZING_MIN = max(
+    0.0,
+    _env_float("ASTER_CONFIDENCE_SIZE_MIN", _confidence_min_default),
+)
 CONFIDENCE_SIZING_MAX = max(
     CONFIDENCE_SIZING_MIN,
-    float(os.getenv("ASTER_CONFIDENCE_SIZE_MAX", "3.0")),
+    _env_float("ASTER_CONFIDENCE_SIZE_MAX", _confidence_max_default),
 )
 CONFIDENCE_SIZING_BLEND = min(
     1.0,
@@ -517,8 +579,22 @@ ALPHA_MIN_CONF = float(os.getenv("ASTER_ALPHA_MIN_CONF", "0.2"))
 ALPHA_PROMOTE_DELTA = float(os.getenv("ASTER_ALPHA_PROMOTE_DELTA", "0.15"))
 ALPHA_REWARD_MARGIN = float(os.getenv("ASTER_ALPHA_REWARD_MARGIN", "0.05"))
 
-DEFAULT_NOTIONAL = float(os.getenv("ASTER_DEFAULT_NOTIONAL", "250"))
+_default_notional_fallback = float(
+    _active_sizing_defaults.get("default_notional", _PRESET_SIZING_FALLBACK["default_notional"])
+)
+DEFAULT_NOTIONAL = _env_float(
+    "ASTER_DEFAULT_NOTIONAL",
+    _default_notional_fallback,
+    allow_zero=False,
+)
 RISK_PER_TRADE = float(os.getenv("ASTER_RISK_PER_TRADE", "0.006"))
+PRESET_NOTIONAL_BOUNDS = {
+    key: (
+        float(values.get("notional_min", _PRESET_SIZING_FALLBACK["notional_min"])),
+        float(values.get("notional_max", _PRESET_SIZING_FALLBACK["notional_max"])),
+    )
+    for key, values in _PRESET_SIZING_DEFAULTS.items()
+}
 _PRESET_LEVERAGE_DEFAULTS = {
     "low": "3",
     "mid": "5",
@@ -5258,6 +5334,29 @@ class RiskManager:
         self._equity_ts: float = 0.0
         self._equity_ttl = 10  # s
         self.state = state if isinstance(state, dict) else None
+        bounds = PRESET_NOTIONAL_BOUNDS.get(
+            PRESET_MODE,
+            (
+                _PRESET_SIZING_FALLBACK["notional_min"],
+                _PRESET_SIZING_FALLBACK["notional_max"],
+            ),
+        )
+        if isinstance(bounds, (tuple, list)) and len(bounds) >= 1:
+            min_bound = bounds[0]
+        else:
+            min_bound = 0.0
+        if isinstance(bounds, (tuple, list)) and len(bounds) >= 2:
+            max_bound = bounds[1]
+        else:
+            max_bound = float("inf")
+        try:
+            self._preset_min_notional = float(min_bound)
+        except (TypeError, ValueError):
+            self._preset_min_notional = float(_PRESET_SIZING_FALLBACK["notional_min"])
+        try:
+            self._preset_max_notional = float(max_bound)
+        except (TypeError, ValueError):
+            self._preset_max_notional = float(_PRESET_SIZING_FALLBACK["notional_max"])
 
     def load_filters(self) -> None:
         try:
@@ -5395,6 +5494,12 @@ class RiskManager:
         notional_base = self.default_notional * max(0.0, size_mult)
         # b) risiko-konsistent (1R = Entry–SL)
         risk_notional = 0.0
+        preset_min = self._preset_min_notional
+        if not math.isfinite(preset_min) or preset_min < 0:
+            preset_min = 0.0
+        preset_max = self._preset_max_notional
+        if not math.isfinite(preset_max) or preset_max <= 0:
+            preset_max = float("inf")
         try:
             stop_dist = abs(entry - sl)
             if stop_dist > 0:
@@ -5413,9 +5518,13 @@ class RiskManager:
                 notional = (notional * 0.7) + (notional_base * 0.3)
         else:
             notional = notional_base
+        if preset_min > 0:
+            notional = max(notional, preset_min)
         notional = max(MIN_NOTIONAL_ENV, notional)
         notional *= self._drawdown_factor()
         notional = max(MIN_NOTIONAL_ENV, notional)
+        if preset_min > 0:
+            notional = max(notional, preset_min)
         # c) Cap via Leverage & Equity-Fraction
         equity = self._equity_cached()
         leverage_cap = self.max_leverage_for(symbol)
@@ -5424,7 +5533,11 @@ class RiskManager:
             dyn_cap = equity * leverage_cap * EQUITY_FRACTION
         if MAX_NOTIONAL_USDT > 0:
             dyn_cap = min(dyn_cap, MAX_NOTIONAL_USDT)
+        if math.isfinite(preset_max):
+            dyn_cap = min(dyn_cap, preset_max)
         notional = min(notional, dyn_cap)
+        if math.isfinite(preset_max):
+            notional = min(notional, preset_max)
         qty = notional / max(entry, 1e-9)
         # d) Runden auf stepSize
         qty = max(0.0, math.floor(qty / step) * step)
