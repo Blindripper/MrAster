@@ -1,14 +1,17 @@
 import os
 import sys
-from typing import Any, Dict, List
-
 import time
+from typing import Any, Dict, List
 
 import pytest
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from aster_multi_bot import TradeManager, _compute_trade_performance_summary
+from aster_multi_bot import (
+    TradeManager,
+    _compute_r_multiple,
+    _compute_trade_performance_summary,
+)
 
 
 def _make_trade(symbol: str, pnl: float, pnl_r: float, bucket: str = "S") -> Dict[str, Any]:
@@ -120,3 +123,23 @@ def test_cooldown_reuses_previous_window() -> None:
         rel=0.01,
     )
     assert follow_up.get("cooldown_expires_at") >= initial.get("cooldown_expires_at")
+
+
+def test_compute_r_multiple_ignores_missing_stop_loss() -> None:
+    assert _compute_r_multiple(0.2871, None, 3027.0, -2.70) == 0.0
+
+
+def test_compute_r_multiple_handles_negligible_risk() -> None:
+    entry = 0.2871
+    qty = 3027.0
+    pnl = -2.70
+    assert _compute_r_multiple(entry, entry, qty, pnl) == 0.0
+
+
+def test_compute_r_multiple_with_valid_stop() -> None:
+    entry = 100.0
+    stop = 95.0
+    qty = 2.0
+    pnl = -8.0
+    expected = pnl / ((entry - stop) * qty)
+    assert _compute_r_multiple(entry, stop, qty, pnl) == pytest.approx(expected, rel=1e-9)
