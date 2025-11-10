@@ -322,6 +322,54 @@ def _coerce_int(value: Any, default: Optional[int] = None) -> Optional[int]:
             return default
 
 
+def _compute_r_multiple(
+    entry_price: Any,
+    stop_loss: Optional[Any],
+    quantity: Any,
+    pnl: Any,
+    *,
+    tolerance: float = 1e-8,
+) -> float:
+    """Return the R-multiple for a trade while guarding against zero-risk artifacts."""
+
+    try:
+        qty = abs(float(quantity) or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+    if qty <= 0:
+        return 0.0
+
+    try:
+        entry_val = float(entry_price)
+    except (TypeError, ValueError):
+        return 0.0
+
+    if stop_loss is None:
+        return 0.0
+
+    try:
+        stop_val = float(stop_loss)
+    except (TypeError, ValueError):
+        return 0.0
+
+    if not math.isfinite(stop_val):
+        return 0.0
+
+    risk = abs(entry_val - stop_val) * qty
+    if not math.isfinite(risk) or risk <= tolerance:
+        return 0.0
+
+    try:
+        pnl_val = float(pnl)
+    except (TypeError, ValueError):
+        pnl_val = 0.0
+
+    if not math.isfinite(pnl_val):
+        return 0.0
+
+    return pnl_val / risk
+
+
 def _compute_trade_performance_summary(
     trades: Sequence[Dict[str, Any]],
     *,
@@ -4449,13 +4497,10 @@ class PaperBroker:
         base_qty = abs(qty)
         if side == "BUY":
             pnl = (exit_price - entry) * base_qty
-            risk_ref = pos.get("stop_loss", entry)
-            risk = max(1e-9, abs(entry - float(risk_ref)) * base_qty)
         else:
             pnl = (entry - exit_price) * base_qty
-            risk_ref = pos.get("stop_loss", entry)
-            risk = max(1e-9, abs(entry - float(risk_ref)) * base_qty)
-        r_mult = pnl / risk if risk > 0 else 0.0
+        stop_loss = pos.get("stop_loss")
+        r_mult = _compute_r_multiple(entry, stop_loss, base_qty, pnl)
         record = {
             "symbol": symbol,
             "side": side,
@@ -4624,9 +4669,8 @@ class PaperBroker:
             qty_left = 0.0
         multiplier = 1.0 if side == "BUY" else -1.0
         pnl = (fill_price - entry) * qty_closed * multiplier
-        risk_ref = pos.get("stop_loss", entry)
-        risk = max(1e-9, abs(entry - float(risk_ref)) * qty_closed)
-        r_mult = pnl / risk if risk > 0 else 0.0
+        stop_loss = pos.get("stop_loss")
+        r_mult = _compute_r_multiple(entry, stop_loss, qty_closed, pnl)
         now = time.time()
         record = {
             "symbol": symbol,
@@ -7708,8 +7752,7 @@ class TradeManager:
                 except Exception:
                     exit_px = entry
                 prof = (exit_px - entry) * qty if side == "BUY" else (entry - exit_px) * qty
-                risk = max(1e-9, abs(entry - sl) * qty)
-                r_mult = float(prof / risk)
+                r_mult = _compute_r_multiple(entry, sl, qty, prof)
                 gross_pnl = prof
                 exit_commission = 0.0
                 rec["exit_price"] = float(exit_px)
@@ -7724,8 +7767,7 @@ class TradeManager:
                     prof = gross_pnl
                 else:
                     prof = net_pnl
-                risk = max(1e-9, abs(entry - sl) * qty)
-                r_mult = float(prof / risk)
+                r_mult = _compute_r_multiple(entry, sl, qty, prof)
                 rec["exit_commission"] = float(closing_commission)
                 rec["entry_commission"] = float(entry_commission)
                 rec["fees_total"] = float(total_commission)
