@@ -348,6 +348,23 @@
                 <p class="card-subtitle" data-i18n="pnl.subtitle">Cumulative realized PNL across your recorded trades.</p>
               </div>
             </div>
+            <div class="confidence-meter" id="alpha-confidence" hidden>
+              <div class="confidence-meter__label">
+                <span data-i18n="pnl.confidenceLabel">Alpha confidence</span>
+                <span class="confidence-meter__value" id="alpha-confidence-value">—</span>
+              </div>
+              <div
+                class="confidence-meter__bar"
+                id="alpha-confidence-bar"
+                role="progressbar"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="0"
+                aria-valuetext="0 / 100"
+              >
+                <div class="confidence-meter__fill" id="alpha-confidence-fill" style="width: 0%"></div>
+              </div>
+            </div>
             <div class="pnl-chart-wrapper">
               <canvas id="pnl-chart" aria-label="Cumulative PNL chart" style="display: none;"></canvas>
               <div id="pnl-empty" class="empty-state" data-i18n="pnl.empty">

@@ -4907,6 +4907,45 @@ body.pro-mode .log-stream {
   align-items: flex-start;
 }
 
+.confidence-meter {
+  margin: 0 0 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.confidence-meter__label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.confidence-meter__value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.confidence-meter__bar {
+  position: relative;
+  width: 100%;
+  height: 0.65rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 77, 79, 0.25), rgba(82, 196, 26, 0.25));
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.confidence-meter__fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ff4d4f 0%, #ffbf00 50%, #52c41a 100%);
+  transition: width 0.35s ease-in-out;
+}
+
 .pnl-chart-wrapper {
   position: relative;
   border-radius: 1.1rem;
