@@ -12,11 +12,27 @@ POSTMORTEM_FEATURE_MAP: Dict[str, str] = {
     "execution_delay": "pm_execution_delay",
     "sentiment_conflict": "pm_sentiment_conflict",
     "macro_event": "pm_macro_event",
+    # Extended quantitative feedback from postmortem summaries
+    "trend": "pm_trend_bias",
+    "adx": "pm_adx_bias",
+    "ema_slope": "pm_ema_slope",
+    "volatility": "pm_volatility_bias",
+    "event_risk": "pm_event_risk",
+    "hype_score": "pm_hype_bias",
+    "spread": "pm_spread_bias",
+    "liquidity": "pm_liquidity_profile",
+    "execution": "pm_execution_quality",
 }
 POSTMORTEM_EXTRA_FEATURES = (
     "pm_volatility_bias",
     "pm_execution_quality",
     "pm_liquidity_profile",
+    "pm_event_risk",
+    "pm_hype_bias",
+    "pm_trend_bias",
+    "pm_adx_bias",
+    "pm_ema_slope",
+    "pm_spread_bias",
 )
 POSTMORTEM_DEFAULT_WEIGHT = 0.15
 POSTMORTEM_DECAY = 0.92
