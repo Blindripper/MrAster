@@ -2684,6 +2684,7 @@ class AITradeAdvisor:
         throttle_key: Optional[str] = None,
         pending: bool = True,
         request_id: Optional[str] = None,
+        request_payload: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         plan = {**fallback}
         plan["take"] = False
@@ -2697,6 +2698,11 @@ class AITradeAdvisor:
             plan.pop("_pending", None)
         if throttle_key:
             plan["_pending_key"] = throttle_key
+        if request_payload is not None:
+            try:
+                plan["_ai_request"] = self._sanitize_for_json(request_payload)
+            except Exception:
+                plan["_ai_request"] = request_payload
         if not request_id:
             request_id = plan.get("request_id") or fallback.get("request_id")
         if not request_id:
@@ -2977,8 +2983,18 @@ class AITradeAdvisor:
                 parsed,
                 request_payload=request_payload,
             )
-        if isinstance(plan_ready, dict) and request_id:
-            plan_ready.setdefault("request_id", request_id)
+        if isinstance(plan_ready, dict):
+            if request_id:
+                plan_ready.setdefault("request_id", request_id)
+            try:
+                plan_ready["_ai_response"] = self._sanitize_for_json(parsed)
+            except Exception:
+                plan_ready["_ai_response"] = parsed
+            if request_payload is not None:
+                try:
+                    plan_ready["_ai_request"] = self._sanitize_for_json(request_payload)
+                except Exception:
+                    plan_ready["_ai_request"] = request_payload
         if cache_key_ready:
             self._cache_store(str(cache_key_ready), plan_ready)
         self._recent_plan_store(throttle_key, plan_ready, now, delivered=False)
@@ -3145,6 +3161,8 @@ class AITradeAdvisor:
         clean_value = copy.deepcopy(value)
         if isinstance(clean_value, dict):
             clean_value.pop("request_id", None)
+            clean_value.pop("_ai_request", None)
+            clean_value.pop("_ai_response", None)
         self._cache[key] = clean_value
         self._cache.move_to_end(key)
         while len(self._cache) > self.CACHE_LIMIT:
@@ -3180,6 +3198,8 @@ class AITradeAdvisor:
         plan_copy = copy.deepcopy(plan)
         if isinstance(plan_copy, dict):
             plan_copy.pop("request_id", None)
+            plan_copy.pop("_ai_request", None)
+            plan_copy.pop("_ai_response", None)
         self._recent_plans[key] = (now, plan_copy, bool(delivered))
         self._recent_plans.move_to_end(key)
         while len(self._recent_plans) > self.RECENT_PLAN_LIMIT:
@@ -4051,6 +4071,15 @@ class AITradeAdvisor:
                 request_payload=payload_with_id,
             )
             plan.setdefault("request_id", request_id)
+            if isinstance(plan, dict):
+                try:
+                    plan["_ai_response"] = self._sanitize_for_json(parsed)
+                except Exception:
+                    plan["_ai_response"] = parsed
+                try:
+                    plan["_ai_request"] = self._sanitize_for_json(payload_with_id)
+                except Exception:
+                    plan["_ai_request"] = payload_with_id
             self._cache_store(cache_key, plan)
             self._recent_plan_store(throttle_key, plan, now)
             return plan
@@ -4104,6 +4133,7 @@ class AITradeAdvisor:
                 "Queued for AI planning",
                 throttle_key=throttle_key,
                 request_id=request_id,
+                request_payload=payload_with_id,
             )
             pending_info["request_id"] = request_id
             self._pending_requests[throttle_key] = pending_info
@@ -4158,6 +4188,7 @@ class AITradeAdvisor:
             "Waiting for AI plan response",
             throttle_key=throttle_key,
             request_id=request_id,
+            request_payload=payload_with_id,
         )
         return stub
 
@@ -4381,6 +4412,15 @@ class AITradeAdvisor:
                 request_payload=payload_with_id,
             )
             plan.setdefault("request_id", request_id)
+            if isinstance(plan, dict):
+                try:
+                    plan["_ai_response"] = self._sanitize_for_json(parsed)
+                except Exception:
+                    plan["_ai_response"] = parsed
+                try:
+                    plan["_ai_request"] = self._sanitize_for_json(payload_with_id)
+                except Exception:
+                    plan["_ai_request"] = payload_with_id
             self._cache_store(cache_key, plan)
             self._recent_plan_store(throttle_key, plan, now)
             return plan
@@ -4434,6 +4474,7 @@ class AITradeAdvisor:
                 "Queued for AI planning",
                 throttle_key=throttle_key,
                 request_id=request_id,
+                request_payload=payload_with_id,
             )
             pending_info["request_id"] = request_id
             self._pending_requests[throttle_key] = pending_info
@@ -4488,6 +4529,7 @@ class AITradeAdvisor:
             "Waiting for AI plan response",
             throttle_key=throttle_key,
             request_id=request_id,
+            request_payload=payload_with_id,
         )
         return stub
 
@@ -9477,6 +9519,8 @@ class Bot:
             "request_id": plan.get("request_id"),
             "throttle_key": throttle_key,
         }
+        request_snapshot = plan.get("_ai_request")
+        response_snapshot = plan.get("_ai_response")
         if confidence_val is not None:
             activity_data["confidence"] = confidence_val
         if size_mult_val is not None:
@@ -9487,6 +9531,10 @@ class Bot:
             activity_data["tp_multiplier"] = tp_mult_val
         if note_sources:
             activity_data["notes"] = note_sources
+        if request_snapshot is not None:
+            activity_data["request_payload"] = request_snapshot
+        if response_snapshot is not None:
+            activity_data["response_payload"] = response_snapshot
         if isinstance(decision_reason_val, str):
             cleaned_reason = " ".join(decision_reason_val.split())
             if cleaned_reason:
@@ -10559,6 +10607,12 @@ class Bot:
                     "sentinel_label": sentinel_info.get("label"),
                     "request_id": plan.get("request_id"),
                 }
+                request_snapshot = plan.get("_ai_request")
+                response_snapshot = plan.get("_ai_response")
+                if request_snapshot is not None:
+                    decision_summary["request_payload"] = request_snapshot
+                if response_snapshot is not None:
+                    decision_summary["response_payload"] = response_snapshot
                 explanation = plan.get("explanation")
                 trend_side = plan.get("side")
                 if isinstance(trend_side, str) and trend_side.strip():
@@ -10566,21 +10620,24 @@ class Bot:
                 if plan.get("_pending"):
                     if self.ai_advisor.should_log_pending(plan):
                         request_id = plan.get("request_id")
+                        data_payload = {
+                            "symbol": symbol,
+                            "side": decision_summary.get("side"),
+                            "origin": "trend",
+                            "sentinel_label": sentinel_info.get("label"),
+                            "event_risk": float(sentinel_info.get("event_risk", 0.0) or 0.0),
+                            "hype_score": float(sentinel_info.get("hype_score", 0.0) or 0.0),
+                            "decision_reason": plan.get("decision_reason"),
+                            "decision_note": plan.get("decision_note"),
+                            "request_id": request_id,
+                        }
+                        if request_snapshot is not None:
+                            data_payload["request_payload"] = request_snapshot
                         self._log_ai_activity(
                             "query",
                             f"AI trend scan requested for {symbol}",
                             body="Consulting the strategy AI for an autonomous opportunity.",
-                            data={
-                                "symbol": symbol,
-                                "side": decision_summary.get("side"),
-                                "origin": "trend",
-                                "sentinel_label": sentinel_info.get("label"),
-                                "event_risk": float(sentinel_info.get("event_risk", 0.0) or 0.0),
-                                "hype_score": float(sentinel_info.get("hype_score", 0.0) or 0.0),
-                                "decision_reason": plan.get("decision_reason"),
-                                "decision_note": plan.get("decision_note"),
-                                "request_id": request_id,
-                            },
+                            data=data_payload,
                             force=True,
                         )
                     return
@@ -10695,6 +10752,12 @@ class Bot:
                     "sentinel_label": sentinel_info.get("label"),
                     "request_id": plan.get("request_id"),
                 }
+                request_snapshot = plan.get("_ai_request")
+                response_snapshot = plan.get("_ai_response")
+                if request_snapshot is not None:
+                    decision_summary["request_payload"] = request_snapshot
+                if response_snapshot is not None:
+                    decision_summary["response_payload"] = response_snapshot
                 explanation = plan.get("explanation")
                 if plan.get("_pending"):
                     if manual_override and manual_req:
@@ -10706,21 +10769,24 @@ class Bot:
                         self._manual_state_dirty = True
                     if self.ai_advisor.should_log_pending(plan):
                         request_id = plan.get("request_id")
+                        data_payload = {
+                            "symbol": symbol,
+                            "side": sig,
+                            "origin": "signal",
+                            "sentinel_label": sentinel_info.get("label"),
+                            "event_risk": float(sentinel_info.get("event_risk", 0.0) or 0.0),
+                            "hype_score": float(sentinel_info.get("hype_score", 0.0) or 0.0),
+                            "decision_reason": plan.get("decision_reason"),
+                            "decision_note": plan.get("decision_note"),
+                            "request_id": request_id,
+                        }
+                        if request_snapshot is not None:
+                            data_payload["request_payload"] = request_snapshot
                         self._log_ai_activity(
                             "query",
                             f"AI review requested for {symbol}",
                             body=f"Consulting the strategy AI for the {sig} signal.",
-                            data={
-                                "symbol": symbol,
-                                "side": sig,
-                                "origin": "signal",
-                                "sentinel_label": sentinel_info.get("label"),
-                                "event_risk": float(sentinel_info.get("event_risk", 0.0) or 0.0),
-                                "hype_score": float(sentinel_info.get("hype_score", 0.0) or 0.0),
-                                "decision_reason": plan.get("decision_reason"),
-                                "decision_note": plan.get("decision_note"),
-                                "request_id": request_id,
-                            },
+                            data=data_payload,
                             force=True,
                         )
                     return
