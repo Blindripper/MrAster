@@ -227,6 +227,26 @@ class PlaybookProcessTests(unittest.TestCase):
         stages = [step["stage"] for step in entry["steps"]]
         self.assertEqual(stages[-1], "failed")
 
+    def test_process_skips_anonymous_cycle_markers(self):
+        raw = [
+            {
+                "kind": "info",
+                "headline": "Playbook refresh cycle started",
+                "ts": "2024-07-01T09:00:00Z",
+            },
+            {
+                "kind": "info",
+                "headline": "Playbook refresh cycle finished",
+                "ts": "2024-07-01T09:00:10Z",
+            },
+        ]
+
+        activity = _collect_playbook_activity(raw)
+        self.assertEqual(len(activity), 2)
+
+        process = _build_playbook_process(activity)
+        self.assertEqual(process, [])
+
 
 class PlaybookStateTests(unittest.TestCase):
     def test_collects_atr_keys_and_confidence(self):
