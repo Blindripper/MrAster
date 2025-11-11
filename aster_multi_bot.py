@@ -95,6 +95,7 @@ OPENAI_API_KEY = os.getenv("ASTER_OPENAI_API_KEY", "").strip()
 if not OPENAI_API_KEY:
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 AI_MODEL = os.getenv("ASTER_AI_MODEL", "gpt-4o").strip() or "gpt-4o"
+JSON_OBJECT_RESPONSE_FORMAT: Dict[str, str] = {"type": "json_object"}
 AI_DAILY_BUDGET = float(os.getenv("ASTER_AI_DAILY_BUDGET_USD", "20") or 0)
 if PRESET_MODE in {"high", "att"}:
     if AI_DAILY_BUDGET > 0:
@@ -2069,6 +2070,7 @@ class AITradeAdvisor:
             kind=kind,
             budget_estimate=estimate,
             request_meta=meta or None,
+            response_format=JSON_OBJECT_RESPONSE_FORMAT,
         )
         if not response:
             if kind == "playbook":
@@ -2742,6 +2744,7 @@ class AITradeAdvisor:
         kind: str,
         budget_estimate: float,
         request_meta: Optional[Dict[str, Any]] = None,
+        response_format: Optional[Dict[str, Any]] = None,
     ) -> Optional[Future]:
         if not self._executor:
             return None
@@ -2752,6 +2755,7 @@ class AITradeAdvisor:
             kind=kind,
             budget_estimate=budget_estimate,
             request_meta=request_meta,
+            response_format=response_format,
         )
 
     def _notify_ready(self, throttle_key: str) -> None:
@@ -2815,6 +2819,7 @@ class AITradeAdvisor:
                         kind=kind,
                         budget_estimate=float(info.get("estimate", 0.0) or 0.0),
                         request_meta=info.get("request_meta"),
+                        response_format=info.get("response_format"),
                     )
                     if future:
                         info["future"] = future
@@ -3244,6 +3249,7 @@ class AITradeAdvisor:
         kind: str,
         budget_estimate: float = 0.0,
         request_meta: Optional[Dict[str, Any]] = None,
+        response_format: Optional[Dict[str, Any]] = None,
     ) -> Optional[str]:
         if not self.enabled:
             return None
@@ -3258,14 +3264,17 @@ class AITradeAdvisor:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
-        payload = {
+        payload: Dict[str, Any] = {
             "model": self.model,
-            "response_format": {"type": "text"},
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
         }
+        if response_format:
+            payload["response_format"] = response_format
+        else:
+            payload["response_format"] = {"type": "text"}
 
         request_id_value: Optional[str] = None
         if isinstance(request_meta, dict):
@@ -4017,6 +4026,7 @@ class AITradeAdvisor:
                 kind="plan",
                 budget_estimate=estimate,
                 request_meta=meta,
+                response_format=JSON_OBJECT_RESPONSE_FORMAT,
             )
             if not response:
                 self._recent_plan_store(throttle_key, fallback, now)
@@ -4077,6 +4087,7 @@ class AITradeAdvisor:
                 "note": "Queued for AI planning",
                 "notified": False,
                 "request_meta": meta,
+                "response_format": JSON_OBJECT_RESPONSE_FORMAT,
             }
             stub = self._pending_stub(
                 fallback,
@@ -4107,6 +4118,7 @@ class AITradeAdvisor:
             kind="plan",
             budget_estimate=estimate,
             request_meta=meta,
+            response_format=JSON_OBJECT_RESPONSE_FORMAT,
         )
         if not future:
             self._recent_plan_store(throttle_key, fallback, now)
@@ -4125,6 +4137,7 @@ class AITradeAdvisor:
             "notified": False,
             "request_meta": meta,
             "request_id": request_id,
+            "response_format": JSON_OBJECT_RESPONSE_FORMAT,
         }
         self._register_pending_key(throttle_key)
         self._last_global_request = now
@@ -4343,6 +4356,7 @@ class AITradeAdvisor:
                 kind="trend",
                 budget_estimate=estimate,
                 request_meta=meta,
+                response_format=JSON_OBJECT_RESPONSE_FORMAT,
             )
             if not response:
                 self._recent_plan_store(throttle_key, fallback, now)
@@ -4403,6 +4417,7 @@ class AITradeAdvisor:
                 "note": "Queued for AI planning",
                 "notified": False,
                 "request_meta": meta,
+                "response_format": JSON_OBJECT_RESPONSE_FORMAT,
             }
             stub = self._pending_stub(
                 fallback,
@@ -4433,6 +4448,7 @@ class AITradeAdvisor:
             kind="trend",
             budget_estimate=estimate,
             request_meta=meta,
+            response_format=JSON_OBJECT_RESPONSE_FORMAT,
         )
         if not future:
             self._recent_plan_store(throttle_key, fallback, now)
@@ -4451,6 +4467,7 @@ class AITradeAdvisor:
             "notified": False,
             "request_meta": meta,
             "request_id": request_id,
+            "response_format": JSON_OBJECT_RESPONSE_FORMAT,
         }
         self._register_pending_key(throttle_key)
         self._last_global_request = now
@@ -4505,6 +4522,7 @@ class AITradeAdvisor:
             user_prompt,
             kind="postmortem",
             request_meta=meta,
+            response_format=JSON_OBJECT_RESPONSE_FORMAT,
         )
         labels: List[str] = []
         feature_scores: Dict[str, float] = {}
