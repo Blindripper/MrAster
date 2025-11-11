@@ -1623,6 +1623,27 @@ class AITradeAdvisor:
         "wickiness",
     }
     STAT_PREFIX_WHITELIST = ("adx", "ema_", "slope_")
+    POSTMORTEM_CONTEXT_WHITELIST = {
+        "policy_bucket",
+        "policy_size_multiplier",
+        "ai_plan_origin",
+        "ai_priority_side_hint",
+        "ai_confidence",
+        "sentinel_factor",
+        "budget_bias",
+        "budget_bias_applied",
+        "budget_skip_top_reason",
+        "budget_skip_latest_reason",
+        "playbook_mode",
+        "playbook_bias",
+        "playbook_size_multiplier",
+        "playbook_trend_bias",
+        "playbook_range_bias",
+        "playbook_breakout_bias",
+        "open_positions",
+        "active_positions",
+        "max_active_positions",
+    }
     MODEL_PRICING: Dict[str, Dict[str, float]] = {
         "gpt-4o": {"input": 0.000005, "output": 0.000015},
         "gpt-4o-mini": {"input": 0.0000006, "output": 0.0000024},
@@ -4533,6 +4554,154 @@ class AITradeAdvisor:
         )
         return stub
 
+    def _postmortem_request_payload(self, trade: Dict[str, Any]) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {}
+        symbol = self._normalize_symbol(trade.get("symbol"))
+        if symbol:
+            payload["symbol"] = symbol
+        side = self._normalize_side(trade.get("side"))
+        if side:
+            payload["side"] = side
+        bucket = trade.get("bucket")
+        if isinstance(bucket, str) and bucket:
+            payload["bucket"] = bucket
+        qty = self._coerce_float(trade.get("qty"))
+        if qty is not None:
+            payload["qty"] = qty
+        entry = self._coerce_float(trade.get("entry"))
+        if entry is None:
+            entry = self._coerce_float(trade.get("entry_price"))
+        if entry is not None:
+            payload["entry"] = entry
+        exit_price = self._coerce_float(trade.get("exit"))
+        if exit_price is None:
+            exit_price = self._coerce_float(trade.get("exit_price"))
+        if exit_price is not None:
+            payload["exit"] = exit_price
+        pnl = self._coerce_float(trade.get("pnl"))
+        if pnl is not None:
+            payload["pnl"] = pnl
+        pnl_r = self._coerce_float(trade.get("pnl_r"))
+        if pnl_r is not None:
+            payload["pnl_r"] = pnl_r
+        fees = self._coerce_float(trade.get("fees"))
+        if fees is not None and abs(fees) > 0:
+            payload["fees"] = fees
+        pnl_gross = self._coerce_float(trade.get("pnl_gross"))
+        if pnl_gross is not None:
+            payload["pnl_gross"] = pnl_gross
+        opened_at = self._coerce_float(trade.get("opened_at"))
+        if opened_at is not None:
+            payload["opened_at"] = opened_at
+        closed_at = self._coerce_float(trade.get("closed_at"))
+        if closed_at is not None:
+            payload["closed_at"] = closed_at
+        if opened_at is not None and closed_at is not None:
+            payload["duration_s"] = max(0.0, closed_at - opened_at)
+        risk_note = trade.get("risk_note") or trade.get("note")
+        if isinstance(risk_note, str) and risk_note.strip():
+            payload["risk_note"] = risk_note.strip()
+
+        ai_meta = trade.get("ai")
+        if isinstance(ai_meta, dict):
+            ai_summary: Dict[str, Any] = {}
+            for key in (
+                "request_id",
+                "decision",
+                "decision_reason",
+                "decision_note",
+                "explanation",
+                "risk_note",
+            ):
+                value = ai_meta.get(key)
+                if isinstance(value, str) and value.strip():
+                    ai_summary[key] = value.strip()
+            for key in (
+                "take",
+                "confidence",
+                "size_multiplier",
+                "sl_multiplier",
+                "tp_multiplier",
+                "leverage",
+                "entry_price",
+                "stop_loss",
+                "take_profit",
+            ):
+                value = ai_meta.get(key)
+                if isinstance(value, bool):
+                    ai_summary[key] = value
+                else:
+                    numeric = self._coerce_float(value)
+                    if numeric is not None:
+                        ai_summary[key] = numeric
+            fasttp = ai_meta.get("fasttp_overrides")
+            if isinstance(fasttp, dict):
+                fasttp_summary: Dict[str, Any] = {}
+                for key in ("enabled", "min_r", "ret1", "ret3", "snap_atr"):
+                    value = fasttp.get(key)
+                    if isinstance(value, bool):
+                        fasttp_summary[key] = value
+                    else:
+                        numeric = self._coerce_float(value)
+                        if numeric is not None:
+                            fasttp_summary[key] = numeric
+                if fasttp_summary:
+                    ai_summary["fasttp_overrides"] = fasttp_summary
+            if ai_summary:
+                payload["ai_decision"] = ai_summary
+
+        ctx = trade.get("context")
+        sentinel_summary: Dict[str, Any] = {}
+        context_meta: Dict[str, Any] = {}
+        stats_block: Dict[str, float] = {}
+        if isinstance(ctx, dict):
+            label = ctx.get("sentinel_label")
+            if isinstance(label, str) and label.strip():
+                sentinel_summary["label"] = label.strip()
+            for key, target in (
+                ("sentinel_event_risk", "event_risk"),
+                ("sentinel_hype", "hype_score"),
+                ("sentinel_factor", "factor"),
+            ):
+                numeric = self._coerce_float(ctx.get(key))
+                if numeric is not None:
+                    sentinel_summary[target] = numeric
+            stats_block = self._extract_stat_block(ctx)
+            for key in self.POSTMORTEM_CONTEXT_WHITELIST:
+                if key not in ctx:
+                    continue
+                value = ctx.get(key)
+                if key in {"open_positions", "active_positions"} and isinstance(value, dict):
+                    trimmed: Dict[str, float] = {}
+                    for idx, (sym, qty_val) in enumerate(value.items()):
+                        if idx >= 5:
+                            break
+                        qty_val_num = self._coerce_float(qty_val)
+                        if qty_val_num is not None:
+                            trimmed[str(sym)] = qty_val_num
+                    if trimmed:
+                        context_meta[key] = trimmed
+                    continue
+                if isinstance(value, bool):
+                    context_meta[key] = value
+                    continue
+                numeric = self._coerce_float(value)
+                if numeric is not None:
+                    context_meta[key] = numeric
+                    continue
+                if isinstance(value, str) and value.strip():
+                    context_meta[key] = value.strip()
+            if stats_block:
+                payload["stats"] = stats_block
+            if sentinel_summary:
+                payload["sentinel"] = sentinel_summary
+            if context_meta:
+                payload["context"] = context_meta
+        elif ctx:
+            payload["context"] = self._sanitize_for_json(ctx)
+
+        return payload
+
     def generate_postmortem(self, trade: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         opened = float(trade.get("opened_at", time.time()) or time.time())
         closed = float(trade.get("closed_at", time.time()) or time.time())
@@ -4563,10 +4732,21 @@ class AITradeAdvisor:
             "thin_liquidity and prefer numeric feature weights for consistent tuning."
         )
         request_id = self._new_request_id("postmortem", str(symbol or ""))
-        payload_with_id = dict(trade)
-        payload_with_id["request_id"] = request_id
+        request_payload = self._postmortem_request_payload(trade)
+        request_payload["request_id"] = request_id
+        payload_with_id = self._sanitize_for_json(request_payload)
+        if not isinstance(payload_with_id, dict):
+            payload_with_id = {"request_id": request_id}
         fallback["request_id"] = request_id
-        user_prompt = json.dumps(payload_with_id, sort_keys=True, separators=(",", ":"))
+        try:
+            user_prompt = json.dumps(payload_with_id, sort_keys=True, separators=(",", ":"))
+        except Exception:
+            payload_with_id = {"request_id": request_id}
+            user_prompt = json.dumps(payload_with_id, sort_keys=True, separators=(",", ":"))
+        try:
+            fallback["_ai_request"] = self._sanitize_for_json(payload_with_id)
+        except Exception:
+            fallback["_ai_request"] = payload_with_id
         meta = {"symbol": symbol, "context": "postmortem", "request_id": request_id}
         response = self._chat(
             system_prompt,
@@ -4632,8 +4812,13 @@ class AITradeAdvisor:
                 note = structured.get("note") or structured.get("insight")
                 if isinstance(note, str) and note.strip():
                     fallback["note"] = self._ensure_bounds(note, note)
+                try:
+                    fallback["_ai_response"] = self._sanitize_for_json(structured)
+                except Exception:
+                    fallback["_ai_response"] = structured
             else:
                 fallback["analysis"] = self._ensure_bounds(response, fallback_text)
+                fallback["_ai_response"] = response
         if not feature_scores:
             feature_scores = {}
         try:
