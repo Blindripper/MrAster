@@ -1621,6 +1621,9 @@ class AITradeAdvisor:
             Callable[[str, str, Dict[str, Any], Optional[str]], None]
         ] = None,
         leverage_lookup: Optional[Callable[[str], float]] = None,
+        activity_feed_logger: Optional[
+            Callable[[str, str, Optional[str], Optional[Dict[str, Any]], bool], None]
+        ] = None,
     ) -> None:
         self.api_key = (api_key or "").strip()
         self.model = (model or "gpt-4o").strip()
@@ -1646,6 +1649,7 @@ class AITradeAdvisor:
         self._ready_callback = wakeup_cb
         self._activity_logger = activity_logger
         self._leverage_lookup = leverage_lookup
+        self._activity_feed_logger = activity_feed_logger
         if self.enabled and AI_CONCURRENCY > 0:
             self._executor = ThreadPoolExecutor(max_workers=AI_CONCURRENCY)
         self._load_persistent_state()
@@ -1825,6 +1829,34 @@ class AITradeAdvisor:
             " UTC reset."
         )
         self._activity_logger("alert", "AI budget exhausted", payload, body)
+
+    def _log_ai_activity(
+        self,
+        kind: str,
+        headline: str,
+        *,
+        body: Optional[str] = None,
+        data: Optional[Dict[str, Any]] = None,
+        force: bool = False,
+    ) -> None:
+        callback = getattr(self, "_activity_feed_logger", None)
+        if callable(callback):
+            try:
+                callback(kind, headline, body=body, data=data, force=force)
+                return
+            except TypeError:
+                try:
+                    callback(kind, headline, data, body)
+                    return
+                except TypeError:
+                    try:
+                        callback(kind, headline)
+                        return
+                    except TypeError:
+                        pass
+        if AI_DEBUG_STATE:
+            detail = f" — {body}" if body else ""
+            log.debug("AI activity %s | %s%s", kind, headline, detail)
 
     def _new_request_id(self, kind: str, throttle_key: Optional[str] = None) -> str:
         prefix_bits: List[str] = []
@@ -8368,6 +8400,7 @@ class Bot:
                 wakeup_cb=self._on_ai_future_ready,
                 activity_logger=self._emit_ai_budget_alert,
                 leverage_lookup=self._symbol_leverage_cap,
+                activity_feed_logger=self._log_ai_activity,
             )
             try:
                 self._strategy.playbook_manager = self.ai_advisor.playbook_manager
