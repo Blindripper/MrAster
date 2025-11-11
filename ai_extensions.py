@@ -417,6 +417,7 @@ class PlaybookManager:
     """Maintain an automatically generated playbook for adaptive strategy modes."""
 
     _SYMBOL_PATTERN = re.compile(r"\b[A-Z0-9]{3,}(?:USDT|USDC|USD|EUR|GBP|BTC|ETH|TRY|JPY|PERP)?\b")
+    _FEATURE_SLUG_PATTERN = re.compile(r"[^a-z0-9_]+")
     _BLOCK_KEYWORDS = (
         "halt",
         "suspend",
@@ -542,6 +543,25 @@ class PlaybookManager:
             except Exception:
                 return None
         return text or None
+
+    @classmethod
+    def _normalize_feature_key(cls, key: Any) -> Optional[str]:
+        if key is None:
+            return None
+        if isinstance(key, str):
+            token = key.strip().lower()
+        else:
+            token = str(key).strip().lower()
+        if not token:
+            return None
+        token = token.replace("/", " ").replace("-", " ")
+        slug = cls._FEATURE_SLUG_PATTERN.sub("_", token)
+        slug = slug.strip("_")
+        if not slug:
+            return None
+        while "__" in slug:
+            slug = slug.replace("__", "_")
+        return slug
 
     @classmethod
     def _normalize_string_list(
@@ -767,14 +787,65 @@ class PlaybookManager:
     def inject_context(self, ctx: Dict[str, Any]) -> None:
         active = self.active()
         features = active.get("features", {})
+        feature_aliases = active.get("feature_aliases", {})
+        raw_features: Dict[str, float] = {}
+        slugged_features: Dict[str, float] = {}
         if isinstance(features, dict):
             for key, value in features.items():
-                ctx[key] = float(value)
+                try:
+                    numeric = float(value)
+                except (TypeError, ValueError):
+                    continue
+                key_str = str(key)
+                raw_features[key_str] = numeric
+                ctx[key_str] = numeric
+                alias = self._normalize_feature_key(key_str)
+                if alias:
+                    slugged_features[alias] = numeric
+        if isinstance(feature_aliases, dict):
+            for alias, value in feature_aliases.items():
+                try:
+                    numeric = float(value)
+                except (TypeError, ValueError):
+                    continue
+                slug = self._normalize_feature_key(alias)
+                if not slug:
+                    continue
+                slugged_features[slug] = numeric
+        if raw_features:
+            ctx["playbook_features_raw"] = dict(raw_features)
+        if slugged_features:
+            ctx["playbook_features"] = dict(slugged_features)
+            for slug, numeric in slugged_features.items():
+                pref_key = f"playbook_feature_{slug}"
+                if pref_key not in ctx:
+                    ctx[pref_key] = numeric
         ctx["playbook_mode"] = active.get("mode", "baseline")
         ctx["playbook_bias"] = active.get("bias", "neutral")
-        ctx["playbook_size_bias"] = float(
-            (active.get("size_bias", {}) or {}).get(str(ctx.get("side") or "").upper(), 1.0)
-        )
+        size_bias_data = active.get("size_bias", {})
+        size_bias = size_bias_data if isinstance(size_bias_data, dict) else {}
+        try:
+            buy_bias = float((size_bias or {}).get("BUY", 1.0) or 1.0)
+        except (TypeError, ValueError):
+            buy_bias = 1.0
+        try:
+            sell_bias = float((size_bias or {}).get("SELL", 1.0) or 1.0)
+        except (TypeError, ValueError):
+            sell_bias = 1.0
+        ctx["playbook_size_bias_buy"] = buy_bias
+        ctx["playbook_size_bias_sell"] = sell_bias
+        ctx["playbook_size_bias_map"] = {"BUY": buy_bias, "SELL": sell_bias}
+        side_token = str(ctx.get("side") or "").upper()
+        side_bias = buy_bias if side_token == "BUY" else sell_bias if side_token == "SELL" else buy_bias
+        ctx["playbook_size_bias"] = float((size_bias or {}).get(side_token, side_bias))
+        try:
+            ctx["playbook_sl_bias"] = float(active.get("sl_bias", 1.0) or 1.0)
+        except (TypeError, ValueError):
+            ctx["playbook_sl_bias"] = 1.0
+        try:
+            ctx["playbook_tp_bias"] = float(active.get("tp_bias", 1.0) or 1.0)
+        except (TypeError, ValueError):
+            ctx["playbook_tp_bias"] = 1.0
         try:
             ctx["playbook_risk_bias"] = float(active.get("risk_bias", 1.0) or 1.0)
         except (TypeError, ValueError):
@@ -785,6 +856,12 @@ class PlaybookManager:
                 ctx["playbook_confidence"] = float(confidence)
         except (TypeError, ValueError):
             pass
+        notes = active.get("notes")
+        if isinstance(notes, str) and notes.strip():
+            ctx["playbook_notes"] = notes.strip()
+        request_id = active.get("request_id")
+        if isinstance(request_id, str) and request_id.strip():
+            ctx["playbook_request_id"] = request_id.strip()
         strategy = active.get("strategy")
         if isinstance(strategy, dict):
             name = strategy.get("name")
@@ -797,25 +874,58 @@ class PlaybookManager:
             if reason:
                 ctx["playbook_strategy_reason"] = str(reason)
             signals = strategy.get("market_signals")
+            sanitized_signals: List[str] = []
             if isinstance(signals, list):
-                for idx, signal in enumerate(signals[:3], start=1):
+                for signal in signals:
                     if isinstance(signal, str) and signal.strip():
-                        ctx[f"playbook_signal_{idx}"] = signal
+                        sanitized_signals.append(signal.strip())
+                for idx, signal in enumerate(sanitized_signals[:3], start=1):
+                    ctx[f"playbook_signal_{idx}"] = signal
+            if sanitized_signals:
+                ctx["playbook_strategy_signals"] = sanitized_signals[:6]
             actions = strategy.get("actions")
+            sanitized_actions: List[Dict[str, str]] = []
             if isinstance(actions, list):
-                for idx, action in enumerate(actions[:3], start=1):
+                for action in actions:
                     if not isinstance(action, dict):
                         continue
+                    clean_action: Dict[str, str] = {}
                     title = action.get("title")
                     detail = action.get("detail")
                     trigger = action.get("trigger")
-                    base_key = f"playbook_action_{idx}"
                     if isinstance(title, str) and title.strip():
-                        ctx[f"{base_key}_title"] = title
+                        clean_action["title"] = title.strip()
                     if isinstance(detail, str) and detail.strip():
-                        ctx[f"{base_key}_detail"] = detail
+                        clean_action["detail"] = detail.strip()
                     if isinstance(trigger, str) and trigger.strip():
+                        clean_action["trigger"] = trigger.strip()
+                    if clean_action:
+                        sanitized_actions.append(clean_action)
+                    if len(sanitized_actions) >= 6:
+                        break
+            if sanitized_actions:
+                ctx["playbook_strategy_actions"] = sanitized_actions
+                for idx, action in enumerate(sanitized_actions[:3], start=1):
+                    base_key = f"playbook_action_{idx}"
+                    title = action.get("title")
+                    detail = action.get("detail")
+                    trigger = action.get("trigger")
+                    if title:
+                        ctx[f"{base_key}_title"] = title
+                    if detail:
+                        ctx[f"{base_key}_detail"] = detail
+                    if trigger:
                         ctx[f"{base_key}_trigger"] = trigger
+            risk_controls = strategy.get("risk_controls") or strategy.get("risk_management")
+            sanitized_rc: List[str] = []
+            if isinstance(risk_controls, list):
+                for entry in risk_controls:
+                    if isinstance(entry, str) and entry.strip():
+                        sanitized_rc.append(entry.strip())
+                    if len(sanitized_rc) >= 6:
+                        break
+            if sanitized_rc:
+                ctx["playbook_strategy_risk_controls"] = sanitized_rc
         symbol = str(ctx.get("symbol") or "").strip().upper()
         if symbol:
             directive = self.symbol_directive(symbol)
@@ -851,12 +961,18 @@ class PlaybookManager:
         }
         features = payload.get("features") or {}
         normalized_features: Dict[str, float] = {}
+        feature_aliases: Dict[str, float] = {}
         if isinstance(features, dict):
             for key, value in features.items():
                 try:
-                    normalized_features[str(key)] = float(value)
+                    numeric = float(value)
                 except (TypeError, ValueError):
                     continue
+                key_str = str(key)
+                normalized_features[key_str] = numeric
+                alias = self._normalize_feature_key(key_str)
+                if alias:
+                    feature_aliases[alias] = numeric
         notes = payload.get("note") or payload.get("notes")
         if isinstance(notes, list):
             notes = "; ".join(str(n) for n in notes)
@@ -882,6 +998,8 @@ class PlaybookManager:
             "notes": notes if isinstance(notes, str) else "",
             "refreshed": now,
         }
+        if feature_aliases:
+            active["feature_aliases"] = feature_aliases
         active["risk_bias"] = self._derive_risk_bias(payload)
         if confidence is not None:
             active["confidence"] = confidence
