@@ -2086,13 +2086,8 @@ class AITradeAdvisor:
             pass
         try:
             if self.playbook_manager:
-                active = self.playbook_manager.active()
-                features = active.get("features", {}) if isinstance(active, dict) else {}
-                ctx["playbook_mode"] = active.get("mode", "baseline") if isinstance(active, dict) else "baseline"
-                ctx["playbook_bias"] = active.get("bias", "neutral") if isinstance(active, dict) else "neutral"
-                ctx["playbook_breakout_bias"] = float((features or {}).get("playbook_breakout_bias", 0.0))
-                ctx["playbook_range_bias"] = float((features or {}).get("playbook_range_bias", 0.0))
-                ctx["playbook_trend_bias"] = float((features or {}).get("playbook_trend_bias", 0.0))
+                ctx.setdefault("symbol", symbol)
+                self.playbook_manager.inject_context(ctx)
         except Exception:
             pass
         try:
@@ -9590,6 +9585,8 @@ class Bot:
         sig, atr_abs, ctx, price = self.strategy.compute_signal(
             symbol, book_ticker=book_ticker, order_book=order_book
         )
+        if isinstance(ctx, dict):
+            ctx.setdefault("symbol", symbol.upper())
         score_info: Dict[str, Any] = {}
         cache = getattr(self, "_symbol_score_cache", None)
         if isinstance(cache, dict):
@@ -9707,6 +9704,57 @@ class Bot:
             except Exception as exc:
                 log.debug(f"context feature inject failed {symbol}: {exc}")
 
+        directive_label_raw = str(ctx.get("playbook_symbol_directive") or "").strip().lower()
+        try:
+            directive_level = float(ctx.get("playbook_symbol_directive_level") or 0.0)
+        except (TypeError, ValueError):
+            directive_level = 0.0
+        try:
+            directive_drop = abs(float(ctx.get("playbook_symbol_drop_pct") or 0.0))
+        except (TypeError, ValueError):
+            directive_drop = 0.0
+        directive_note = ctx.get("playbook_symbol_note")
+        directive_source = ctx.get("playbook_symbol_directive_source")
+        directive_summary = directive_note or directive_source or directive_label_raw or "playbook directive"
+        if directive_label_raw in {"block", "avoid"} or directive_level >= 2.4:
+            if self.decision_tracker:
+                self.decision_tracker.record_rejection("playbook_directive_block")
+            ctx["playbook_symbol_veto"] = True
+            headline = f"Playbook vetoed {symbol}"
+            summary_note = textwrap.shorten(str(directive_summary), width=120, placeholder="…")
+            body = f"Playbook directive blocks trading {symbol}. Detail: {summary_note}"
+            veto_data = {
+                "symbol": symbol,
+                "directive": directive_label_raw or "block",
+                "level": directive_level,
+                "drop_pct": directive_drop or None,
+                "note": directive_note,
+                "source": directive_source,
+            }
+            log.info(
+                "Skip %s — playbook directive veto (%s, level %.2f).",
+                symbol,
+                directive_label_raw or "block",
+                directive_level,
+            )
+            self._log_ai_activity(
+                "decision",
+                headline,
+                body=body,
+                data=veto_data,
+                force=True,
+            )
+            if manual_override:
+                self._complete_manual_request(
+                    manual_req,
+                    "failed",
+                    error="Playbook directive forbids trades for this symbol",
+                )
+            return
+
+        playbook_soft_multiplier: Optional[float] = None
+        playbook_soft_reason: Optional[str] = None
+
         # Policy: Gate + Size
         size_mult = SIZE_MULT_S
         bucket = "S"
@@ -9758,6 +9806,47 @@ class Bot:
         ):
             sentinel_factor = max(sentinel_factor, 0.9)
             ctx["sentinel_yellow_quality_boost"] = 1.0
+
+        if not manual_override and (
+            directive_label_raw in {"warning", "caution"}
+            or directive_level >= 1.3
+        ):
+            drop_penalty = min(directive_drop, 30.0) * 0.005
+            base_soft = 0.75 - min(max(directive_level, 0.0), 3.5) * 0.1 - drop_penalty
+            playbook_soft_multiplier = max(0.25, base_soft)
+            sentinel_factor *= playbook_soft_multiplier
+            sentinel_soft_block = True
+            playbook_soft_reason = directive_note or directive_source or directive_label_raw or "caution"
+            ctx["sentinel_soft_block"] = True
+            ctx["sentinel_soft_override"] = float(playbook_soft_multiplier)
+            ctx["playbook_symbol_soft_multiplier"] = float(playbook_soft_multiplier)
+            ctx["playbook_symbol_soft_block"] = directive_label_raw or "caution"
+            log.info(
+                "Playbook throttles %s — directive=%s level=%.2f drop=%.2f -> size×%.2f",
+                symbol,
+                directive_label_raw or "caution",
+                directive_level,
+                directive_drop,
+                playbook_soft_multiplier,
+            )
+            throttle_note = textwrap.shorten(str(playbook_soft_reason), width=120, placeholder="…")
+            throttle_data = {
+                "symbol": symbol,
+                "directive": directive_label_raw or "caution",
+                "level": directive_level,
+                "drop_pct": directive_drop or None,
+                "multiplier": playbook_soft_multiplier,
+                "note": directive_note,
+                "source": directive_source,
+            }
+            self._log_ai_activity(
+                "decision",
+                f"Playbook throttled {symbol}",
+                body=f"Playbook cautions {symbol}; reducing size multiplier to {playbook_soft_multiplier:.2f}. Detail: {throttle_note}",
+                data=throttle_data,
+                force=True,
+            )
+
         tuning_bucket_factor = 1.0
         overrides_sl_mult: Optional[float] = None
         overrides_tp_mult: Optional[float] = None
@@ -9981,7 +10070,11 @@ class Bot:
                 size_mult *= perf_mult
                 ctx["universe_perf_multiplier"] = float(perf_mult)
         if sentinel_soft_block and not manual_override:
-            soft_mult = max(0.2, 1.0 - event_risk * 0.8)
+            soft_override = ctx.get("sentinel_soft_override")
+            if isinstance(soft_override, (int, float)):
+                soft_mult = max(0.2, float(soft_override))
+            else:
+                soft_mult = max(0.2, 1.0 - event_risk * 0.8)
             size_mult *= soft_mult
             ctx["sentinel_soft_multiplier"] = float(soft_mult)
         if not manual_override:

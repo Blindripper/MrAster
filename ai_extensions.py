@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import re
 import time
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
@@ -409,6 +410,62 @@ class ParameterTuner:
 class PlaybookManager:
     """Maintain an automatically generated playbook for adaptive strategy modes."""
 
+    _SYMBOL_PATTERN = re.compile(r"\b[A-Z0-9]{3,}(?:USDT|USDC|USD|EUR|GBP|BTC|ETH|TRY|JPY|PERP)?\b")
+    _BLOCK_KEYWORDS = (
+        "halt",
+        "suspend",
+        "block",
+        "forbid",
+        "prohibit",
+        "do not trade",
+        "no trade",
+        "stop trading",
+    )
+    _AVOID_KEYWORDS = (
+        "avoid",
+        "stay away",
+        "no exposure",
+        "skip",
+        "stand aside",
+    )
+    _WARNING_KEYWORDS = (
+        "warning",
+        "caution",
+        "risk",
+        "drawdown",
+        "selloff",
+        "sell-off",
+        "drop",
+        "decline",
+        "volatility",
+        "pressure",
+        "elevated",
+        "fragile",
+        "stress",
+    )
+    _POSITIVE_KEYWORDS = (
+        "focus",
+        "favour",
+        "favor",
+        "opportunity",
+        "support",
+        "bullish",
+        "strong",
+        "momentum",
+        "accumulate",
+    )
+    _DIRECTIVE_LEVEL = {
+        "block": 3.0,
+        "avoid": 2.6,
+        "warning": 1.8,
+        "caution": 1.6,
+        "monitor": 1.2,
+        "focus": -0.8,
+        "positive": -0.6,
+        "mention": 0.2,
+        "neutral": 0.0,
+    }
+
     def __init__(
         self,
         state: Dict[str, Any],
@@ -684,6 +741,28 @@ class PlaybookManager:
                         ctx[f"{base_key}_detail"] = detail
                     if isinstance(trigger, str) and trigger.strip():
                         ctx[f"{base_key}_trigger"] = trigger
+        symbol = str(ctx.get("symbol") or "").strip().upper()
+        if symbol:
+            directive = self.symbol_directive(symbol)
+            if directive:
+                ctx["playbook_symbol_directive"] = directive.get("label", "neutral")
+                level = directive.get("level", directive.get("score", 0.0))
+                try:
+                    ctx["playbook_symbol_directive_level"] = float(level)
+                except (TypeError, ValueError):
+                    ctx["playbook_symbol_directive_level"] = 0.0
+                drop_pct = directive.get("drop_pct")
+                if isinstance(drop_pct, (int, float)):
+                    ctx["playbook_symbol_drop_pct"] = float(drop_pct)
+                note = directive.get("text") or directive.get("note")
+                if isinstance(note, str) and note.strip():
+                    ctx["playbook_symbol_note"] = note
+                source = directive.get("source")
+                if isinstance(source, str) and source.strip():
+                    ctx["playbook_symbol_directive_source"] = source
+                updated = directive.get("updated")
+                if isinstance(updated, (int, float)):
+                    ctx["playbook_symbol_directive_updated"] = float(updated)
 
     def _normalize_playbook(self, payload: Dict[str, Any], now: float) -> Dict[str, Any]:
         mode = str(payload.get("mode") or payload.get("regime") or "baseline")
@@ -741,7 +820,147 @@ class PlaybookManager:
             token = request_id.strip()
             if token:
                 active["request_id"] = token
+        symbol_directives = self._collect_symbol_directives(payload, now)
+        if symbol_directives:
+            active["symbol_directives"] = symbol_directives
         return active
+
+    def _collect_symbol_directives(self, payload: Dict[str, Any], now: float) -> Dict[str, Any]:
+        directives: Dict[str, Dict[str, Any]] = {}
+
+        def register(text: Optional[str], source: str) -> None:
+            cleaned = self._clean_string(text)
+            if not cleaned:
+                return
+            matches = self._SYMBOL_PATTERN.findall(cleaned)
+            if not matches:
+                return
+            lowered = cleaned.lower()
+            label = "neutral"
+            score = 0.0
+            if any(keyword in lowered for keyword in self._BLOCK_KEYWORDS):
+                label = "block"
+                score = self._DIRECTIVE_LEVEL["block"]
+            elif any(keyword in lowered for keyword in self._AVOID_KEYWORDS):
+                label = "avoid"
+                score = self._DIRECTIVE_LEVEL["avoid"]
+            elif any(keyword in lowered for keyword in self._WARNING_KEYWORDS):
+                label = "warning"
+                score = self._DIRECTIVE_LEVEL["warning"]
+            elif any(keyword in lowered for keyword in self._POSITIVE_KEYWORDS):
+                label = "focus"
+                score = self._DIRECTIVE_LEVEL["focus"]
+            else:
+                label = "mention"
+                score = self._DIRECTIVE_LEVEL["mention"]
+            drop_pct = None
+            drop_match = re.search(r"(-?\d+(?:\.\d+)?)%\s*(?:drop|decline|sell[- ]?off|drawdown)", cleaned, flags=re.IGNORECASE)
+            if drop_match:
+                try:
+                    drop_pct = abs(float(drop_match.group(1)))
+                except (TypeError, ValueError):
+                    drop_pct = None
+                else:
+                    if label == "mention" and drop_pct >= 4.0:
+                        label = "warning"
+                        score = max(score, self._DIRECTIVE_LEVEL["warning"])
+            monitor_match = re.search(r"monitor|watch|observe", lowered)
+            if label == "mention" and monitor_match:
+                label = "monitor"
+                score = self._DIRECTIVE_LEVEL["monitor"]
+            level = self._DIRECTIVE_LEVEL.get(label, score)
+            for raw_symbol in matches:
+                symbol = raw_symbol.upper()
+                entry = {
+                    "label": label,
+                    "level": level,
+                    "score": score,
+                    "text": cleaned,
+                    "source": source,
+                    "updated": float(now),
+                }
+                if drop_pct is not None:
+                    entry["drop_pct"] = float(drop_pct)
+                prev = directives.get(symbol)
+                if prev:
+                    prev_drop = prev.get("drop_pct")
+                    if prev_drop is not None and "drop_pct" not in entry:
+                        try:
+                            entry["drop_pct"] = float(prev_drop)
+                        except (TypeError, ValueError):
+                            pass
+                if not prev:
+                    directives[symbol] = entry
+                    continue
+                prev_level = float(prev.get("level", prev.get("score", 0.0)) or 0.0)
+                prev_abs = abs(prev_level)
+                curr_abs = abs(level)
+                if curr_abs > prev_abs or (curr_abs == prev_abs and level > prev_level):
+                    prev_text = prev.get("text")
+                    if isinstance(prev_text, str) and prev_text.strip() and prev_text.strip() not in entry["text"]:
+                        entry["text"] = f"{prev_text.strip()} | {entry['text']}"
+                    directives[symbol] = entry
+                    continue
+                if drop_pct is not None:
+                    old_drop = prev.get("drop_pct")
+                    if not isinstance(old_drop, (int, float)) or float(old_drop) < drop_pct:
+                        prev["drop_pct"] = float(drop_pct)
+                if cleaned and cleaned not in prev.get("text", ""):
+                    prev_text = prev.get("text")
+                    if isinstance(prev_text, str) and prev_text.strip():
+                        prev["text"] = f"{prev_text} | {cleaned}"
+                    else:
+                        prev["text"] = cleaned
+
+        strategy = payload.get("strategy")
+        if isinstance(strategy, dict):
+            register(strategy.get("why_active"), "strategy")
+            signals = strategy.get("market_signals")
+            if isinstance(signals, list):
+                for item in signals:
+                    register(item if isinstance(item, str) else None, "market_signal")
+            actions = strategy.get("actions")
+            if isinstance(actions, list):
+                for entry in actions:
+                    if isinstance(entry, dict):
+                        register(entry.get("detail") or entry.get("title"), "strategy_action")
+                    else:
+                        register(str(entry), "strategy_action")
+        risk_controls = payload.get("risk_controls")
+        if isinstance(risk_controls, list):
+            for item in risk_controls:
+                register(item if isinstance(item, str) else None, "risk_control")
+        top_signals = payload.get("market_signals")
+        if isinstance(top_signals, list):
+            for item in top_signals:
+                register(item if isinstance(item, str) else None, "top_market_signal")
+        notes = payload.get("notes")
+        if isinstance(notes, list):
+            for item in notes:
+                register(item if isinstance(item, str) else None, "note")
+        else:
+            register(notes if isinstance(notes, str) else None, "note")
+        actions = payload.get("actions")
+        if isinstance(actions, list):
+            for entry in actions:
+                if isinstance(entry, dict):
+                    register(entry.get("detail") or entry.get("title"), "action")
+                else:
+                    register(str(entry), "action")
+        return directives
+
+    def symbol_directive(self, symbol: str) -> Optional[Dict[str, Any]]:
+        active = self.active()
+        directives = active.get("symbol_directives")
+        if not isinstance(directives, dict):
+            return None
+        key = str(symbol or "").strip().upper()
+        if not key:
+            return None
+        entry = directives.get(key)
+        if entry:
+            return dict(entry)
+        return None
 
 
 class BudgetLearner:
