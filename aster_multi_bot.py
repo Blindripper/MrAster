@@ -710,9 +710,107 @@ LONG_RSI_MAX = float(os.getenv("ASTER_LONG_RSI_MAX", "70.0"))
 SHORT_RSI_MIN = float(os.getenv("ASTER_SHORT_RSI_MIN", "30.0"))
 STOCHRSI_LONG_MAX = float(os.getenv("ASTER_STOCHRSI_LONG_MAX", "20.0"))
 STOCHRSI_SHORT_MIN = float(os.getenv("ASTER_STOCHRSI_SHORT_MIN", "80.0"))
+STOCHRSI_OVERBOUGHT = float(os.getenv("ASTER_STOCHRSI_OVERBOUGHT", "85.0"))
+STOCHRSI_OVERSOLD = float(os.getenv("ASTER_STOCHRSI_OVERSOLD", "15.0"))
 BB_LONG_MIN = float(os.getenv("ASTER_BB_LONG_MIN", "0.5"))
+BB_LONG_MAX = float(os.getenv("ASTER_BB_LONG_MAX", "0.98"))
+BB_SHORT_MAX = float(os.getenv("ASTER_BB_SHORT_MAX", "0.02"))
+ORDERBOOK_BIAS_CONFLICT = float(os.getenv("ASTER_ORDERBOOK_BIAS_CONFLICT", "0.35"))
+ORDERBOOK_BIAS_BUY_MIN = float(os.getenv("ASTER_ORDERBOOK_BIAS_BUY_MIN", "0.0"))
+ORDERBOOK_BIAS_SELL_MAX = float(os.getenv("ASTER_ORDERBOOK_BIAS_SELL_MAX", "0.0"))
 FUNDING_EDGE_MIN = float(os.getenv("ASTER_FUNDING_EDGE_MIN", "0.0"))
 QUALITY_LEVERAGE = float(os.getenv("ASTER_QUALITY_LEVERAGE", "9.0"))
+
+_PRESET_SIGNAL_TUNING: Dict[str, Dict[str, Any]] = {
+    "low": {
+        "MIN_QUOTE_VOL": 1_500_000.0,
+        "SPREAD_BPS_MAX": 0.0005,
+        "WICKINESS_MAX": 0.92,
+        "MIN_EDGE_R": 0.36,
+        "ADX_MIN_THRESHOLD": 32.0,
+        "ADX_DELTA_MIN": -2.0,
+        "STOCHRSI_LONG_MAX": 22.0,
+        "STOCHRSI_SHORT_MIN": 78.0,
+        "STOCHRSI_OVERBOUGHT": 82.0,
+        "STOCHRSI_OVERSOLD": 18.0,
+        "LONG_RSI_MAX": 68.0,
+        "SHORT_RSI_MIN": 32.0,
+        "BB_LONG_MIN": 0.55,
+        "BB_LONG_MAX": 0.985,
+        "BB_SHORT_MAX": 0.03,
+        "ORDERBOOK_BIAS_CONFLICT": 0.30,
+        "ORDERBOOK_BIAS_BUY_MIN": 0.05,
+        "ORDERBOOK_BIAS_SELL_MAX": -0.05,
+        "SL_ATR_MULT": 1.70,
+        "TP_ATR_MULT": 2.20,
+        "QUOTE_VOLUME_COOLDOWN_CYCLES": 420,
+        "allow_align": False,
+    },
+    "mid": {
+        "MIN_QUOTE_VOL": 900_000.0,
+        "SPREAD_BPS_MAX": 0.00075,
+        "WICKINESS_MAX": 0.96,
+        "MIN_EDGE_R": 0.24,
+        "ADX_MIN_THRESHOLD": 27.0,
+        "ADX_DELTA_MIN": -12.0,
+        "STOCHRSI_LONG_MAX": 32.0,
+        "STOCHRSI_SHORT_MIN": 68.0,
+        "STOCHRSI_OVERBOUGHT": 88.0,
+        "STOCHRSI_OVERSOLD": 12.0,
+        "LONG_RSI_MAX": 72.0,
+        "SHORT_RSI_MIN": 28.0,
+        "BB_LONG_MIN": 0.45,
+        "BB_LONG_MAX": 0.992,
+        "BB_SHORT_MAX": 0.08,
+        "ORDERBOOK_BIAS_CONFLICT": 0.28,
+        "ORDERBOOK_BIAS_BUY_MIN": -0.05,
+        "ORDERBOOK_BIAS_SELL_MAX": 0.05,
+        "SL_ATR_MULT": 1.55,
+        "TP_ATR_MULT": 2.45,
+        "QUOTE_VOLUME_COOLDOWN_CYCLES": 150,
+        "allow_align": True,
+    },
+    "high": {
+        "MIN_QUOTE_VOL": 600_000.0,
+        "SPREAD_BPS_MAX": 0.0009,
+        "WICKINESS_MAX": 0.98,
+        "MIN_EDGE_R": 0.20,
+        "ADX_MIN_THRESHOLD": 24.0,
+        "ADX_DELTA_MIN": -18.0,
+        "STOCHRSI_LONG_MAX": 38.0,
+        "STOCHRSI_SHORT_MIN": 62.0,
+        "STOCHRSI_OVERBOUGHT": 90.0,
+        "STOCHRSI_OVERSOLD": 10.0,
+        "LONG_RSI_MAX": 74.0,
+        "SHORT_RSI_MIN": 26.0,
+        "BB_LONG_MIN": 0.40,
+        "BB_LONG_MAX": 0.995,
+        "BB_SHORT_MAX": 0.10,
+        "ORDERBOOK_BIAS_CONFLICT": 0.25,
+        "ORDERBOOK_BIAS_BUY_MIN": -0.12,
+        "ORDERBOOK_BIAS_SELL_MAX": 0.12,
+        "SL_ATR_MULT": 1.45,
+        "TP_ATR_MULT": 2.60,
+        "QUOTE_VOLUME_COOLDOWN_CYCLES": 90,
+        "allow_align": True,
+    },
+}
+
+_preset_tuning = _PRESET_SIGNAL_TUNING.get(PRESET_MODE, {})
+if _preset_tuning:
+    for _key, _value in _preset_tuning.items():
+        if _key == "allow_align":
+            continue
+        if _key in globals():
+            _current = globals()[_key]
+            if isinstance(_current, int):
+                globals()[_key] = int(_value)
+            elif isinstance(_current, float):
+                globals()[_key] = float(_value)
+            else:
+                globals()[_key] = _value
+if "ASTER_ALLOW_TREND_ALIGN" not in os.environ and _preset_tuning.get("allow_align") is not None:
+    ALLOW_ALIGN = bool(_preset_tuning.get("allow_align"))
 
 # ========= Utils =========
 def ema(data: List[float], period: int) -> List[float]:
@@ -5862,6 +5960,7 @@ class Strategy:
         self.wickiness_max = WICKINESS_MAX
         self.state = state if isinstance(state, dict) else None
         self._tech_snapshot_dirty = False
+        self.playbook_manager: Optional[Any] = None
         # 24h Ticker Cache
         self._t24_cache: Dict[str, dict] = {}
         self._t24_ts = 0.0
@@ -6742,11 +6841,13 @@ class Strategy:
 
         lob_bias = ctx_base.get("orderbook_bias")
         if isinstance(lob_bias, (int, float)):
-            if sig == "BUY" and lob_bias < -0.35:
+            if sig == "BUY" and lob_bias < -ORDERBOOK_BIAS_CONFLICT:
                 ctx_base["lob_conflict"] = float(lob_bias)
+                ctx_base["lob_conflict_threshold"] = float(ORDERBOOK_BIAS_CONFLICT)
                 sig = "NONE"
-            elif sig == "SELL" and lob_bias > 0.35:
+            elif sig == "SELL" and lob_bias > ORDERBOOK_BIAS_CONFLICT:
                 ctx_base["lob_conflict"] = float(lob_bias)
+                ctx_base["lob_conflict_threshold"] = float(ORDERBOOK_BIAS_CONFLICT)
                 sig = "NONE"
         lob_gap_score = ctx_base.get("lob_gap_score")
         if isinstance(lob_gap_score, (int, float)) and lob_gap_score > 3.0:
@@ -6770,17 +6871,21 @@ class Strategy:
                 quality_gate_pass = False
                 ctx_base["bb_position_gate"] = float(bb_position)
                 sig = "NONE"
-            elif not orderbook_sampled or not isinstance(lob_bias_value, (int, float)) or lob_bias_value <= 0.0:
+            elif not orderbook_sampled or not isinstance(lob_bias_value, (int, float)):
                 quality_gate_pass = False
-                ctx_base["orderbook_bias_required"] = float(lob_bias_value or 0.0)
+                ctx_base["orderbook_bias_required"] = float(ORDERBOOK_BIAS_BUY_MIN)
+                sig = "NONE"
+            elif lob_bias_value < ORDERBOOK_BIAS_BUY_MIN:
+                quality_gate_pass = False
+                ctx_base["orderbook_bias_required"] = float(ORDERBOOK_BIAS_BUY_MIN)
                 sig = "NONE"
             elif supertrend_gate_enabled and supertrend_dir_last < 0.0:
                 ctx_base["supertrend_conflict"] = float(supertrend_dir_last)
                 sig = "NONE"
-            elif stoch_d_last >= 85.0:
+            elif stoch_d_last >= STOCHRSI_OVERBOUGHT:
                 ctx_base["stoch_rsi_overbought"] = float(stoch_d_last)
                 sig = "NONE"
-            elif bb_position >= 0.98:
+            elif bb_position >= BB_LONG_MAX:
                 ctx_base["bb_overextended"] = float(bb_position)
                 sig = "NONE"
         elif sig == "SELL":
@@ -6795,10 +6900,18 @@ class Strategy:
             elif supertrend_gate_enabled and supertrend_dir_last > 0.0:
                 ctx_base["supertrend_conflict"] = float(supertrend_dir_last)
                 sig = "NONE"
-            elif stoch_d_last <= 15.0:
+            elif not orderbook_sampled or not isinstance(lob_bias_value, (int, float)):
+                quality_gate_pass = False
+                ctx_base["orderbook_bias_required"] = float(ORDERBOOK_BIAS_SELL_MAX)
+                sig = "NONE"
+            elif lob_bias_value > ORDERBOOK_BIAS_SELL_MAX:
+                quality_gate_pass = False
+                ctx_base["orderbook_bias_required"] = float(ORDERBOOK_BIAS_SELL_MAX)
+                sig = "NONE"
+            elif stoch_d_last <= STOCHRSI_OVERSOLD:
                 ctx_base["stoch_rsi_oversold"] = float(stoch_d_last)
                 sig = "NONE"
-            elif bb_position <= 0.02:
+            elif bb_position <= BB_SHORT_MAX:
                 ctx_base["bb_overextended"] = float(bb_position)
                 sig = "NONE"
 
@@ -8155,6 +8268,12 @@ class Bot:
                 activity_logger=self._emit_ai_budget_alert,
                 leverage_lookup=self._symbol_leverage_cap,
             )
+            try:
+                self._strategy.playbook_manager = self.ai_advisor.playbook_manager
+            except Exception:
+                self._strategy.playbook_manager = None
+        else:
+            self._strategy.playbook_manager = None
 
     def _log_management_event(self, rec: Dict[str, Any], action: str, payload: Optional[Dict[str, Any]] = None) -> None:
         events = rec.setdefault("management_events", [])
