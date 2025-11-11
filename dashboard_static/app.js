@@ -88,6 +88,7 @@ const activePositionsModeLabel = document.getElementById('active-positions-mode'
 const activePositionsWrapper = document.getElementById('active-positions-wrapper');
 const activePositionsEmpty = document.getElementById('active-positions-empty');
 const activePositionsRows = document.getElementById('active-positions-rows');
+const activePositionsNotifications = document.getElementById('active-positions-notifications');
 const automationToggle = document.getElementById('automation-toggle');
 const automationIntervalInput = document.getElementById('automation-interval');
 const automationCountdown = document.getElementById('automation-countdown');
@@ -5268,7 +5269,7 @@ function formatManagementRelativeTime(ts) {
   return translate('active.management.daysAgo', '{{value}}d ago', { value: days });
 }
 
-function buildPositionManagementSummary(position) {
+function buildPositionManagementSummary(position, options = {}) {
   const events = normaliseManagementEvents(position);
   if (!events.length) return null;
 
@@ -5276,6 +5277,19 @@ function buildPositionManagementSummary(position) {
   const container = document.createElement('div');
   container.className = 'active-position-management';
   container.dataset.action = latest.action || '';
+
+  const { includeSymbol = false, symbolText = null } = options || {};
+  if (includeSymbol) {
+    const symbolLabel = document.createElement('span');
+    symbolLabel.className = 'active-position-management-symbol';
+    symbolLabel.textContent = symbolText || getPositionSymbol(position);
+    container.append(symbolLabel);
+
+    const arrow = document.createElement('span');
+    arrow.className = 'active-position-management-arrow';
+    arrow.textContent = '→';
+    container.append(arrow);
+  }
 
   const label = document.createElement('span');
   label.className = 'active-position-management-label';
@@ -5405,7 +5419,15 @@ function updateActivePositionsView() {
     }
   }
 
-  if (!hasRows) return;
+  if (!hasRows) {
+    if (activePositionsNotifications) {
+      activePositionsNotifications.innerHTML = '';
+      activePositionsNotifications.setAttribute('hidden', '');
+    }
+    return;
+  }
+
+  const notifications = [];
 
   sorted.forEach((position) => {
     const row = document.createElement('tr');
@@ -5441,9 +5463,12 @@ function updateActivePositionsView() {
         side: sideValue,
       }),
     );
-    const managementSummary = buildPositionManagementSummary(position);
+    const managementSummary = buildPositionManagementSummary(position, {
+      includeSymbol: true,
+      symbolText: symbolValue,
+    });
     if (managementSummary) {
-      symbolCell.append(managementSummary);
+      notifications.push(managementSummary);
     }
     applyActivePositionLabel(symbolCell, 'symbol');
     row.append(symbolCell);
@@ -5570,6 +5595,18 @@ function updateActivePositionsView() {
 
     activePositionsRows.append(row);
   });
+
+  if (activePositionsNotifications) {
+    activePositionsNotifications.innerHTML = '';
+    if (notifications.length) {
+      notifications.forEach((notification) => {
+        activePositionsNotifications.append(notification);
+      });
+      activePositionsNotifications.removeAttribute('hidden');
+    } else {
+      activePositionsNotifications.setAttribute('hidden', '');
+    }
+  }
 }
 
 function renderActivePositions(openPositions) {

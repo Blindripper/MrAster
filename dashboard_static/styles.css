@@ -1132,6 +1132,15 @@ body.paper-mode .hero-paper-toggle span {
   min-width: 168px;
 }
 
+.active-positions-notifications {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
 .active-positions-symbol-cell {
   display: flex;
   flex-direction: column;
@@ -1145,6 +1154,17 @@ body.paper-mode .hero-paper-toggle span {
   font-size: 0.72rem;
   color: var(--text-subtle);
   letter-spacing: 0.01em;
+}
+
+.active-position-management-symbol {
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.active-position-management-arrow {
+  color: rgba(199, 206, 225, 0.7);
 }
 
 .active-position-management-label {
