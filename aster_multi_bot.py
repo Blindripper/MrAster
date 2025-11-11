@@ -2866,6 +2866,8 @@ class AITradeAdvisor:
         throttle_key: str,
         fallback: Dict[str, Any],
         now: float,
+        *,
+        apply_grace_wait: bool = True,
     ) -> Tuple[Optional[str], Optional[Any]]:
         info = self._pending_requests.get(throttle_key)
         if not info:
@@ -2944,7 +2946,7 @@ class AITradeAdvisor:
                 response = None
             return "response", {"response": response, "info": info}
         dispatched_at = float(info.get("dispatched_at", now) or now)
-        if isinstance(future, Future) and self._plan_grace > 0:
+        if apply_grace_wait and isinstance(future, Future) and self._plan_grace > 0:
             if not future.done():
                 elapsed = max(0.0, now - dispatched_at)
                 remaining = self._plan_grace - elapsed
@@ -3106,7 +3108,12 @@ class AITradeAdvisor:
                     throttle_key,
                 )
                 fallback = {}
-            status, payload = self._process_pending_request(throttle_key, fallback, now)
+            status, payload = self._process_pending_request(
+                throttle_key,
+                fallback,
+                now,
+                apply_grace_wait=False,
+            )
             if status != "response":
                 continue
             bundle = payload or {}
