@@ -36,7 +36,7 @@ from urllib.parse import urlencode
 from typing import Dict, List, Tuple, Optional, Any, Callable, Sequence, Set
 
 from collections import OrderedDict, deque
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 
 import requests
 
@@ -110,6 +110,7 @@ AI_MIN_INTERVAL_SECONDS = float(os.getenv("ASTER_AI_MIN_INTERVAL_SECONDS", "8") 
 AI_CONCURRENCY = max(1, int(os.getenv("ASTER_AI_CONCURRENCY", "3") or 1))
 AI_GLOBAL_COOLDOWN = max(0.0, float(os.getenv("ASTER_AI_GLOBAL_COOLDOWN_SECONDS", "2.0") or 0.0))
 AI_PLAN_TIMEOUT = max(10.0, float(os.getenv("ASTER_AI_PLAN_TIMEOUT_SECONDS", "45") or 0.0))
+AI_PLAN_GRACE = max(0.0, float(os.getenv("ASTER_AI_PLAN_GRACE_SECONDS", "3.0") or 0.0))
 _default_pending_limit = max(4, AI_CONCURRENCY * 3)
 AI_PENDING_LIMIT = max(
     AI_CONCURRENCY,
@@ -1742,6 +1743,7 @@ class AITradeAdvisor:
         self._min_interval = max(0.0, AI_MIN_INTERVAL_SECONDS)
         self._last_global_request = 0.0
         self._plan_timeout = AI_PLAN_TIMEOUT
+        self._plan_grace = AI_PLAN_GRACE
         self._pending_limit = AI_PENDING_LIMIT
         self._plan_delivery_ttl = max(self._min_interval * 3.0, 90.0)
         self._executor: Optional[ThreadPoolExecutor] = None
@@ -2942,6 +2944,23 @@ class AITradeAdvisor:
                 response = None
             return "response", {"response": response, "info": info}
         dispatched_at = float(info.get("dispatched_at", now) or now)
+        if isinstance(future, Future) and self._plan_grace > 0:
+            if not future.done():
+                elapsed = max(0.0, now - dispatched_at)
+                remaining = self._plan_grace - elapsed
+                if remaining > 0:
+                    try:
+                        response = future.result(timeout=remaining)
+                    except TimeoutError:
+                        now = time.time()
+                        dispatched_at = float(info.get("dispatched_at", now) or now)
+                    except Exception as exc:
+                        log.debug("AI future exception for %s during grace wait: %s", throttle_key, exc)
+                        self._remove_pending_entry(throttle_key)
+                        return "response", {"response": None, "info": info}
+                    else:
+                        self._remove_pending_entry(throttle_key)
+                        return "response", {"response": response, "info": info}
         if (now - dispatched_at) > self._plan_timeout:
             try:
                 if isinstance(future, Future):
