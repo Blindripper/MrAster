@@ -247,6 +247,26 @@ class PlaybookProcessTests(unittest.TestCase):
         process = _build_playbook_process(activity)
         self.assertEqual(process, [])
 
+    def test_process_ignores_pending_cycles_without_request_id(self):
+        raw = [
+            {
+                "kind": "query",
+                "headline": "Playbook refresh requested",
+                "ts": "2024-07-01T09:05:00Z",
+            },
+            {
+                "kind": "query",
+                "headline": "Playbook refresh requested",
+                "ts": "2024-07-01T09:06:00Z",
+            },
+        ]
+
+        activity = _collect_playbook_activity(raw)
+        self.assertEqual(len(activity), 2)
+
+        process = _build_playbook_process(activity)
+        self.assertEqual(process, [])
+
     def test_process_coalesces_signal_entries_without_request_id(self):
         raw = [
             {

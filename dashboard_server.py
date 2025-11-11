@@ -1038,6 +1038,18 @@ def _build_playbook_process(
             )
         )
 
+        stages = [step.get("stage") for step in steps if step.get("stage")]
+        pending_cycle_marker = (
+            record.get("status") == "pending"
+            and not has_signal_payload
+            and not has_request_id
+            and stages
+            and all(stage == "requested" for stage in stages)
+        )
+
+        if pending_cycle_marker:
+            continue
+
         if not (has_request_id or has_meaningful_stage or has_signal_payload):
             continue
 
