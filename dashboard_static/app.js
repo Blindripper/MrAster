@@ -5787,17 +5787,39 @@ function applyLogReasonStyles(element, reason) {
   if (!palette) return;
   const base = palette.base || null;
   const accent = palette.accent || base;
-  const background =
-    palette.background || (base ? hexToRgba(base, palette.backgroundAlpha ?? 0.18) : '');
+  const backgroundStart =
+    palette.backgroundStart ||
+    (base ? hexToRgba(base, palette.backgroundStartAlpha ?? palette.backgroundAlpha ?? 0.24) : '');
+  const backgroundEnd =
+    palette.backgroundEnd ||
+    (accent ? hexToRgba(accent, palette.backgroundEndAlpha ?? 0.12) : '');
+  const background = palette.background || backgroundStart;
   const border = palette.border || (base ? hexToRgba(base, palette.borderAlpha ?? 0.36) : '');
-  const badge = palette.badge || (accent ? hexToRgba(accent, palette.badgeAlpha ?? 0.32) : '');
+  const badgeStart =
+    palette.badgeStart || (accent ? hexToRgba(accent, palette.badgeAlpha ?? 0.36) : '');
+  const badgeEnd =
+    palette.badgeEnd ||
+    (base ? hexToRgba(base, palette.badgeEndAlpha ?? palette.badgeAlpha ?? 0.22) : badgeStart);
+  const badge = palette.badge || badgeStart;
   const badgeText = palette.badgeText || palette.text || '';
 
+  if (backgroundStart) {
+    element.style.setProperty('--log-reason-bg-start', backgroundStart);
+  }
+  if (backgroundEnd) {
+    element.style.setProperty('--log-reason-bg-end', backgroundEnd);
+  }
   if (background) {
     element.style.setProperty('--log-reason-bg', background);
   }
   if (border) {
     element.style.setProperty('--log-reason-border', border);
+  }
+  if (badgeStart) {
+    element.style.setProperty('--log-reason-badge-start', badgeStart);
+  }
+  if (badgeEnd) {
+    element.style.setProperty('--log-reason-badge-end', badgeEnd);
   }
   if (badge) {
     element.style.setProperty('--log-reason-badge-bg', badge);
@@ -6213,6 +6235,16 @@ function appendLogLine({ line, level, ts }) {
   const derivedLevel = (parsed.level || normalizedLevel).toLowerCase();
   const el = document.createElement('div');
   el.className = `log-line ${derivedLevel}`.trim();
+  const rawMessage = (parsed.message || parsed.raw || '').toString();
+  if (/^\s*skip\b/i.test(rawMessage)) {
+    el.classList.add('is-skip');
+  }
+  if (/\b(entry|exit|trade)\b/i.test(rawMessage)) {
+    el.classList.add('is-trade');
+  }
+  if (/\bai(?:[_\s:-]|\b)/i.test(rawMessage)) {
+    el.classList.add('is-ai');
+  }
 
   const meta = document.createElement('div');
   meta.className = 'log-meta';
@@ -10759,6 +10791,25 @@ function appendCompactLog({ line, level, ts }) {
   const classificationClasses = getLogClassList(friendly);
   if (classificationClasses.length > 0) {
     el.classList.add(...classificationClasses);
+  }
+  const normalizedLabel = (friendly.label || '').toString().toLowerCase();
+  if (normalizedLabel.includes('skip')) {
+    el.classList.add('is-skip');
+  }
+  if (normalizedLabel.includes('ai')) {
+    el.classList.add('is-ai');
+  }
+  if (normalizedLabel.includes('trade')) {
+    el.classList.add('is-trade');
+  }
+  const reasonKey = normaliseLogReasonKey(friendly.reason);
+  if (reasonKey) {
+    if (reasonKey.includes('skip')) {
+      el.classList.add('is-skip');
+    }
+    if (reasonKey.startsWith('ai') || reasonKey.includes('policy')) {
+      el.classList.add('is-ai');
+    }
   }
   applyLogReasonStyles(el, friendly.reason);
 
