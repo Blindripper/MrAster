@@ -1486,12 +1486,7 @@ button:focus-visible {
   }
 
   .playbook-overview-body {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto;
-    grid-template-areas:
-      'summary'
-      'timeline'
-      'activity';
+    gap: 1.05rem;
   }
 }
 
@@ -1539,12 +1534,16 @@ button:focus-visible {
     min-height: 0;
     max-height: none;
     overflow: visible;
-    gap: 1.2rem;
-    padding: 1.2rem 1.35rem;
+    gap: 1.15rem;
+    padding: 1.15rem 1.3rem;
   }
 
-  .playbook-panel {
-    padding: 1.2rem 1.25rem;
+  .playbook-card-trigger {
+    padding: 1.2rem 1.4rem;
+  }
+
+  .playbook-card-content {
+    padding: 0 1.4rem 1.4rem;
   }
 
   .playbook-activity-feed {
@@ -2322,33 +2321,31 @@ body.ai-mode .playbook-overview {
   flex: 1 1 auto;
   min-height: 0;
   height: 100%;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: minmax(0, 1fr);
-  grid-template-areas: 'summary timeline activity';
+  display: flex;
+  flex-direction: column;
   gap: 1.2rem;
   padding: 1.25rem 1.45rem;
   border-radius: 1.35rem;
   background: rgba(12, 13, 20, 0.86);
   border: 1px solid rgba(245, 196, 107, 0.12);
   box-shadow: inset 0 1px 0 rgba(245, 196, 107, 0.05), 0 24px 60px rgba(5, 6, 8, 0.35);
-  overflow: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable both-edges;
 }
 
-.playbook-panel {
+.playbook-card {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  min-height: 0;
-  padding: 1.25rem 1.35rem;
   border-radius: 1.15rem;
   background: rgba(18, 19, 29, 0.92);
-  box-shadow: 0 18px 40px rgba(5, 6, 8, 0.4);
   border: 1px solid rgba(245, 196, 107, 0.14);
+  box-shadow: 0 18px 40px rgba(5, 6, 8, 0.4);
+  overflow: hidden;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
-.playbook-panel::before {
+.playbook-card::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -2363,48 +2360,104 @@ body.ai-mode .playbook-overview {
   opacity: 0.65;
 }
 
-.playbook-panel-body {
+.playbook-card.is-expanded {
+  border-color: rgba(245, 196, 107, 0.32);
+  box-shadow: 0 22px 54px rgba(5, 6, 8, 0.45);
+}
+
+.playbook-card-trigger {
   position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  padding: 1.35rem 1.6rem;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.playbook-card-trigger:focus-visible {
+  outline: 2px solid rgba(245, 196, 107, 0.65);
+  outline-offset: 3px;
+}
+
+.playbook-card-summary {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  overflow-y: auto;
-  padding-right: 0.35rem;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(245, 196, 107, 0.25) transparent;
+  gap: 0.45rem;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-.playbook-panel-body::-webkit-scrollbar {
-  width: 8px;
+.playbook-card-date {
+  font-size: 0.85rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
-.playbook-panel-body::-webkit-scrollbar-thumb {
+.playbook-card-name {
+  font-size: clamp(1.05rem, 2vw, 1.2rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.playbook-card-chevron {
+  flex-shrink: 0;
+  width: 1.85rem;
+  height: 1.85rem;
   border-radius: 999px;
-  background: rgba(245, 196, 107, 0.22);
+  background: rgba(245, 196, 107, 0.12);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  transition: transform 180ms ease;
 }
 
-.playbook-summary-section {
-  grid-area: summary;
+.playbook-card-chevron::before {
+  content: '';
+  width: 0.45rem;
+  height: 0.45rem;
+  border: solid currentColor;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  margin-left: 2px;
 }
 
-.playbook-process-section {
-  grid-area: timeline;
+.playbook-card-trigger[aria-expanded='true'] .playbook-card-chevron {
+  transform: rotate(180deg);
 }
 
-.playbook-activity-section {
-  grid-area: activity;
+.playbook-card-content {
+  position: relative;
+  padding: 0 1.6rem 1.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
 }
 
-.playbook-panel-header {
+.playbook-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.playbook-section-header {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
 }
 
-.playbook-panel-header h3 {
+.playbook-section-header h3 {
   margin: 0;
   font-size: 1.15rem;
   font-weight: 600;
@@ -2412,11 +2465,18 @@ body.ai-mode .playbook-overview {
   color: var(--text-primary);
 }
 
-.playbook-panel-subtitle {
+.playbook-section-subtitle {
   margin: 0;
   color: var(--text-muted);
   font-size: 0.92rem;
   line-height: 1.5;
+}
+
+.playbook-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 0;
 }
 
 .trades .ai-hint {
