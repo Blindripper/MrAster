@@ -1159,6 +1159,55 @@ def clamp(value: float, lower: float, upper: float) -> float:
     return max(lower, min(upper, value))
 
 
+def _apply_playbook_focus_adjustments(
+    ctx: Dict[str, Any],
+    side: str,
+    size_factor: float,
+    sl_factor: float,
+    tp_factor: float,
+) -> Tuple[float, float, float]:
+    """Blend textual playbook focus hints into risk sizing parameters."""
+
+    try:
+        focus_side_bias = float(ctx.get("playbook_focus_side_bias", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        focus_side_bias = 0.0
+    try:
+        focus_risk_bias = float(ctx.get("playbook_focus_risk_bias", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        focus_risk_bias = 0.0
+
+    side_multiplier = 1.0
+    risk_size_multiplier = 1.0
+    sl_multiplier = 1.0
+    tp_multiplier = 1.0
+
+    side_token = str(side or "").upper()
+    if focus_side_bias and side_token in {"BUY", "SELL"}:
+        direction = 1.0 if side_token == "BUY" else -1.0
+        adjustment = focus_side_bias * direction * 0.35
+        side_multiplier = clamp(1.0 + adjustment, 0.4, 1.8)
+        size_factor *= side_multiplier
+        if abs(side_multiplier - 1.0) >= 1e-6:
+            ctx["playbook_focus_side_multiplier"] = float(side_multiplier)
+
+    if focus_risk_bias:
+        risk_size_multiplier = clamp(1.0 - focus_risk_bias * 0.35, 0.3, 1.7)
+        sl_multiplier = clamp(1.0 + focus_risk_bias * 0.35, 0.6, 2.5)
+        tp_multiplier = clamp(1.0 - focus_risk_bias * 0.4, 0.4, 3.0)
+        size_factor *= risk_size_multiplier
+        sl_factor *= sl_multiplier
+        tp_factor *= tp_multiplier
+        if abs(risk_size_multiplier - 1.0) >= 1e-6:
+            ctx["playbook_focus_risk_multiplier"] = float(risk_size_multiplier)
+        if abs(sl_multiplier - 1.0) >= 1e-6:
+            ctx["playbook_focus_sl_multiplier"] = float(sl_multiplier)
+        if abs(tp_multiplier - 1.0) >= 1e-6:
+            ctx["playbook_focus_tp_multiplier"] = float(tp_multiplier)
+
+    return size_factor, sl_factor, tp_factor
+
+
 def _confidence_size_target(confidence: float) -> float:
     conf = max(0.0, min(1.0, float(confidence)))
     span = max(0.0, CONFIDENCE_SIZING_MAX - CONFIDENCE_SIZING_MIN)
@@ -10648,6 +10697,17 @@ class Bot:
                     playbook_tp_factor = float(active_playbook.get("tp_bias", 1.0))
                 except (TypeError, ValueError):
                     playbook_tp_factor = 1.0
+                (
+                    playbook_size_factor,
+                    playbook_sl_factor,
+                    playbook_tp_factor,
+                ) = _apply_playbook_focus_adjustments(
+                    ctx,
+                    sig,
+                    playbook_size_factor,
+                    playbook_sl_factor,
+                    playbook_tp_factor,
+                )
         structured_size_mult = 1.0
         structured_size_cap: Optional[float] = None
         structured_size_floor: Optional[float] = None
