@@ -11,6 +11,7 @@ import pytest
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from ai_extensions import PlaybookManager
+from aster_multi_bot import _apply_playbook_focus_adjustments
 
 
 def _manager():
@@ -157,3 +158,26 @@ def test_playbook_context_surfaces_structured_features_and_biases():
     assert any(rc.startswith("Strictly avoid") for rc in ctx["playbook_strategy_risk_controls"])
     assert ctx["playbook_notes"].startswith("Market is broadly constructive")
     assert ctx["playbook_request_id"] == "playbook::playbook:sample"
+    assert ctx["playbook_focus_side_bias"] > 0.3
+    assert ctx["playbook_focus_risk_bias"] > 0.45
+    assert ctx["playbook_focus_features"]["breadth_green"] > 0.5
+    assert ctx["playbook_focus_feature_breadth_green"] > 0.5
+
+
+def test_playbook_focus_adjustment_helper_applies_side_and_risk_bias():
+    ctx = {"playbook_focus_side_bias": 0.8}
+    size, sl, tp = _apply_playbook_focus_adjustments(dict(ctx), "BUY", 1.0, 1.0, 1.0)
+    assert size > 1.0
+    assert sl == pytest.approx(1.0)
+    assert tp == pytest.approx(1.0)
+
+    ctx_risk = {"playbook_focus_risk_bias": 0.6}
+    size_r, sl_r, tp_r = _apply_playbook_focus_adjustments(ctx_risk, "SELL", 1.0, 1.0, 1.0)
+    assert size_r < 1.0
+    assert sl_r > 1.0
+    assert tp_r < 1.0
+    assert ctx_risk["playbook_focus_sl_multiplier"] > 1.0
+
+    ctx_short = {"playbook_focus_side_bias": -0.9}
+    size_s, _, _ = _apply_playbook_focus_adjustments(dict(ctx_short), "SELL", 1.0, 1.0, 1.0)
+    assert size_s > 1.0

@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 import re
 import time
-from typing import Any, Callable, Dict, Iterable, List, Optional, Set
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 _ACTION_FOCUS_STOPWORDS: Set[str] = {
     "and",
@@ -86,6 +86,88 @@ _ACTION_FOCUS_PRIORITY_TERMS: Set[str] = {
 }
 
 _ACTION_FOCUS_PATTERN = re.compile(r"[A-Za-z0-9_%]+")
+
+_FOCUS_SIDE_KEYWORDS: Dict[str, float] = {
+    "buy": 1.0,
+    "long": 0.9,
+    "overweight": 0.8,
+    "accumulate": 0.7,
+    "expand": 0.6,
+    "increase": 0.6,
+    "add": 0.5,
+    "sell": -1.0,
+    "short": -1.0,
+    "reduce": -0.7,
+    "trim": -0.7,
+    "cut": -0.7,
+    "hedge": -0.5,
+    "defend": -0.4,
+    "protect": -0.4,
+}
+
+_FOCUS_RISK_KEYWORDS: Dict[str, float] = {
+    "reduce": 0.7,
+    "trim": 0.6,
+    "tighten": 0.65,
+    "hedge": 0.6,
+    "protect": 0.65,
+    "defend": 0.55,
+    "avoid": 0.75,
+    "block": 0.8,
+    "warning": 0.7,
+    "risk": 0.55,
+    "monitor": 0.35,
+    "limit": 0.45,
+    "cap": 0.45,
+    "no": 0.4,
+    "halt": 0.85,
+    "increase": -0.45,
+    "expand": -0.4,
+    "add": -0.35,
+    "aggressive": -0.5,
+}
+
+_RISK_CONTROL_KEYWORDS: Dict[str, float] = {
+    "avoid": 0.75,
+    "block": 0.8,
+    "cap": 0.5,
+    "limit": 0.45,
+    "reduce": 0.7,
+    "trim": 0.6,
+    "tighten": 0.6,
+    "hedge": 0.55,
+    "protect": 0.6,
+    "defend": 0.55,
+    "monitor": 0.35,
+    "warning": 0.7,
+    "risk": 0.55,
+    "stop": 0.5,
+    "suspend": 0.75,
+    "halt": 0.85,
+    "aggressive": -0.5,
+    "increase": -0.45,
+    "expand": -0.4,
+    "accelerate": -0.45,
+    "add": -0.35,
+}
+
+_FOCUS_FEATURE_BASE_TERMS: Set[str] = {
+    "adx",
+    "atr",
+    "trend",
+    "range",
+    "breadth",
+    "hype",
+    "volatility",
+    "momentum",
+    "liquidity",
+    "event",
+    "risk",
+    "spread",
+    "rsi",
+    "stoch",
+    "ema",
+}
 
 
 def _extract_action_focus_terms(texts: Iterable[Optional[str]], *, limit: int = 6) -> List[str]:
@@ -807,6 +889,82 @@ class PlaybookManager:
         return adjustments
 
     @classmethod
+    def _derive_focus_hints(
+        cls,
+        focus_terms: Iterable[str],
+        risk_controls: Iterable[str],
+    ) -> Tuple[float, float, Dict[str, float]]:
+        side_samples: List[float] = []
+        risk_samples: List[float] = []
+        feature_bias: Dict[str, float] = {}
+
+        def _maybe_record_feature(token: str, weight: float) -> None:
+            slug = cls._normalize_feature_key(token)
+            if not slug or slug in feature_bias:
+                return
+            include = False
+            if "_" in token or any(ch.isdigit() for ch in token):
+                include = True
+            else:
+                base = slug.split("_", 1)[0]
+                if base in _FOCUS_FEATURE_BASE_TERMS:
+                    include = True
+            if not include:
+                return
+            feature_bias[slug] = float(max(-1.0, min(1.0, weight if weight else 1.0)))
+
+        def _ingest(token: str, *, from_risk: bool = False) -> None:
+            if not token:
+                return
+            if token in _ACTION_FOCUS_STOPWORDS:
+                return
+            side_weight = _FOCUS_SIDE_KEYWORDS.get(token)
+            if side_weight is not None:
+                side_samples.append(float(side_weight))
+            risk_weight = _FOCUS_RISK_KEYWORDS.get(token)
+            if risk_weight is not None:
+                risk_samples.append(float(risk_weight))
+            rc_weight = None
+            if from_risk:
+                rc_weight = _RISK_CONTROL_KEYWORDS.get(token)
+                if rc_weight is not None:
+                    risk_samples.append(float(rc_weight))
+            weight = 0.0
+            if risk_weight is not None:
+                weight = float(risk_weight)
+            elif side_weight is not None:
+                weight = float(side_weight)
+            elif rc_weight is not None:
+                weight = float(rc_weight)
+            _maybe_record_feature(token, weight)
+
+        for term in focus_terms or ():
+            if not isinstance(term, str):
+                continue
+            token = term.strip().lower()
+            if not token:
+                continue
+            _ingest(token)
+
+        for entry in risk_controls or ():
+            if not isinstance(entry, str):
+                continue
+            for raw in _ACTION_FOCUS_PATTERN.findall(entry.lower()):
+                if len(raw) < 3:
+                    continue
+                _ingest(raw, from_risk=True)
+
+        if side_samples:
+            side_bias = float(max(-1.0, min(1.0, sum(side_samples) / len(side_samples))))
+        else:
+            side_bias = 0.0
+        if risk_samples:
+            risk_bias = float(max(-1.0, min(1.0, sum(risk_samples) / len(risk_samples))))
+        else:
+            risk_bias = 0.0
+        return side_bias, risk_bias, feature_bias
+
+    @classmethod
     def _derive_risk_bias(
         cls, payload: Dict[str, Any], *, default: float = 1.0
     ) -> float:
@@ -1110,6 +1268,7 @@ class PlaybookManager:
                 ctx["playbook_strategy_signals"] = sanitized_signals[:6]
             actions = strategy.get("actions")
             sanitized_actions: List[Dict[str, Any]] = []
+            aggregated_terms: List[str] = []
             if isinstance(actions, list):
                 for action in actions:
                     if not isinstance(action, dict):
@@ -1135,7 +1294,6 @@ class PlaybookManager:
                         break
             if sanitized_actions:
                 ctx["playbook_strategy_actions"] = sanitized_actions
-                aggregated_terms: List[str] = []
                 aggregated_seen: Set[str] = set()
                 for idx, action in enumerate(sanitized_actions[:3], start=1):
                     base_key = f"playbook_action_{idx}"
@@ -1168,6 +1326,18 @@ class PlaybookManager:
                         break
             if sanitized_rc:
                 ctx["playbook_strategy_risk_controls"] = sanitized_rc
+            focus_side_bias, focus_risk_bias, focus_features = self._derive_focus_hints(
+                aggregated_terms,
+                sanitized_rc,
+            )
+            if abs(focus_side_bias) >= 1e-6:
+                ctx["playbook_focus_side_bias"] = focus_side_bias
+            if abs(focus_risk_bias) >= 1e-6:
+                ctx["playbook_focus_risk_bias"] = focus_risk_bias
+            if focus_features:
+                ctx["playbook_focus_features"] = dict(focus_features)
+                for slug, weight in focus_features.items():
+                    ctx.setdefault(f"playbook_focus_feature_{slug}", weight)
         structured_directives: List[Dict[str, Any]] = []
         actions_structured = active.get("structured_actions")
         if isinstance(actions_structured, list):

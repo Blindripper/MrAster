@@ -56,6 +56,8 @@ FEATURES = (
     "tuning_confidence",
     "playbook_risk_bias",
     "playbook_confidence",
+    "playbook_focus_side_bias",
+    "playbook_focus_risk_bias",
     "playbook_breakout_bias",
     "playbook_range_bias",
     "playbook_trend_bias",
