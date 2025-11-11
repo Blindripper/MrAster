@@ -65,9 +65,20 @@ from brackets_guard import BracketGuard, replace_tp_for_open_position as _bg_rep
 # ========= Logging =========
 LOGFMT = "%(asctime)s │ %(levelname)-5s │ %(name)s │ %(message)s"
 DATEFMT = "%Y-%m-%d %H:%M:%S"
+_AI_DEBUG_STATE_RAW = os.getenv("ASTER_AI_DEBUG_STATE", "")
+AI_DEBUG_STATE = str(_AI_DEBUG_STATE_RAW or "").strip().lower() in {"1", "true", "yes", "on", "debug"}
 _level = os.getenv("ASTER_LOGLEVEL", "INFO").upper()
+if AI_DEBUG_STATE and _level != "DEBUG":
+    _level = "DEBUG"
 logging.basicConfig(level=getattr(logging, _level, logging.INFO), format=LOGFMT, datefmt=DATEFMT, force=True)
 log = logging.getLogger("aster")
+if AI_DEBUG_STATE:
+    root_logger = logging.getLogger()
+    if root_logger.level > logging.DEBUG:
+        root_logger.setLevel(logging.DEBUG)
+    if log.level > logging.DEBUG:
+        log.setLevel(logging.DEBUG)
+    log.debug("AI debug state logging enabled via ASTER_AI_DEBUG_STATE")
 
 # ========= ENV / Defaults =========
 BASE = os.getenv("ASTER_EXCHANGE_BASE", "https://fapi.asterdex.com").rstrip("/")
@@ -1616,6 +1627,10 @@ class AITradeAdvisor:
         self.budget = budget
         self.state = state if isinstance(state, dict) else {}
         self.enabled = bool(enabled and self.api_key)
+        if isinstance(self.state, dict):
+            pending_bucket = self.state.get("ai_pending_requests")
+            if not isinstance(pending_bucket, list):
+                self.state["ai_pending_requests"] = []
         self._temperature_supported = True
         self._temperature_override = self._resolve_temperature()
         self._cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
@@ -1646,6 +1661,7 @@ class AITradeAdvisor:
         )
         self.budget_learner = BudgetLearner(state_bucket)
         self._playbook_request_meta: Dict[str, Dict[str, Any]] = {}
+        self._sync_pending_state()
 
     def set_leverage_lookup(self, lookup: Optional[Callable[[str], float]]) -> None:
         self._leverage_lookup = lookup
@@ -2439,6 +2455,7 @@ class AITradeAdvisor:
         if not self._pending_order:
             return
         stale: List[str] = []
+        changed = False
         for key in list(self._pending_order):
             info = self._pending_requests.get(key)
             if not info:
@@ -2451,11 +2468,14 @@ class AITradeAdvisor:
             if info.get("cancelled"):
                 stale.append(key)
         for key in stale:
-            self._pending_requests.pop(key, None)
+            if self._pending_requests.pop(key, None) is not None:
+                changed = True
             try:
                 self._pending_order.remove(key)
             except ValueError:
                 pass
+        if changed:
+            self._sync_pending_state()
 
     def _has_pending_capacity(self, key: str) -> bool:
         self._prune_pending_queue()
@@ -2478,11 +2498,74 @@ class AITradeAdvisor:
         self._pending_order.append(key)
 
     def _remove_pending_entry(self, key: str) -> None:
-        self._pending_requests.pop(key, None)
+        removed = self._pending_requests.pop(key, None)
         try:
             self._pending_order.remove(key)
         except ValueError:
             pass
+        if removed is not None:
+            self._sync_pending_state()
+
+    def _pending_state_entry(self, key: str, info: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if not isinstance(info, dict):
+            return None
+        entry: Dict[str, Any] = {"key": str(key)}
+        kind = info.get("kind")
+        if kind is not None:
+            entry["kind"] = str(kind)
+        request_id = info.get("request_id")
+        if request_id:
+            entry["request_id"] = str(request_id)
+        meta = info.get("request_meta")
+        if isinstance(meta, dict):
+            symbol = meta.get("symbol")
+            if symbol:
+                entry["symbol"] = str(symbol)
+        for field in ("queued_at", "ready_after", "dispatched_at", "estimate"):
+            value = info.get(field)
+            if value is None:
+                continue
+            try:
+                entry[field] = float(value)
+            except Exception:
+                continue
+        note = info.get("note")
+        if isinstance(note, str) and note.strip():
+            entry["note"] = note.strip()
+        if info.get("cancelled"):
+            status = "cancelled"
+        else:
+            future = info.get("future")
+            if isinstance(future, Future):
+                status = "inflight" if not future.done() else "complete"
+            else:
+                status = "queued"
+        entry["status"] = status
+        if info.get("notified"):
+            entry["notified"] = True
+        return entry
+
+    def _sync_pending_state(self) -> None:
+        if not isinstance(self.state, dict):
+            return
+        snapshot: List[Dict[str, Any]] = []
+        seen: Set[str] = set()
+        ordered = list(self._pending_order) if self._pending_order else []
+        for key in ordered:
+            info = self._pending_requests.get(key)
+            if not info or key in seen:
+                continue
+            entry = self._pending_state_entry(key, info)
+            if entry:
+                snapshot.append(entry)
+            seen.add(key)
+        for key, info in self._pending_requests.items():
+            if key in seen:
+                continue
+            entry = self._pending_state_entry(key, info)
+            if entry:
+                snapshot.append(entry)
+        self.state["ai_pending_requests"] = snapshot
 
     def _active_pending(self) -> int:
         count = 0
@@ -2531,6 +2614,7 @@ class AITradeAdvisor:
         if info.get("notified"):
             return False
         info["notified"] = True
+        self._sync_pending_state()
         return True
 
     def should_log_pending(self, plan: Optional[Dict[str, Any]]) -> bool:
@@ -2606,6 +2690,7 @@ class AITradeAdvisor:
         info = self._pending_requests.get(throttle_key)
         if not info:
             return None, None
+        changed = False
         if not isinstance(fallback, dict):
             log.debug(
                 "pending request %s provided non-dict fallback (%s); coercing to empty plan",
@@ -2648,12 +2733,14 @@ class AITradeAdvisor:
                         self._last_global_request = now
                         note = "Waiting for AI plan response"
                         self._attach_future_callback(throttle_key, future)
+                        changed = True
                     else:
                         self._remove_pending_entry(throttle_key)
                         self._recent_plan_store(throttle_key, fallback, now)
                         return "fallback", fallback
                 else:
                     info["ready_after"] = now + max(0.5, AI_GLOBAL_COOLDOWN or 0.5)
+                    changed = True
             stub = self._pending_stub(
                 fallback,
                 f"{kind}_pending",
@@ -2663,6 +2750,9 @@ class AITradeAdvisor:
             )
             if stub.get("request_id") and not info.get("request_id"):
                 info["request_id"] = stub["request_id"]
+                changed = True
+            if changed:
+                self._sync_pending_state()
             return "pending", stub
         if isinstance(future, Future) and future.done():
             self._remove_pending_entry(throttle_key)
@@ -2701,6 +2791,9 @@ class AITradeAdvisor:
         )
         if stub.get("request_id") and not info.get("request_id"):
             info["request_id"] = stub["request_id"]
+            changed = True
+        if changed:
+            self._sync_pending_state()
         return "pending", stub
 
     def _finalize_response(
@@ -3906,6 +3999,7 @@ class AITradeAdvisor:
             pending_info["request_id"] = request_id
             self._pending_requests[throttle_key] = pending_info
             self._register_pending_key(throttle_key)
+            self._sync_pending_state()
             return stub
 
         if not self._has_pending_capacity(throttle_key):
@@ -3946,6 +4040,7 @@ class AITradeAdvisor:
         self._register_pending_key(throttle_key)
         self._last_global_request = now
         self._attach_future_callback(throttle_key, future)
+        self._sync_pending_state()
         stub = self._pending_stub(
             fallback,
             "plan_pending",
@@ -4230,6 +4325,7 @@ class AITradeAdvisor:
             pending_info["request_id"] = request_id
             self._pending_requests[throttle_key] = pending_info
             self._register_pending_key(throttle_key)
+            self._sync_pending_state()
             return stub
 
         if not self._has_pending_capacity(throttle_key):
@@ -4270,6 +4366,7 @@ class AITradeAdvisor:
         self._register_pending_key(throttle_key)
         self._last_global_request = now
         self._attach_future_callback(throttle_key, future)
+        self._sync_pending_state()
         stub = self._pending_stub(
             fallback,
             "trend_pending",
@@ -8157,6 +8254,10 @@ class Bot:
         self.state.setdefault("ai_trade_proposals", [])
         self.state.setdefault("manual_trade_requests", [])
         self.state.setdefault("manual_trade_history", [])
+        pending_state = self.state.get("ai_pending_requests")
+        if not isinstance(pending_state, list):
+            self.state["ai_pending_requests"] = []
+        self._last_ai_debug_state: Optional[str] = None
         try:
             self.risk.attach_state(self.state)
         except Exception:
@@ -8274,6 +8375,7 @@ class Bot:
                 self._strategy.playbook_manager = None
         else:
             self._strategy.playbook_manager = None
+        self._maybe_emit_ai_debug_state("startup")
 
     def _log_management_event(self, rec: Dict[str, Any], action: str, payload: Optional[Dict[str, Any]] = None) -> None:
         events = rec.setdefault("management_events", [])
@@ -8704,6 +8806,61 @@ class Bot:
                 "Autonomous requests are paused until the next reset."
             )
         self._log_ai_activity(kind, headline, body=body, data=payload, force=True)
+
+    def _maybe_emit_ai_debug_state(self, stage: str) -> None:
+        if not AI_DEBUG_STATE or not isinstance(self.state, dict):
+            return
+        snapshot: Dict[str, Any] = {}
+        playbook_state = self.state.get("ai_playbook")
+        if isinstance(playbook_state, dict):
+            active = playbook_state.get("active")
+            if isinstance(active, dict):
+                summary: Dict[str, Any] = {
+                    "mode": active.get("mode"),
+                    "bias": active.get("bias"),
+                    "sl_bias": active.get("sl_bias"),
+                    "tp_bias": active.get("tp_bias"),
+                    "size_bias": active.get("size_bias"),
+                }
+                updated = playbook_state.get("updated") or playbook_state.get("updated_at")
+                if updated is not None:
+                    summary["updated"] = updated
+                features = active.get("features") if isinstance(active.get("features"), dict) else None
+                if isinstance(features, dict):
+                    ordered: List[Tuple[str, float]] = []
+                    for key, value in features.items():
+                        try:
+                            ordered.append((str(key), float(value)))
+                        except (TypeError, ValueError):
+                            continue
+                    ordered.sort(key=lambda item: abs(item[1]), reverse=True)
+                    summary["focus"] = [f"{key}={val:+.2f}" for key, val in ordered[:3] if abs(val) >= 0.05]
+                snapshot["ai_playbook"] = summary
+            else:
+                snapshot["ai_playbook"] = playbook_state
+        else:
+            snapshot["ai_playbook"] = playbook_state
+        activity = self.state.get("ai_activity")
+        if isinstance(activity, list) and activity:
+            tail = activity[-3:] if len(activity) > 3 else list(activity)
+            snapshot["ai_activity"] = {"total": len(activity), "latest": tail}
+        else:
+            snapshot["ai_activity"] = {"total": 0, "latest": []}
+        pending = self.state.get("ai_pending_requests")
+        if isinstance(pending, list) and pending:
+            snapshot["ai_pending_count"] = len(pending)
+            snapshot["ai_pending_requests"] = pending[:10]
+        else:
+            snapshot["ai_pending_count"] = 0
+            snapshot["ai_pending_requests"] = []
+        try:
+            payload = json.dumps(snapshot, indent=2, sort_keys=True, default=lambda o: str(o))
+        except Exception:
+            payload = str(snapshot)
+        if payload == getattr(self, "_last_ai_debug_state", None):
+            return
+        self._last_ai_debug_state = payload
+        log.debug("AI debug state [%s]:\n%s", stage, payload)
 
     def _enqueue_ai_priority(self, symbol: str, side: Optional[str]) -> None:
         sym = str(symbol or "").upper()
@@ -10650,6 +10807,7 @@ class Bot:
         cycle_index += 1
         self.state["cycle_index"] = cycle_index
         self._current_cycle = cycle_index
+        self._maybe_emit_ai_debug_state(f"cycle_start#{cycle_index}")
         cooldown_map = self.state.get("quote_volume_cooldown")
         if not isinstance(cooldown_map, dict):
             cooldown_map = {}
@@ -10931,6 +11089,7 @@ class Bot:
             self._quote_volume_cooldown_dirty = False
             self._universe_state_dirty = False
             self._management_dirty = False
+        self._maybe_emit_ai_debug_state(f"cycle_end#{cycle_index}")
 
     def run(self, loop: bool = True):
         log.info("Starting bot (mode=%s, loop=%s)", "PAPER" if PAPER else "LIVE", loop)
