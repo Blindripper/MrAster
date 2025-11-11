@@ -390,48 +390,90 @@
           </div>
         </div>
         <div class="playbook-overview-body">
-          <section
-            class="playbook-panel playbook-summary-section"
-            aria-labelledby="playbook-summary-title"
-          >
-            <div class="playbook-panel-header">
-              <h3 id="playbook-summary-title" data-i18n="playbook.summary.title">Active regime snapshot</h3>
-              <p class="playbook-panel-subtitle" data-i18n="playbook.summary.subtitle">
-                Bias multipliers, focus signals, and the current strategy in play.
-              </p>
+          <article class="playbook-card" data-playbook-card="summary">
+            <button
+              class="playbook-card-trigger"
+              type="button"
+              data-playbook-card-trigger="summary"
+              aria-expanded="false"
+              aria-controls="playbook-summary-card"
+            >
+              <div class="playbook-card-summary">
+                <span class="playbook-card-date" id="playbook-summary-date">—</span>
+                <span class="playbook-card-name" id="playbook-summary-playbook">—</span>
+              </div>
+              <span class="playbook-card-chevron" aria-hidden="true"></span>
+            </button>
+            <div class="playbook-card-content" id="playbook-summary-card" hidden>
+              <section class="playbook-section playbook-summary-section" aria-labelledby="playbook-summary-title">
+                <div class="playbook-section-header">
+                  <h3 id="playbook-summary-title" data-i18n="playbook.summary.title">Active regime snapshot</h3>
+                  <p class="playbook-section-subtitle" data-i18n="playbook.summary.subtitle">
+                    Bias multipliers, focus signals, and the current strategy in play.
+                  </p>
+                </div>
+                <div class="playbook-section-body">
+                  <div class="playbook-summary" id="playbook-summary"></div>
+                </div>
+              </section>
             </div>
-            <div class="playbook-panel-body">
-              <div class="playbook-summary" id="playbook-summary"></div>
+          </article>
+          <article class="playbook-card" data-playbook-card="process">
+            <button
+              class="playbook-card-trigger"
+              type="button"
+              data-playbook-card-trigger="process"
+              aria-expanded="false"
+              aria-controls="playbook-process-card"
+            >
+              <div class="playbook-card-summary">
+                <span class="playbook-card-date" id="playbook-process-date">—</span>
+                <span class="playbook-card-name" id="playbook-process-playbook">—</span>
+              </div>
+              <span class="playbook-card-chevron" aria-hidden="true"></span>
+            </button>
+            <div class="playbook-card-content" id="playbook-process-card" hidden>
+              <section class="playbook-section playbook-process-section" aria-labelledby="playbook-process-title">
+                <div class="playbook-section-header">
+                  <h3 id="playbook-process-title" data-i18n="playbook.process.title">Playbook refresh timeline</h3>
+                  <p class="playbook-section-subtitle" data-i18n="playbook.process.subtitle">
+                    Follow each stage in the refresh pipeline — from the initial request to the final applied update.
+                  </p>
+                </div>
+                <div class="playbook-section-body">
+                  <div class="playbook-process-feed" id="playbook-process" role="list"></div>
+                </div>
+              </section>
             </div>
-          </section>
-          <section
-            class="playbook-panel playbook-process-section"
-            aria-labelledby="playbook-process-title"
-          >
-            <div class="playbook-panel-header">
-              <h3 id="playbook-process-title" data-i18n="playbook.process.title">Playbook refresh timeline</h3>
-              <p class="playbook-panel-subtitle" data-i18n="playbook.process.subtitle">
-                Follow each stage in the refresh pipeline — from the initial request to the final applied update.
-              </p>
+          </article>
+          <article class="playbook-card" data-playbook-card="activity">
+            <button
+              class="playbook-card-trigger"
+              type="button"
+              data-playbook-card-trigger="activity"
+              aria-expanded="false"
+              aria-controls="playbook-activity-card"
+            >
+              <div class="playbook-card-summary">
+                <span class="playbook-card-date" id="playbook-activity-date">—</span>
+                <span class="playbook-card-name" id="playbook-activity-playbook">—</span>
+              </div>
+              <span class="playbook-card-chevron" aria-hidden="true"></span>
+            </button>
+            <div class="playbook-card-content" id="playbook-activity-card" hidden>
+              <section class="playbook-section playbook-activity-section" aria-labelledby="playbook-activity-title">
+                <div class="playbook-section-header">
+                  <h3 id="playbook-activity-title" data-i18n="playbook.activity.title">Playbook communications</h3>
+                  <p class="playbook-section-subtitle" data-i18n="playbook.activity.subtitle">
+                    Requests, updates, and diagnostics between the bot and the AI.
+                  </p>
+                </div>
+                <div class="playbook-section-body">
+                  <div class="playbook-activity-feed" id="playbook-activity" role="log" aria-live="polite"></div>
+                </div>
+              </section>
             </div>
-            <div class="playbook-panel-body">
-              <div class="playbook-process-feed" id="playbook-process" role="list"></div>
-            </div>
-          </section>
-          <section
-            class="playbook-panel playbook-activity-section"
-            aria-labelledby="playbook-activity-title"
-          >
-            <div class="playbook-panel-header">
-              <h3 id="playbook-activity-title" data-i18n="playbook.activity.title">Playbook communications</h3>
-              <p class="playbook-panel-subtitle" data-i18n="playbook.activity.subtitle">
-                Requests, updates, and diagnostics between the bot and the AI.
-              </p>
-            </div>
-            <div class="playbook-panel-body">
-              <div class="playbook-activity-feed" id="playbook-activity" role="log" aria-live="polite"></div>
-            </div>
-          </section>
+          </article>
         </div>
       </section>
 
