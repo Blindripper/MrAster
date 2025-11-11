@@ -2479,6 +2479,238 @@ body.ai-mode .playbook-overview {
   min-height: 0;
 }
 
+.playbook-request-section .playbook-section-body {
+  gap: 1.1rem;
+}
+
+.playbook-request-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.playbook-request-empty {
+  padding: 1.2rem 1.1rem;
+  border-radius: 0.9rem;
+  background: rgba(245, 196, 107, 0.08);
+  border: 1px solid rgba(245, 196, 107, 0.12);
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  text-align: center;
+}
+
+.playbook-request-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  width: 100%;
+  padding: 1.2rem 1.4rem;
+  border-radius: 1.1rem;
+  border: 1px solid rgba(245, 196, 107, 0.16);
+  background: rgba(18, 19, 29, 0.92);
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.playbook-request-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid rgba(245, 196, 107, 0.12);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+.playbook-request-card:hover,
+.playbook-request-card:focus-visible {
+  border-color: rgba(245, 196, 107, 0.32);
+  box-shadow: 0 20px 46px rgba(5, 6, 8, 0.42);
+  transform: translateY(-1px);
+}
+
+.playbook-request-card:hover::after,
+.playbook-request-card:focus-visible::after {
+  opacity: 1;
+}
+
+.playbook-request-card:focus-visible {
+  outline: 2px solid rgba(245, 196, 107, 0.6);
+  outline-offset: 4px;
+}
+
+.playbook-request-card__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.playbook-request-card__title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: baseline;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.playbook-request-card__name {
+  font-size: clamp(1.05rem, 2vw, 1.25rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.playbook-request-card__id {
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.playbook-request-card__status {
+  margin-left: auto;
+}
+
+.playbook-request-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 1rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.playbook-request-card__meta span {
+  position: relative;
+  padding-left: 0.9rem;
+}
+
+.playbook-request-card__meta span::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: rgba(245, 196, 107, 0.55);
+}
+
+.playbook-request-card__meta span:first-of-type::before {
+  display: none;
+}
+
+.playbook-request-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.playbook-request-card__chips span {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(245, 196, 107, 0.12);
+  border: 1px solid rgba(245, 196, 107, 0.2);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  letter-spacing: 0.01em;
+}
+
+.playbook-request-card__note {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.playbook-request-card__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.playbook-request-card__hint {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(245, 196, 107, 0.75);
+}
+
+.playbook-request-card__hint::after {
+  content: '';
+  width: 0.45rem;
+  height: 0.45rem;
+  border: solid currentColor;
+  border-width: 0 2px 2px 0;
+  transform: rotate(-45deg);
+  margin-top: -0.1rem;
+}
+
+.playbook-modal .trade-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.6rem;
+  padding-bottom: 2rem;
+}
+
+.playbook-modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.6rem;
+}
+
+.playbook-modal-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.playbook-modal-section__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.playbook-modal-section__title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.playbook-modal-section__subtitle {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.playbook-modal-section__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.playbook-modal-activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.playbook-modal-activity-empty {
+  margin: 0;
+  padding: 0.95rem 1rem;
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
 .trades .ai-hint {
   padding-top: 0;
   padding-bottom: 0.75rem;

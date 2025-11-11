@@ -70,31 +70,12 @@ const aiBudgetModeLabel = document.getElementById('ai-budget-mode');
 const aiBudgetMeta = document.getElementById('ai-budget-meta');
 const aiBudgetFill = document.getElementById('ai-budget-fill');
 const playbookSummaryContainer = document.getElementById('playbook-summary');
-const playbookProcessContainer = document.getElementById('playbook-process');
-const playbookActivityFeed = document.getElementById('playbook-activity');
-const playbookCardElements = {
-  summary: {
-    container: document.querySelector('[data-playbook-card="summary"]'),
-    trigger: document.querySelector('[data-playbook-card-trigger="summary"]'),
-    panel: document.getElementById('playbook-summary-card'),
-    date: document.getElementById('playbook-summary-date'),
-    playbook: document.getElementById('playbook-summary-playbook'),
-  },
-  process: {
-    container: document.querySelector('[data-playbook-card="process"]'),
-    trigger: document.querySelector('[data-playbook-card-trigger="process"]'),
-    panel: document.getElementById('playbook-process-card'),
-    date: document.getElementById('playbook-process-date'),
-    playbook: document.getElementById('playbook-process-playbook'),
-  },
-  activity: {
-    container: document.querySelector('[data-playbook-card="activity"]'),
-    trigger: document.querySelector('[data-playbook-card-trigger="activity"]'),
-    panel: document.getElementById('playbook-activity-card'),
-    date: document.getElementById('playbook-activity-date'),
-    playbook: document.getElementById('playbook-activity-playbook'),
-  },
-};
+const playbookRequestList = document.getElementById('playbook-request-list');
+const playbookModal = document.getElementById('playbook-modal');
+const playbookModalClose = document.getElementById('playbook-modal-close');
+const playbookModalBody = document.getElementById('playbook-modal-body');
+const playbookModalTitle = document.getElementById('playbook-modal-title');
+const playbookModalSubtitle = document.getElementById('playbook-modal-subtitle');
 const aiChatMessages = document.getElementById('ai-chat-messages');
 const aiChatForm = document.getElementById('ai-chat-form');
 const aiChatInput = document.getElementById('ai-chat-input');
@@ -144,8 +125,6 @@ const DEFAULT_LANGUAGE = 'en';
 const SUPPORTED_LANGUAGES = ['en', 'ru', 'zh', 'ko', 'de', 'fr', 'es', 'tr'];
 const COMPACT_SKIP_AGGREGATION_WINDOW = 600; // seconds
 const MAX_MANAGEMENT_EVENTS = 50;
-
-let expandedPlaybookCard = 'summary';
 
 const PLAYBOOK_CARD_TIMESTAMP_KEYS = {
   summary: ['requested_ts', 'requested', 'refreshed_ts', 'refreshed', 'applied_ts', 'applied'],
@@ -2019,6 +1998,9 @@ let tradeModalReturnTarget = null;
 let aiRequestModalHideTimer = null;
 let aiRequestModalFinalizeHandler = null;
 let aiRequestModalReturnTarget = null;
+let playbookModalHideTimer = null;
+let playbookModalFinalizeHandler = null;
+let playbookModalReturnTarget = null;
 let decisionModalHideTimer = null;
 let decisionModalFinalizeHandler = null;
 let decisionModalReturnTarget = null;
@@ -7177,83 +7159,6 @@ function buildPlaybookMeta(entry) {
   return rows;
 }
 
-function getPlaybookCard(section) {
-  return playbookCardElements && Object.prototype.hasOwnProperty.call(playbookCardElements, section)
-    ? playbookCardElements[section]
-    : null;
-}
-
-function updatePlaybookCardHeader(section, { dateLabel, dateTitle, playbookLabel } = {}) {
-  const card = getPlaybookCard(section);
-  if (!card) return;
-  const fallbackDate = translate('playbook.card.dateFallback', 'Awaiting request date');
-  const fallbackPlaybook = translate('playbook.card.playbookFallback', 'Playbook not selected');
-  if (card.date) {
-    card.date.textContent = dateLabel || fallbackDate;
-    if (dateTitle) {
-      card.date.title = dateTitle;
-    } else {
-      card.date.removeAttribute('title');
-    }
-  }
-  if (card.playbook) {
-    card.playbook.textContent = playbookLabel || fallbackPlaybook;
-  }
-}
-
-function setPlaybookCardExpansion(section, expanded) {
-  const card = getPlaybookCard(section);
-  if (!card || !card.trigger || !card.panel) return;
-  const nextState = Boolean(expanded);
-  card.trigger.setAttribute('aria-expanded', String(nextState));
-  card.trigger.classList.toggle('is-expanded', nextState);
-  card.panel.hidden = !nextState;
-  if (card.container) {
-    card.container.classList.toggle('is-expanded', nextState);
-  }
-  if (nextState) {
-    Object.entries(playbookCardElements).forEach(([key, other]) => {
-      if (key === section || !other || !other.trigger || !other.panel) return;
-      other.trigger.setAttribute('aria-expanded', 'false');
-      other.trigger.classList.remove('is-expanded');
-      other.panel.hidden = true;
-      if (other.container) {
-        other.container.classList.remove('is-expanded');
-      }
-    });
-    expandedPlaybookCard = section;
-  } else if (expandedPlaybookCard === section) {
-    expandedPlaybookCard = null;
-  }
-}
-
-function restorePlaybookCardExpansion() {
-  if (!expandedPlaybookCard) {
-    Object.values(playbookCardElements).forEach((card) => {
-      if (!card || !card.trigger || !card.panel) return;
-      card.trigger.setAttribute('aria-expanded', 'false');
-      card.trigger.classList.remove('is-expanded');
-      card.panel.hidden = true;
-      if (card.container) {
-        card.container.classList.remove('is-expanded');
-      }
-    });
-    return;
-  }
-  setPlaybookCardExpansion(expandedPlaybookCard, true);
-}
-
-function initializePlaybookCards() {
-  Object.entries(playbookCardElements).forEach(([section, card]) => {
-    if (!card || !card.trigger || !card.panel) return;
-    card.trigger.addEventListener('click', () => {
-      const isExpanded = card.trigger.getAttribute('aria-expanded') === 'true';
-      setPlaybookCardExpansion(section, !isExpanded);
-    });
-  });
-  restorePlaybookCardExpansion();
-}
-
 function extractTimestampMs(entry, keys = []) {
   if (!entry || typeof entry !== 'object') return Number.NaN;
   for (const key of keys) {
@@ -7299,54 +7204,10 @@ function composePlaybookName(source, fallback) {
   return '';
 }
 
-function renderPlaybookOverview(playbook, activity, process) {
-  lastPlaybookState = playbook && typeof playbook === 'object' ? { ...playbook } : null;
-  lastPlaybookActivity = Array.isArray(activity) ? activity.slice() : [];
-  lastPlaybookProcess = Array.isArray(process) ? process.slice() : [];
-  renderPlaybookSummarySection();
-  renderPlaybookProcessSection();
-  renderPlaybookActivitySection();
-  restorePlaybookCardExpansion();
-  updatePlaybookPendingState();
-}
+function createPlaybookSummaryContent(state, { hint } = {}) {
+  if (!state || typeof state !== 'object') return null;
 
-function renderPlaybookSummarySection() {
-  if (!playbookSummaryContainer) return;
-  const hintNode = aiHint && playbookSummaryContainer.contains(aiHint) ? aiHint : null;
-  playbookSummaryContainer.innerHTML = '';
-  updatePlaybookCardHeader('summary');
-
-  if (!aiMode) {
-    const disabled = document.createElement('p');
-    disabled.className = 'playbook-empty';
-    disabled.textContent = translate('playbook.disabled', 'Enable AI mode to view the playbook overview.');
-    playbookSummaryContainer.append(disabled);
-    if (hintNode) playbookSummaryContainer.append(hintNode);
-    updatePlaybookCardHeader('summary', {
-      playbookLabel: translate('playbook.card.aiDisabled', 'AI mode disabled'),
-    });
-    return;
-  }
-
-  if (!lastPlaybookState) {
-    const empty = document.createElement('p');
-    empty.className = 'playbook-empty';
-    empty.textContent = translate('playbook.empty', 'No playbook has been applied yet.');
-    playbookSummaryContainer.append(empty);
-    if (hintNode) playbookSummaryContainer.append(hintNode);
-    updatePlaybookCardHeader('summary', {
-      playbookLabel: translate('playbook.card.noSummary', 'No playbook active'),
-    });
-    return;
-  }
-
-  const timestampInfo = formatPlaybookCardTimestamp(lastPlaybookState, PLAYBOOK_CARD_TIMESTAMP_KEYS.summary);
-  const summaryPlaybookLabel = composePlaybookName(lastPlaybookState);
-  updatePlaybookCardHeader('summary', {
-    dateLabel: timestampInfo?.label,
-    dateTitle: timestampInfo?.relative,
-    playbookLabel: summaryPlaybookLabel,
-  });
+  const fragment = document.createDocumentFragment();
 
   const header = document.createElement('div');
   header.className = 'playbook-summary-header';
@@ -7354,29 +7215,37 @@ function renderPlaybookSummarySection() {
   activeLabel.textContent = translate('playbook.active', 'Active playbook:');
   header.append(activeLabel);
   const activeValue = document.createElement('strong');
-  const modeText = toTitleCase(lastPlaybookState.mode || 'baseline');
-  const biasText = toTitleCase(lastPlaybookState.bias || 'neutral');
+  const modeText = toTitleCase(state.mode || 'baseline');
+  const biasText = toTitleCase(state.bias || 'neutral');
   activeValue.textContent = biasText ? `${modeText} (${biasText})` : modeText;
   header.append(activeValue);
-  const refreshedValue = lastPlaybookState.refreshed_ts || lastPlaybookState.refreshed;
-  if (refreshedValue) {
+  const timestampInfo = formatPlaybookCardTimestamp(state, PLAYBOOK_CARD_TIMESTAMP_KEYS.summary);
+  const refreshedValue = state.refreshed_ts || state.refreshed;
+  if (timestampInfo?.relative) {
+    const refreshed = document.createElement('span');
+    refreshed.textContent = `${translate('playbook.refreshed', 'Refreshed')} ${timestampInfo.relative}`;
+    if (timestampInfo.iso) {
+      refreshed.title = timestampInfo.label || timestampInfo.iso;
+    }
+    header.append(refreshed);
+  } else if (refreshedValue) {
     const refreshed = document.createElement('span');
     refreshed.textContent = `${translate('playbook.refreshed', 'Refreshed')} ${formatRelativeTime(refreshedValue)}`;
     header.append(refreshed);
   }
-  playbookSummaryContainer.append(header);
+  fragment.append(header);
 
   const stats = [];
-  if (Number.isFinite(Number(lastPlaybookState.sl_bias))) {
-    stats.push({ label: translate('playbook.sl', 'SL bias'), value: formatPlaybookMultiplier(lastPlaybookState.sl_bias) });
+  if (Number.isFinite(Number(state.sl_bias))) {
+    stats.push({ label: translate('playbook.sl', 'SL bias'), value: formatPlaybookMultiplier(state.sl_bias) });
   }
-  if (Number.isFinite(Number(lastPlaybookState.tp_bias))) {
-    stats.push({ label: translate('playbook.tp', 'TP bias'), value: formatPlaybookMultiplier(lastPlaybookState.tp_bias) });
+  if (Number.isFinite(Number(state.tp_bias))) {
+    stats.push({ label: translate('playbook.tp', 'TP bias'), value: formatPlaybookMultiplier(state.tp_bias) });
   }
-  if (Number.isFinite(Number(lastPlaybookState.confidence))) {
+  if (Number.isFinite(Number(state.confidence))) {
     stats.push({
       label: translate('playbook.confidence', 'Confidence'),
-      value: formatPlaybookPercent(lastPlaybookState.confidence, lastPlaybookState.confidence < 0.1 ? 1 : 0),
+      value: formatPlaybookPercent(state.confidence, state.confidence < 0.1 ? 1 : 0),
     });
   }
 
@@ -7395,11 +7264,10 @@ function renderPlaybookSummarySection() {
       item.append(label, value);
       grid.append(item);
     });
-    playbookSummaryContainer.append(grid);
+    fragment.append(grid);
   }
 
-  const sizeBias = lastPlaybookState.size_bias;
-  const sizeEntries = normalizePlaybookSizeBiasEntries(sizeBias);
+  const sizeEntries = normalizePlaybookSizeBiasEntries(state.size_bias);
   if (sizeEntries.length > 0) {
     const sizeSection = document.createElement('div');
     sizeSection.className = 'playbook-size-bias';
@@ -7415,10 +7283,10 @@ function renderPlaybookSummarySection() {
       values.append(chip);
     });
     sizeSection.append(values);
-    playbookSummaryContainer.append(sizeSection);
+    fragment.append(sizeSection);
   }
 
-  if (Array.isArray(lastPlaybookState.features) && lastPlaybookState.features.length > 0) {
+  if (Array.isArray(state.features) && state.features.length > 0) {
     const featuresSection = document.createElement('div');
     featuresSection.className = 'playbook-features';
     const title = document.createElement('div');
@@ -7427,7 +7295,7 @@ function renderPlaybookSummarySection() {
     featuresSection.append(title);
     const list = document.createElement('div');
     list.className = 'playbook-feature-list';
-    lastPlaybookState.features.forEach((feature) => {
+    state.features.forEach((feature) => {
       if (!feature) return;
       const chip = document.createElement('span');
       chip.className = 'playbook-feature';
@@ -7436,10 +7304,10 @@ function renderPlaybookSummarySection() {
       list.append(chip);
     });
     featuresSection.append(list);
-    playbookSummaryContainer.append(featuresSection);
+    fragment.append(featuresSection);
   }
 
-  const strategy = lastPlaybookState.strategy && typeof lastPlaybookState.strategy === 'object' ? lastPlaybookState.strategy : null;
+  const strategy = state.strategy && typeof state.strategy === 'object' ? state.strategy : null;
   if (strategy) {
     const strategySection = document.createElement('div');
     strategySection.className = 'playbook-strategy';
@@ -7475,8 +7343,8 @@ function renderPlaybookSummarySection() {
       typeof strategy.objective === 'string' ? strategy.objective : null
     );
     const reasonText =
-      (typeof lastPlaybookState.reason === 'string' && lastPlaybookState.reason.trim())
-        ? lastPlaybookState.reason
+      (typeof state.reason === 'string' && state.reason.trim())
+        ? state.reason
         : typeof strategy.why_active === 'string'
         ? strategy.why_active
         : null;
@@ -7572,18 +7440,434 @@ function renderPlaybookSummarySection() {
       strategySection.append(riskSection);
     }
 
-    playbookSummaryContainer.append(strategySection);
+    fragment.append(strategySection);
   }
 
-  if (lastPlaybookState.notes) {
+  if (state.notes) {
     const notes = document.createElement('p');
     notes.className = 'playbook-notes';
-    notes.textContent = lastPlaybookState.notes;
-    playbookSummaryContainer.append(notes);
+    notes.textContent = state.notes;
+    fragment.append(notes);
   }
 
-  if (hintNode) {
-    playbookSummaryContainer.append(hintNode);
+  if (hint) {
+    fragment.append(hint);
+  }
+
+  return fragment;
+}
+
+function renderPlaybookOverview(playbook, activity, process) {
+  lastPlaybookState = playbook && typeof playbook === 'object' ? { ...playbook } : null;
+  lastPlaybookActivity = Array.isArray(activity) ? activity.slice() : [];
+  lastPlaybookProcess = Array.isArray(process) ? process.slice() : [];
+  renderPlaybookSummarySection();
+  renderPlaybookRequestList();
+  updatePlaybookPendingState();
+}
+
+function renderPlaybookSummarySection() {
+  if (!playbookSummaryContainer) return;
+  const hintNode = aiHint && playbookSummaryContainer.contains(aiHint) ? aiHint : null;
+  playbookSummaryContainer.innerHTML = '';
+
+  if (!aiMode) {
+    const disabled = document.createElement('p');
+    disabled.className = 'playbook-empty';
+    disabled.textContent = translate('playbook.disabled', 'Enable AI mode to view the playbook overview.');
+    playbookSummaryContainer.append(disabled);
+    if (hintNode) playbookSummaryContainer.append(hintNode);
+    return;
+  }
+
+  if (!lastPlaybookState) {
+    const empty = document.createElement('p');
+    empty.className = 'playbook-empty';
+    empty.textContent = translate('playbook.empty', 'No playbook has been applied yet.');
+    playbookSummaryContainer.append(empty);
+    if (hintNode) playbookSummaryContainer.append(hintNode);
+    return;
+  }
+  const summaryContent = createPlaybookSummaryContent(lastPlaybookState, { hint: hintNode });
+  if (summaryContent) {
+    playbookSummaryContainer.append(summaryContent);
+  }
+}
+
+function renderPlaybookRequestList() {
+  if (!playbookRequestList) return;
+  playbookRequestList.innerHTML = '';
+
+  if (!aiMode) {
+    const disabled = document.createElement('p');
+    disabled.className = 'playbook-request-empty';
+    disabled.textContent = translate('playbook.disabled', 'Enable AI mode to view the playbook overview.');
+    playbookRequestList.append(disabled);
+    return;
+  }
+
+  const entries = Array.isArray(lastPlaybookProcess) ? lastPlaybookProcess.slice() : [];
+  if (!entries.length) {
+    const empty = document.createElement('p');
+    empty.className = 'playbook-request-empty';
+    empty.textContent = translate('playbook.process.empty', 'No refresh activity recorded yet.');
+    playbookRequestList.append(empty);
+    return;
+  }
+
+  entries.forEach((entry) => {
+    const card = buildPlaybookRequestCard(entry);
+    if (card) {
+      playbookRequestList.append(card);
+    }
+  });
+}
+
+function buildPlaybookRequestCard(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+
+  const statusKey = (entry.status || 'pending').toString().toLowerCase();
+  const statusLabel = getPlaybookProcessStatusLabel(statusKey);
+  const playbookLabel = composePlaybookName(entry, lastPlaybookState);
+  const timestampInfo = formatPlaybookCardTimestamp(entry, PLAYBOOK_CARD_TIMESTAMP_KEYS.process);
+
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'playbook-request-card';
+  card.dataset.status = statusKey;
+
+  const header = document.createElement('div');
+  header.className = 'playbook-request-card__header';
+
+  const title = document.createElement('div');
+  title.className = 'playbook-request-card__title';
+  const name = document.createElement('span');
+  name.className = 'playbook-request-card__name';
+  name.textContent = playbookLabel || translate('playbook.card.playbookFallback', 'Playbook not selected');
+  title.append(name);
+  if (entry.request_id) {
+    const id = document.createElement('span');
+    id.className = 'playbook-request-card__id';
+    id.textContent = `#${entry.request_id}`;
+    title.append(id);
+  }
+  header.append(title);
+
+  if (statusLabel) {
+    const statusEl = document.createElement('span');
+    statusEl.className = `playbook-process-status status-${statusKey} playbook-request-card__status`;
+    statusEl.textContent = statusLabel;
+    header.append(statusEl);
+  }
+
+  card.append(header);
+
+  const meta = document.createElement('div');
+  meta.className = 'playbook-request-card__meta';
+  if (timestampInfo?.label) {
+    const timeSpan = document.createElement('span');
+    timeSpan.textContent = timestampInfo.label;
+    if (timestampInfo.relative) {
+      timeSpan.title = timestampInfo.relative;
+    }
+    meta.append(timeSpan);
+  }
+  const relativeText = formatRelativeTime(entry.completed_ts || entry.failed_ts || entry.requested_ts);
+  if (relativeText && relativeText !== timestampInfo?.relative) {
+    const relativeSpan = document.createElement('span');
+    relativeSpan.textContent = relativeText;
+    meta.append(relativeSpan);
+  }
+  if (entry.snapshot_summary) {
+    const snapshotSpan = document.createElement('span');
+    snapshotSpan.textContent = entry.snapshot_summary;
+    meta.append(snapshotSpan);
+  }
+  if (meta.children.length > 0) {
+    card.append(meta);
+  }
+
+  const chips = [];
+  if (Number.isFinite(Number(entry.sl_bias))) {
+    chips.push(`${translate('playbook.sl', 'SL bias')}: ${formatPlaybookMultiplier(entry.sl_bias)}`);
+  }
+  if (Number.isFinite(Number(entry.tp_bias))) {
+    chips.push(`${translate('playbook.tp', 'TP bias')}: ${formatPlaybookMultiplier(entry.tp_bias)}`);
+  }
+  if (Number.isFinite(Number(entry.confidence))) {
+    chips.push(`${translate('playbook.confidence', 'Confidence')} ${formatPlaybookPercent(entry.confidence)}`);
+  }
+  const sizePreview = normalizePlaybookSizeBiasEntries(entry.size_bias).slice(0, 2);
+  sizePreview.forEach((item) => {
+    chips.push(`${item.label} ${formatPlaybookMultiplier(item.value)}`);
+  });
+  if (chips.length > 0) {
+    const chipList = document.createElement('div');
+    chipList.className = 'playbook-request-card__chips';
+    chips.forEach((text) => {
+      const chip = document.createElement('span');
+      chip.textContent = text;
+      chipList.append(chip);
+    });
+    card.append(chipList);
+  }
+
+  const noteTextCandidates = [entry.snapshot_summary, entry.reason, entry.notes].filter(
+    (value) => typeof value === 'string' && value.trim()
+  );
+  if (noteTextCandidates.length > 0) {
+    const note = document.createElement('p');
+    note.className = 'playbook-request-card__note';
+    const preview = noteTextCandidates[0].trim();
+    note.textContent = preview.length > 200 ? `${preview.slice(0, 197).trimEnd()}…` : preview;
+    card.append(note);
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'playbook-request-card__actions';
+  const hint = document.createElement('span');
+  hint.className = 'playbook-request-card__hint';
+  hint.textContent = translate('trades.viewDetails', 'View details');
+  actions.append(hint);
+  card.append(actions);
+
+  const accessibleParts = [];
+  if (statusLabel) accessibleParts.push(statusLabel);
+  if (timestampInfo?.label) accessibleParts.push(timestampInfo.label);
+  if (noteTextCandidates[0]) accessibleParts.push(noteTextCandidates[0].trim());
+  const accessibleSuffix = accessibleParts.length > 0 ? ` (${accessibleParts.join(' · ')})` : '';
+  card.setAttribute(
+    'aria-label',
+    `${translate('playbook.modal.title', 'Playbook details')}: ${name.textContent}${accessibleSuffix}`
+  );
+
+  card.addEventListener('click', () => openPlaybookModal(entry, card));
+
+  return card;
+}
+
+function collectPlaybookActivityForRequest(entry) {
+  const requestId = entry && entry.request_id ? entry.request_id.toString().trim() : '';
+  if (!requestId) return [];
+  return lastPlaybookActivity
+    .filter((item) => {
+      if (!item || typeof item !== 'object') return false;
+      const candidateId = item.request_id === undefined ? '' : String(item.request_id).trim();
+      return candidateId === requestId;
+    })
+    .sort((a, b) => getPlaybookActivityTimestampMs(a) - getPlaybookActivityTimestampMs(b));
+}
+
+function buildPlaybookRequestDetailContent(entry) {
+  const container = document.createElement('div');
+  container.className = 'playbook-modal-content';
+
+  const summaryState = {
+    ...(lastPlaybookState && typeof lastPlaybookState === 'object' ? lastPlaybookState : {}),
+    ...(entry && typeof entry === 'object' ? entry : {}),
+  };
+  const summaryContent = createPlaybookSummaryContent(summaryState);
+  if (summaryContent && summaryContent.childNodes.length > 0) {
+    const section = document.createElement('section');
+    section.className = 'playbook-modal-section';
+    const header = document.createElement('div');
+    header.className = 'playbook-modal-section__header';
+    const title = document.createElement('h3');
+    title.className = 'playbook-modal-section__title';
+    title.textContent = translate('playbook.summary.title', 'Active regime snapshot');
+    header.append(title);
+    const subtitle = document.createElement('p');
+    subtitle.className = 'playbook-modal-section__subtitle';
+    subtitle.textContent = translate(
+      'playbook.summary.subtitle',
+      'Bias multipliers, focus signals, and the current strategy in play.'
+    );
+    header.append(subtitle);
+    section.append(header);
+    const body = document.createElement('div');
+    body.className = 'playbook-modal-section__body';
+    body.append(summaryContent);
+    section.append(body);
+    container.append(section);
+  }
+
+  const processItem = createPlaybookProcessItem(entry);
+  if (processItem) {
+    const section = document.createElement('section');
+    section.className = 'playbook-modal-section';
+    const header = document.createElement('div');
+    header.className = 'playbook-modal-section__header';
+    const title = document.createElement('h3');
+    title.className = 'playbook-modal-section__title';
+    title.textContent = translate('playbook.process.title', 'Playbook refresh timeline');
+    header.append(title);
+    const subtitle = document.createElement('p');
+    subtitle.className = 'playbook-modal-section__subtitle';
+    subtitle.textContent = translate(
+      'playbook.process.subtitle',
+      'Follow each stage in the refresh pipeline — from the initial request to the final applied update.'
+    );
+    header.append(subtitle);
+    section.append(header);
+    const body = document.createElement('div');
+    body.className = 'playbook-modal-section__body';
+    body.append(processItem);
+    section.append(body);
+    container.append(section);
+  }
+
+  const relatedActivity = collectPlaybookActivityForRequest(entry);
+  const activitySection = document.createElement('section');
+  activitySection.className = 'playbook-modal-section';
+  const activityHeader = document.createElement('div');
+  activityHeader.className = 'playbook-modal-section__header';
+  const activityTitle = document.createElement('h3');
+  activityTitle.className = 'playbook-modal-section__title';
+  activityTitle.textContent = translate('playbook.activity.title', 'Playbook communications');
+  activityHeader.append(activityTitle);
+  const activitySubtitle = document.createElement('p');
+  activitySubtitle.className = 'playbook-modal-section__subtitle';
+  activitySubtitle.textContent = translate(
+    'playbook.activity.subtitle',
+    'Requests, updates, and diagnostics between the bot and the AI.'
+  );
+  activityHeader.append(activitySubtitle);
+  activitySection.append(activityHeader);
+  const activityBody = document.createElement('div');
+  activityBody.className = 'playbook-modal-section__body';
+  const activityList = document.createElement('div');
+  activityList.className = 'playbook-modal-activity-list';
+  if (relatedActivity.length > 0) {
+    relatedActivity.forEach((item) => {
+      const node = createPlaybookActivityItem(item);
+      if (node) {
+        activityList.append(node);
+      }
+    });
+  } else {
+    const empty = document.createElement('p');
+    empty.className = 'playbook-modal-activity-empty';
+    empty.textContent = translate('playbook.activity.empty', 'No playbook communications recorded yet.');
+    activityList.append(empty);
+  }
+  activityBody.append(activityList);
+  activitySection.append(activityBody);
+  container.append(activitySection);
+
+  return container;
+}
+
+function openPlaybookModal(entry, returnTarget) {
+  if (!playbookModal || !playbookModalBody) return;
+
+  const safe = entry && typeof entry === 'object' ? entry : {};
+  const statusKey = (safe.status || 'pending').toString().toLowerCase();
+  const statusLabel = getPlaybookProcessStatusLabel(statusKey);
+  const playbookLabel = composePlaybookName(safe, lastPlaybookState);
+  const timestampInfo = formatPlaybookCardTimestamp(safe, PLAYBOOK_CARD_TIMESTAMP_KEYS.process);
+
+  if (playbookModalTitle) {
+    playbookModalTitle.textContent = playbookLabel || translate('playbook.modal.title', 'Playbook details');
+  }
+  if (playbookModalSubtitle) {
+    const subtitleParts = [];
+    if (statusLabel) subtitleParts.push(statusLabel);
+    if (timestampInfo?.label) subtitleParts.push(timestampInfo.label);
+    if (safe.request_id) subtitleParts.push(`#${safe.request_id}`);
+    playbookModalSubtitle.textContent =
+      subtitleParts.length > 0
+        ? subtitleParts.join(' · ')
+        : translate('playbook.modal.subtitleFallback', 'No additional metadata available.');
+  }
+
+  const active =
+    returnTarget instanceof HTMLElement
+      ? returnTarget
+      : document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+  playbookModalReturnTarget = active && active !== document.body ? active : null;
+
+  if (playbookModalHideTimer) {
+    clearTimeout(playbookModalHideTimer);
+    playbookModalHideTimer = null;
+  }
+  if (playbookModalFinalizeHandler) {
+    playbookModal.removeEventListener('transitionend', playbookModalFinalizeHandler);
+    playbookModalFinalizeHandler = null;
+  }
+
+  playbookModalBody.innerHTML = '';
+  const content = buildPlaybookRequestDetailContent(safe);
+  if (content) {
+    playbookModalBody.append(content);
+  }
+  playbookModalBody.scrollTop = 0;
+
+  playbookModal.removeAttribute('hidden');
+  playbookModal.removeAttribute('aria-hidden');
+  requestAnimationFrame(() => {
+    playbookModal.classList.add('is-active');
+  });
+  document.body.classList.add('modal-open');
+
+  document.addEventListener('keydown', handlePlaybookModalKeydown);
+  if (playbookModalClose) {
+    setTimeout(() => playbookModalClose.focus(), 120);
+  }
+}
+
+function closePlaybookModal() {
+  if (!playbookModal) return;
+
+  if (playbookModalHideTimer) {
+    clearTimeout(playbookModalHideTimer);
+    playbookModalHideTimer = null;
+  }
+  if (playbookModalFinalizeHandler) {
+    playbookModal.removeEventListener('transitionend', playbookModalFinalizeHandler);
+    playbookModalFinalizeHandler = null;
+  }
+  if (playbookModal.hasAttribute('hidden')) {
+    return;
+  }
+
+  playbookModal.classList.remove('is-active');
+  playbookModal.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('modal-open');
+
+  const finalize = () => {
+    if (playbookModalHideTimer) {
+      clearTimeout(playbookModalHideTimer);
+      playbookModalHideTimer = null;
+    }
+    if (!playbookModal.hasAttribute('hidden')) {
+      playbookModal.setAttribute('hidden', '');
+    }
+    if (playbookModalFinalizeHandler) {
+      playbookModal.removeEventListener('transitionend', playbookModalFinalizeHandler);
+      playbookModalFinalizeHandler = null;
+    }
+    const restoreTarget =
+      playbookModalReturnTarget && typeof playbookModalReturnTarget.focus === 'function'
+        ? playbookModalReturnTarget
+        : null;
+    playbookModalReturnTarget = null;
+    if (restoreTarget) {
+      restoreTarget.focus({ preventScroll: true });
+    }
+  };
+
+  playbookModalFinalizeHandler = finalize;
+  playbookModal.addEventListener('transitionend', finalize);
+  playbookModalHideTimer = setTimeout(finalize, 280);
+
+  document.removeEventListener('keydown', handlePlaybookModalKeydown);
+}
+
+function handlePlaybookModalKeydown(event) {
+  if (event.key === 'Escape') {
+    closePlaybookModal();
   }
 }
 
@@ -7599,53 +7883,6 @@ function resolveTimestampMs(epochValue, isoValue) {
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
-}
-
-function renderPlaybookProcessSection() {
-  if (!playbookProcessContainer) return;
-  playbookProcessContainer.innerHTML = '';
-  updatePlaybookCardHeader('process');
-
-  if (!aiMode) {
-    const disabled = document.createElement('p');
-    disabled.className = 'playbook-process-empty';
-    disabled.textContent = translate('playbook.disabled', 'Enable AI mode to view the playbook overview.');
-    playbookProcessContainer.append(disabled);
-    updatePlaybookCardHeader('process', {
-      playbookLabel: translate('playbook.card.aiDisabled', 'AI mode disabled'),
-    });
-    return;
-  }
-
-  const entries = Array.isArray(lastPlaybookProcess) ? lastPlaybookProcess.slice(0, 6) : [];
-  if (!entries.length) {
-    const empty = document.createElement('p');
-    empty.className = 'playbook-process-empty';
-    empty.textContent = translate('playbook.process.empty', 'No refresh activity recorded yet.');
-    playbookProcessContainer.append(empty);
-    const fallbackPlaybook = composePlaybookName(lastPlaybookState);
-    updatePlaybookCardHeader('process', {
-      playbookLabel:
-        fallbackPlaybook || translate('playbook.card.noRefresh', 'No refresh requests yet'),
-    });
-    return;
-  }
-
-  const processHeader = entries[0];
-  const processTimestamp = formatPlaybookCardTimestamp(processHeader, PLAYBOOK_CARD_TIMESTAMP_KEYS.process);
-  const processPlaybookLabel = composePlaybookName(processHeader, lastPlaybookState);
-  updatePlaybookCardHeader('process', {
-    dateLabel: processTimestamp?.label,
-    dateTitle: processTimestamp?.relative,
-    playbookLabel: processPlaybookLabel || composePlaybookName(lastPlaybookState),
-  });
-
-  entries.forEach((entry) => {
-    const item = createPlaybookProcessItem(entry);
-    if (item) {
-      playbookProcessContainer.append(item);
-    }
-  });
 }
 
 function createPlaybookProcessItem(entry) {
@@ -7819,64 +8056,6 @@ function createPlaybookProcessItem(entry) {
   }
 
   return wrapper;
-}
-
-function renderPlaybookActivitySection() {
-  if (!playbookActivityFeed) return;
-  const shouldAutoScroll = autoScrollEnabled && isScrolledToBottom(playbookActivityFeed);
-  playbookActivityFeed.innerHTML = '';
-  updatePlaybookCardHeader('activity');
-
-  if (!aiMode) {
-    const disabled = document.createElement('p');
-    disabled.className = 'playbook-empty';
-    disabled.textContent = translate('playbook.disabled', 'Enable AI mode to view the playbook overview.');
-    playbookActivityFeed.append(disabled);
-    updatePlaybookCardHeader('activity', {
-      playbookLabel: translate('playbook.card.aiDisabled', 'AI mode disabled'),
-    });
-    return;
-  }
-
-  const entries = Array.isArray(lastPlaybookActivity)
-    ? lastPlaybookActivity
-        .slice()
-        .sort((a, b) => getPlaybookActivityTimestampMs(b) - getPlaybookActivityTimestampMs(a))
-        .slice(0, 30)
-    : [];
-  if (!entries.length) {
-    const empty = document.createElement('p');
-    empty.className = 'playbook-empty';
-    empty.textContent = translate('playbook.activity.empty', 'No playbook communications recorded yet.');
-    playbookActivityFeed.append(empty);
-    const fallbackPlaybook = composePlaybookName(lastPlaybookState);
-    updatePlaybookCardHeader('activity', {
-      playbookLabel:
-        fallbackPlaybook || translate('playbook.card.noActivity', 'Awaiting communications'),
-    });
-    return;
-  }
-
-  const activityHeader = entries[0];
-  const activityTimestamp = formatPlaybookCardTimestamp(activityHeader, PLAYBOOK_CARD_TIMESTAMP_KEYS.activity);
-  const activityPlaybookLabel = composePlaybookName(activityHeader, lastPlaybookState);
-  updatePlaybookCardHeader('activity', {
-    dateLabel: activityTimestamp?.label,
-    dateTitle: activityTimestamp?.relative,
-    playbookLabel: activityPlaybookLabel || composePlaybookName(lastPlaybookState),
-  });
-
-  entries.forEach((entry) => {
-    const item = createPlaybookActivityItem(entry);
-    if (item) {
-      playbookActivityFeed.append(item);
-    }
-  });
-
-  if (shouldAutoScroll) {
-    const behavior = playbookActivityFeed.scrollHeight > playbookActivityFeed.clientHeight ? 'smooth' : 'auto';
-    scrollToBottom(playbookActivityFeed, behavior);
-  }
 }
 
 function createPlaybookActivityItem(entry) {
@@ -11564,10 +11743,22 @@ aiRequestModalClose?.addEventListener('click', () => {
   closeAiRequestModal();
 });
 
+playbookModalClose?.addEventListener('click', () => {
+  closePlaybookModal();
+});
+
 if (aiRequestModal) {
   aiRequestModal.addEventListener('click', (event) => {
     if (event.target === aiRequestModal) {
       closeAiRequestModal();
+    }
+  });
+}
+
+if (playbookModal) {
+  playbookModal.addEventListener('click', (event) => {
+    if (event.target === playbookModal) {
+      closePlaybookModal();
     }
   });
 }
@@ -11860,7 +12051,6 @@ if (aiChatForm && aiChatInput) {
   });
 }
 
-initializePlaybookCards();
 syncAiChatAvailability();
 
 document.addEventListener('visibilitychange', () => {
