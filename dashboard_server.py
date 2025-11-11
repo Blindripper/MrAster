@@ -2912,17 +2912,36 @@ def _summarize_ai_requests(
         data = entry.get("data")
         if not isinstance(data, dict):
             continue
+
+        raw_origin_hint = data.get("origin") or data.get("plan_origin")
+        origin_hint_clean = str(raw_origin_hint or "").strip()
+
+        raw_request_kind = data.get("request_kind")
+        request_kind_hint = None
+        if isinstance(raw_request_kind, str):
+            request_kind_hint = raw_request_kind.strip() or None
+        elif raw_request_kind is not None:
+            request_kind_hint = str(raw_request_kind)
+        request_kind_normalized = (request_kind_hint or "").strip().lower()
+        if request_kind_normalized.startswith("playbook"):
+            continue
+
         raw_request_id = data.get("request_id")
         request_id = None
         if isinstance(raw_request_id, str):
             request_id = raw_request_id.strip() or None
         elif raw_request_id is not None:
             request_id = str(raw_request_id)
+        request_id_normalized = (request_id or "").strip().lower()
+        if request_id_normalized:
+            prefix = request_id_normalized.split("::", 1)[0]
+            if prefix.startswith("playbook"):
+                continue
+        if origin_hint_clean and origin_hint_clean.lower().startswith("playbook"):
+            continue
         symbol_hint = str(data.get("symbol") or "").strip().upper()
         side_hint = str(data.get("side") or "").strip().upper()
-        origin_hint = str(
-            data.get("origin") or data.get("plan_origin") or ""
-        ).strip()
+        origin_hint = origin_hint_clean
         base_key = None
         if symbol_hint:
             fallback_side = side_hint or "UNKNOWN"
