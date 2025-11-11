@@ -9807,6 +9807,7 @@ class Bot:
             sentinel_factor = max(sentinel_factor, 0.9)
             ctx["sentinel_yellow_quality_boost"] = 1.0
 
+        sentinel_soft_block = False
         if not manual_override and (
             directive_label_raw in {"warning", "caution"}
             or directive_level >= 1.3
@@ -9853,7 +9854,6 @@ class Bot:
         playbook_size_factor = 1.0
         playbook_sl_factor = 1.0
         playbook_tp_factor = 1.0
-        sentinel_soft_block = False
         performance_factor = 1.0
         performance_bias = self.state.get("performance_bias")
         symbol_bias_map = self.state.get("symbol_performance_bias")
