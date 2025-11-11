@@ -4293,15 +4293,25 @@ body.pro-mode .log-stream {
   min-height: clamp(240px, 32vh, 420px);
 }
 
+
 .log-line {
   margin: 0 0 0.75rem;
   padding: 0.65rem 0.85rem;
   border-radius: 1rem;
-  background: rgba(53, 53, 72, 0.55);
-  border: 1px solid rgba(245, 196, 107, 0.1);
+  --log-bg-start: rgba(53, 53, 72, 0.6);
+  --log-bg-end: rgba(24, 25, 39, 0.45);
+  --log-border-color: rgba(245, 196, 107, 0.12);
+  --log-badge-start: rgba(53, 53, 72, 0.85);
+  --log-badge-end: rgba(27, 28, 45, 0.65);
+  --log-badge-text: #f5f1e8;
+  --log-message-color: #f8f4ea;
+  --log-note-color: var(--text-muted);
+  background: linear-gradient(135deg, var(--log-bg-start), var(--log-bg-end));
+  border: 1px solid var(--log-border-color);
   display: grid;
   gap: 0.35rem;
-  transition: transform 0.2s ease, background 0.3s ease;
+  transition: transform 0.2s ease, background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+  box-shadow: 0 10px 26px rgba(5, 5, 12, 0.25);
 }
 
 .log-line:last-child {
@@ -4326,195 +4336,219 @@ body.pro-mode .log-stream {
   color: var(--text);
 }
 
-.log-line .log-level {
-  padding: 0.2rem 0.6rem;
-  border-radius: 999px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-}
-
 .log-line .log-message {
   white-space: pre-wrap;
   word-break: break-word;
-  color: #f8f4ea;
+  color: var(--log-message-color, #f8f4ea);
   font-size: 0.95rem;
   line-height: 1.55;
 }
 
 .log-line .log-note {
   font-size: 0.78rem;
-  color: var(--text-muted);
+  color: var(--log-note-color, var(--text-muted));
   line-height: 1.4;
 }
 
-.log-line.info {
-  background: rgba(53, 53, 72, 0.55);
-  border-color: rgba(245, 196, 107, 0.1);
+
+.log-line .log-level {
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  background: linear-gradient(
+    135deg,
+    var(--log-badge-start, rgba(45, 45, 65, 0.8)),
+    var(--log-badge-end, rgba(20, 20, 32, 0.6))
+  );
+  color: var(--log-badge-text, var(--text));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
-.log-line.info .log-level {
-  background: rgba(245, 196, 107, 0.18);
-  color: #f5f1e8;
+.log-line.info {
+  --log-bg-start: rgba(94, 86, 150, 0.35);
+  --log-bg-end: rgba(54, 51, 96, 0.28);
+  --log-border-color: rgba(196, 181, 253, 0.28);
+  --log-badge-start: rgba(245, 196, 107, 0.38);
+  --log-badge-end: rgba(245, 196, 107, 0.15);
+  --log-badge-text: #fff8e7;
 }
 
 .log-line.system {
-  background: rgba(245, 196, 107, 0.16);
-  border-color: rgba(245, 196, 107, 0.35);
-}
-
-.log-line.system .log-level {
-  background: rgba(245, 196, 107, 0.28);
-  color: #2d1a07;
+  --log-bg-start: rgba(245, 196, 107, 0.32);
+  --log-bg-end: rgba(128, 90, 20, 0.18);
+  --log-border-color: rgba(245, 196, 107, 0.46);
+  --log-badge-start: rgba(245, 196, 107, 0.45);
+  --log-badge-end: rgba(217, 119, 6, 0.24);
+  --log-badge-text: #2d1a07;
+  --log-message-color: #fdf5da;
 }
 
 .log-line.debug {
-  background: rgba(53, 53, 72, 0.35);
-  border-color: rgba(245, 196, 107, 0.08);
-}
-
-.log-line.debug .log-level {
-  background: rgba(148, 148, 184, 0.22);
-  color: #d5d0c3;
+  --log-bg-start: rgba(53, 53, 72, 0.48);
+  --log-bg-end: rgba(24, 25, 39, 0.32);
+  --log-border-color: rgba(148, 148, 184, 0.22);
+  --log-badge-start: rgba(148, 148, 184, 0.28);
+  --log-badge-end: rgba(89, 89, 122, 0.16);
+  --log-badge-text: #d5d0c3;
+  --log-message-color: #e7e3da;
 }
 
 .log-line.error {
-  background: rgba(248, 113, 113, 0.15);
-  border-color: rgba(248, 113, 113, 0.32);
-}
-
-.log-line.error .log-level {
-  background: rgba(248, 113, 113, 0.22);
-  color: #fecaca;
+  --log-bg-start: rgba(248, 113, 113, 0.38);
+  --log-bg-end: rgba(127, 29, 29, 0.28);
+  --log-border-color: rgba(248, 113, 113, 0.5);
+  --log-badge-start: rgba(248, 113, 113, 0.45);
+  --log-badge-end: rgba(248, 113, 113, 0.2);
+  --log-badge-text: #fecaca;
+  --log-message-color: #ffe4e6;
 }
 
 .log-line.warning {
-  background: rgba(251, 191, 36, 0.18);
-  border-color: rgba(251, 191, 36, 0.32);
-}
-
-.log-line.warning .log-level {
-  background: rgba(251, 191, 36, 0.28);
-  color: #fde68a;
+  --log-bg-start: rgba(251, 191, 36, 0.14);
+  --log-bg-end: rgba(120, 73, 5, 0.08);
+  --log-border-color: rgba(251, 191, 36, 0.28);
+  --log-badge-start: rgba(251, 191, 36, 0.28);
+  --log-badge-end: rgba(251, 191, 36, 0.12);
+  --log-badge-text: #fde68a;
+  --log-message-color: #fff5d1;
 }
 
 .log-line.success {
-  background: rgba(34, 197, 94, 0.18);
-  border-color: rgba(34, 197, 94, 0.35);
+  --log-bg-start: rgba(45, 212, 191, 0.48);
+  --log-bg-end: rgba(34, 197, 94, 0.28);
+  --log-border-color: rgba(16, 185, 129, 0.52);
+  --log-badge-start: rgba(34, 197, 94, 0.55);
+  --log-badge-end: rgba(16, 185, 129, 0.22);
+  --log-badge-text: #042f1a;
+  --log-message-color: #e6fff5;
 }
 
-.log-line.success .log-level {
-  background: rgba(34, 197, 94, 0.32);
-  color: #042f1a;
+.log-line.category-trade,
+.log-line.is-trade {
+  --log-bg-start: rgba(250, 204, 21, 0.45);
+  --log-bg-end: rgba(34, 197, 94, 0.32);
+  --log-border-color: rgba(234, 179, 8, 0.55);
+  --log-badge-start: rgba(250, 204, 21, 0.55);
+  --log-badge-end: rgba(34, 197, 94, 0.25);
+  --log-badge-text: #2a1b00;
+  --log-message-color: #fffbea;
+}
+
+.log-line.category-ai,
+.log-line.is-ai {
+  --log-bg-start: rgba(34, 211, 238, 0.48);
+  --log-bg-end: rgba(6, 182, 212, 0.28);
+  --log-border-color: rgba(34, 211, 238, 0.58);
+  --log-badge-start: rgba(34, 211, 238, 0.55);
+  --log-badge-end: rgba(14, 165, 233, 0.24);
+  --log-badge-text: #012d36;
+  --log-message-color: #e5fcff;
+}
+
+.log-line.is-skip {
+  --log-bg-start: rgba(251, 191, 36, 0.08);
+  --log-bg-end: rgba(58, 44, 16, 0.04);
+  --log-border-color: rgba(251, 191, 36, 0.16);
+  --log-badge-start: rgba(251, 191, 36, 0.18);
+  --log-badge-end: rgba(251, 191, 36, 0.08);
+  --log-badge-text: rgba(253, 246, 178, 0.9);
+  --log-message-color: rgba(255, 248, 217, 0.88);
+  --log-note-color: rgba(253, 246, 178, 0.7);
 }
 
 .log-line.category-volume {
-  background: rgba(13, 148, 136, 0.18);
-  border-color: rgba(45, 212, 191, 0.35);
-}
-
-.log-line.category-volume .log-level {
-  background: rgba(45, 212, 191, 0.32);
-  color: #022c22;
+  --log-bg-start: rgba(13, 148, 136, 0.28);
+  --log-bg-end: rgba(45, 212, 191, 0.18);
+  --log-border-color: rgba(45, 212, 191, 0.38);
+  --log-badge-start: rgba(45, 212, 191, 0.42);
+  --log-badge-end: rgba(13, 148, 136, 0.16);
+  --log-badge-text: #022c22;
 }
 
 .log-line.category-spread {
-  background: rgba(168, 85, 247, 0.18);
-  border-color: rgba(168, 85, 247, 0.35);
-}
-
-.log-line.category-spread .log-level {
-  background: rgba(192, 132, 252, 0.32);
-  color: #2e1065;
+  --log-bg-start: rgba(168, 85, 247, 0.3);
+  --log-bg-end: rgba(192, 132, 252, 0.18);
+  --log-border-color: rgba(168, 85, 247, 0.42);
+  --log-badge-start: rgba(192, 132, 252, 0.4);
+  --log-badge-end: rgba(126, 58, 242, 0.2);
+  --log-badge-text: #2e1065;
 }
 
 .log-line.category-oracle {
-  background: rgba(59, 130, 246, 0.18);
-  border-color: rgba(59, 130, 246, 0.35);
-}
-
-.log-line.category-oracle .log-level {
-  background: rgba(96, 165, 250, 0.32);
-  color: #0b1d4d;
+  --log-bg-start: rgba(59, 130, 246, 0.3);
+  --log-bg-end: rgba(96, 165, 250, 0.18);
+  --log-border-color: rgba(59, 130, 246, 0.42);
+  --log-badge-start: rgba(96, 165, 250, 0.38);
+  --log-badge-end: rgba(37, 99, 235, 0.2);
+  --log-badge-text: #0b1d4d;
 }
 
 .log-line.category-sentinel {
-  background: rgba(236, 72, 153, 0.18);
-  border-color: rgba(236, 72, 153, 0.32);
-}
-
-.log-line.category-sentinel .log-level {
-  background: rgba(244, 114, 182, 0.32);
-  color: #4b0b2f;
-}
-
-.log-line.category-ai {
-  background: rgba(6, 182, 212, 0.18);
-  border-color: rgba(6, 182, 212, 0.35);
-}
-
-.log-line.category-ai .log-level {
-  background: rgba(34, 211, 238, 0.32);
-  color: #042f3a;
+  --log-bg-start: rgba(236, 72, 153, 0.32);
+  --log-bg-end: rgba(244, 114, 182, 0.2);
+  --log-border-color: rgba(236, 72, 153, 0.42);
+  --log-badge-start: rgba(244, 114, 182, 0.4);
+  --log-badge-end: rgba(190, 24, 93, 0.2);
+  --log-badge-text: #4b0b2f;
 }
 
 .log-line.category-funding {
-  background: rgba(217, 119, 6, 0.18);
-  border-color: rgba(217, 119, 6, 0.35);
-}
-
-.log-line.category-funding .log-level {
-  background: rgba(251, 191, 36, 0.32);
-  color: #231805;
+  --log-bg-start: rgba(217, 119, 6, 0.3);
+  --log-bg-end: rgba(251, 191, 36, 0.18);
+  --log-border-color: rgba(217, 119, 6, 0.45);
+  --log-badge-start: rgba(251, 191, 36, 0.42);
+  --log-badge-end: rgba(180, 83, 9, 0.22);
+  --log-badge-text: #231805;
+  --log-message-color: #fff1d5;
 }
 
 .log-line.category-orders {
-  background: rgba(248, 113, 113, 0.18);
-  border-color: rgba(248, 113, 113, 0.35);
-}
-
-.log-line.category-orders .log-level {
-  background: rgba(248, 113, 113, 0.32);
-  color: #450a0a;
+  --log-bg-start: rgba(248, 113, 113, 0.3);
+  --log-bg-end: rgba(248, 150, 150, 0.18);
+  --log-border-color: rgba(248, 113, 113, 0.42);
+  --log-badge-start: rgba(248, 113, 113, 0.42);
+  --log-badge-end: rgba(185, 28, 28, 0.2);
+  --log-badge-text: #450a0a;
+  --log-message-color: #ffe2e5;
 }
 
 .log-line.category-data {
-  background: rgba(148, 163, 184, 0.18);
-  border-color: rgba(148, 163, 184, 0.35);
-}
-
-.log-line.category-data .log-level {
-  background: rgba(226, 232, 240, 0.32);
-  color: #111827;
+  --log-bg-start: rgba(148, 163, 184, 0.3);
+  --log-bg-end: rgba(226, 232, 240, 0.18);
+  --log-border-color: rgba(148, 163, 184, 0.4);
+  --log-badge-start: rgba(226, 232, 240, 0.4);
+  --log-badge-end: rgba(100, 116, 139, 0.18);
+  --log-badge-text: #111827;
+  --log-message-color: #f4f7fb;
 }
 
 .log-line.category-volatility {
-  background: rgba(249, 115, 22, 0.18);
-  border-color: rgba(249, 115, 22, 0.35);
-}
-
-.log-line.category-volatility .log-level {
-  background: rgba(251, 146, 60, 0.32);
-  color: #431407;
+  --log-bg-start: rgba(249, 115, 22, 0.3);
+  --log-bg-end: rgba(251, 146, 60, 0.18);
+  --log-border-color: rgba(249, 115, 22, 0.45);
+  --log-badge-start: rgba(251, 146, 60, 0.4);
+  --log-badge-end: rgba(194, 65, 12, 0.2);
+  --log-badge-text: #431407;
+  --log-message-color: #ffe8d8;
 }
 
 .log-line.category-edge {
-  background: rgba(99, 102, 241, 0.18);
-  border-color: rgba(99, 102, 241, 0.35);
-}
-
-.log-line.category-edge .log-level {
-  background: rgba(129, 140, 248, 0.32);
-  color: #1e1b4b;
+  --log-bg-start: rgba(99, 102, 241, 0.3);
+  --log-bg-end: rgba(129, 140, 248, 0.18);
+  --log-border-color: rgba(99, 102, 241, 0.42);
+  --log-badge-start: rgba(129, 140, 248, 0.4);
+  --log-badge-end: rgba(79, 70, 229, 0.2);
+  --log-badge-text: #1e1b4b;
 }
 
 .log-line.log-reason-themed {
-  background: var(--log-reason-bg, rgba(45, 212, 191, 0.18));
-  border-color: var(--log-reason-border, rgba(45, 212, 191, 0.35));
-}
-
-.log-line.log-reason-themed .log-level {
-  background: var(--log-reason-badge-bg, rgba(45, 212, 191, 0.32));
-  color: var(--log-reason-badge-text, #022c22);
+  --log-bg-start: var(--log-reason-bg-start, var(--log-reason-bg, var(--log-bg-start)));
+  --log-bg-end: var(--log-reason-bg-end, var(--log-reason-bg-start, var(--log-bg-end)));
+  --log-border-color: var(--log-reason-border, var(--log-border-color));
+  --log-badge-start: var(--log-reason-badge-start, var(--log-reason-badge-bg, var(--log-badge-start)));
+  --log-badge-end: var(--log-reason-badge-end, var(--log-reason-badge-start, var(--log-badge-end)));
+  --log-badge-text: var(--log-reason-badge-text, var(--log-badge-text));
 }
 
 .toggle {
