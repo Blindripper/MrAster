@@ -271,6 +271,10 @@ EXCLUDE = set(_split_env_symbols(os.getenv("ASTER_EXCLUDE_SYMBOLS", ""))) | SYMB
 UNIVERSE_MAX = int(os.getenv("ASTER_UNIVERSE_MAX", "0"))
 UNIVERSE_ROTATE = os.getenv("ASTER_UNIVERSE_ROTATE", "true").lower() in ("1", "true", "yes", "on")
 
+# Anzahl der Symbole, die nach Volumen priorisiert werden sollen (0 = kein Limit)
+TOP_VOLUME_SYMBOL_LIMIT = max(0, int(os.getenv("ASTER_TOP_VOLUME_LIMIT", "10") or 10))
+SENTINEL_SAMPLE_LIMIT = TOP_VOLUME_SYMBOL_LIMIT if TOP_VOLUME_SYMBOL_LIMIT > 0 else 8
+
 ORDERBOOK_DEPTH_LIMIT = max(5, min(1000, int(os.getenv("ASTER_ORDERBOOK_DEPTH_LIMIT", "100") or 100)))
 ORDERBOOK_PREFETCH = max(0, int(os.getenv("ASTER_ORDERBOOK_PREFETCH", "14") or 14))
 ORDERBOOK_TTL = max(0.5, float(os.getenv("ASTER_ORDERBOOK_TTL", "2.5") or 2.5))
@@ -6226,7 +6230,7 @@ class Strategy:
         return 0.0
 
     def _playbook_sentinel_sample(
-        self, sentinel_state: Any, *, limit: int = 8
+        self, sentinel_state: Any, *, limit: int = SENTINEL_SAMPLE_LIMIT
     ) -> Dict[str, Any]:
         if not isinstance(sentinel_state, dict):
             return {}
@@ -9269,6 +9273,7 @@ class Bot:
                 avg_r = 0.0
             perf_bias = max(0.55, min(1.5, 1.0 + avg_r * 0.28))
             record = ticker_map.get(sym)
+            qvol = 0.0
             if record and isinstance(record, dict):
                 try:
                     qvol = float(record.get("quoteVolume", 0.0) or 0.0)
@@ -9292,6 +9297,7 @@ class Bot:
             score_cache[sym] = {
                 "score": float(score),
                 "qv_score": float(qv_score),
+                "qvol": float(qvol),
                 "perf_bias": float(perf_bias),
                 "budget_bias": float(budget_bias),
             }
@@ -9303,6 +9309,14 @@ class Bot:
             ),
             reverse=True,
         )
+        if TOP_VOLUME_SYMBOL_LIMIT > 0:
+            volume_sorted = sorted(
+                unique_syms,
+                key=lambda sym: score_cache.get(sym, {}).get("qvol", 0.0),
+                reverse=True,
+            )
+            allowed = set(volume_sorted[:TOP_VOLUME_SYMBOL_LIMIT])
+            ranked = [sym for sym in ranked if sym in allowed]
         self._symbol_score_cache = score_cache
         if getattr(self, "_strategy", None):
             self._strategy._symbol_score_cache = score_cache
