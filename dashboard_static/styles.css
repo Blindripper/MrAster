@@ -1412,11 +1412,11 @@ button:focus-visible {
   grid-auto-flow: row dense;
   grid-auto-rows: minmax(360px, auto);
   gap: 1.6rem;
-  padding: 2.35rem var(--page-inline-padding) 3.2rem;
+  padding: 2.35rem 0 3.2rem;
   flex: 1;
   align-content: start;
   align-items: stretch;
-  max-width: calc(var(--layout-max-width) + var(--page-inline-padding) * 2);
+  max-width: var(--layout-max-width);
   margin-inline: auto;
   width: 100%;
 }
