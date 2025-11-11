@@ -2,6 +2,14 @@ import time
 
 import pytest
 
+import os
+import sys
+import time
+
+import pytest
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
 from ai_extensions import PlaybookManager
 
 
