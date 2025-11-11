@@ -2583,6 +2583,8 @@ body.ai-mode .playbook-overview {
   gap: 0.45rem 1rem;
   font-size: 0.9rem;
   color: var(--text-muted);
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .playbook-request-card__meta span {
@@ -2610,6 +2612,8 @@ body.ai-mode .playbook-overview {
 .playbook-request-card__chips span {
   display: inline-flex;
   align-items: center;
+  max-width: 100%;
+  white-space: normal;
   padding: 0.3rem 0.65rem;
   border-radius: 999px;
   background: rgba(245, 196, 107, 0.12);
@@ -2624,6 +2628,8 @@ body.ai-mode .playbook-overview {
   font-size: 0.95rem;
   color: var(--text-secondary);
   line-height: 1.45;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .playbook-request-card__actions {
