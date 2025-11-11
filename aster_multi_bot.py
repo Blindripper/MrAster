@@ -685,6 +685,13 @@ FAST_TP_RET1 = float(os.getenv("FAST_TP_RET1", "0.06"))
 FAST_TP_RET3 = float(os.getenv("FAST_TP_RET3", "0.18"))
 FASTTP_SNAP_ATR = float(os.getenv("FASTTP_SNAP_ATR", "0.25"))
 FASTTP_COOLDOWN_S = int(os.getenv("FASTTP_COOLDOWN_S", "15"))
+ACTIVE_POSITION_MONITOR_ENABLED = os.getenv(
+    "ASTER_ACTIVE_POSITION_MONITOR_ENABLED", "true"
+).lower() in {"1", "true", "yes", "on"}
+ACTIVE_POSITION_MONITOR_INTERVAL = max(
+    0.25,
+    float(os.getenv("ASTER_ACTIVE_POSITION_MONITOR_INTERVAL", "0.75") or 0.75),
+)
 
 FUNDING_FILTER_ENABLED = os.getenv("ASTER_FUNDING_FILTER_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 FUNDING_MAX_LONG = float(os.getenv("ASTER_FUNDING_MAX_LONG", "0.0010"))  # 0.10 %
@@ -8882,6 +8889,8 @@ class Bot:
                 "AI mode is enabled, but ASTER_OPENAI_API_KEY is missing—AI features remain disabled."
             )
         self.exchange = Exchange(BASE, API_KEY, API_SECRET, RECV_WINDOW)
+        self._position_monitor_stop = threading.Event()
+        self._position_monitor_thread: Optional[threading.Thread] = None
         self.universe = SymbolUniverse(self.exchange, QUOTE, UNIVERSE_MAX, EXCLUDE, UNIVERSE_ROTATE, include=INCLUDE)
         self._base_include: List[str] = list(self.universe.include or [])
         self._dynamic_include: Set[str] = set()
@@ -9215,6 +9224,111 @@ class Bot:
             self.trade_mgr.handle_account_update(payload)
         except Exception as exc:
             log.debug(f"stream account dispatch failed: {exc}")
+
+    def _start_position_monitor(self) -> None:
+        if not ACTIVE_POSITION_MONITOR_ENABLED:
+            return
+        thread = self._position_monitor_thread
+        if thread and thread.is_alive():
+            return
+        self._position_monitor_stop.clear()
+        monitor = threading.Thread(
+            target=self._position_monitor_loop,
+            name="aster-position-monitor",
+            daemon=True,
+        )
+        self._position_monitor_thread = monitor
+        monitor.start()
+
+    def _stop_position_monitor(self) -> None:
+        self._position_monitor_stop.set()
+        thread = self._position_monitor_thread
+        if thread and thread.is_alive():
+            thread.join(timeout=2.5)
+        self._position_monitor_thread = None
+
+    def _position_monitor_loop(self) -> None:
+        interval = ACTIVE_POSITION_MONITOR_INTERVAL
+        while not self._position_monitor_stop.is_set():
+            start = time.time()
+            try:
+                live = self.state.get("live_trades", {})
+                if not isinstance(live, dict) or not live:
+                    pass
+                else:
+                    active_map: Dict[str, float] = {}
+                    try:
+                        pos_payload = self.exchange.get_position_risk()
+                        if isinstance(pos_payload, list):
+                            for entry in pos_payload:
+                                if not isinstance(entry, dict):
+                                    continue
+                                sym = str(entry.get("symbol") or entry.get("s") or "").upper()
+                                if not sym:
+                                    continue
+                                try:
+                                    amt_val = float(entry.get("positionAmt") or entry.get("pa") or 0.0)
+                                except (TypeError, ValueError):
+                                    continue
+                                if abs(amt_val) > 1e-12:
+                                    active_map[sym] = float(amt_val)
+                    except Exception as exc:
+                        log.debug(f"position monitor risk fetch failed: {exc}")
+                    if not active_map:
+                        for sym, rec in list(live.items()):
+                            if not isinstance(rec, dict):
+                                continue
+                            try:
+                                amt_val = float(rec.get("position_amt", 0.0) or 0.0)
+                            except (TypeError, ValueError):
+                                continue
+                            if abs(amt_val) > 1e-12:
+                                active_map[str(sym)] = float(amt_val)
+                    for sym, amount in active_map.items():
+                        rec = live.get(sym)
+                        if not isinstance(rec, dict):
+                            continue
+                        atr_abs = float(rec.get("atr_abs", 0.0) or 0.0)
+                        entry = float(rec.get("entry", 0.0) or 0.0)
+                        stop_loss = float(rec.get("sl", 0.0) or 0.0)
+                        try:
+                            bt = self.exchange.get_book_ticker(sym)
+                        except Exception:
+                            bt = None
+                        mid = 0.0
+                        if isinstance(bt, dict):
+                            try:
+                                ask = float(bt.get("askPrice", 0.0) or bt.get("a", 0.0) or 0.0)
+                                bid = float(bt.get("bidPrice", 0.0) or bt.get("b", 0.0) or 0.0)
+                                if ask > 0 and bid > 0:
+                                    mid = (ask + bid) / 2.0
+                                elif ask > 0:
+                                    mid = ask
+                                elif bid > 0:
+                                    mid = bid
+                            except (TypeError, ValueError):
+                                mid = 0.0
+                        if mid <= 0:
+                            continue
+                        try:
+                            self.fasttp.track(sym, mid)
+                        except Exception as exc:
+                            log.debug(f"position monitor track failed for {sym}: {exc}")
+                        if atr_abs > 0 and entry > 0 and stop_loss > 0:
+                            try:
+                                self.fasttp.maybe_apply(sym, amount, entry, stop_loss, mid, atr_abs)
+                            except Exception as exc:
+                                log.debug(f"position monitor fasttp failed for {sym}: {exc}")
+                        try:
+                            self._manage_open_position(sym, amount, mid, atr_abs)
+                        except Exception as exc:
+                            log.debug(f"position monitor management failed for {sym}: {exc}")
+            except Exception as exc:
+                log.debug(f"position monitor loop error: {exc}")
+            elapsed = time.time() - start
+            wait_for = max(0.05, interval - elapsed)
+            if self._position_monitor_stop.wait(wait_for):
+                break
 
     def _ensure_banned_state(self) -> None:
         banned = self.state.get("banned_symbols")
@@ -12033,37 +12147,37 @@ class Bot:
         def _stop(*_):
             nonlocal running
             running = False
+            self._position_monitor_stop.set()
             log.info("Shutdown signal received — finishing the current cycle.")
         signal.signal(signal.SIGINT, _stop)
         signal.signal(signal.SIGTERM, _stop)
 
-        if not loop:
-            self.run_once()
-            log.info("Done (single run).")
+        self._start_position_monitor()
+        try:
+            if not loop:
+                self.run_once()
+                log.info("Done (single run).")
+                return
+
+            while running:
+                t0 = time.time()
+                self.run_once()
+                dt = time.time() - t0
+                log.info("Cycle finished in %.2fs.", dt)
+                if not running:
+                    break
+                wait_time = max(1, LOOP_SLEEP)
+                triggered = self._ai_wakeup_event.wait(timeout=wait_time)
+                if triggered:
+                    continue
+        finally:
+            self._stop_position_monitor()
             if self.user_stream:
                 try:
                     self.user_stream.stop()
                 except Exception as exc:
                     log.debug(f"user stream shutdown failed: {exc}")
-            return
-
-        while running:
-            t0 = time.time()
-            self.run_once()
-            dt = time.time() - t0
-            log.info("Cycle finished in %.2fs.", dt)
-            if not running:
-                break
-            wait_time = max(1, LOOP_SLEEP)
-            triggered = self._ai_wakeup_event.wait(timeout=wait_time)
-            if triggered:
-                continue
-        if self.user_stream:
-            try:
-                self.user_stream.stop()
-            except Exception as exc:
-                log.debug(f"user stream shutdown failed: {exc}")
-        log.info("Bot stopped. Safe to exit.")
+            log.info("Bot stopped. Safe to exit.")
 
 # ========= main =========
 if __name__ == "__main__":
