@@ -1,5 +1,7 @@
 import time
 
+import pytest
+
 from ai_extensions import PlaybookManager
 
 
@@ -58,3 +60,24 @@ def test_playbook_injects_symbol_directive_into_context():
     assert ctx["playbook_symbol_directive"] == "avoid"
     assert ctx["playbook_symbol_directive_level"] >= 2.0
     assert "playbook_symbol_note" in ctx or "playbook_symbol_directive_source" in ctx
+
+
+def test_playbook_risk_bias_tracks_mode_bias_and_confidence():
+    mgr = _manager()
+    now = time.time()
+    payload = {
+        "mode": "defensive posture",
+        "bias": "risk_off",
+        "size_bias": {"BUY": 0.9, "SELL": 0.9},
+        "sl_bias": 0.9,
+        "tp_bias": 0.9,
+        "features": {},
+        "confidence": 0.2,
+    }
+    active = mgr._normalize_playbook(payload, now)  # pylint: disable=protected-access
+    assert pytest.approx(active["risk_bias"], rel=0.01) == 0.56
+    mgr._state["active"] = active  # pylint: disable=protected-access
+    ctx = {"side": "BUY", "symbol": "BTCUSDT"}
+    mgr.inject_context(ctx)
+    assert pytest.approx(ctx["playbook_risk_bias"], rel=0.01) == active["risk_bias"]
+    assert pytest.approx(ctx["playbook_confidence"], rel=0.01) == 0.2

@@ -54,6 +54,8 @@ FEATURES = (
     "tuning_risk_bias",
     "tuning_size_bias",
     "tuning_confidence",
+    "playbook_risk_bias",
+    "playbook_confidence",
     "playbook_breakout_bias",
     "playbook_range_bias",
     "playbook_trend_bias",
@@ -367,6 +369,18 @@ class BanditPolicy:
                 risk_penalty += 0.05
         if hype_score > 0.86:
             risk_penalty += (hype_score - 0.86) * 0.6
+        try:
+            playbook_risk_bias = float(ctx.get("playbook_risk_bias", 1.0) or 1.0)
+        except (TypeError, ValueError):
+            playbook_risk_bias = 1.0
+        pb_penalty = 0.0
+        pb_bonus = 0.0
+        if playbook_risk_bias < 0.95:
+            pb_penalty = (0.95 - playbook_risk_bias) * 0.9
+            risk_penalty += pb_penalty
+        elif playbook_risk_bias > 1.05:
+            pb_bonus = min(0.4, (playbook_risk_bias - 1.0) * 0.6)
+            take_ucb += pb_bonus
         if risk_penalty > 0.0:
             take_ucb -= risk_penalty
         # Warmup: am Anfang eher großzügig
@@ -390,10 +404,15 @@ class BanditPolicy:
                 scores[b] = self.size.predict_ucb(xb)
             size_bucket = max(scores.items(), key=lambda kv: kv[1])[0]
         extras: Dict[str, Any] = {"size_bucket": size_bucket}
+        extras["playbook_risk_bias"] = playbook_risk_bias
         if risk_penalty > 0.0:
             extras["risk_penalty"] = risk_penalty
             extras["risk_event"] = event_risk
             extras["risk_hype"] = hype_score
+        if pb_penalty > 0.0:
+            extras["playbook_risk_penalty"] = pb_penalty
+        if pb_bonus > 0.0:
+            extras["playbook_risk_bonus"] = pb_bonus
 
         if self.alpha:
             try:
