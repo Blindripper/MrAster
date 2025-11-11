@@ -8236,12 +8236,15 @@ function collectAiRequestDetailData(item) {
   }
 
   const events = Array.isArray(safe.events) ? safe.events.slice() : [];
+  const requestPayload = safe.request_payload ?? safe.requestPayload ?? null;
+  const responsePayload = safe.response_payload ?? safe.responsePayload ?? null;
 
-  return { metricsParts, noteCandidates, events };
+  return { metricsParts, noteCandidates, events, requestPayload, responsePayload };
 }
 
 function buildAiRequestDetailContent(item) {
-  const { metricsParts, noteCandidates, events } = collectAiRequestDetailData(item);
+  const { metricsParts, noteCandidates, events, requestPayload, responsePayload } =
+    collectAiRequestDetailData(item);
   const container = document.createElement('div');
   container.className = 'ai-request-modal-content';
 
@@ -8317,6 +8320,45 @@ function buildAiRequestDetailContent(item) {
       body.append(timeline);
     }
   }
+
+  const renderJsonSection = (label, payload) => {
+    if (payload === null || payload === undefined) return;
+    let formatted = '';
+    if (typeof payload === 'string') {
+      const trimmed = payload.trim();
+      if (!trimmed) return;
+      try {
+        formatted = JSON.stringify(JSON.parse(trimmed), null, 2);
+      } catch (err) {
+        formatted = trimmed;
+      }
+    } else {
+      try {
+        formatted = JSON.stringify(payload, null, 2);
+      } catch (err) {
+        formatted = String(payload);
+      }
+    }
+    if (!formatted) return;
+    const section = document.createElement('section');
+    section.className = 'ai-request-card__json';
+    const heading = document.createElement('h3');
+    heading.className = 'ai-request-card__json-title';
+    heading.textContent = label;
+    const pre = document.createElement('pre');
+    pre.textContent = formatted;
+    section.append(heading, pre);
+    body.append(section);
+  };
+
+  renderJsonSection(
+    translate('ai.requests.modal.requestPayload', 'AI request payload'),
+    requestPayload
+  );
+  renderJsonSection(
+    translate('ai.requests.modal.responsePayload', 'AI response payload'),
+    responsePayload
+  );
 
   if (body.children.length === 0) {
     const empty = document.createElement('p');

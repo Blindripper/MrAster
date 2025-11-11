@@ -3078,6 +3078,13 @@ def _summarize_ai_requests(
             }
         )
 
+        request_payload = data.get("request_payload")
+        if request_payload is not None:
+            record["request_payload"] = request_payload
+        response_payload = data.get("response_payload")
+        if response_payload is not None:
+            record["response_payload"] = response_payload
+
         numeric_fields = {
             "confidence": "confidence",
             "size_multiplier": "size_multiplier",

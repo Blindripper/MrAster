@@ -4755,6 +4755,32 @@ body.pro-mode .log-stream {
   line-height: 1.4;
 }
 
+.ai-request-card__json {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: var(--surface-2, #0b1320);
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-muted, #b9c2d0);
+  overflow-x: auto;
+}
+
+.ai-request-card__json-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-subtle, #a7b4c3);
+}
+
+.ai-request-card__json pre {
+  margin: 0;
+  white-space: pre;
+}
+
 .ai-request-card__notes {
   display: flex;
   flex-direction: column;
