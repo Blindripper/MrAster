@@ -3,26 +3,28 @@
   <h1>MrAster Trading Bot</h1>
   <p><strong>Your friendly crypto futures co-pilot: watch the market, manage risk, and keep you in the loop.</strong></p>
   <p>
-    <a href="#-mraster-in-60-seconds">Why MrAster?</a>
+    <a href="#mraster-in-60-seconds">Why MrAster?</a>
     ·
-    <a href="#-quick-start">Quick start</a>
+    <a href="#quick-start">Quick start</a>
     ·
-    <a href="#-dashboard-at-a-glance">Dashboard tour</a>
+    <a href="#dashboard-at-a-glance">Dashboard tour</a>
     ·
-    <a href="#-under-the-hood-for-builders">Under the hood</a>
+    <a href="#under-the-hood-for-builders">Under the hood</a>
   </p>
 </div>
 
 <p align="center">
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+" /></a>
-  <a href="#-dashboard-at-a-glance"><img src="https://img.shields.io/badge/Control-Clean%20web%20dashboard-8A2BE2" alt="Dashboard" /></a>
-  <a href="#-safety-first"><img src="https://img.shields.io/badge/Mode-Paper%20or%20live-FF8C00" alt="Modes" /></a>
-  <a href="#-safety-first"><img src="https://img.shields.io/badge/Reminder-Trading%20is%20risky-E63946" alt="Risk warning" /></a>
+  <a href="#dashboard-at-a-glance"><img src="https://img.shields.io/badge/Control-Clean%20web%20dashboard-8A2BE2" alt="Dashboard" /></a>
+  <a href="#safety-first"><img src="https://img.shields.io/badge/Mode-Paper%20or%20live-FF8C00" alt="Modes" /></a>
+  <a href="#safety-first"><img src="https://img.shields.io/badge/Reminder-Trading%20is%20risky-E63946" alt="Risk warning" /></a>
 </p>
 
 > “Flip on the backend, open the browser, and let the copilots do the heavy lifting.”
 
 ---
+
+<a id="mraster-in-60-seconds"></a>
 
 ## ✨ MrAster in 60 seconds
 
@@ -30,6 +32,8 @@
 - **Always-on dashboard** – Start or stop the bot, adjust risk sliders, and read AI explanations from one friendly web page.
 - **AI that respects your budget** – Daily spend caps, cool-downs, and a news sentinel keep the copilots helpful and affordable.
 - **No guesswork setup** – Use paper mode to rehearse before you flip the switch to live orders.
+
+<a id="quick-start"></a>
 
 ## 🚀 Quick start
 
@@ -51,6 +55,8 @@
 
 > Prefer running headless? Export `ASTER_PAPER=true` (optional) and call `python aster_multi_bot.py`. Add `ASTER_RUN_ONCE=true` to perform a single scan cycle.
 
+<a id="dashboard-at-a-glance"></a>
+
 ## 🖥️ Dashboard at a glance
 
 - **One-click control** – Start, stop, or relaunch the supervised bot (`aster_multi_bot.py`) without touching the terminal.
@@ -60,12 +66,16 @@
 - **AI copilots on display** – Read plain-language trade notes, see how much budget they’ve used, and chat back.
 - **Performance snapshots** – Review PnL charts, trade history, and market heat maps without leaving the page.
 
+<a id="safety-first"></a>
+
 ## 🛡️ Safety first
 
 - **Paper mode**: rehearse strategies using simulated fills before trading real funds.
 - **Budget caps**: AI helpers respect your daily USD limit unless you explicitly lift it.
 - **Sentinel warnings**: breaking news, unusual funding, and volatility spikes surface instantly.
 - **You stay in charge**: stop the bot, edit settings, or pause AI autonomy whenever you like.
+
+<a id="under-the-hood-for-builders"></a>
 
 ## 🤓 Under the hood (for builders)
 
