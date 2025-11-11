@@ -491,7 +491,7 @@ class PlaybookManager:
             },
         )
         self._request_fn = request_fn
-        self._refresh_interval = 8 * 60
+        self._refresh_interval = 60 * 60
         self._bootstrap_pending = True
         self._bootstrap_deadline = time.time() + 120.0
         self._bootstrap_retry = 90.0
@@ -662,10 +662,11 @@ class PlaybookManager:
             return True
         if snapshot.get("sentinel"):
             return True
-        if snapshot.get("recent_trades"):
-            return True
         budget = snapshot.get("budget")
         if isinstance(budget, dict) and budget:
+            return True
+        overview = snapshot.get("market_overview")
+        if isinstance(overview, dict) and overview:
             return True
         return False
 

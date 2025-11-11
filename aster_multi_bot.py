@@ -1990,12 +1990,14 @@ class AITradeAdvisor:
             estimate = 0.0012
         else:
             system_prompt = (
-                "You act as the autonomous playbook strategist for an automated trading bot. Analyse the telemetry snapshot "
-                "and respond with JSON describing the updated playbook. Return the fields: request_id (echo the provided value), "
-                "mode, bias, confidence (0-1), size_bias (BUY/SELL multipliers between 0.4 and 2.5), sl_bias (0.4-2.5), tp_bias "
-                "(0.6-3.0), features (object mapping focus keywords to numeric weights between -1 and 1), strategy (object with "
-                "name, objective, why_active, market_signals array, actions array of objects with title/detail and optional "
-                "trigger, and risk_controls array), plus optional notes. Respond with valid JSON only."
+                "You act as the autonomous playbook strategist for an automated trading bot. Analyse the telemetry snapshot, "
+                "which highlights the current market regime via volatility, breadth, event-risk and hype metrics, and respond "
+                "with JSON describing the updated playbook. Focus on forward-looking positioning; recent trade logs are not "
+                "included. Return the fields: request_id (echo the provided value), mode, bias, confidence (0-1), size_bias "
+                "(BUY/SELL multipliers between 0.4 and 2.5), sl_bias (0.4-2.5), tp_bias (0.6-3.0), features (object mapping "
+                "focus keywords to numeric weights between -1 and 1), strategy (object with name, objective, why_active, "
+                "market_signals array, actions array of objects with title/detail and optional trigger, and risk_controls array), "
+                "plus optional notes. Respond with valid JSON only."
             )
             estimate = 0.0018
         try:
@@ -2125,9 +2127,35 @@ class AITradeAdvisor:
             sentinel = snapshot.get("sentinel")
             if isinstance(sentinel, dict):
                 meta["sentinel"] = len(sentinel)
-            trades = snapshot.get("recent_trades")
-            if isinstance(trades, list):
-                meta["recent_trades"] = len(trades)
+            overview = snapshot.get("market_overview")
+            if isinstance(overview, dict):
+                tech_overview = overview.get("technical")
+                if isinstance(tech_overview, dict):
+                    scope = tech_overview.get("count")
+                    if isinstance(scope, (int, float)):
+                        meta["technical"] = int(scope)
+                    for key in ("avg_rsi", "avg_adx", "avg_atr_pct", "trend_up_ratio", "high_volatility_ratio"):
+                        value = tech_overview.get(key)
+                        try:
+                            if value is not None:
+                                meta[f"technical_{key}"] = float(value)
+                        except (TypeError, ValueError):
+                            continue
+                sentinel_overview = overview.get("sentinel")
+                if isinstance(sentinel_overview, dict):
+                    scope = sentinel_overview.get("count")
+                    if isinstance(scope, (int, float)):
+                        meta["sentinel"] = int(scope)
+                    for key in ("avg_event_risk", "avg_hype_score"):
+                        value = sentinel_overview.get(key)
+                        try:
+                            if value is not None:
+                                meta[f"sentinel_{key}"] = float(value)
+                        except (TypeError, ValueError):
+                            continue
+                    warnings = sentinel_overview.get("warning_symbols")
+                    if isinstance(warnings, (int, float)):
+                        meta["sentinel_warnings"] = int(warnings)
             budget = snapshot.get("budget")
             if isinstance(budget, dict):
                 for key in ("remaining", "limit", "spent"):
@@ -2151,8 +2179,18 @@ class AITradeAdvisor:
             parts.append(f"tech={int(meta['technical'])}")
         if "sentinel" in meta:
             parts.append(f"sentinel={int(meta['sentinel'])}")
-        if "recent_trades" in meta:
-            parts.append(f"trades={int(meta['recent_trades'])}")
+        if "technical_avg_rsi" in meta:
+            parts.append(f"avgRSI={meta['technical_avg_rsi']:.1f}")
+        if "technical_trend_up_ratio" in meta:
+            parts.append(f"trend↑={meta['technical_trend_up_ratio']:.2f}")
+        if "technical_high_volatility_ratio" in meta:
+            parts.append(f"hiVOL={meta['technical_high_volatility_ratio']:.2f}")
+        if "sentinel_avg_event_risk" in meta:
+            parts.append(f"event={meta['sentinel_avg_event_risk']:.2f}")
+        if "sentinel_avg_hype_score" in meta:
+            parts.append(f"hype={meta['sentinel_avg_hype_score']:.2f}")
+        if "sentinel_warnings" in meta and meta["sentinel_warnings"]:
+            parts.append(f"warnings={int(meta['sentinel_warnings'])}")
         if (
             "budget_remaining" in meta
             or "budget_limit" in meta
@@ -6217,6 +6255,163 @@ class Strategy:
                 trimmed[sym] = item
         return trimmed
 
+    @staticmethod
+    def _playbook_market_overview(
+        technical_state: Any, sentinel_state: Any
+    ) -> Dict[str, Any]:
+        overview: Dict[str, Any] = {}
+
+        def _safe_float(value: Any) -> Optional[float]:
+            try:
+                if value is None:
+                    return None
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        def _average(values: List[float]) -> Optional[float]:
+            if not values:
+                return None
+            return sum(values) / float(len(values))
+
+        if isinstance(technical_state, dict) and technical_state:
+            entries = [
+                (sym, rec)
+                for sym, rec in technical_state.items()
+                if sym and isinstance(rec, dict)
+            ]
+            if entries:
+                metrics: Dict[str, Any] = {"count": len(entries)}
+                rsi_values: List[float] = []
+                adx_values: List[float] = []
+                atr_values: List[float] = []
+                bb_width_values: List[float] = []
+                trend_up = 0
+                trend_down = 0
+                rsi_bullish = 0
+                rsi_bearish = 0
+                high_vol = 0
+                atr_rank: List[Tuple[str, float]] = []
+                for sym, rec in entries:
+                    rsi = _safe_float(rec.get("rsi"))
+                    if rsi is not None:
+                        rsi_values.append(rsi)
+                        if rsi >= 55.0:
+                            rsi_bullish += 1
+                        elif rsi <= 45.0:
+                            rsi_bearish += 1
+                    adx = _safe_float(rec.get("adx"))
+                    if adx is not None:
+                        adx_values.append(adx)
+                    atr_pct = _safe_float(rec.get("atr_pct"))
+                    if atr_pct is not None:
+                        atr_values.append(atr_pct)
+                        if atr_pct >= 0.025:
+                            high_vol += 1
+                        atr_rank.append((sym, atr_pct))
+                    bb_width = _safe_float(rec.get("bb_width"))
+                    if bb_width is not None:
+                        bb_width_values.append(bb_width)
+                    st_dir = _safe_float(rec.get("supertrend_dir"))
+                    htf_trend = _safe_float(rec.get("htf_trend"))
+                    if st_dir is not None and st_dir > 0:
+                        trend_up += 1
+                    elif st_dir is not None and st_dir < 0:
+                        trend_down += 1
+                    elif htf_trend is not None:
+                        if htf_trend > 0:
+                            trend_up += 1
+                        elif htf_trend < 0:
+                            trend_down += 1
+                avg_rsi = _average(rsi_values)
+                if avg_rsi is not None:
+                    metrics["avg_rsi"] = round(avg_rsi, 2)
+                avg_adx = _average(adx_values)
+                if avg_adx is not None:
+                    metrics["avg_adx"] = round(avg_adx, 2)
+                avg_atr = _average(atr_values)
+                if avg_atr is not None:
+                    metrics["avg_atr_pct"] = round(avg_atr, 4)
+                avg_bb_width = _average(bb_width_values)
+                if avg_bb_width is not None:
+                    metrics["avg_bb_width"] = round(avg_bb_width, 6)
+                total = float(len(entries))
+                if total > 0:
+                    metrics["trend_up_ratio"] = round(trend_up / total, 3)
+                    metrics["trend_down_ratio"] = round(trend_down / total, 3)
+                    metrics["rsi_bullish_ratio"] = round(rsi_bullish / total, 3)
+                    metrics["rsi_bearish_ratio"] = round(rsi_bearish / total, 3)
+                    metrics["high_volatility_ratio"] = round(high_vol / total, 3)
+                if atr_rank:
+                    atr_rank.sort(key=lambda item: item[1], reverse=True)
+                    top_sym, top_atr = atr_rank[0]
+                    metrics["max_atr_pct"] = {
+                        "symbol": top_sym,
+                        "value": round(top_atr, 4),
+                    }
+                overview["technical"] = metrics
+
+        if isinstance(sentinel_state, dict) and sentinel_state:
+            entries = [
+                (sym, rec)
+                for sym, rec in sentinel_state.items()
+                if sym and isinstance(rec, dict)
+            ]
+            if entries:
+                metrics = {"count": len(entries)}
+                event_risks: List[float] = []
+                hype_scores: List[float] = []
+                label_counts: Dict[str, int] = {}
+                warning_symbols = 0
+                hard_blocks = 0
+                event_rank: List[Tuple[str, float]] = []
+                hype_rank: List[Tuple[str, float]] = []
+                for sym, rec in entries:
+                    event_risk = _safe_float(rec.get("event_risk"))
+                    if event_risk is not None:
+                        event_risks.append(event_risk)
+                        event_rank.append((sym, event_risk))
+                        if event_risk >= 0.25:
+                            warning_symbols += 1
+                    hype = _safe_float(rec.get("hype_score"))
+                    if hype is not None:
+                        hype_scores.append(hype)
+                        hype_rank.append((sym, hype))
+                    label = rec.get("label")
+                    if isinstance(label, str) and label:
+                        label_counts[label] = label_counts.get(label, 0) + 1
+                    actions = rec.get("actions")
+                    if isinstance(actions, dict):
+                        if actions.get("hard_block"):
+                            hard_blocks += 1
+                avg_event = _average(event_risks)
+                if avg_event is not None:
+                    metrics["avg_event_risk"] = round(avg_event, 3)
+                avg_hype = _average(hype_scores)
+                if avg_hype is not None:
+                    metrics["avg_hype_score"] = round(avg_hype, 3)
+                if label_counts:
+                    metrics["label_counts"] = label_counts
+                metrics["warning_symbols"] = warning_symbols
+                metrics["hard_blocks"] = hard_blocks
+                if event_rank:
+                    event_rank.sort(key=lambda item: item[1], reverse=True)
+                    top_sym, top_event = event_rank[0]
+                    metrics["max_event_risk"] = {
+                        "symbol": top_sym,
+                        "value": round(top_event, 3),
+                    }
+                if hype_rank:
+                    hype_rank.sort(key=lambda item: item[1], reverse=True)
+                    top_sym, top_hype = hype_rank[0]
+                    metrics["max_hype_score"] = {
+                        "symbol": top_sym,
+                        "value": round(top_hype, 3),
+                    }
+                overview["sentinel"] = metrics
+
+        return overview
+
     def _playbook_snapshot(self) -> Dict[str, Any]:
         tech_state = self.state.get("technical_snapshot") if self.state else None
         if isinstance(tech_state, dict):
@@ -6245,19 +6440,16 @@ class Strategy:
             except Exception:
                 budget_snapshot = {}
 
-        recent_trades: List[Any] = []
-        if self.state:
-            trades = self.state.get("trade_history")
-            if isinstance(trades, list):
-                recent_trades = trades[-6:]
+        market_overview = self._playbook_market_overview(tech_state, sentinel_state)
 
         snapshot = {
             "timestamp": time.time(),
             "technical": technical_sample,
             "sentinel": sentinel_sample,
             "budget": budget_snapshot,
-            "recent_trades": recent_trades,
         }
+        if market_overview:
+            snapshot["market_overview"] = market_overview
         if self.playbook_manager:
             try:
                 active_playbook = self.playbook_manager.active()
