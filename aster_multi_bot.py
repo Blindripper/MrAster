@@ -271,7 +271,7 @@ EXCLUDE = set(_split_env_symbols(os.getenv("ASTER_EXCLUDE_SYMBOLS", ""))) | SYMB
 UNIVERSE_MAX = int(os.getenv("ASTER_UNIVERSE_MAX", "0"))
 UNIVERSE_ROTATE = os.getenv("ASTER_UNIVERSE_ROTATE", "true").lower() in ("1", "true", "yes", "on")
 
-# Anzahl der Symbole, die nach Volumen priorisiert werden sollen (0 = kein Limit)
+# Anzahl der Symbole, die für Playbook-Analysen nach Volumen priorisiert werden sollen (0 = kein Limit)
 TOP_VOLUME_SYMBOL_LIMIT = max(0, int(os.getenv("ASTER_TOP_VOLUME_LIMIT", "10") or 10))
 SENTINEL_SAMPLE_LIMIT = TOP_VOLUME_SYMBOL_LIMIT if TOP_VOLUME_SYMBOL_LIMIT > 0 else 8
 
@@ -6510,14 +6510,60 @@ class Strategy:
                 return 0.0
         return 0.0
 
+    def _playbook_top_volume_symbols(self, limit: int) -> Optional[Set[str]]:
+        if limit <= 0:
+            return None
+        pairs: List[Tuple[str, float]] = []
+        cache = getattr(self, "_symbol_score_cache", {})
+        if isinstance(cache, dict) and cache:
+            for sym, info in cache.items():
+                if not isinstance(sym, str) or not sym:
+                    continue
+                if not isinstance(info, dict):
+                    continue
+                try:
+                    qvol = float(info.get("qvol", 0.0) or 0.0)
+                except Exception:
+                    qvol = 0.0
+                pairs.append((sym, qvol))
+        if not pairs:
+            scores = self.state.get("universe_scores") if self.state else None
+            if isinstance(scores, dict):
+                for sym, rec in scores.items():
+                    if not isinstance(sym, str) or not sym:
+                        continue
+                    if not isinstance(rec, dict):
+                        continue
+                    try:
+                        qvol = float(
+                            rec.get("qvol")
+                            or rec.get("qv")
+                            or rec.get("quoteVolume", 0.0)
+                            or 0.0
+                        )
+                    except Exception:
+                        qvol = 0.0
+                    pairs.append((sym, qvol))
+        if not pairs:
+            return None
+        pairs.sort(key=lambda item: item[1], reverse=True)
+        selected = {sym for sym, _ in pairs[:limit] if sym}
+        return selected or None
+
     def _playbook_sentinel_sample(
-        self, sentinel_state: Any, *, limit: int = SENTINEL_SAMPLE_LIMIT
+        self,
+        sentinel_state: Any,
+        *,
+        limit: int = SENTINEL_SAMPLE_LIMIT,
+        allowed: Optional[Set[str]] = None,
     ) -> Dict[str, Any]:
         if not isinstance(sentinel_state, dict):
             return {}
         entries: List[Tuple[float, str, Dict[str, Any]]] = []
         for sym, payload in sentinel_state.items():
             if not sym or not isinstance(payload, dict):
+                continue
+            if allowed is not None and sym not in allowed:
                 continue
             ts = self._playbook_timestamp(payload.get("updated"))
             entries.append((ts, sym, payload))
@@ -6584,7 +6630,9 @@ class Strategy:
 
     @staticmethod
     def _playbook_market_overview(
-        technical_state: Any, sentinel_state: Any
+        technical_state: Any,
+        sentinel_state: Any,
+        allowed: Optional[Set[str]] = None,
     ) -> Dict[str, Any]:
         overview: Dict[str, Any] = {}
 
@@ -6605,7 +6653,9 @@ class Strategy:
             entries = [
                 (sym, rec)
                 for sym, rec in technical_state.items()
-                if sym and isinstance(rec, dict)
+                if sym
+                and isinstance(rec, dict)
+                and (allowed is None or sym in allowed)
             ]
             if entries:
                 metrics: Dict[str, Any] = {"count": len(entries)}
@@ -6682,7 +6732,9 @@ class Strategy:
             entries = [
                 (sym, rec)
                 for sym, rec in sentinel_state.items()
-                if sym and isinstance(rec, dict)
+                if sym
+                and isinstance(rec, dict)
+                and (allowed is None or sym in allowed)
             ]
             if entries:
                 metrics = {"count": len(entries)}
@@ -6741,10 +6793,37 @@ class Strategy:
 
     def _playbook_snapshot(self) -> Dict[str, Any]:
         tech_state = self.state.get("technical_snapshot") if self.state else None
+        available_symbols: Set[str] = set()
         if isinstance(tech_state, dict):
+            available_symbols.update(
+                {str(key) for key in tech_state.keys() if isinstance(key, str) and key}
+            )
+        sentinel_state = self.state.get("sentinel", {}) if self.state else {}
+        if isinstance(sentinel_state, dict):
+            available_symbols.update(
+                {str(key) for key in sentinel_state.keys() if isinstance(key, str) and key}
+            )
+
+        top_volume_symbols = self._playbook_top_volume_symbols(TOP_VOLUME_SYMBOL_LIMIT)
+        if top_volume_symbols is not None and available_symbols:
+            overlap = {sym for sym in top_volume_symbols if sym in available_symbols}
+            if overlap:
+                top_volume_symbols = overlap
+            else:
+                top_volume_symbols = None
+
+        if isinstance(tech_state, dict):
+            filtered_items = [
+                (key, value)
+                for key, value in tech_state.items()
+                if isinstance(key, str)
+                and key
+                and isinstance(value, dict)
+                and (top_volume_symbols is None or key in top_volume_symbols)
+            ]
             sample_items = list(
                 sorted(
-                    tech_state.items(),
+                    filtered_items,
                     key=lambda item: float(item[1].get("ts", 0.0))
                     if isinstance(item[1], dict)
                     else 0.0,
@@ -6756,8 +6835,9 @@ class Strategy:
         else:
             technical_sample = {}
 
-        sentinel_state = self.state.get("sentinel", {}) if self.state else {}
-        sentinel_sample = self._playbook_sentinel_sample(sentinel_state)
+        sentinel_sample = self._playbook_sentinel_sample(
+            sentinel_state, allowed=top_volume_symbols
+        )
 
         budget_snapshot: Dict[str, Any] = {}
         tracker = getattr(self, "budget_tracker", None)
@@ -6767,7 +6847,9 @@ class Strategy:
             except Exception:
                 budget_snapshot = {}
 
-        market_overview = self._playbook_market_overview(tech_state, sentinel_state)
+        market_overview = self._playbook_market_overview(
+            tech_state, sentinel_state, allowed=top_volume_symbols
+        )
 
         snapshot = {
             "timestamp": time.time(),
@@ -9656,14 +9738,6 @@ class Bot:
             ),
             reverse=True,
         )
-        if TOP_VOLUME_SYMBOL_LIMIT > 0:
-            volume_sorted = sorted(
-                unique_syms,
-                key=lambda sym: score_cache.get(sym, {}).get("qvol", 0.0),
-                reverse=True,
-            )
-            allowed = set(volume_sorted[:TOP_VOLUME_SYMBOL_LIMIT])
-            ranked = [sym for sym in ranked if sym in allowed]
         self._symbol_score_cache = score_cache
         if getattr(self, "_strategy", None):
             self._strategy._symbol_score_cache = score_cache
