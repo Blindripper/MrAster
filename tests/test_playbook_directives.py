@@ -81,3 +81,66 @@ def test_playbook_risk_bias_tracks_mode_bias_and_confidence():
     mgr.inject_context(ctx)
     assert pytest.approx(ctx["playbook_risk_bias"], rel=0.01) == active["risk_bias"]
     assert pytest.approx(ctx["playbook_confidence"], rel=0.01) == 0.2
+
+
+def test_playbook_context_surfaces_structured_features_and_biases():
+    mgr = _manager()
+    now = time.time()
+    payload = {
+        "mode": "adaptive",
+        "bias": "slightly bullish",
+        "size_bias": {"BUY": 1.15, "SELL": 0.85},
+        "sl_bias": 1.1,
+        "tp_bias": 1.3,
+        "features": {
+            "event_risk": -0.2,
+            "hype_score": 0.5,
+            "breadth_green": 0.7,
+        },
+        "confidence": 0.68,
+        "notes": "Market is broadly constructive but not risk-free.",
+        "request_id": "playbook::playbook:sample",
+        "strategy": {
+            "name": "Momentum-Breadth Tilt",
+            "objective": "Capture upside in a broadly positive market.",
+            "why_active": "Breadth strong and hype elevated while event risk manageable.",
+            "market_signals": [
+                "123/155 symbols green; strong positive breadth",
+                "Average hype score elevated (0.72)",
+            ],
+            "actions": [
+                {
+                    "title": "Increase Buy Tilt",
+                    "detail": "Slightly overweight BUY positions to capture upside momentum.",
+                },
+                {
+                    "title": "Dynamic Take-Profit",
+                    "detail": "Widen take-profit targets to capture extended moves.",
+                    "trigger": "breadth_green > 0.6",
+                },
+            ],
+            "risk_controls": [
+                "Strictly avoid hard-blocked and red-labeled symbols.",
+                "Reduce position size on event risk > 0.7.",
+            ],
+        },
+    }
+    active = mgr._normalize_playbook(payload, now)  # pylint: disable=protected-access
+    mgr._state["active"] = active  # pylint: disable=protected-access
+    ctx = {"side": "SELL", "symbol": "OPENUSDT"}
+    mgr.inject_context(ctx)
+
+    assert pytest.approx(ctx["playbook_size_bias_sell"], rel=0.01) == 0.85
+    assert pytest.approx(ctx["playbook_size_bias_buy"], rel=0.01) == 1.15
+    assert ctx["playbook_size_bias_map"]["SELL"] == pytest.approx(0.85, rel=0.01)
+    assert pytest.approx(ctx["playbook_sl_bias"], rel=0.01) == 1.1
+    assert pytest.approx(ctx["playbook_tp_bias"], rel=0.01) == 1.3
+    assert pytest.approx(ctx["playbook_feature_event_risk"], rel=0.01) == -0.2
+    assert pytest.approx(ctx["playbook_features"]["event_risk"], rel=0.01) == -0.2
+    assert pytest.approx(ctx["playbook_features_raw"]["event_risk"], rel=0.01) == -0.2
+    assert ctx["playbook_strategy_signals"][0].startswith("123/155 symbols")
+    assert ctx["playbook_strategy_actions"][0]["title"] == "Increase Buy Tilt"
+    assert ctx["playbook_strategy_actions"][1]["trigger"] == "breadth_green > 0.6"
+    assert any(rc.startswith("Strictly avoid") for rc in ctx["playbook_strategy_risk_controls"])
+    assert ctx["playbook_notes"].startswith("Market is broadly constructive")
+    assert ctx["playbook_request_id"] == "playbook::playbook:sample"
