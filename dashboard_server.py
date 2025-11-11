@@ -1001,7 +1001,29 @@ def _build_playbook_process(
 
     process: List[Dict[str, Any]] = []
     for key, record in grouped.items():
-        record["steps"] = record.get("steps", [])
+        steps = record.get("steps", [])
+        record["steps"] = steps
+
+        has_request_id = bool(record.get("request_id"))
+        has_meaningful_stage = any(
+            step.get("stage") in {"requested", "applied", "failed"} for step in steps
+        )
+        has_signal_payload = any(
+            bool(record.get(field))
+            for field in (
+                "mode",
+                "bias",
+                "size_bias",
+                "sl_bias",
+                "tp_bias",
+                "snapshot_summary",
+                "notes",
+            )
+        )
+
+        if not (has_request_id or has_meaningful_stage or has_signal_payload):
+            continue
+
         process.append(record)
 
     process.sort(
