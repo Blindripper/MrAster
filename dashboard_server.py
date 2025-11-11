@@ -929,6 +929,16 @@ def _build_playbook_process(
     grouped: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
     anonymous_counter = 0
 
+    signal_fields = (
+        "mode",
+        "bias",
+        "size_bias",
+        "sl_bias",
+        "tp_bias",
+        "snapshot_summary",
+        "notes",
+    )
+
     for raw_entry in activity:
         if not isinstance(raw_entry, dict):
             continue
@@ -936,9 +946,15 @@ def _build_playbook_process(
         request_id = entry.get("request_id")
         if isinstance(request_id, str):
             request_id = request_id.strip() or None
+        stage = _resolve_stage(entry)
+
         if not request_id:
-            anonymous_counter += 1
-            key = f"anonymous:{anonymous_counter}"
+            has_signal_payload = any(entry.get(field) for field in signal_fields)
+            if stage in {"applied", "failed"} and has_signal_payload:
+                key = "anonymous:playbook"
+            else:
+                anonymous_counter += 1
+                key = f"anonymous:{anonymous_counter}"
         else:
             key = request_id
 
@@ -951,7 +967,6 @@ def _build_playbook_process(
             },
         )
 
-        stage = _resolve_stage(entry)
         if stage == "failed":
             record["status"] = "failed"
         elif stage == "applied" and record.get("status") != "failed":
@@ -998,6 +1013,8 @@ def _build_playbook_process(
             "ts_epoch": ts_epoch,
         }
         record["steps"].append(step)
+        if len(record["steps"]) > 8:
+            record["steps"] = record["steps"][-8:]
 
     process: List[Dict[str, Any]] = []
     for key, record in grouped.items():

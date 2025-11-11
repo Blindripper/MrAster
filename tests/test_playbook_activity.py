@@ -247,6 +247,42 @@ class PlaybookProcessTests(unittest.TestCase):
         process = _build_playbook_process(activity)
         self.assertEqual(process, [])
 
+    def test_process_coalesces_signal_entries_without_request_id(self):
+        raw = [
+            {
+                "kind": "playbook",
+                "headline": "Event regime snapshot",
+                "ts": "2024-07-01T11:00:00Z",
+                "data": {
+                    "mode": "event_hype",
+                    "bias": "neutral",
+                    "size_bias": {"BUY": 1.05, "SELL": 0.95},
+                    "sl_atr_mult": 1.1,
+                },
+            },
+            {
+                "kind": "playbook",
+                "headline": "Event regime snapshot",
+                "ts": "2024-07-01T12:00:00Z",
+                "data": {
+                    "mode": "event_hype",
+                    "bias": "neutral",
+                    "size_bias": {"BUY": 1.02, "SELL": 0.98},
+                    "tp_atr_mult": 0.95,
+                },
+            },
+        ]
+
+        activity = _collect_playbook_activity(raw)
+        self.assertEqual(len(activity), 2)
+
+        process = _build_playbook_process(activity)
+        self.assertEqual(len(process), 1)
+        entry = process[0]
+        self.assertIsNone(entry.get("request_id"))
+        self.assertEqual(entry.get("status"), "applied")
+        self.assertGreaterEqual(len(entry.get("steps", [])), 2)
+
 
 class PlaybookStateTests(unittest.TestCase):
     def test_collects_atr_keys_and_confidence(self):
