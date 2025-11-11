@@ -112,6 +112,63 @@ const MEME_COMPOSER_WINDOW_FEATURES =
 
 const languageButtons = document.querySelectorAll('.language-button[data-lang]');
 const i18nElements = document.querySelectorAll('[data-i18n]');
+const mobileSectionNav = document.querySelector('.mobile-section-nav');
+const mobileSectionNavToggle = document.querySelector('.mobile-section-nav__toggle');
+const mobileSectionNavMenu = document.getElementById('mobile-section-nav-menu');
+
+if (mobileSectionNav && mobileSectionNavToggle && mobileSectionNavMenu) {
+  const setMobileNavExpanded = (expanded, { restoreFocus = true } = {}) => {
+    const isOpen = mobileSectionNav.classList.contains('is-open');
+    if (expanded) {
+      if (isOpen) return;
+      mobileSectionNav.classList.add('is-open');
+      mobileSectionNavToggle.setAttribute('aria-expanded', 'true');
+    } else {
+      if (!isOpen) return;
+      mobileSectionNav.classList.remove('is-open');
+      mobileSectionNavToggle.setAttribute('aria-expanded', 'false');
+      if (restoreFocus && typeof mobileSectionNavToggle.focus === 'function') {
+        mobileSectionNavToggle.focus();
+      }
+    }
+  };
+
+  mobileSectionNavToggle.addEventListener('click', () => {
+    const expanded = mobileSectionNav.classList.contains('is-open');
+    setMobileNavExpanded(!expanded, { restoreFocus: false });
+  });
+
+  mobileSectionNavMenu.addEventListener('click', (event) => {
+    const link = event.target.closest('.mobile-section-nav__link');
+    if (!link) return;
+    setMobileNavExpanded(false, { restoreFocus: false });
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!mobileSectionNav.classList.contains('is-open')) return;
+    if (mobileSectionNav.contains(event.target)) return;
+    setMobileNavExpanded(false, { restoreFocus: false });
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    if (!mobileSectionNav.classList.contains('is-open')) return;
+    setMobileNavExpanded(false);
+  });
+
+  const desktopQuery = window.matchMedia('(min-width: 769px)');
+  const handleDesktopChange = (event) => {
+    if (event.matches) {
+      setMobileNavExpanded(false, { restoreFocus: false });
+    }
+  };
+
+  if (typeof desktopQuery.addEventListener === 'function') {
+    desktopQuery.addEventListener('change', handleDesktopChange);
+  } else if (typeof desktopQuery.addListener === 'function') {
+    desktopQuery.addListener(handleDesktopChange);
+  }
+}
 
 if (btnSaveConfig) btnSaveConfig.dataset.state = 'idle';
 if (btnSaveCredentials) btnSaveCredentials.dataset.state = 'idle';
@@ -143,6 +200,12 @@ const TRANSLATIONS = {
     'language.turkish': 'Турецкий',
     'language.korean': 'Корейский',
     'language.switcher': 'Выбор языка',
+    'nav.menu': 'Разделы',
+    'nav.overview': 'Обзор',
+    'nav.trades': 'Сделки',
+    'nav.playbook': 'Плейбук',
+    'nav.config': 'Настройки',
+    'nav.logs': 'Логи',
     'ticker.label': 'Самые торгуемые монеты · Топ 20:',
     'ticker.empty': 'Собираем лидеров рынка…',
     'ticker.noData': 'Сейчас нет рыночных данных.',
@@ -400,6 +463,12 @@ const TRANSLATIONS = {
     'language.turkish': 'Türkisch',
     'language.korean': 'Koreanisch',
     'language.switcher': 'Sprache wählen',
+    'nav.menu': 'Bereiche',
+    'nav.overview': 'Übersicht',
+    'nav.trades': 'Trades',
+    'nav.playbook': 'Playbook',
+    'nav.config': 'Konfiguration',
+    'nav.logs': 'Protokolle',
     'ticker.label': 'Meistgehandelte Coins · Top 20:',
     'ticker.empty': 'Marktführer werden geladen…',
     'ticker.noData': 'Zurzeit liegen keine Marktdaten vor.',
@@ -671,6 +740,12 @@ const TRANSLATIONS = {
     'language.turkish': '터키어',
     'language.korean': '한국어',
     'language.switcher': '언어 선택',
+    'nav.menu': '섹션',
+    'nav.overview': '개요',
+    'nav.trades': '거래',
+    'nav.playbook': '플레이북',
+    'nav.config': '설정',
+    'nav.logs': '로그',
     'ticker.label': '가장 많이 거래되는 코인 · 상위 20개:',
     'ticker.empty': '시장 선도주를 불러오는 중…',
     'ticker.noData': '현재 이용 가능한 시장 데이터가 없습니다.',
@@ -930,6 +1005,12 @@ const TRANSLATIONS = {
     'language.turkish': 'Turc',
     'language.korean': 'Coréen',
     'language.switcher': 'Choisir la langue',
+    'nav.menu': 'Sections',
+    'nav.overview': 'Aperçu',
+    'nav.trades': 'Transactions',
+    'nav.playbook': 'Playbook',
+    'nav.config': 'Config',
+    'nav.logs': 'Journaux',
     'ticker.label': 'Crypto les plus échangées · Top 20 :',
     'ticker.empty': 'Collecte des leaders du marché…',
     'ticker.noData': 'Aucune donnée de marché disponible pour le moment.',
@@ -1189,6 +1270,12 @@ const TRANSLATIONS = {
     'language.turkish': 'Turco',
     'language.korean': 'Coreano',
     'language.switcher': 'Seleccionar idioma',
+    'nav.menu': 'Secciones',
+    'nav.overview': 'Resumen',
+    'nav.trades': 'Operaciones',
+    'nav.playbook': 'Playbook',
+    'nav.config': 'Configuración',
+    'nav.logs': 'Registros',
     'ticker.label': 'Monedas más negociadas · Top 20:',
     'ticker.empty': 'Reuniendo líderes del mercado…',
     'ticker.noData': 'No hay datos de mercado disponibles.',
@@ -1448,6 +1535,12 @@ const TRANSLATIONS = {
     'language.turkish': 'Türkçe',
     'language.korean': 'Korece',
     'language.switcher': 'Dili seç',
+    'nav.menu': 'Bölümler',
+    'nav.overview': 'Genel bakış',
+    'nav.trades': 'İşlemler',
+    'nav.playbook': 'Oyun planı',
+    'nav.config': 'Yapılandırma',
+    'nav.logs': 'Günlükler',
     'ticker.label': 'En çok işlem gören Coinler · İlk 20:',
     'ticker.empty': 'Piyasa liderleri toplanıyor…',
     'ticker.noData': 'Şu anda piyasa verisi yok.',
@@ -1699,6 +1792,12 @@ const TRANSLATIONS = {
     'language.turkish': '土耳其语',
     'language.korean': '韩语',
     'language.switcher': '选择语言',
+    'nav.menu': '模块',
+    'nav.overview': '概览',
+    'nav.trades': '交易',
+    'nav.playbook': '策略手册',
+    'nav.config': '配置',
+    'nav.logs': '日志',
     'ticker.label': '最热门交易币种 · 前 20 名：',
     'ticker.empty': '正在收集市场领头羊…',
     'ticker.noData': '当前没有市场数据。',
