@@ -401,12 +401,29 @@ def _summarize_playbook_snapshot_meta(meta: Optional[Dict[str, Any]]) -> Optiona
         except Exception:
             pass
 
-    trades = meta.get("recent_trades")
-    if isinstance(trades, (int, float)):
-        try:
-            parts.append(f"trades={int(trades)}")
-        except Exception:
-            pass
+    avg_rsi = _safe_float(meta.get("technical_avg_rsi"))
+    if avg_rsi is not None:
+        parts.append(f"avgRSI={avg_rsi:.1f}")
+
+    trend_up = _safe_float(meta.get("technical_trend_up_ratio"))
+    if trend_up is not None:
+        parts.append(f"trend↑={trend_up:.2f}")
+
+    high_vol = _safe_float(meta.get("technical_high_volatility_ratio"))
+    if high_vol is not None:
+        parts.append(f"hiVOL={high_vol:.2f}")
+
+    avg_event = _safe_float(meta.get("sentinel_avg_event_risk"))
+    if avg_event is not None:
+        parts.append(f"event={avg_event:.2f}")
+
+    avg_hype = _safe_float(meta.get("sentinel_avg_hype_score"))
+    if avg_hype is not None:
+        parts.append(f"hype={avg_hype:.2f}")
+
+    warnings = meta.get("sentinel_warnings")
+    if isinstance(warnings, (int, float)) and warnings:
+        parts.append(f"warnings={int(warnings)}")
 
     remaining = _safe_float(meta.get("budget_remaining"))
     limit = _safe_float(meta.get("budget_limit"))
