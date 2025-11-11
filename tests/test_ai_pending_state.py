@@ -10,7 +10,7 @@ from aster_multi_bot import AITradeAdvisor, DailyBudgetTracker  # noqa: E402
 def _make_advisor() -> tuple[AITradeAdvisor, dict]:
     state: dict = {}
     budget = DailyBudgetTracker(state, limit=5.0, strict=True)
-    advisor = AITradeAdvisor("key", "gpt-4o", budget, state, enabled=False)
+    advisor = AITradeAdvisor("key", "gpt-4.1", budget, state, enabled=False)
     advisor._pending_order.clear()
     advisor._pending_requests.clear()
     advisor._sync_pending_state()

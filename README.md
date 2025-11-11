@@ -246,7 +246,7 @@ All variables can be edited via environment overrides or through the dashboard (
 | `ASTER_HISTORY_MAX` | `250` | Number of historical trades for analytics. |
 | `ASTER_OPENAI_API_KEY` | empty | API key for AITradeAdvisor. |
 | `ASTER_CHAT_OPENAI_API_KEY` | empty | Optional dashboard chat-only OpenAI key; falls back to `ASTER_OPENAI_API_KEY`. |
-| `ASTER_AI_MODEL` | `gpt-4o` | Model ID for AI analysis. |
+| `ASTER_AI_MODEL` | `gpt-4.1` | Model ID for AI analysis. |
 | `ASTER_AI_DAILY_BUDGET_USD` | `20` | Daily budget limit (USD). Ignored when `ASTER_PRESET_MODE` is `high` or `att`. |
 | `ASTER_AI_STRICT_BUDGET` | `true` | Stops AI calls after hitting the budget. |
 | `ASTER_AI_MIN_INTERVAL_SECONDS` | `8` | Cooldown before the AI re-evaluates the same symbol. |

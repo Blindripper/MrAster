@@ -94,7 +94,7 @@ AI_MODE_ENABLED = MODE == "ai" or os.getenv("ASTER_AI_MODE", "").lower() in ("1"
 OPENAI_API_KEY = os.getenv("ASTER_OPENAI_API_KEY", "").strip()
 if not OPENAI_API_KEY:
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
-AI_MODEL = os.getenv("ASTER_AI_MODEL", "gpt-4o").strip() or "gpt-4o"
+AI_MODEL = os.getenv("ASTER_AI_MODEL", "gpt-4.1").strip() or "gpt-4.1"
 JSON_OBJECT_RESPONSE_FORMAT: Dict[str, str] = {"type": "json_object"}
 AI_DAILY_BUDGET = float(os.getenv("ASTER_AI_DAILY_BUDGET_USD", "20") or 0)
 if PRESET_MODE in {"high", "att"}:
@@ -1725,7 +1725,7 @@ class AITradeAdvisor:
         ] = None,
     ) -> None:
         self.api_key = (api_key or "").strip()
-        self.model = (model or "gpt-4o").strip()
+        self.model = (model or "gpt-4.1").strip()
         self.budget = budget
         self.state = state if isinstance(state, dict) else {}
         self.enabled = bool(enabled and self.api_key)

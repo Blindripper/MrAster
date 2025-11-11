@@ -3243,7 +3243,7 @@ function renderCredentials(env) {
     inputAiBudget.value = env?.ASTER_AI_DAILY_BUDGET_USD ?? '20';
   }
   if (inputAiModel) {
-    const model = env?.ASTER_AI_MODEL ?? 'gpt-4o';
+    const model = env?.ASTER_AI_MODEL ?? 'gpt-4.1';
     const existingOption = Array.from(inputAiModel.options).find((option) => option.value === model);
     if (existingOption) {
       inputAiModel.value = model;
