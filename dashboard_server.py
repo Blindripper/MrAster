@@ -114,7 +114,7 @@ ENV_DEFAULTS: Dict[str, str] = {
     "ASTER_HISTORY_MAX": "250",
     "ASTER_BOT_SCRIPT": "aster_multi_bot.py",
     "ASTER_OPENAI_API_KEY": "",
-    "ASTER_AI_MODEL": "gpt-4o",
+    "ASTER_AI_MODEL": "gpt-4.1",
     "ASTER_AI_DAILY_BUDGET_USD": "20",
     "ASTER_AI_STRICT_BUDGET": "true",
     "ASTER_AI_SENTINEL_ENABLED": "true",
@@ -6323,7 +6323,7 @@ class AIChatEngine:
             if focus_symbols:
                 response["analysis_focus"] = focus_symbols
             return response
-        model = (env.get("ASTER_AI_MODEL") or "gpt-4o").strip() or "gpt-4o"
+        model = (env.get("ASTER_AI_MODEL") or "gpt-4.1").strip() or "gpt-4.1"
 
         context_text = self._build_context_text(
             stats,
@@ -6494,7 +6494,7 @@ class AIChatEngine:
                 "source": "missing_chat_key",
             }
 
-        model = (env.get("ASTER_AI_MODEL") or "gpt-4o").strip() or "gpt-4o"
+        model = (env.get("ASTER_AI_MODEL") or "gpt-4.1").strip() or "gpt-4.1"
         context_text = self._build_context_text(
             stats,
             history,
