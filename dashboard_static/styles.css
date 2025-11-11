@@ -3349,9 +3349,10 @@ body.ai-mode .playbook-overview {
   gap: 0.7rem;
   padding: 0.95rem 1.05rem;
   border-radius: 1rem;
-  background: rgba(17, 18, 27, 0.92);
-  border: 1px solid rgba(245, 196, 107, 0.14);
-  box-shadow: inset 0 1px 0 rgba(245, 196, 107, 0.06);
+  background: var(--activity-gradient, rgba(17, 18, 27, 0.92));
+  border: 1px solid var(--activity-border, rgba(245, 196, 107, 0.14));
+  box-shadow: inset 0 1px 0 var(--activity-glow, rgba(245, 196, 107, 0.06));
+  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .playbook-activity-header-row {
@@ -3377,27 +3378,28 @@ body.ai-mode .playbook-overview {
   font-size: 0.78rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  background: rgba(245, 196, 107, 0.18);
-  border: 1px solid rgba(245, 196, 107, 0.4);
-  color: var(--accent);
+  background: var(--activity-chip-bg, rgba(245, 196, 107, 0.18));
+  border: 1px solid var(--activity-chip-border, rgba(245, 196, 107, 0.4));
+  color: var(--activity-chip-text, var(--accent));
+  transition: background 0.3s ease, border-color 0.3s ease, color 0.3s ease;
 }
 
 .playbook-activity-kind.kind--query {
-  background: rgba(80, 75, 241, 0.18);
-  border-color: rgba(80, 75, 241, 0.35);
-  color: #aeb6ff;
+  --activity-chip-bg: rgba(80, 75, 241, 0.18);
+  --activity-chip-border: rgba(80, 75, 241, 0.35);
+  --activity-chip-text: #aeb6ff;
 }
 
 .playbook-activity-kind.kind--error {
-  background: rgba(248, 113, 113, 0.15);
-  border-color: rgba(248, 113, 113, 0.3);
-  color: var(--danger);
+  --activity-chip-bg: rgba(248, 113, 113, 0.15);
+  --activity-chip-border: rgba(248, 113, 113, 0.3);
+  --activity-chip-text: var(--danger);
 }
 
 .playbook-activity-kind.kind--warning {
-  background: rgba(245, 196, 107, 0.18);
-  border-color: rgba(245, 196, 107, 0.35);
-  color: var(--accent);
+  --activity-chip-bg: rgba(245, 196, 107, 0.18);
+  --activity-chip-border: rgba(245, 196, 107, 0.35);
+  --activity-chip-text: var(--accent);
 }
 
 .playbook-activity-title {
