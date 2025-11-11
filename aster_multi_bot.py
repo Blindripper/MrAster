@@ -8775,6 +8775,26 @@ class Bot:
         self._quote_volume_cooldown_dirty = False
         self._universe_state_dirty = False
         self._management_dirty = False
+        raw_veto_cache = self.state.get("playbook_veto_cache")
+        veto_cache: Dict[str, Dict[str, Any]] = {}
+        now = time.time()
+        cutoff = now - 3600.0
+        if isinstance(raw_veto_cache, dict):
+            for key, rec in raw_veto_cache.items():
+                if not isinstance(rec, dict):
+                    continue
+                try:
+                    ts = float(rec.get("ts", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    ts = 0.0
+                if ts <= 0.0 or ts < cutoff:
+                    continue
+                veto_cache[str(key)] = {
+                    "ts": ts,
+                    "reason": str(rec.get("reason") or ""),
+                }
+        self._playbook_veto_cache: Dict[str, Dict[str, Any]] = veto_cache
+        self.state["playbook_veto_cache"] = dict(veto_cache)
         self._ai_wakeup_event = threading.Event()
         self._ai_priority_lock = threading.Lock()
         self._ai_priority_queue: deque[Tuple[str, Optional[str]]] = deque()
@@ -9200,6 +9220,52 @@ class Bot:
                 )
             else:
                 self._manual_state_dirty = True
+
+    def _playbook_veto_log_allowed(
+        self,
+        symbol: str,
+        *,
+        reason: Optional[str] = None,
+        tag: str = "generic",
+    ) -> bool:
+        cache = getattr(self, "_playbook_veto_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._playbook_veto_cache = cache
+        state_bucket = self.state.get("playbook_veto_cache")
+        if not isinstance(state_bucket, dict):
+            state_bucket = {}
+        now = time.time()
+        cutoff = now - 3600.0
+        stale_removed = False
+        for key, rec in list(cache.items()):
+            try:
+                ts = float(rec.get("ts", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                ts = 0.0
+            if ts <= 0.0 or ts < cutoff:
+                cache.pop(key, None)
+                if key in state_bucket:
+                    state_bucket.pop(key, None)
+                    stale_removed = True
+        if stale_removed:
+            self.state["playbook_veto_cache"] = state_bucket
+            self._management_dirty = True
+        reason_key = str(reason or "").strip().lower()
+        cache_key = f"{tag}:{str(symbol).upper()}::{reason_key}"
+        entry = cache.get(cache_key)
+        if entry:
+            try:
+                last_ts = float(entry.get("ts", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                last_ts = 0.0
+            if last_ts >= cutoff:
+                return False
+        cache[cache_key] = {"ts": now, "reason": reason_key}
+        state_bucket[cache_key] = {"ts": now, "reason": reason_key}
+        self.state["playbook_veto_cache"] = state_bucket
+        self._management_dirty = True
+        return True
 
     def _refresh_manual_requests(self):
         try:
@@ -10206,18 +10272,23 @@ class Bot:
                 symbol,
                 reason_note,
             )
-            self._log_ai_activity(
-                "decision",
-                f"Playbook vetoed {symbol}",
-                body=f"Structured risk control blocked trade: {reason_note}",
-                data={
-                    "symbol": symbol,
-                    "reason": reason_note,
-                    "event_risk": event_risk,
-                    "hype": hype_score,
-                },
-                force=True,
-            )
+            if self._playbook_veto_log_allowed(
+                symbol,
+                reason=reason_note,
+                tag="structured",
+            ):
+                self._log_ai_activity(
+                    "decision",
+                    f"Playbook vetoed {symbol}",
+                    body=f"Structured risk control blocked trade: {reason_note}",
+                    data={
+                        "symbol": symbol,
+                        "reason": reason_note,
+                        "event_risk": event_risk,
+                        "hype": hype_score,
+                    },
+                    force=True,
+                )
             if manual_override:
                 self._complete_manual_request(
                     manual_req,
@@ -10259,13 +10330,18 @@ class Bot:
                 directive_label_raw or "block",
                 directive_level,
             )
-            self._log_ai_activity(
-                "decision",
-                headline,
-                body=body,
-                data=veto_data,
-                force=True,
-            )
+            if self._playbook_veto_log_allowed(
+                symbol,
+                reason=summary_note,
+                tag="directive",
+            ):
+                self._log_ai_activity(
+                    "decision",
+                    headline,
+                    body=body,
+                    data=veto_data,
+                    force=True,
+                )
             if manual_override:
                 self._complete_manual_request(
                     manual_req,
