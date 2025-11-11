@@ -4,7 +4,125 @@ from __future__ import annotations
 from datetime import datetime
 import re
 import time
-from typing import Any, Callable, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set
+
+_ACTION_FOCUS_STOPWORDS: Set[str] = {
+    "and",
+    "are",
+    "both",
+    "but",
+    "either",
+    "for",
+    "from",
+    "into",
+    "just",
+    "keep",
+    "like",
+    "make",
+    "must",
+    "need",
+    "not",
+    "only",
+    "our",
+    "out",
+    "should",
+    "such",
+    "than",
+    "that",
+    "the",
+    "their",
+    "them",
+    "then",
+    "there",
+    "these",
+    "they",
+    "this",
+    "those",
+    "through",
+    "to",
+    "too",
+    "toward",
+    "towards",
+    "very",
+    "was",
+    "were",
+    "while",
+    "with",
+}
+
+_ACTION_FOCUS_PRIORITY_TERMS: Set[str] = {
+    "adjust",
+    "avoid",
+    "bias",
+    "breadth",
+    "buy",
+    "capture",
+    "cut",
+    "defend",
+    "diversify",
+    "expand",
+    "exposure",
+    "focus",
+    "hedge",
+    "increase",
+    "limit",
+    "long",
+    "monitor",
+    "momentum",
+    "neutral",
+    "overweight",
+    "protect",
+    "reduce",
+    "risk",
+    "sell",
+    "short",
+    "size",
+    "sl",
+    "tighten",
+    "tp",
+    "trim",
+    "volatility",
+    "warning",
+}
+
+_ACTION_FOCUS_PATTERN = re.compile(r"[A-Za-z0-9_%]+")
+
+
+def _extract_action_focus_terms(texts: Iterable[Optional[str]], *, limit: int = 6) -> List[str]:
+    """Distill playbook action prose into a compact set of focus tokens."""
+
+    priority: List[str] = []
+    special: List[str] = []
+    regular: List[str] = []
+    seen: Set[str] = set()
+
+    def _append(bucket: List[str], token: str) -> None:
+        if token not in seen:
+            bucket.append(token)
+            seen.add(token)
+
+    for text in texts:
+        if not isinstance(text, str):
+            continue
+        for raw_token in _ACTION_FOCUS_PATTERN.findall(text.lower()):
+            if len(raw_token) < 3:
+                continue
+            if raw_token in _ACTION_FOCUS_STOPWORDS:
+                continue
+            if raw_token.endswith("ly") and raw_token not in {"only", "early"}:
+                base = raw_token[:-2]
+                if len(base) >= 3:
+                    raw_token = base
+            bucket = regular
+            if raw_token in _ACTION_FOCUS_PRIORITY_TERMS:
+                bucket = priority
+            elif any(ch.isdigit() for ch in raw_token) or "_" in raw_token:
+                bucket = special
+            _append(bucket, raw_token)
+
+    combined = priority + special + regular
+    return combined[:limit]
+
 
 POSTMORTEM_FEATURE_MAP: Dict[str, str] = {
     "trend_break": "pm_trend_break",
@@ -884,12 +1002,12 @@ class PlaybookManager:
             if sanitized_signals:
                 ctx["playbook_strategy_signals"] = sanitized_signals[:6]
             actions = strategy.get("actions")
-            sanitized_actions: List[Dict[str, str]] = []
+            sanitized_actions: List[Dict[str, Any]] = []
             if isinstance(actions, list):
                 for action in actions:
                     if not isinstance(action, dict):
                         continue
-                    clean_action: Dict[str, str] = {}
+                    clean_action: Dict[str, Any] = {}
                     title = action.get("title")
                     detail = action.get("detail")
                     trigger = action.get("trigger")
@@ -899,23 +1017,40 @@ class PlaybookManager:
                         clean_action["detail"] = detail.strip()
                     if isinstance(trigger, str) and trigger.strip():
                         clean_action["trigger"] = trigger.strip()
+                    focus_terms = _extract_action_focus_terms(
+                        (title, detail, trigger)
+                    )
+                    if focus_terms:
+                        clean_action["focus_terms"] = focus_terms
                     if clean_action:
                         sanitized_actions.append(clean_action)
                     if len(sanitized_actions) >= 6:
                         break
             if sanitized_actions:
                 ctx["playbook_strategy_actions"] = sanitized_actions
+                aggregated_terms: List[str] = []
+                aggregated_seen: Set[str] = set()
                 for idx, action in enumerate(sanitized_actions[:3], start=1):
                     base_key = f"playbook_action_{idx}"
                     title = action.get("title")
                     detail = action.get("detail")
                     trigger = action.get("trigger")
+                    focus_terms = action.get("focus_terms")
                     if title:
                         ctx[f"{base_key}_title"] = title
                     if detail:
                         ctx[f"{base_key}_detail"] = detail
                     if trigger:
                         ctx[f"{base_key}_trigger"] = trigger
+                    if focus_terms:
+                        ctx[f"{base_key}_focus_terms"] = focus_terms
+                for action in sanitized_actions:
+                    for term in action.get("focus_terms", []):
+                        if term not in aggregated_seen:
+                            aggregated_terms.append(term)
+                            aggregated_seen.add(term)
+                if aggregated_terms:
+                    ctx["playbook_action_focus_terms"] = aggregated_terms
             risk_controls = strategy.get("risk_controls") or strategy.get("risk_management")
             sanitized_rc: List[str] = []
             if isinstance(risk_controls, list):

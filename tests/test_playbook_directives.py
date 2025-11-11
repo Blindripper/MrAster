@@ -141,6 +141,11 @@ def test_playbook_context_surfaces_structured_features_and_biases():
     assert ctx["playbook_strategy_signals"][0].startswith("123/155 symbols")
     assert ctx["playbook_strategy_actions"][0]["title"] == "Increase Buy Tilt"
     assert ctx["playbook_strategy_actions"][1]["trigger"] == "breadth_green > 0.6"
+    assert "buy" in ctx["playbook_strategy_actions"][0]["focus_terms"]
+    assert "profit" in ctx["playbook_strategy_actions"][1]["focus_terms"]
+    assert "breadth_green" in ctx["playbook_strategy_actions"][1]["focus_terms"]
+    assert "buy" in ctx["playbook_action_focus_terms"]
+    assert "breadth_green" in ctx["playbook_action_focus_terms"]
     assert any(rc.startswith("Strictly avoid") for rc in ctx["playbook_strategy_risk_controls"])
     assert ctx["playbook_notes"].startswith("Market is broadly constructive")
     assert ctx["playbook_request_id"] == "playbook::playbook:sample"
