@@ -8272,10 +8272,128 @@ function createPlaybookProcessItem(entry) {
   return wrapper;
 }
 
+function getPlaybookActivityToneKey(entry) {
+  if (!entry || typeof entry !== 'object') return '';
+  const candidates = [entry.reason, entry.headline, entry.notes, entry.kind, entry.mode];
+  for (const value of candidates) {
+    if (typeof value !== 'string') continue;
+    const cleaned = value.trim();
+    if (cleaned) {
+      return cleaned.toLowerCase();
+    }
+  }
+  return '';
+}
+
+function classifyPlaybookActivityImportance(entry) {
+  const toneSource = getPlaybookActivityToneKey(entry);
+  if (!toneSource) return 'balanced';
+  const mutedKeywords = [
+    'skip',
+    'skipped',
+    'ignored',
+    'noop',
+    'no trade',
+    'cooldown',
+    'waiting',
+    'paused',
+    'dismissed',
+  ];
+  if (mutedKeywords.some((term) => toneSource.includes(term))) {
+    return 'muted';
+  }
+  const brightKeywords = [
+    'filled',
+    'executed',
+    'update',
+    'updated',
+    'applied',
+    'orderbook',
+    'playbook',
+    'trade',
+    'entry',
+    'exit',
+    'filled',
+    'triggered',
+  ];
+  if (brightKeywords.some((term) => toneSource.includes(term))) {
+    return 'bright';
+  }
+  if (entry && typeof entry === 'object') {
+    const kind = (entry.kind || '').toString().toLowerCase();
+    if (kind.includes('playbook') || kind.includes('orderbook') || kind.includes('trade')) {
+      return 'bright';
+    }
+    if (kind.includes('query') || kind.includes('warning')) {
+      return 'muted';
+    }
+  }
+  return 'balanced';
+}
+
+function hashPlaybookActivityKey(key) {
+  let hash = 0;
+  if (!key) return hash;
+  for (let index = 0; index < key.length; index += 1) {
+    hash = (hash << 5) - hash + key.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function buildPlaybookActivityPalette(entry) {
+  const toneKey = getPlaybookActivityToneKey(entry) || 'default';
+  const importance = classifyPlaybookActivityImportance(entry);
+  const hash = hashPlaybookActivityKey(toneKey);
+  const huePrimary = hash % 360;
+  const hueOffset = 24 + ((hash >> 5) % 96);
+  const hueSecondary = (huePrimary + hueOffset) % 360;
+  const tonePresets = {
+    bright: { saturation: 72, lightness: 52 },
+    balanced: { saturation: 60, lightness: 44 },
+    muted: { saturation: 42, lightness: 30 },
+  };
+  const preset = tonePresets[importance] || tonePresets.balanced;
+  const saturation = preset.saturation;
+  const lightness = preset.lightness;
+  const lightnessSecondary = Math.min(lightness + 10, 70);
+  const gradient = `linear-gradient(135deg, hsla(${huePrimary}, ${saturation}%, ${lightness}%, 0.82), hsla(${hueSecondary}, ${saturation + 6}%, ${lightnessSecondary}%, 0.88))`;
+  const border = `hsla(${huePrimary}, ${Math.max(28, saturation - 14)}%, ${Math.max(12, lightness - 18)}%, 0.72)`;
+  const glow = `hsla(${hueSecondary}, ${saturation + 10}%, ${Math.min(84, lightnessSecondary + 14)}%, 0.6)`;
+  const chipBg = `hsla(${huePrimary}, ${saturation}%, ${Math.min(78, lightnessSecondary + 12)}%, 0.35)`;
+  const chipBorder = `hsla(${huePrimary}, ${saturation}%, ${Math.max(24, lightness - 10)}%, 0.65)`;
+  const chipText = importance === 'muted'
+    ? `hsla(${hueSecondary}, ${Math.min(56, saturation)}%, ${Math.min(88, lightnessSecondary + 18)}%, 0.92)`
+    : `hsla(${hueSecondary}, ${Math.min(78, saturation + 12)}%, ${Math.min(90, lightnessSecondary + 24)}%, 0.98)`;
+  return {
+    gradient,
+    border,
+    glow,
+    chipBg,
+    chipBorder,
+    chipText,
+    toneClass: `tone--${importance}`,
+  };
+}
+
+function applyPlaybookActivityPalette(element, entry) {
+  if (!(element instanceof HTMLElement)) return;
+  const palette = buildPlaybookActivityPalette(entry);
+  if (!palette) return;
+  element.style.setProperty('--activity-gradient', palette.gradient);
+  element.style.setProperty('--activity-border', palette.border);
+  element.style.setProperty('--activity-glow', palette.glow);
+  element.style.setProperty('--activity-chip-bg', palette.chipBg);
+  element.style.setProperty('--activity-chip-border', palette.chipBorder);
+  element.style.setProperty('--activity-chip-text', palette.chipText);
+  element.classList.add(palette.toneClass);
+}
+
 function createPlaybookActivityItem(entry) {
   if (!entry || typeof entry !== 'object') return null;
   const wrapper = document.createElement('article');
   wrapper.className = 'playbook-activity-item';
+  applyPlaybookActivityPalette(wrapper, entry);
 
   const headerRow = document.createElement('div');
   headerRow.className = 'playbook-activity-header-row';
