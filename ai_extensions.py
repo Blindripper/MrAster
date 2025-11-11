@@ -342,6 +342,12 @@ class ParameterTuner:
                 )
             except (TypeError, ValueError):
                 pass
+            try:
+                snapshot["playbook_risk_bias"] = float(
+                    active_playbook.get("risk_bias", 1.0) or 1.0
+                )
+            except (TypeError, ValueError):
+                pass
             size_bias = active_playbook.get("size_bias")
             if isinstance(size_bias, dict):
                 for key, value in size_bias.items():
@@ -465,6 +471,32 @@ class PlaybookManager:
         "mention": 0.2,
         "neutral": 0.0,
     }
+    _RISK_KEYWORD_TILTS = {
+        "cautious": -0.25,
+        "defensive": -0.3,
+        "protective": -0.24,
+        "conservative": -0.28,
+        "shielded": -0.22,
+        "balanced": 0.0,
+        "neutral": 0.0,
+        "calm": -0.12,
+        "guarded": -0.2,
+        "risk_off": -0.34,
+        "risk-off": -0.34,
+        "riskoff": -0.34,
+        "defensive_bias": -0.28,
+        "opportunistic": 0.14,
+        "constructive": 0.08,
+        "expansionary": 0.18,
+        "aggressive": 0.3,
+        "offensive": 0.24,
+        "risk_on": 0.26,
+        "risk-on": 0.26,
+        "riskon": 0.26,
+        "bullish": 0.22,
+        "bearish": -0.22,
+        "proactive": 0.12,
+    }
 
     def __init__(
         self,
@@ -528,6 +560,44 @@ class PlaybookManager:
             if text:
                 values.append(text)
         return values
+
+    @classmethod
+    def _risk_adjustments_from_text(cls, raw: Any) -> List[float]:
+        text = cls._clean_string(raw)
+        if not text:
+            return []
+        lowered = text.lower()
+        adjustments: List[float] = []
+        for key, tilt in cls._RISK_KEYWORD_TILTS.items():
+            if key and key in lowered:
+                adjustments.append(float(tilt))
+        return adjustments
+
+    @classmethod
+    def _derive_risk_bias(
+        cls, payload: Dict[str, Any], *, default: float = 1.0
+    ) -> float:
+        adjustments: List[float] = []
+        adjustments.extend(
+            cls._risk_adjustments_from_text(
+                payload.get("mode") or payload.get("regime")
+            )
+        )
+        adjustments.extend(cls._risk_adjustments_from_text(payload.get("bias")))
+        if adjustments:
+            base_tilt = sum(adjustments) / max(len(adjustments), 1)
+        else:
+            base_tilt = 0.0
+        conf_adjust = 0.0
+        try:
+            confidence = payload.get("confidence")
+            if confidence is not None:
+                conf = max(0.0, min(1.0, float(confidence)))
+                conf_adjust = (conf - 0.5) * 0.4
+        except (TypeError, ValueError):
+            conf_adjust = 0.0
+        total_tilt = base_tilt + conf_adjust
+        return float(max(0.55, min(1.45, default + total_tilt)))
 
     @classmethod
     def _normalize_strategy(cls, payload: Any) -> Optional[Dict[str, Any]]:
@@ -705,6 +775,10 @@ class PlaybookManager:
         ctx["playbook_size_bias"] = float(
             (active.get("size_bias", {}) or {}).get(str(ctx.get("side") or "").upper(), 1.0)
         )
+        try:
+            ctx["playbook_risk_bias"] = float(active.get("risk_bias", 1.0) or 1.0)
+        except (TypeError, ValueError):
+            ctx["playbook_risk_bias"] = 1.0
         confidence = active.get("confidence")
         try:
             if confidence is not None:
@@ -808,6 +882,7 @@ class PlaybookManager:
             "notes": notes if isinstance(notes, str) else "",
             "refreshed": now,
         }
+        active["risk_bias"] = self._derive_risk_bias(payload)
         if confidence is not None:
             active["confidence"] = confidence
         if reason_text:
