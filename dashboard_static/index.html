@@ -109,7 +109,26 @@
       </button>
     </div>
 
-    <header class="hero">
+    <nav class="mobile-section-nav" aria-label="Dashboard sections">
+      <button
+        class="mobile-section-nav__toggle"
+        type="button"
+        aria-expanded="false"
+        aria-controls="mobile-section-nav-menu"
+      >
+        <span data-i18n="nav.menu">Sections</span>
+        <span class="mobile-section-nav__icon" aria-hidden="true"></span>
+      </button>
+      <div class="mobile-section-nav__menu" id="mobile-section-nav-menu">
+        <a class="mobile-section-nav__link" href="#overview" data-i18n="nav.overview">Overview</a>
+        <a class="mobile-section-nav__link" href="#trades" data-i18n="nav.trades">Trades</a>
+        <a class="mobile-section-nav__link" href="#playbook" data-i18n="nav.playbook">Playbook</a>
+        <a class="mobile-section-nav__link" href="#quick-setup" data-i18n="nav.config">Config</a>
+        <a class="mobile-section-nav__link" href="#logs" data-i18n="nav.logs">Logs</a>
+      </div>
+    </nav>
+
+    <header class="hero" id="overview">
       <div class="hero-inner">
         <div class="hero-header">
           <div class="hero-lede">
@@ -309,7 +328,7 @@
             </div>
           </section>
 
-          <section class="card trades hero-overview-card" aria-label="Recent trade history">
+          <section class="card trades hero-overview-card" aria-label="Recent trade history" id="trades">
             <div class="card-header trade-header">
               <div class="trade-title">
                 <h2 data-i18n="trades.title">Trade history</h2>
@@ -377,7 +396,7 @@
     </header>
 
     <main class="layout">
-      <section class="card playbook-overview" data-ai-only>
+      <section class="card playbook-overview" data-ai-only id="playbook">
         <div class="playbook-overview-header">
           <div class="playbook-overview-header-main">
             <span class="playbook-badge" data-i18n="playbook.label">Playbook</span>
@@ -610,7 +629,7 @@
         </p>
       </section>
 
-      <section class="card mode-panel quick-setup" data-normal-only data-hide-when-ai>
+      <section class="card mode-panel quick-setup" data-normal-only data-hide-when-ai id="quick-setup">
         <div class="card-header">
           <div>
             <h2 data-i18n="quick.title">Quick strategy setup</h2>
@@ -751,7 +770,7 @@
         <div id="env-settings" class="env-grid"></div>
       </section>
 
-      <section class="card logs compact">
+      <section class="card logs compact" id="logs">
         <div class="card-header">
           <div>
             <h2 data-i18n="logs.activity.title">Activity feed</h2>
