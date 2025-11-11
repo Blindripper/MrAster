@@ -44,13 +44,13 @@
 ## ✨ Highlights
 
 ### AI Copilot Stack
-- **AITradeAdvisor** assembles every request with regime stats, orderbook context, and structured prompts, then fans them out through a thread pool (respecting caching and per-model price sheets) before handing back JSON plans with overrides and explanations.【F:aster_multi_bot.py†L1693-L1767】【F:aster_multi_bot.py†L3171-L3240】
-- **DailyBudgetTracker + BudgetLearner** double-gate spending: the tracker keeps a rolling ledger with per-model averages, while the learner tilts symbol budgets and skips expensive calls when recent edge deteriorates, all updated after each OpenAI response.【F:aster_multi_bot.py†L1220-L1281】【F:aster_multi_bot.py†L3388-L3445】【F:ai_extensions.py†L1748-L1899】
-- **NewsTrendSentinel** (`ASTER_AI_SENTINEL_*`) fuses 24h market stats with optional external news into event-risk labels, size clamps, and hype multipliers before the advisor ever sees the trade.【F:aster_multi_bot.py†L1338-L1506】
-- **PostmortemLearning** distils qualitative trade reviews into persistent numeric features so the next plan “remembers” what the last exit taught us.【F:ai_extensions.py†L209-L317】
-- **ParameterTuner** harvests trade outcomes, recomputes size/ATR biases, and only escalates to LLM suggestions once enough statistically relevant history is captured.【F:ai_extensions.py†L392-L515】
-- **PlaybookManager** refreshes a living playbook of market regimes, directives, and structured risk adjustments that the advisor injects into every payload.【F:ai_extensions.py†L616-L755】【F:ai_extensions.py†L800-L840】
-- **Pending queue & concurrency guards** throttle autonomy with `ASTER_AI_CONCURRENCY`, `ASTER_AI_PENDING_LIMIT`, and global cool-downs so AI calls never overwhelm the exchange or your budget while still surfacing queued intents in the dashboard feed.【F:aster_multi_bot.py†L109-L117】【F:aster_multi_bot.py†L1733-L1767】【F:aster_multi_bot.py†L4173-L4243】
+- **AITradeAdvisor** assembles every request with regime stats, orderbook context, and structured prompts, then fans them out through a thread pool (respecting caching and per-model price sheets) before handing back JSON plans with overrides and explanations.
+- **DailyBudgetTracker + BudgetLearner** double-gate spending: the tracker keeps a rolling ledger with per-model averages, while the learner tilts symbol budgets and skips expensive calls when recent edge deteriorates, all updated after each OpenAI response.
+- **NewsTrendSentinel** (`ASTER_AI_SENTINEL_*`) fuses 24h market stats with optional external news into event-risk labels, size clamps, and hype multipliers before the advisor ever sees the trade.
+- **PostmortemLearning** distils qualitative trade reviews into persistent numeric features so the next plan “remembers” what the last exit taught us.
+- **ParameterTuner** harvests trade outcomes, recomputes size/ATR biases, and only escalates to LLM suggestions once enough statistically relevant history is captured.
+- **PlaybookManager** refreshes a living playbook of market regimes, directives, and structured risk adjustments that the advisor injects into every payload.
+- **Pending queue & concurrency guards** throttle autonomy with `ASTER_AI_CONCURRENCY`, `ASTER_AI_PENDING_LIMIT`, and global cool-downs so AI calls never overwhelm the exchange or your budget while still surfacing queued intents in the dashboard feed.
 
 ### Trading Engine
 - **RSI-driven signals with trend confirmation** configurable via `ASTER_*` environment variables or the dashboard editor.
@@ -119,12 +119,12 @@ Language buttons in the header update all UI labels, cards, and helper copy by p
 
 When you toggle the dashboard to **AI** (or set `ASTER_MODE=ai` / `ASTER_AI_MODE=true`) and provide `ASTER_OPENAI_API_KEY`, the workflow upgrades itself:
 
-1. **Signal intake** – Momentum, RSI, ATR, spread, funding, and trend context flow into each payload alongside orderbook depth, stop/TP distances, and policy stats the advisor whitelists for LLM consumption.【F:aster_multi_bot.py†L1649-L1687】【F:aster_multi_bot.py†L4040-L4104】
-2. **Sentinel context** – `NewsTrendSentinel` caches 24h ticker stats and optional external news to inject hype/event-risk scores, size clamps, and hard vetoes when the market turns radioactive.【F:aster_multi_bot.py†L1338-L1506】
-3. **Learning enrichment** – `PostmortemLearning`, `ParameterTuner`, and `PlaybookManager` inject feature vectors, risk overrides, and playbook directives, while `BudgetLearner` biases the payload with symbol-level spend heuristics.【F:ai_extensions.py†L209-L317】【F:ai_extensions.py†L392-L515】【F:ai_extensions.py†L616-L755】【F:ai_extensions.py†L1748-L1899】
-4. **Budget & bias gating** – `DailyBudgetTracker` checks estimated token costs (per model) before dispatch and can block requests once the daily cap hits, while `BudgetLearner` decides whether a symbol deserves another paid consult.【F:aster_multi_bot.py†L1220-L1281】【F:aster_multi_bot.py†L3171-L3445】【F:ai_extensions.py†L1829-L1860】
-5. **Dispatch & concurrency** – The advisor enforces `ASTER_AI_CONCURRENCY`, `ASTER_AI_PENDING_LIMIT`, and a global cool-down, queueing structured fallbacks so the dashboard still shows intent even when the LLM lane is saturated.【F:aster_multi_bot.py†L109-L117】【F:aster_multi_bot.py†L1733-L1767】【F:aster_multi_bot.py†L4173-L4243】
-6. **Execution & telemetry** – Approved trades inherit AI overrides, record request/response metadata, and stream budget + sentinel snapshots straight into the dashboard feed and `aster_state.json` for audit trails.【F:aster_multi_bot.py†L3388-L3445】【F:dashboard_static/app.js†L6285-L6898】
+1. **Signal intake** – Momentum, RSI, ATR, spread, funding, and trend context flow into each payload alongside orderbook depth, stop/TP distances, and policy stats the advisor whitelists for LLM consumption.
+2. **Sentinel context** – `NewsTrendSentinel` caches 24h ticker stats and optional external news to inject hype/event-risk scores, size clamps, and hard vetoes when the market turns radioactive.
+3. **Learning enrichment** – `PostmortemLearning`, `ParameterTuner`, and `PlaybookManager` inject feature vectors, risk overrides, and playbook directives, while `BudgetLearner` biases the payload with symbol-level spend heuristics.
+4. **Budget & bias gating** – `DailyBudgetTracker` checks estimated token costs (per model) before dispatch and can block requests once the daily cap hits, while `BudgetLearner` decides whether a symbol deserves another paid consult.
+5. **Dispatch & concurrency** – The advisor enforces `ASTER_AI_CONCURRENCY`, `ASTER_AI_PENDING_LIMIT`, and a global cool-down, queueing structured fallbacks so the dashboard still shows intent even when the LLM lane is saturated.
+6. **Execution & telemetry** – Approved trades inherit AI overrides, record request/response metadata, and stream budget + sentinel snapshots straight into the dashboard feed and `aster_state.json` for audit trails.
 
 > **Learning loop.** The `note_exit` hook updates bandit matrices, the alpha model, and AI learning stores after every closed trade, with state serialized through `to_dict`/`from_dict` so progress survives restarts.
 
@@ -240,7 +240,7 @@ All variables can be edited via environment overrides or through the dashboard (
 | Variable | Default | Description |
 | --- | --- | --- |
 | `ASTER_BANDIT_ENABLED` | `true` | Enables the LinUCB policy. |
-| `ASTER_AI_MODE` | `false` | Forces AI runtime even if the dashboard default is Standard/Pro. Equivalent to setting `ASTER_MODE=ai`.【F:aster_multi_bot.py†L89-L97】|
+| `ASTER_AI_MODE` | `false` | Forces AI runtime even if the dashboard default is Standard/Pro. Equivalent to setting `ASTER_MODE=ai`.|
 | `ASTER_ALPHA_ENABLED` | `true` | Toggles the optional alpha model. |
 | `ASTER_ALPHA_THRESHOLD` | `0.55` | Minimum confidence to approve a trade. |
 | `ASTER_ALPHA_PROMOTE_DELTA` | `0.15` | Extra confidence required to upsize. |
@@ -251,16 +251,16 @@ All variables can be edited via environment overrides or through the dashboard (
 | `ASTER_AI_DAILY_BUDGET_USD` | `20` | Daily budget limit (USD). Ignored when `ASTER_PRESET_MODE` is `high` or `att`. |
 | `ASTER_AI_STRICT_BUDGET` | `true` | Stops AI calls after hitting the budget. |
 | `ASTER_AI_MIN_INTERVAL_SECONDS` | `8` | Cooldown before the AI re-evaluates the same symbol. |
-| `ASTER_AI_CONCURRENCY` | `3` | Maximum concurrent LLM requests dispatched via the advisor thread pool.【F:aster_multi_bot.py†L109-L117】|
-| `ASTER_AI_PENDING_LIMIT` | `max(4, 3×concurrency)` | Cap on queued AI jobs before falling back to heuristics.【F:aster_multi_bot.py†L113-L117】|
-| `ASTER_AI_GLOBAL_COOLDOWN_SECONDS` | `2.0` | Global pause enforced between requests to prevent API bursts.【F:aster_multi_bot.py†L109-L117】【F:aster_multi_bot.py†L4173-L4194】|
-| `ASTER_AI_PLAN_TIMEOUT_SECONDS` | `45` | Maximum wait for a pending AI plan before reverting to fallbacks.【F:aster_multi_bot.py†L112-L117】【F:aster_multi_bot.py†L1733-L1767】|
+| `ASTER_AI_CONCURRENCY` | `3` | Maximum concurrent LLM requests dispatched via the advisor thread pool.|
+| `ASTER_AI_PENDING_LIMIT` | `max(4, 3×concurrency)` | Cap on queued AI jobs before falling back to heuristics.|
+| `ASTER_AI_GLOBAL_COOLDOWN_SECONDS` | `2.0` | Global pause enforced between requests to prevent API bursts.|
+| `ASTER_AI_PLAN_TIMEOUT_SECONDS` | `45` | Maximum wait for a pending AI plan before reverting to fallbacks.|
 | `ASTER_AI_SENTINEL_ENABLED` | `true` | Activates the News Sentinel. |
 | `ASTER_AI_SENTINEL_DECAY_MINUTES` | `60` | Lifetime of a news warning. |
 | `ASTER_AI_NEWS_ENDPOINT` | empty | External source for breaking news. |
 | `ASTER_AI_NEWS_API_KEY` | empty | API token for the sentinel. |
-| `ASTER_AI_TEMPERATURE` | `0.3` | Optional creativity override (set `1.0` for provider default).【F:aster_multi_bot.py†L3188-L3200】|
-| `ASTER_AI_DEBUG_STATE` | `false` | Turns on verbose logging and debug payload dumps for AI workflows.【F:aster_multi_bot.py†L65-L81】|
+| `ASTER_AI_TEMPERATURE` | `0.3` | Optional creativity override (set `1.0` for provider default).|
+| `ASTER_AI_DEBUG_STATE` | `false` | Turns on verbose logging and debug payload dumps for AI workflows.|
 | `ASTER_BRACKETS_QUEUE_FILE` | `brackets_queue.json` | Queue file for guard repairs. |
 
 </details>
