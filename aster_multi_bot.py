@@ -9247,6 +9247,15 @@ class Bot:
             thread.join(timeout=2.5)
         self._position_monitor_thread = None
 
+    def _position_monitor_active(self) -> bool:
+        thread = self._position_monitor_thread
+        return (
+            ACTIVE_POSITION_MONITOR_ENABLED
+            and thread is not None
+            and thread.is_alive()
+            and not self._position_monitor_stop.is_set()
+        )
+
     def _position_monitor_loop(self) -> None:
         interval = ACTIVE_POSITION_MONITOR_INTERVAL
         while not self._position_monitor_stop.is_set():
@@ -11996,6 +12005,8 @@ class Bot:
             book_ticker_map[str(book_payload.get("symbol"))] = dict(book_payload)
         bulk_book_available = bool(book_ticker_map)
 
+        monitor_active = self._position_monitor_active()
+
         self.strategy.reset_orderbook_budget(ORDERBOOK_ON_DEMAND)
 
         priority_tokens = [
@@ -12078,7 +12089,7 @@ class Bot:
                     ask = float(bt.get("askPrice", 0.0) or 0.0)
                     bid = float(bt.get("bidPrice", 0.0) or 0.0)
                     mid = (ask + bid) / 2.0 if ask > 0 and bid > 0 else 0.0
-                    if mid > 0:
+                    if mid > 0 and not monitor_active:
                         self.fasttp.track(sym, mid)
                 except Exception:
                     mid = 0.0
@@ -12088,9 +12099,17 @@ class Bot:
                 rec = self.state.get("live_trades", {}).get(sym)
                 if rec and mid > 0:
                     atr_abs = float(rec.get("atr_abs", 0.0))
-                    if atr_abs > 0.0:
-                        self.fasttp.maybe_apply(sym, amt, float(rec.get("entry")), float(rec.get("sl")), mid, atr_abs)
-                    self._manage_open_position(sym, amt, mid, atr_abs)
+                    if atr_abs > 0.0 and not monitor_active:
+                        self.fasttp.maybe_apply(
+                            sym,
+                            amt,
+                            float(rec.get("entry")),
+                            float(rec.get("sl")),
+                            mid,
+                            atr_abs,
+                        )
+                    if not monitor_active:
+                        self._manage_open_position(sym, amt, mid, atr_abs)
                 continue
 
             try:
