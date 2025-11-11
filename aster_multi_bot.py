@@ -594,10 +594,10 @@ def _compute_trade_performance_summary(
     return summary
 
 
-MIN_QUOTE_VOL = float(os.getenv("ASTER_MIN_QUOTE_VOL_USDT", "1000000"))
-SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.00075"))  # 0.075 %
-WICKINESS_MAX = float(os.getenv("ASTER_WICKINESS_MAX", "0.98"))
-MIN_EDGE_R = float(os.getenv("ASTER_MIN_EDGE_R", "0.26"))
+MIN_QUOTE_VOL = float(os.getenv("ASTER_MIN_QUOTE_VOL_USDT", "850000"))
+SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.00090"))  # 0.09 %
+WICKINESS_MAX = float(os.getenv("ASTER_WICKINESS_MAX", "0.985"))
+MIN_EDGE_R = float(os.getenv("ASTER_MIN_EDGE_R", "0.22"))
 
 BANDIT_FLAG = os.getenv("ASTER_BANDIT_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 BANDIT_ENABLED = BANDIT_FLAG and not AI_MODE_ENABLED
@@ -720,115 +720,115 @@ ALLOW_ALIGN = os.getenv("ASTER_ALLOW_TREND_ALIGN", "false").lower() in ("1", "tr
 ALIGN_RSI_PAD = float(os.getenv("ASTER_ALIGN_RSI_PAD", "1.0"))
 TREND_BIAS = os.getenv("ASTER_TREND_BIAS", "with").strip().lower()
 CONTRARIAN = TREND_BIAS in ("against", "att", "contrarian")
-ADX_MIN_THRESHOLD = float(os.getenv("ASTER_ADX_MIN", "26.0"))
+ADX_MIN_THRESHOLD = float(os.getenv("ASTER_ADX_MIN", "23.0"))
 ADX_DELTA_MIN = float(os.getenv("ASTER_ADX_DELTA_MIN", "0.0"))
 LONG_RSI_MAX = float(os.getenv("ASTER_LONG_RSI_MAX", "70.0"))
 SHORT_RSI_MIN = float(os.getenv("ASTER_SHORT_RSI_MIN", "30.0"))
-STOCHRSI_LONG_MAX = float(os.getenv("ASTER_STOCHRSI_LONG_MAX", "20.0"))
-STOCHRSI_SHORT_MIN = float(os.getenv("ASTER_STOCHRSI_SHORT_MIN", "80.0"))
-STOCHRSI_OVERBOUGHT = float(os.getenv("ASTER_STOCHRSI_OVERBOUGHT", "85.0"))
-STOCHRSI_OVERSOLD = float(os.getenv("ASTER_STOCHRSI_OVERSOLD", "15.0"))
-BB_LONG_MIN = float(os.getenv("ASTER_BB_LONG_MIN", "0.5"))
-BB_LONG_MAX = float(os.getenv("ASTER_BB_LONG_MAX", "0.98"))
-BB_SHORT_MAX = float(os.getenv("ASTER_BB_SHORT_MAX", "0.02"))
-ORDERBOOK_BIAS_CONFLICT = float(os.getenv("ASTER_ORDERBOOK_BIAS_CONFLICT", "0.35"))
-ORDERBOOK_BIAS_BUY_MIN = float(os.getenv("ASTER_ORDERBOOK_BIAS_BUY_MIN", "0.0"))
-ORDERBOOK_BIAS_SELL_MAX = float(os.getenv("ASTER_ORDERBOOK_BIAS_SELL_MAX", "0.0"))
+STOCHRSI_LONG_MAX = float(os.getenv("ASTER_STOCHRSI_LONG_MAX", "24.0"))
+STOCHRSI_SHORT_MIN = float(os.getenv("ASTER_STOCHRSI_SHORT_MIN", "76.0"))
+STOCHRSI_OVERBOUGHT = float(os.getenv("ASTER_STOCHRSI_OVERBOUGHT", "88.0"))
+STOCHRSI_OVERSOLD = float(os.getenv("ASTER_STOCHRSI_OVERSOLD", "12.0"))
+BB_LONG_MIN = float(os.getenv("ASTER_BB_LONG_MIN", "0.46"))
+BB_LONG_MAX = float(os.getenv("ASTER_BB_LONG_MAX", "0.988"))
+BB_SHORT_MAX = float(os.getenv("ASTER_BB_SHORT_MAX", "0.03"))
+ORDERBOOK_BIAS_CONFLICT = float(os.getenv("ASTER_ORDERBOOK_BIAS_CONFLICT", "0.33"))
+ORDERBOOK_BIAS_BUY_MIN = float(os.getenv("ASTER_ORDERBOOK_BIAS_BUY_MIN", "-0.05"))
+ORDERBOOK_BIAS_SELL_MAX = float(os.getenv("ASTER_ORDERBOOK_BIAS_SELL_MAX", "0.05"))
 FUNDING_EDGE_MIN = float(os.getenv("ASTER_FUNDING_EDGE_MIN", "0.0"))
 QUALITY_LEVERAGE = float(os.getenv("ASTER_QUALITY_LEVERAGE", "9.0"))
 
 _PRESET_SIGNAL_TUNING: Dict[str, Dict[str, Any]] = {
     "low": {
-        "MIN_QUOTE_VOL": 1_300_000.0,
-        "SPREAD_BPS_MAX": 0.00075,
-        "WICKINESS_MAX": 0.95,
-        "MIN_EDGE_R": 0.28,
-        "ADX_MIN_THRESHOLD": 27.0,
-        "ADX_DELTA_MIN": -8.0,
-        "STOCHRSI_LONG_MAX": 24.0,
-        "STOCHRSI_SHORT_MIN": 76.0,
-        "STOCHRSI_OVERBOUGHT": 84.0,
-        "STOCHRSI_OVERSOLD": 16.0,
-        "LONG_RSI_MAX": 69.0,
-        "SHORT_RSI_MIN": 31.0,
-        "BB_LONG_MIN": 0.50,
-        "BB_LONG_MAX": 0.986,
-        "BB_SHORT_MAX": 0.035,
-        "ORDERBOOK_BIAS_CONFLICT": 0.31,
-        "ORDERBOOK_BIAS_BUY_MIN": 0.04,
-        "ORDERBOOK_BIAS_SELL_MAX": -0.04,
+        "MIN_QUOTE_VOL": 1_150_000.0,
+        "SPREAD_BPS_MAX": 0.00085,
+        "WICKINESS_MAX": 0.96,
+        "MIN_EDGE_R": 0.24,
+        "ADX_MIN_THRESHOLD": 25.0,
+        "ADX_DELTA_MIN": -10.0,
+        "STOCHRSI_LONG_MAX": 28.0,
+        "STOCHRSI_SHORT_MIN": 72.0,
+        "STOCHRSI_OVERBOUGHT": 86.0,
+        "STOCHRSI_OVERSOLD": 12.0,
+        "LONG_RSI_MAX": 71.0,
+        "SHORT_RSI_MIN": 29.0,
+        "BB_LONG_MIN": 0.45,
+        "BB_LONG_MAX": 0.992,
+        "BB_SHORT_MAX": 0.025,
+        "ORDERBOOK_BIAS_CONFLICT": 0.34,
+        "ORDERBOOK_BIAS_BUY_MIN": 0.02,
+        "ORDERBOOK_BIAS_SELL_MAX": -0.02,
         "SL_ATR_MULT": 1.68,
         "TP_ATR_MULT": 2.25,
         "QUOTE_VOLUME_COOLDOWN_CYCLES": 260,
         "allow_align": False,
     },
     "mid": {
-        "MIN_QUOTE_VOL": 650_000.0,
-        "SPREAD_BPS_MAX": 0.00130,
-        "WICKINESS_MAX": 0.99,
-        "MIN_EDGE_R": 0.14,
-        "ADX_MIN_THRESHOLD": 20.0,
-        "ADX_DELTA_MIN": -20.0,
-        "STOCHRSI_LONG_MAX": 34.0,
-        "STOCHRSI_SHORT_MIN": 66.0,
-        "STOCHRSI_OVERBOUGHT": 90.0,
-        "STOCHRSI_OVERSOLD": 10.0,
-        "LONG_RSI_MAX": 73.0,
-        "SHORT_RSI_MIN": 27.0,
-        "BB_LONG_MIN": 0.40,
-        "BB_LONG_MAX": 0.993,
-        "BB_SHORT_MAX": 0.09,
-        "ORDERBOOK_BIAS_CONFLICT": 0.30,
-        "ORDERBOOK_BIAS_BUY_MIN": -0.12,
-        "ORDERBOOK_BIAS_SELL_MAX": 0.12,
+        "MIN_QUOTE_VOL": 550_000.0,
+        "SPREAD_BPS_MAX": 0.00145,
+        "WICKINESS_MAX": 0.995,
+        "MIN_EDGE_R": 0.10,
+        "ADX_MIN_THRESHOLD": 18.0,
+        "ADX_DELTA_MIN": -24.0,
+        "STOCHRSI_LONG_MAX": 38.0,
+        "STOCHRSI_SHORT_MIN": 62.0,
+        "STOCHRSI_OVERBOUGHT": 92.0,
+        "STOCHRSI_OVERSOLD": 8.0,
+        "LONG_RSI_MAX": 75.0,
+        "SHORT_RSI_MIN": 25.0,
+        "BB_LONG_MIN": 0.36,
+        "BB_LONG_MAX": 0.995,
+        "BB_SHORT_MAX": 0.08,
+        "ORDERBOOK_BIAS_CONFLICT": 0.35,
+        "ORDERBOOK_BIAS_BUY_MIN": -0.18,
+        "ORDERBOOK_BIAS_SELL_MAX": 0.18,
         "SL_ATR_MULT": 1.52,
         "TP_ATR_MULT": 2.50,
         "QUOTE_VOLUME_COOLDOWN_CYCLES": 75,
         "allow_align": True,
     },
     "high": {
-        "MIN_QUOTE_VOL": 400_000.0,
-        "SPREAD_BPS_MAX": 0.00155,
-        "WICKINESS_MAX": 0.997,
-        "MIN_EDGE_R": 0.11,
-        "ADX_MIN_THRESHOLD": 18.0,
-        "ADX_DELTA_MIN": -28.0,
-        "STOCHRSI_LONG_MAX": 40.0,
-        "STOCHRSI_SHORT_MIN": 60.0,
-        "STOCHRSI_OVERBOUGHT": 92.0,
-        "STOCHRSI_OVERSOLD": 8.0,
-        "LONG_RSI_MAX": 75.0,
-        "SHORT_RSI_MIN": 25.0,
-        "BB_LONG_MIN": 0.35,
-        "BB_LONG_MAX": 0.995,
-        "BB_SHORT_MAX": 0.11,
-        "ORDERBOOK_BIAS_CONFLICT": 0.26,
-        "ORDERBOOK_BIAS_BUY_MIN": -0.22,
-        "ORDERBOOK_BIAS_SELL_MAX": 0.22,
+        "MIN_QUOTE_VOL": 325_000.0,
+        "SPREAD_BPS_MAX": 0.00170,
+        "WICKINESS_MAX": 0.998,
+        "MIN_EDGE_R": 0.08,
+        "ADX_MIN_THRESHOLD": 16.0,
+        "ADX_DELTA_MIN": -32.0,
+        "STOCHRSI_LONG_MAX": 44.0,
+        "STOCHRSI_SHORT_MIN": 56.0,
+        "STOCHRSI_OVERBOUGHT": 94.0,
+        "STOCHRSI_OVERSOLD": 6.0,
+        "LONG_RSI_MAX": 77.0,
+        "SHORT_RSI_MIN": 23.0,
+        "BB_LONG_MIN": 0.30,
+        "BB_LONG_MAX": 0.996,
+        "BB_SHORT_MAX": 0.10,
+        "ORDERBOOK_BIAS_CONFLICT": 0.30,
+        "ORDERBOOK_BIAS_BUY_MIN": -0.26,
+        "ORDERBOOK_BIAS_SELL_MAX": 0.26,
         "SL_ATR_MULT": 1.42,
         "TP_ATR_MULT": 2.65,
         "QUOTE_VOLUME_COOLDOWN_CYCLES": 45,
         "allow_align": True,
     },
     "att": {
-        "MIN_QUOTE_VOL": 350_000.0,
-        "SPREAD_BPS_MAX": 0.00180,
-        "WICKINESS_MAX": 0.998,
-        "MIN_EDGE_R": 0.09,
-        "ADX_MIN_THRESHOLD": 16.0,
-        "ADX_DELTA_MIN": -30.0,
-        "STOCHRSI_LONG_MAX": 42.0,
-        "STOCHRSI_SHORT_MIN": 58.0,
-        "STOCHRSI_OVERBOUGHT": 94.0,
-        "STOCHRSI_OVERSOLD": 6.0,
-        "LONG_RSI_MAX": 76.0,
-        "SHORT_RSI_MIN": 24.0,
-        "BB_LONG_MIN": 0.30,
-        "BB_LONG_MAX": 0.996,
-        "BB_SHORT_MAX": 0.12,
-        "ORDERBOOK_BIAS_CONFLICT": 0.24,
-        "ORDERBOOK_BIAS_BUY_MIN": -0.26,
-        "ORDERBOOK_BIAS_SELL_MAX": 0.26,
+        "MIN_QUOTE_VOL": 300_000.0,
+        "SPREAD_BPS_MAX": 0.00195,
+        "WICKINESS_MAX": 0.9985,
+        "MIN_EDGE_R": 0.07,
+        "ADX_MIN_THRESHOLD": 14.0,
+        "ADX_DELTA_MIN": -34.0,
+        "STOCHRSI_LONG_MAX": 46.0,
+        "STOCHRSI_SHORT_MIN": 54.0,
+        "STOCHRSI_OVERBOUGHT": 95.0,
+        "STOCHRSI_OVERSOLD": 5.0,
+        "LONG_RSI_MAX": 78.0,
+        "SHORT_RSI_MIN": 22.0,
+        "BB_LONG_MIN": 0.26,
+        "BB_LONG_MAX": 0.997,
+        "BB_SHORT_MAX": 0.11,
+        "ORDERBOOK_BIAS_CONFLICT": 0.32,
+        "ORDERBOOK_BIAS_BUY_MIN": -0.30,
+        "ORDERBOOK_BIAS_SELL_MAX": 0.30,
         "SL_ATR_MULT": 1.38,
         "TP_ATR_MULT": 2.75,
         "QUOTE_VOLUME_COOLDOWN_CYCLES": 40,
