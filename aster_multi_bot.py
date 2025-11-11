@@ -2025,8 +2025,13 @@ class AITradeAdvisor:
                 "included. Return the fields: request_id (echo the provided value), mode, bias, confidence (0-1), size_bias "
                 "(BUY/SELL multipliers between 0.4 and 2.5), sl_bias (0.4-2.5), tp_bias (0.6-3.0), features (object mapping "
                 "focus keywords to numeric weights between -1 and 1), strategy (object with name, objective, why_active, "
-                "market_signals array, actions array of objects with title/detail and optional trigger, and risk_controls array), "
-                "plus optional notes. Respond with valid JSON only."
+                "market_signals array, actions array of objects with title/detail/optional trigger, risk_controls array, and "
+                "two additional arrays named actions_structured and risk_controls_structured). Each element of actions_structured "
+                "and risk_controls_structured must be an object using: id (snake_case identifier), effect (one of size_multiplier, "
+                "size_cap, size_floor, sl_multiplier, tp_multiplier, hard_block), optional multiplier (0.1-3.0), optional scope "
+                "(BUY, SELL or ANY), and optional condition (object with metric from [event_risk, hype, volatility, breadth, "
+                "trend_strength], operator from [>, >=, <, <=, between], value (number) and optional value2 for between). Include "
+                "an optional note per structured item. Keep output strictly valid JSON."
             )
             estimate = 0.0018
         try:
@@ -9944,6 +9949,8 @@ class Bot:
         actions = sentinel_info.get("actions", {}) or {}
         event_risk = float(sentinel_info.get("event_risk", 0.0) or 0.0)
         hype_score = float(sentinel_info.get("hype_score", 0.0) or 0.0)
+        ctx["sentinel_event_risk"] = event_risk
+        ctx["sentinel_hype"] = hype_score
 
         if self.ai_advisor:
             try:
@@ -9951,6 +9958,40 @@ class Bot:
                 self.ai_advisor.inject_context_features(symbol, ctx)
             except Exception as exc:
                 log.debug(f"context feature inject failed {symbol}: {exc}")
+
+        structured_block_reason = ctx.get("playbook_structured_block_reason")
+        if ctx.get("playbook_structured_hard_block"):
+            if self.decision_tracker:
+                self.decision_tracker.record_rejection("playbook_structured_block")
+            reason_note = textwrap.shorten(
+                str(structured_block_reason or "playbook risk control"),
+                width=120,
+                placeholder="…",
+            )
+            log.info(
+                "Skip %s — playbook structured risk control veto (%s).",
+                symbol,
+                reason_note,
+            )
+            self._log_ai_activity(
+                "decision",
+                f"Playbook vetoed {symbol}",
+                body=f"Structured risk control blocked trade: {reason_note}",
+                data={
+                    "symbol": symbol,
+                    "reason": reason_note,
+                    "event_risk": event_risk,
+                    "hype": hype_score,
+                },
+                force=True,
+            )
+            if manual_override:
+                self._complete_manual_request(
+                    manual_req,
+                    "failed",
+                    error="Playbook structured risk control forbids trades for this symbol",
+                )
+            return
 
         directive_label_raw = str(ctx.get("playbook_symbol_directive") or "").strip().lower()
         try:
@@ -10298,7 +10339,26 @@ class Bot:
                     playbook_tp_factor = float(active_playbook.get("tp_bias", 1.0))
                 except (TypeError, ValueError):
                     playbook_tp_factor = 1.0
-        size_mult = policy_size_mult * sentinel_factor
+        structured_size_mult = 1.0
+        structured_size_cap: Optional[float] = None
+        structured_size_floor: Optional[float] = None
+        try:
+            if ctx.get("playbook_structured_size_multiplier") is not None:
+                structured_size_mult = float(ctx.get("playbook_structured_size_multiplier", 1.0))
+        except (TypeError, ValueError):
+            structured_size_mult = 1.0
+        try:
+            if ctx.get("playbook_structured_size_cap") is not None:
+                structured_size_cap = max(0.1, float(ctx.get("playbook_structured_size_cap")))
+        except (TypeError, ValueError):
+            structured_size_cap = None
+        try:
+            if ctx.get("playbook_structured_size_floor") is not None:
+                structured_size_floor = max(0.05, float(ctx.get("playbook_structured_size_floor")))
+        except (TypeError, ValueError):
+            structured_size_floor = None
+
+        size_mult = policy_size_mult * sentinel_factor * structured_size_mult
         if not manual_override:
             size_mult *= performance_factor
             size_mult *= tuning_bucket_factor
@@ -10317,6 +10377,13 @@ class Bot:
                 perf_mult = max(0.6, min(1.6, float(perf_bias_val)))
                 size_mult *= perf_mult
                 ctx["universe_perf_multiplier"] = float(perf_mult)
+        if structured_size_cap is not None:
+            size_mult = min(size_mult, structured_size_cap)
+            ctx["playbook_structured_cap_applied"] = float(structured_size_cap)
+        if structured_size_floor is not None:
+            size_mult = max(size_mult, structured_size_floor)
+            ctx["playbook_structured_floor_applied"] = float(structured_size_floor)
+
         if sentinel_soft_block and not manual_override:
             soft_override = ctx.get("sentinel_soft_override")
             if isinstance(soft_override, (int, float)):
@@ -10332,6 +10399,7 @@ class Bot:
             size_mult = max(0.0, size_mult)
         ctx["tuning_size_bucket_multiplier"] = float(tuning_bucket_factor)
         ctx["playbook_size_multiplier"] = float(playbook_size_factor)
+        ctx["playbook_structured_size_multiplier_applied"] = float(structured_size_mult)
         ctx["sentinel_factor"] = sentinel_factor
         ctx["sentinel_event_risk"] = event_risk
         ctx["sentinel_hype"] = hype_score
@@ -10379,6 +10447,18 @@ class Bot:
 
         dynamic_sl_mult = SL_ATR_MULT
         dynamic_tp_mult = TP_ATR_MULT
+        structured_sl_mult = 1.0
+        structured_tp_mult = 1.0
+        try:
+            if ctx.get("playbook_structured_sl_multiplier") is not None:
+                structured_sl_mult = float(ctx.get("playbook_structured_sl_multiplier", 1.0))
+        except (TypeError, ValueError):
+            structured_sl_mult = 1.0
+        try:
+            if ctx.get("playbook_structured_tp_multiplier") is not None:
+                structured_tp_mult = float(ctx.get("playbook_structured_tp_multiplier", 1.0))
+        except (TypeError, ValueError):
+            structured_tp_mult = 1.0
         if overrides_sl_mult is not None:
             dynamic_sl_mult *= max(0.4, min(2.5, float(overrides_sl_mult)))
         if overrides_tp_mult is not None:
@@ -10386,6 +10466,8 @@ class Bot:
         if not manual_override:
             dynamic_sl_mult *= max(0.4, min(2.5, playbook_sl_factor))
             dynamic_tp_mult *= max(0.6, min(3.0, playbook_tp_factor))
+            dynamic_sl_mult *= max(0.3, min(3.5, structured_sl_mult))
+            dynamic_tp_mult *= max(0.3, min(3.5, structured_tp_mult))
         sl_dist = max(1e-9, dynamic_sl_mult * atr_abs)
         tp_dist = max(1e-9, dynamic_tp_mult * atr_abs)
         ctx["sl_atr_multiplier_dynamic"] = float(dynamic_sl_mult)

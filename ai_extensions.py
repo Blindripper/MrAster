@@ -590,6 +590,22 @@ class PlaybookManager:
         "mention": 0.2,
         "neutral": 0.0,
     }
+    _STRUCTURED_EFFECTS = {
+        "size_multiplier",
+        "size_cap",
+        "size_floor",
+        "sl_multiplier",
+        "tp_multiplier",
+        "hard_block",
+    }
+    _STRUCTURED_SCOPE = {"BUY", "SELL", "ANY"}
+    _STRUCTURED_METRIC_KEYS = {
+        "event_risk": ("sentinel_event_risk", "playbook_feature_event_risk", "event_risk", "pm_event_risk"),
+        "hype": ("sentinel_hype", "playbook_feature_hype", "hype", "pm_hype_bias"),
+        "volatility": ("atr_pct", "playbook_feature_volatility", "pm_volatility_bias"),
+        "breadth": ("breadth", "playbook_feature_breadth"),
+        "trend_strength": ("trend", "regime_slope", "playbook_feature_trend", "pm_trend_bias"),
+    }
     _RISK_KEYWORD_TILTS = {
         "cautious": -0.25,
         "defensive": -0.3,
@@ -698,6 +714,85 @@ class PlaybookManager:
             if text:
                 values.append(text)
         return values
+
+    @classmethod
+    def _normalize_structured_condition(cls, raw: Any) -> Optional[Dict[str, Any]]:
+        if not isinstance(raw, dict):
+            return None
+        metric = cls._clean_string(raw.get("metric"))
+        if not metric:
+            return None
+        metric_key = metric.lower().replace(" ", "_")
+        if metric_key not in cls._STRUCTURED_METRIC_KEYS:
+            return None
+        operator = cls._clean_string(raw.get("operator")) or ">"
+        operator = operator.lower()
+        if operator not in {">", ">=", "<", "<=", "between"}:
+            return None
+        value = raw.get("value")
+        try:
+            if value is None and operator == "between":
+                value = raw.get("min")
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return None
+        condition: Dict[str, Any] = {"metric": metric_key, "operator": operator, "value": float(numeric)}
+        if operator == "between":
+            upper = raw.get("value2", raw.get("max"))
+            try:
+                if upper is not None:
+                    condition["value2"] = float(upper)
+            except (TypeError, ValueError):
+                return None
+        return condition
+
+    @classmethod
+    def _normalize_structured_entry(cls, raw: Any) -> Optional[Dict[str, Any]]:
+        if not isinstance(raw, dict):
+            return None
+        effect = cls._clean_string(raw.get("effect"))
+        if not effect:
+            return None
+        effect_key = effect.lower().replace(" ", "_")
+        if effect_key not in cls._STRUCTURED_EFFECTS:
+            return None
+        entry: Dict[str, Any] = {"effect": effect_key}
+        identifier = cls._clean_string(raw.get("id") or raw.get("name") or effect_key)
+        if identifier:
+            entry["id"] = identifier
+        multiplier = raw.get("multiplier") or raw.get("value")
+        if multiplier is not None:
+            try:
+                entry["multiplier"] = float(multiplier)
+            except (TypeError, ValueError):
+                pass
+        scope = cls._clean_string(raw.get("scope") or raw.get("side") or "ANY")
+        if scope:
+            scope_token = scope.upper()
+            if scope_token in cls._STRUCTURED_SCOPE:
+                entry["scope"] = scope_token
+        condition = cls._normalize_structured_condition(raw.get("condition"))
+        if condition:
+            entry["condition"] = condition
+        note = cls._clean_string(raw.get("note") or raw.get("detail"))
+        if note:
+            entry["note"] = note
+        return entry
+
+    @classmethod
+    def _parse_structured_entries(
+        cls, raw: Any, *, limit: int = 8
+    ) -> List[Dict[str, Any]]:
+        entries: List[Dict[str, Any]] = []
+        if not isinstance(raw, list):
+            return entries
+        for item in raw:
+            entry = cls._normalize_structured_entry(item)
+            if entry:
+                entries.append(entry)
+            if len(entries) >= limit:
+                break
+        return entries
 
     @classmethod
     def _risk_adjustments_from_text(cls, raw: Any) -> List[float]:
@@ -818,6 +913,18 @@ class PlaybookManager:
         )
         if risk_controls:
             strategy["risk_controls"] = risk_controls[:6]
+
+        structured_actions = cls._parse_structured_entries(
+            payload.get("actions_structured") or []
+        )
+        if structured_actions:
+            strategy["actions_structured"] = structured_actions
+
+        structured_risk = cls._parse_structured_entries(
+            payload.get("risk_controls_structured") or []
+        )
+        if structured_risk:
+            strategy["risk_controls_structured"] = structured_risk
 
         return strategy or None
 
@@ -1061,6 +1168,14 @@ class PlaybookManager:
                         break
             if sanitized_rc:
                 ctx["playbook_strategy_risk_controls"] = sanitized_rc
+        structured_directives: List[Dict[str, Any]] = []
+        actions_structured = active.get("structured_actions")
+        if isinstance(actions_structured, list):
+            structured_directives.extend(actions_structured)
+        risk_structured = active.get("structured_risk_controls")
+        if isinstance(risk_structured, list):
+            structured_directives.extend(risk_structured)
+        self._apply_structured_directives(ctx, structured_directives)
         symbol = str(ctx.get("symbol") or "").strip().upper()
         if symbol:
             directive = self.symbol_directive(symbol)
@@ -1083,6 +1198,168 @@ class PlaybookManager:
                 updated = directive.get("updated")
                 if isinstance(updated, (int, float)):
                     ctx["playbook_symbol_directive_updated"] = float(updated)
+
+    @classmethod
+    def _resolve_metric_value(cls, ctx: Dict[str, Any], metric: str) -> Optional[float]:
+        keys = cls._STRUCTURED_METRIC_KEYS.get(metric)
+        if not keys:
+            return None
+        for key in keys:
+            if key not in ctx:
+                continue
+            value = ctx.get(key)
+            try:
+                if value is None:
+                    continue
+                numeric = float(value)
+            except (TypeError, ValueError):
+                continue
+            return numeric
+        return None
+
+    @classmethod
+    def _condition_matches(
+        cls, ctx: Dict[str, Any], condition: Optional[Dict[str, Any]]
+    ) -> bool:
+        if not condition:
+            return True
+        metric = condition.get("metric")
+        if not metric:
+            return False
+        metric_value = cls._resolve_metric_value(ctx, metric)
+        if metric_value is None:
+            return False
+        try:
+            threshold = float(condition.get("value", 0.0))
+        except (TypeError, ValueError):
+            return False
+        op = condition.get("operator") or ">"
+        if op == ">":
+            return metric_value > threshold
+        if op == ">=":
+            return metric_value >= threshold
+        if op == "<":
+            return metric_value < threshold
+        if op == "<=":
+            return metric_value <= threshold
+        if op == "between":
+            try:
+                upper = float(condition.get("value2"))
+            except (TypeError, ValueError):
+                return False
+            low = min(threshold, upper)
+            high = max(threshold, upper)
+            return low <= metric_value <= high
+        return False
+
+    def _apply_structured_directives(
+        self, ctx: Dict[str, Any], directives: List[Dict[str, Any]]
+    ) -> None:
+        keys_to_reset = [
+            "playbook_structured_size_multiplier",
+            "playbook_structured_size_cap",
+            "playbook_structured_size_floor",
+            "playbook_structured_sl_multiplier",
+            "playbook_structured_tp_multiplier",
+            "playbook_structured_hard_block",
+            "playbook_structured_block_reason",
+            "playbook_structured_notes",
+        ]
+        if not directives:
+            for key in keys_to_reset:
+                ctx.pop(key, None)
+            return
+
+        size_mult = 1.0
+        sl_mult = 1.0
+        tp_mult = 1.0
+        size_cap: Optional[float] = None
+        size_floor: Optional[float] = None
+        hard_block = False
+        block_reason: Optional[str] = None
+        notes: List[str] = []
+        side = str(ctx.get("side") or "").upper() or "ANY"
+
+        for entry in directives:
+            effect = entry.get("effect")
+            if effect not in self._STRUCTURED_EFFECTS:
+                continue
+            scope = entry.get("scope") or "ANY"
+            if scope != "ANY" and scope != side:
+                continue
+            if not self._condition_matches(ctx, entry.get("condition")):
+                continue
+            note = entry.get("note") or entry.get("id")
+            multiplier_raw = entry.get("multiplier")
+            try:
+                multiplier = float(multiplier_raw) if multiplier_raw is not None else 1.0
+            except (TypeError, ValueError):
+                multiplier = 1.0
+            multiplier = float(max(0.05, min(4.0, multiplier)))
+            if effect == "hard_block":
+                hard_block = True
+                block_reason = note or block_reason or entry.get("effect")
+                if note:
+                    notes.append(note)
+                continue
+            if effect == "size_multiplier":
+                size_mult *= multiplier
+                if note:
+                    notes.append(f"size×{multiplier:.2f}: {note}")
+            elif effect == "size_cap":
+                size_cap = multiplier if size_cap is None else min(size_cap, multiplier)
+                if note:
+                    notes.append(f"size≤{size_cap:.2f}: {note}")
+            elif effect == "size_floor":
+                size_floor = multiplier if size_floor is None else max(size_floor, multiplier)
+                if note:
+                    notes.append(f"size≥{size_floor:.2f}: {note}")
+            elif effect == "sl_multiplier":
+                sl_mult *= multiplier
+                if note:
+                    notes.append(f"SL×{multiplier:.2f}: {note}")
+            elif effect == "tp_multiplier":
+                tp_mult *= multiplier
+                if note:
+                    notes.append(f"TP×{multiplier:.2f}: {note}")
+
+        if hard_block:
+            ctx["playbook_structured_hard_block"] = True
+            if block_reason or notes:
+                reason = block_reason or "; ".join(notes)
+                ctx["playbook_structured_block_reason"] = reason
+        else:
+            ctx.pop("playbook_structured_hard_block", None)
+            ctx.pop("playbook_structured_block_reason", None)
+
+        size_mult = float(max(0.1, min(3.5, size_mult)))
+        sl_mult = float(max(0.3, min(3.5, sl_mult)))
+        tp_mult = float(max(0.3, min(3.5, tp_mult)))
+
+        if abs(size_mult - 1.0) > 1e-4:
+            ctx["playbook_structured_size_multiplier"] = size_mult
+        else:
+            ctx.pop("playbook_structured_size_multiplier", None)
+        if size_cap is not None:
+            ctx["playbook_structured_size_cap"] = float(max(0.1, min(3.5, size_cap)))
+        else:
+            ctx.pop("playbook_structured_size_cap", None)
+        if size_floor is not None:
+            ctx["playbook_structured_size_floor"] = float(max(0.1, min(3.5, size_floor)))
+        else:
+            ctx.pop("playbook_structured_size_floor", None)
+        if abs(sl_mult - 1.0) > 1e-4:
+            ctx["playbook_structured_sl_multiplier"] = sl_mult
+        else:
+            ctx.pop("playbook_structured_sl_multiplier", None)
+        if abs(tp_mult - 1.0) > 1e-4:
+            ctx["playbook_structured_tp_multiplier"] = tp_mult
+        else:
+            ctx.pop("playbook_structured_tp_multiplier", None)
+        if notes:
+            ctx["playbook_structured_notes"] = notes[:8]
+        else:
+            ctx.pop("playbook_structured_notes", None)
 
     def _normalize_playbook(self, payload: Dict[str, Any], now: float) -> Dict[str, Any]:
         mode = str(payload.get("mode") or payload.get("regime") or "baseline")
@@ -1144,6 +1421,12 @@ class PlaybookManager:
             active["strategy"] = strategy
             if "reason" not in active and strategy.get("why_active"):
                 active["reason"] = strategy["why_active"]
+            structured_actions = strategy.get("actions_structured")
+            if structured_actions:
+                active["structured_actions"] = structured_actions
+            structured_risk = strategy.get("risk_controls_structured")
+            if structured_risk:
+                active["structured_risk_controls"] = structured_risk
         request_id = payload.get("request_id")
         if isinstance(request_id, str):
             token = request_id.strip()
