@@ -1,49 +1,79 @@
 <div align="center">
   <img src="assets/mraster-logo.png" alt="MrAster logo" width="240" />
   <h1>MrAster Trading Bot</h1>
-  <p><strong>Full-spectrum futures automation with AI copilots, resilient guardrails, and a dashboard-first UX.</strong></p>
+  <p><strong>Your friendly crypto futures co-pilot: watch the market, manage risk, and keep you in the loop.</strong></p>
   <p>
+    <a href="#-mraster-in-60-seconds">Why MrAster?</a>
+    ·
     <a href="#-quick-start">Quick start</a>
     ·
-    <a href="#-dashboard-experience">Dashboard tour</a>
+    <a href="#-dashboard-at-a-glance">Dashboard tour</a>
     ·
-    <a href="#-configuration-reference">Configuration</a>
-    ·
-    <a href="#-ai-mode-explained">AI mode</a>
+    <a href="#-under-the-hood-for-builders">Under the hood</a>
   </p>
 </div>
 
 <p align="center">
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+" /></a>
-  <a href="#-multilingual-dashboard"><img src="https://img.shields.io/badge/Multi--language-8%20Locales-8A2BE2" alt="Multi-language UI" /></a>
-  <a href="#-observability--resilience"><img src="https://img.shields.io/badge/Status-Dashboard%20native-FF8C00" alt="Dashboard native" /></a>
-  <a href="#-security-notice"><img src="https://img.shields.io/badge/Trading-Handle%20with%20care-E63946" alt="Risk warning" /></a>
+  <a href="#-dashboard-at-a-glance"><img src="https://img.shields.io/badge/Control-Clean%20web%20dashboard-8A2BE2" alt="Dashboard" /></a>
+  <a href="#-safety-first"><img src="https://img.shields.io/badge/Mode-Paper%20or%20live-FF8C00" alt="Modes" /></a>
+  <a href="#-safety-first"><img src="https://img.shields.io/badge/Reminder-Trading%20is%20risky-E63946" alt="Risk warning" /></a>
 </p>
 
-> "Start the backend once, run the show from the browser, and let the copilots fine-tune every position."
+> “Flip on the backend, open the browser, and let the copilots do the heavy lifting.”
+
+---
+
+## ✨ MrAster in 60 seconds
+
+- **Hands-off trading** – MrAster scans the futures market, suggests trades, and can execute them with built-in guardrails.
+- **Always-on dashboard** – Start or stop the bot, adjust risk sliders, and read AI explanations from one friendly web page.
+- **AI that respects your budget** – Daily spend caps, cool-downs, and a news sentinel keep the copilots helpful and affordable.
+- **No guesswork setup** – Use paper mode to rehearse before you flip the switch to live orders.
+
+## 🚀 Quick start
+
+1. **Set up Python**
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # Windows: .venv\Scripts\activate
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+2. **Launch the backend**
+   ```bash
+   python dashboard_server.py
+   # or enable auto-reload
+   uvicorn dashboard_server:app --host 0.0.0.0 --port 8000
+   ```
+3. **Finish inside the browser**
+   Open <http://localhost:8000>, connect your exchange keys (or paper mode), and follow the guided setup.
+
+> Prefer running headless? Export `ASTER_PAPER=true` (optional) and call `python aster_multi_bot.py`. Add `ASTER_RUN_ONCE=true` to perform a single scan cycle.
+
+## 🖥️ Dashboard at a glance
+
+- **One-click control** – Start, stop, or relaunch the supervised bot (`aster_multi_bot.py`) without touching the terminal.
+- **Live logs & alerts** – Follow every trade idea, AI response, and guardrail warning in real time.
+- **Risk made simple** – Choose a preset (Low / Mid / High / ATT) or switch to Pro mode to edit every `ASTER_*` knob.
+- **Safe config editing** – Update your environment securely; MrAster validates the fields before applying them.
+- **AI copilots on display** – Read plain-language trade notes, see how much budget they’ve used, and chat back.
+- **Performance snapshots** – Review PnL charts, trade history, and market heat maps without leaving the page.
+
+## 🛡️ Safety first
+
+- **Paper mode**: rehearse strategies using simulated fills before trading real funds.
+- **Budget caps**: AI helpers respect your daily USD limit unless you explicitly lift it.
+- **Sentinel warnings**: breaking news, unusual funding, and volatility spikes surface instantly.
+- **You stay in charge**: stop the bot, edit settings, or pause AI autonomy whenever you like.
+
+## 🤓 Under the hood (for builders)
+
+Curious about the engines, guardrails, and configuration surface? Expand the sections below for the full technical tour.
 
 <details>
-<summary><strong>Table of Contents</strong></summary>
+<summary><strong>AI Copilot Stack</strong></summary>
 
-- [✨ Highlights](#-highlights)
-  - [AI Copilot Stack](#ai-copilot-stack)
-  - [Trading Engine](#trading-engine)
-  - [Risk and Order Management](#risk-and-order-management)
-  - [Observability & Resilience](#-observability--resilience)
-- [🚀 Quick Start](#-quick-start)
-- [🖥️ Dashboard Experience](#-dashboard-experience)
-- [🌍 Multilingual Dashboard](#-multilingual-dashboard)
-- [🤖 AI Mode Explained](#-ai-mode-explained)
-  - [Learning Loops & Self-Tuning](#learning-loops--self-tuning)
-- [🧭 Architecture Overview](#-architecture-overview)
-- [⚙️ Configuration Reference](#-configuration-reference)
-- [🔐 Security Notice](#-security-notice)
-
-</details>
-
-## ✨ Highlights
-
-### AI Copilot Stack
 - **AITradeAdvisor** assembles every request with regime stats, orderbook context, and structured prompts, then fans them out through a thread pool (respecting caching and per-model price sheets) before handing back JSON plans with overrides and explanations.
 - **DailyBudgetTracker + BudgetLearner** double-gate spending: the tracker keeps a rolling ledger with per-model averages, while the learner tilts symbol budgets and skips expensive calls when recent edge deteriorates, all updated after each OpenAI response.
 - **NewsTrendSentinel** (`ASTER_AI_SENTINEL_*`) fuses 24h market stats with optional external news into event-risk labels, size clamps, and hype multipliers before the advisor ever sees the trade.
@@ -52,128 +82,38 @@
 - **PlaybookManager** refreshes a living playbook of market regimes, directives, and structured risk adjustments that the advisor injects into every payload.
 - **Pending queue & concurrency guards** throttle autonomy with `ASTER_AI_CONCURRENCY`, `ASTER_AI_PENDING_LIMIT`, and global cool-downs so AI calls never overwhelm the exchange or your budget while still surfacing queued intents in the dashboard feed.
 
-### Trading Engine
+</details>
+
+<details>
+<summary><strong>Trading Engine</strong></summary>
+
 - **RSI-driven signals with trend confirmation** configurable via `ASTER_*` environment variables or the dashboard editor.
 - **Multi-armed bandit policy (`BanditPolicy`)** blends LinUCB exploration with the optional alpha model (`ml_policy.py`) to decide TAKE/SKIP and size buckets (S/M/L).
 - **Market hygiene filters** keep the feed clean: funding and spread guards, wickiness filters, and cached klines/24h tickers smooth out exchange noise.
 - **Oracle-aware non-arbitrage guard** clamps the mark/oracle gap using the premium index (per Jez, 2025) and steers entries away from funding traps.
 
-### Risk and Order Management
+</details>
+
+<details>
+<summary><strong>Risk & Order Management</strong></summary>
+
 - **BracketGuard** (`brackets_guard.py`) repairs stop-loss and take-profit orders while respecting both legacy and new bot signatures.
 - **FastTP** trims adverse moves with ATR-bound checkpoints and cooldown logic.
 - **Equity and exposure caps** (`ASTER_MAX_OPEN_*`, `ASTER_EQUITY_FRACTION`) plus persistent state (`aster_state.json`) ensure continuity across restarts.
 
-### 🛰️ Observability & Resilience
+</details>
+
+<details>
+<summary><strong>Observability & Resilience</strong></summary>
+
 - **Dashboard-native monitoring** covers log streaming, process control, environment editing, AI chat, and analytics cards.
 - **HTTP guardrails** via `ASTER_HTTP_RETRIES`, `ASTER_HTTP_BACKOFF`, and `ASTER_HTTP_TIMEOUT` harden network calls.
 - **Single dependency pass** — `pip install -r requirements.txt` brings in everything you need.
 
-## 🚀 Quick Start
-
-1. **Install dependencies**
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # Windows: .venv\Scripts\activate
-   pip install --upgrade pip
-   pip install -r requirements.txt
-   ```
-2. **Launch the dashboard backend**
-   ```bash
-   python dashboard_server.py
-   # or with uvicorn hot reload
-   uvicorn dashboard_server:app --host 0.0.0.0 --port 8000
-   ```
-3. **Open the web UI** at <http://localhost:8000> and finish the setup from the browser.
-
-> Need headless operation? Export `ASTER_PAPER=true` (optional) and run `python aster_multi_bot.py`. Set `ASTER_RUN_ONCE=true` for a single scan cycle.
-
-## 🖥️ Dashboard Experience
-
-- **One-click bot control**: start, stop, or relaunch the supervised `aster_multi_bot.py` process and inspect PID, uptime, and exit reasons.
-- **Live log streaming** with auto-scroll toggles, compact/detailed views, and downloadable snapshots.
-- **Risk presets & pro mode**: switch between Standard (Low/Mid/High presets + sliders) and Pro (full `ASTER_*` surface) on demand; High and ATT automatically lift the AI spend cap for uncapped execution.
-- **Safe configuration editing** writes to `dashboard_config.json`, validates keys, and syncs changes back into the running bot.
-- **Credential vaulting** keeps exchange and OpenAI keys isolated from general config edits.
-- **Performance analytics**: PnL charts, trade history, aggregated trade summaries, and market heat-strips update continuously.
-- **AI copilots**: review explanations, monitor budget usage, and chat with the advisor directly in the dashboard.
-- **Sentinel awareness**: event warnings, budget guards, and AI status surface instantly from the state file.
-- **AI decisions log**: a dedicated hero card chronicles every copilot consultation so you can audit TAKE/SKIP calls and
-  overrides without leaving the dashboard.
-
-## 🌍 Multilingual Dashboard
-
-The single-page app ships with eight fully translated locales and instant language switching—no reloads required. Supported languages today:
-
-- English (EN)
-- Deutsch / German (DE)
-- Español / Spanish (ES)
-- Français / French (FR)
-- Türkçe / Turkish (TR)
-- 한국어 / Korean (KO)
-- Русский / Russian (RU)
-- 中文（普通话） / Chinese (Mandarin) (ZH)
-
-Language buttons in the header update all UI labels, cards, and helper copy by pulling localized strings from `dashboard_static/app.js`.
-
-## 🤖 AI Mode Explained
-
-When you toggle the dashboard to **AI** (or set `ASTER_MODE=ai` / `ASTER_AI_MODE=true`) and provide `ASTER_OPENAI_API_KEY`, the workflow upgrades itself:
-
-1. **Signal intake** – Momentum, RSI, ATR, spread, funding, and trend context flow into each payload alongside orderbook depth, stop/TP distances, and policy stats the advisor whitelists for LLM consumption.
-2. **Sentinel context** – `NewsTrendSentinel` caches 24h ticker stats and optional external news to inject hype/event-risk scores, size clamps, and hard vetoes when the market turns radioactive.
-3. **Learning enrichment** – `PostmortemLearning`, `ParameterTuner`, and `PlaybookManager` inject feature vectors, risk overrides, and playbook directives, while `BudgetLearner` biases the payload with symbol-level spend heuristics.
-4. **Budget & bias gating** – `DailyBudgetTracker` checks estimated token costs (per model) before dispatch and can block requests once the daily cap hits, while `BudgetLearner` decides whether a symbol deserves another paid consult.
-5. **Dispatch & concurrency** – The advisor enforces `ASTER_AI_CONCURRENCY`, `ASTER_AI_PENDING_LIMIT`, and a global cool-down, queueing structured fallbacks so the dashboard still shows intent even when the LLM lane is saturated.
-6. **Execution & telemetry** – Approved trades inherit AI overrides, record request/response metadata, and stream budget + sentinel snapshots straight into the dashboard feed and `aster_state.json` for audit trails.
-
-> **Learning loop.** The `note_exit` hook updates bandit matrices, the alpha model, and AI learning stores after every closed trade, with state serialized through `to_dict`/`from_dict` so progress survives restarts.
-
-### AI Decisions Feed & Tag Legend
-
-The **AI decisions** card mirrors the autonomous feed and surfaces the most recent copilot requests without opening the modal.
-Each entry includes:
-
-- **Symbol & side** – The instrument under review and whether the advisor evaluated a long or short idea.
-- **Status pill** – Color-coded tags that map to the advisor lifecycle:
-  - `Pending` (grey): request queued—awaiting an LLM response.
-  - `Response received` (indigo): analysis returned, but the policy is still evaluating execution.
-  - `Analysis complete` / `Decision logged` (blue): qualitative output recorded while guardrails finalise the action.
-  - `Entry approved` (green): the copilot authorised the trade and handed back any size/SL/TP overrides.
-  - `Entry rejected` (red): the copilot or guardrail vetoed the setup; the headline summarises the block.
-- **Metric chips** – Inline badges extracted from the JSON payload (`Decision: TAKE`, `Confidence 0.82`, `Size ×1.20`, `SL ×0.85`, `TP ×1.35`, etc.) so overrides are obvious at a glance.
-- **Notes excerpt** – The top rationale, risk note, or sentinel callout trimmed for readability. Click the card to open the modal for the full event timeline and supporting telemetry.
-
-### Learning Loops & Self-Tuning
-
-The AI stack keeps improving as it trades. Four cooperating services share the persistent state stored in `aster_state.json`:
-
-- **PostmortemLearning** translates qualitative LLM trade reviews (e.g., “macro event,” “liquidity gap”) into weighted numeric signals that reappear in future trade payloads, letting the advisor learn from discretionary notes.
-- **ParameterTuner** records per-trade features, recomputes local stop/take biases, and periodically asks the LLM for structured JSON overrides once enough evidence accumulates.
-- **PlaybookManager** snapshots market breadth, volatility, and sentiment, then refreshes a playbook (“momentum squeeze,” “sideways chop”) that the advisor uses as regime context.
-- **BudgetLearner** tracks token spend vs. realised reward for each symbol and throttles costly post-mortems or tuning calls when edge deteriorates.
-
-Every component is transparent inside the dashboard: AI call receipts, current playbook, post-mortem feature weights, and tuning overrides are surfaced in the AI panel so you can audit the loop in real time.
-
-## 🧭 Architecture Overview
-
-```text
-├── aster_multi_bot.py      # Signal engine, policy decisions, order routing
-├── brackets_guard.py       # Background process for stop/TP repair
-├── ml_policy.py            # LinUCB bandit & optional alpha model
-├── dashboard_server.py     # FastAPI backend, websocket logs, process control
-├── dashboard_static/       # Single-page app with Standard, Pro, AI modes
-├── assets/                 # Project media (logo, etc.)
-└── requirements.txt        # Python dependencies
-```
-
-Run the bot standalone or from the dashboard; policy and state files reload automatically on startup.
-
-## ⚙️ Configuration Reference
-
-All variables can be edited via environment overrides or through the dashboard (`dashboard_config.json`). The tables below capture the most commonly tuned options; the full list lives in `aster_multi_bot.py` and in the UI editor.
+</details>
 
 <details>
-<summary><strong>Core Variables</strong></summary>
+<summary><strong>Configuration reference</strong></summary>
 
 | Variable | Default | Description |
 | --- | --- | --- |
@@ -193,7 +133,7 @@ All variables can be edited via environment overrides or through the dashboard (
 </details>
 
 <details>
-<summary><strong>Strategy, Risk, and Positioning</strong></summary>
+<summary><strong>Strategy, risk, and positioning</strong></summary>
 
 | Variable | Default | Description |
 | --- | --- | --- |
@@ -235,7 +175,7 @@ All variables can be edited via environment overrides or through the dashboard (
 </details>
 
 <details>
-<summary><strong>AI, Automation, and Guardrails</strong></summary>
+<summary><strong>AI, automation, and guardrails</strong></summary>
 
 | Variable | Default | Description |
 | --- | --- | --- |
@@ -266,7 +206,7 @@ All variables can be edited via environment overrides or through the dashboard (
 </details>
 
 <details>
-<summary><strong>Persistence Files</strong></summary>
+<summary><strong>Persistence files</strong></summary>
 
 - **`aster_state.json`** – Primary store for open positions, AI telemetry, sentinel state, and dashboard UI preferences. Delete it to force a clean slate when data becomes inconsistent.
 - **`dashboard_config.json`** – Mirrors the environment editor. Back it up for multiple presets or remove it to revert to seeded defaults.
@@ -276,11 +216,11 @@ Stop the backend before editing or deleting these files to avoid partial writes;
 
 </details>
 
-## 🔐 Security Notice
+## 🔐 Security notice
 
-- Live trading carries significant risk: always trial changes in paper mode first.
-- Never commit or expose API keys.
-- Even with caching enabled, verify that market and order data remain fresh.
-- Calibrate budget and sentinel parameters deliberately to control AI cost and event risk.
+- Live trading carries significant risk: always rehearse in paper mode before committing real funds.
+- Keep API keys private and rotate them regularly.
+- Even with caching enabled, confirm that market and order data stay fresh.
+- Tune budget and sentinel parameters to match your risk appetite.
 
-Best of luck & happy trading! Contributions and issue reports are always welcome.
+Happy trading—and if you spot a bug or have an idea, open an issue or pull request!
