@@ -935,6 +935,8 @@ body.paper-mode .hero-paper-toggle span {
 @media (max-width: 768px) {
   .hero {
     padding: clamp(2rem, 8vw, 2.6rem) var(--page-inline-padding);
+    box-sizing: border-box;
+    margin-inline: auto;
   }
 
   .hero-actions {
