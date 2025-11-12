@@ -162,7 +162,7 @@ Curious about the engines, guardrails, and configuration surface? Expand the sec
 | `ASTER_CONFIDENCE_SIZING` | `true` | Enables confidence-weighted sizing. When `true`, AI confidence blends between the configured multiplier bounds. |
 | `ASTER_CONFIDENCE_SIZE_MIN` / `ASTER_CONFIDENCE_SIZE_MAX` | `1.0` / `3.0` | Lower and upper multiplier targets when confidence-based sizing is active (identical values lock the multiplier to a fixed × value). |
 | `ASTER_CONFIDENCE_SIZE_BLEND` / `ASTER_CONFIDENCE_SIZE_EXP` | `1` / `2.0` | Blend weight between baseline and confidence target, plus the exponent shaping the curve (values >1 favour high confidence). |
-| `ASTER_RISK_PER_TRADE` | `0.007`* | Share of equity per trade. |
+| `ASTER_RISK_PER_TRADE` | `0.005`* | Share of equity per trade. |
 | `ASTER_EQUITY_FRACTION` | `0.66` | Maximum equity utilization across open positions (33% / 66% / 100% via Low / Mid / High & ATT presets). |
 | `ASTER_LEVERAGE` | `10` | Default leverage for orders. Dashboard presets apply 4× (Low), 10× (Mid), or the per-symbol exchange maximum (High / ATT). |
 | `ASTER_MAX_OPEN_GLOBAL` | `0` | Global cap on concurrent positions (0 = unlimited, rely on equity guard). |
@@ -180,7 +180,7 @@ Curious about the engines, guardrails, and configuration surface? Expand the sec
 | `ASTER_NON_ARB_EDGE_THRESHOLD` | `0.00005` | Funding edge tolerated before the guard blocks a biased entry. |
 | `ASTER_NON_ARB_SKIP_GAP` | `0.0015` | Absolute mark/oracle gap that forces a skip regardless of direction. |
 
-*When launched from the dashboard, values seed to 51/49 RSI and 0.007 risk share. CLI-only launches fall back to 52/48 and 0.006 until overridden or synced via `dashboard_config.json`.*
+*When launched from the dashboard, values seed to 51/49 RSI and a 0.006 risk share. CLI-only launches fall back to 52/48 and 0.005 until overridden or synced via `dashboard_config.json`.*
 
 </details>
 
@@ -192,7 +192,8 @@ Curious about the engines, guardrails, and configuration surface? Expand the sec
 | `ASTER_BANDIT_ENABLED` | `true` | Enables the LinUCB policy. |
 | `ASTER_AI_MODE` | `false` | Forces AI runtime even if the dashboard default is Standard/Pro. Equivalent to setting `ASTER_MODE=ai`.|
 | `ASTER_ALPHA_ENABLED` | `true` | Toggles the optional alpha model. |
-| `ASTER_ALPHA_THRESHOLD` | `0.55` | Minimum confidence to approve a trade. |
+| `ASTER_ALPHA_THRESHOLD` | `0.50` | Minimum confidence to approve a trade. |
+| `ASTER_ALPHA_WARMUP` | `30` | Minimum trades recorded before the alpha model can veto or promote. |
 | `ASTER_ALPHA_PROMOTE_DELTA` | `0.15` | Extra confidence required to upsize. |
 | `ASTER_HISTORY_MAX` | `250` | Number of historical trades for analytics. |
 | `ASTER_OPENAI_API_KEY` | empty | API key for AITradeAdvisor. |
