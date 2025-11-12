@@ -303,7 +303,7 @@ class BanditPolicy:
         gate_alpha: float = 1.2,
         size_alpha: float = 0.8,
         l2: float = 1e-3,
-        warmup_trades: int = 30,
+        warmup_trades: int = 40,
         enable_size: bool = True,
         size_multipliers: Optional[Dict[str, float]] = None,
         d: Optional[int] = None,
@@ -344,9 +344,9 @@ class BanditPolicy:
 
         # Tunables (können später per ENV übergeben/gesetzt werden)
         self.eps_gate: float = 0.0          # ε-greedy Chance auf TAKE
-        self.gate_margin: float = 0.0       # Margin-Anforderung auf UCB>0
+        self.gate_margin: float = -0.02     # Margin-Anforderung auf UCB>0 (negativ = aggressiver)
         self.anti_stall_min: int = 60       # Mindestsekunden zwischen Trades (Anti-Stall aus)
-        self.skip_push: float = 0.0         # Bonus auf SKIP (positiv = konservativer)
+        self.skip_push: float = -0.03       # Bonus auf SKIP (negativ = weniger konservativ)
 
         # Laufzeit-Stats
         self.n_trades: int = 0
@@ -387,7 +387,7 @@ class BanditPolicy:
             take_ucb -= risk_penalty
         # Warmup: am Anfang eher großzügig
         if self.n_trades < self.warmup_trades:
-            take_ucb += 0.05
+            take_ucb += 0.08
 
         # ε-greedy
         if random.random() < self.eps_gate:
@@ -557,7 +557,7 @@ class BanditPolicy:
         gate_alpha = float(overrides.get("gate_alpha", d.get("gate_alpha", 1.2)))
         size_alpha = float(overrides.get("size_alpha", d.get("size_alpha", 0.8)))
         l2 = float(overrides.get("l2", d.get("l2", 1e-3)))
-        warmup_trades = int(overrides.get("warmup_trades", d.get("warmup_trades", 30)))
+        warmup_trades = int(overrides.get("warmup_trades", d.get("warmup_trades", 40)))
         enable_size = overrides.get("enable_size", d.get("enable_size", True))
         size_multipliers = overrides.get("size_multipliers", d.get("size_multipliers"))
         alpha_enabled = overrides.get("alpha_enabled", d.get("alpha_enabled", False))
@@ -599,9 +599,15 @@ class BanditPolicy:
         obj.n_trades = int(d.get("n_trades", 0))
         obj.last_trade_ts = float(d.get("last_trade_ts", 0.0))
         obj.eps_gate = float(d.get("eps_gate", 0.0))
-        obj.gate_margin = float(d.get("gate_margin", 0.0))
+        gate_margin = float(d.get("gate_margin", obj.gate_margin))
+        if gate_margin > obj.gate_margin:
+            gate_margin = obj.gate_margin
+        obj.gate_margin = gate_margin
         obj.anti_stall_min = int(d.get("anti_stall_min", 60))
-        obj.skip_push = float(d.get("skip_push", 0.0))
+        skip_push = float(d.get("skip_push", obj.skip_push))
+        if skip_push > obj.skip_push:
+            skip_push = obj.skip_push
+        obj.skip_push = skip_push
         if obj.alpha and isinstance(d.get("alpha"), dict):
             try:
                 obj.alpha = AlphaModel.from_dict(d["alpha"])
