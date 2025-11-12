@@ -29,3 +29,12 @@ def test_bandit_policy_rewards_high_playbook_risk_bias():
     decision, extras = policy.decide(ctx)
     assert decision == "TAKE"
     assert extras["playbook_risk_bonus"] > 0
+
+
+def test_eps_gate_introduces_random_take_probability():
+    random.seed(42)
+    policy = BanditPolicy()
+    policy.eps_gate = 0.3
+    policy.gate.predict_ucb = lambda x: -0.4
+    takes = sum(1 for _ in range(200) if policy.decide({})[0] == "TAKE")
+    assert takes >= 40

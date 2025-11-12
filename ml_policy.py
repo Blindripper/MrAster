@@ -300,7 +300,7 @@ class BanditPolicy:
 
     def __init__(
         self,
-        gate_alpha: float = 1.2,
+        gate_alpha: float = 1.6,
         size_alpha: float = 0.8,
         l2: float = 1e-3,
         warmup_trades: int = 40,
@@ -554,7 +554,7 @@ class BanditPolicy:
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any], **overrides) -> "BanditPolicy":
-        gate_alpha = float(overrides.get("gate_alpha", d.get("gate_alpha", 1.2)))
+        gate_alpha = float(overrides.get("gate_alpha", d.get("gate_alpha", 1.6)))
         size_alpha = float(overrides.get("size_alpha", d.get("size_alpha", 0.8)))
         l2 = float(overrides.get("l2", d.get("l2", 1e-3)))
         warmup_trades = int(overrides.get("warmup_trades", d.get("warmup_trades", 40)))

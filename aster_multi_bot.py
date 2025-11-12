@@ -8992,6 +8992,8 @@ class Bot:
             except Exception as e:
                 log.debug(f"ML policy init failed: {e}")
                 self.policy = None
+        if self.policy:
+            self._apply_policy_tunables()
         self.guard = BracketGuard(
             base_url=BASE,
             api_key=API_KEY,
@@ -9053,6 +9055,57 @@ class Bot:
         else:
             self._strategy.playbook_manager = None
         self._maybe_emit_ai_debug_state("startup")
+
+    def _apply_policy_tunables(self) -> None:
+        policy = getattr(self, "policy", None)
+        if not isinstance(policy, BanditPolicy):
+            return
+
+        overrides: Dict[str, Any] = {}
+        state_overrides = self.state.get("policy_overrides") if isinstance(self.state, dict) else None
+        if isinstance(state_overrides, dict):
+            overrides.update(state_overrides)
+
+        env_eps = os.getenv("ASTER_POLICY_EPS_GATE")
+        if env_eps is not None:
+            try:
+                overrides["eps_gate"] = float(env_eps)
+            except (TypeError, ValueError):
+                log.debug("Invalid ASTER_POLICY_EPS_GATE value: %s", env_eps)
+
+        env_gate_alpha = os.getenv("ASTER_POLICY_GATE_ALPHA")
+        if env_gate_alpha is not None:
+            try:
+                overrides["gate_alpha"] = float(env_gate_alpha)
+            except (TypeError, ValueError):
+                log.debug("Invalid ASTER_POLICY_GATE_ALPHA value: %s", env_gate_alpha)
+
+        applied: Dict[str, Any] = {}
+        if "eps_gate" in overrides:
+            try:
+                eps = float(overrides["eps_gate"])
+                eps = min(1.0, max(0.0, eps))
+                policy.eps_gate = eps
+                applied["eps_gate"] = eps
+            except (TypeError, ValueError):
+                log.debug("Failed to apply eps_gate override: %r", overrides.get("eps_gate"))
+
+        if "gate_alpha" in overrides and getattr(policy, "gate", None):
+            try:
+                gate_alpha = float(overrides["gate_alpha"])
+                if gate_alpha > 0:
+                    policy.gate.alpha = gate_alpha
+                    applied["gate_alpha"] = gate_alpha
+            except (TypeError, ValueError):
+                log.debug("Failed to apply gate_alpha override: %r", overrides.get("gate_alpha"))
+
+        if applied:
+            overrides_state = self.state.setdefault("policy_overrides", {})
+            if isinstance(overrides_state, dict):
+                overrides_state.update(applied)
+            else:
+                self.state["policy_overrides"] = dict(applied)
+            log.debug("Applied policy overrides: %s", applied)
 
     def _log_management_event(self, rec: Dict[str, Any], action: str, payload: Optional[Dict[str, Any]] = None) -> None:
         events = rec.setdefault("management_events", [])
