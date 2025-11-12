@@ -6016,15 +6016,14 @@ function humanizeLogLine(line, fallbackLevel = 'info') {
     const cleaned = reasonText ? reasonText.trim() : '';
     text = `Skipped ${symbol} — Base strategy veto (${cleaned || 'no detail'}).`;
     label = 'Skipped trade';
-    severity = 'warning';
-    relevant = true;
+    severity = 'debug';
+    relevant = false;
     return {
       text,
       label,
       severity,
       relevant,
       parsed,
-      reason: 'base_strategy_skip',
       symbol: symbol ? symbol.toString().toUpperCase() : undefined,
       detail: cleaned,
     };
