@@ -309,8 +309,8 @@ class BanditPolicy:
         d: Optional[int] = None,
         *,
         alpha_enabled: bool = False,
-        alpha_threshold: float = 0.55,
-        alpha_warmup: int = 40,
+        alpha_threshold: float = 0.50,
+        alpha_warmup: int = 30,
         alpha_lr: float = 0.05,
         alpha_l2: float = 5e-4,
         alpha_min_conf: float = 0.2,
@@ -365,12 +365,12 @@ class BanditPolicy:
         event_risk = float(ctx.get("sentinel_event_risk", 0.0) or 0.0)
         hype_score = float(ctx.get("sentinel_hype", 0.0) or 0.0)
         risk_penalty = 0.0
-        if event_risk > 0.32:
-            risk_penalty += (event_risk - 0.32) * 1.2
-            if event_risk > 0.55:
-                risk_penalty += 0.05
-        if hype_score > 0.86:
-            risk_penalty += (hype_score - 0.86) * 0.6
+        if event_risk > 0.35:
+            risk_penalty += (event_risk - 0.35) * 0.9
+            if event_risk > 0.60:
+                risk_penalty += 0.03
+        if hype_score > 0.90:
+            risk_penalty += (hype_score - 0.90) * 0.4
         try:
             playbook_risk_bias = float(ctx.get("playbook_risk_bias", 1.0) or 1.0)
         except (TypeError, ValueError):
@@ -378,10 +378,10 @@ class BanditPolicy:
         pb_penalty = 0.0
         pb_bonus = 0.0
         if playbook_risk_bias < 0.95:
-            pb_penalty = (0.95 - playbook_risk_bias) * 0.9
+            pb_penalty = (0.95 - playbook_risk_bias) * 0.75
             risk_penalty += pb_penalty
         elif playbook_risk_bias > 1.05:
-            pb_bonus = min(0.4, (playbook_risk_bias - 1.0) * 0.6)
+            pb_bonus = min(0.4, (playbook_risk_bias - 1.0) * 0.5)
             take_ucb += pb_bonus
         if risk_penalty > 0.0:
             take_ucb -= risk_penalty
@@ -432,9 +432,9 @@ class BanditPolicy:
                 extras["size_bucket"] = size_bucket
                 # kein direkter Eingriff in LinUCB; Bucket-Anpassung reicht
 
-        if decision == "TAKE" and self.enable_size and (event_risk > 0.45 or risk_penalty >= 0.2):
+        if decision == "TAKE" and self.enable_size and (event_risk > 0.50 or risk_penalty >= 0.25):
             demote_steps = 1
-            if event_risk > 0.65 or risk_penalty >= 0.35:
+            if event_risk > 0.70 or risk_penalty >= 0.40:
                 demote_steps = 2
             size_bucket = self._demote_bucket(size_bucket, demote_steps)
             extras["size_bucket"] = size_bucket
@@ -561,8 +561,8 @@ class BanditPolicy:
         enable_size = overrides.get("enable_size", d.get("enable_size", True))
         size_multipliers = overrides.get("size_multipliers", d.get("size_multipliers"))
         alpha_enabled = overrides.get("alpha_enabled", d.get("alpha_enabled", False))
-        alpha_threshold = float(overrides.get("alpha_threshold", d.get("alpha_threshold", 0.55)))
-        alpha_warmup = int(overrides.get("alpha_warmup", d.get("alpha_warmup", 40)))
+        alpha_threshold = float(overrides.get("alpha_threshold", d.get("alpha_threshold", 0.50)))
+        alpha_warmup = int(overrides.get("alpha_warmup", d.get("alpha_warmup", 30)))
         alpha_lr = float(overrides.get("alpha_lr", d.get("alpha_lr", 0.05)))
         alpha_l2 = float(overrides.get("alpha_l2", d.get("alpha_l2", 5e-4)))
         alpha_min_conf = float(overrides.get("alpha_min_conf", d.get("alpha_min_conf", 0.2)))

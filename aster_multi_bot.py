@@ -636,8 +636,8 @@ CONFIDENCE_SIZING_BLEND = min(
 CONFIDENCE_SIZING_EXP = max(0.2, float(os.getenv("ASTER_CONFIDENCE_SIZE_EXP", "2.0")))
 
 ALPHA_ENABLED = os.getenv("ASTER_ALPHA_ENABLED", "true").lower() in ("1", "true", "yes", "on")
-ALPHA_THRESHOLD = float(os.getenv("ASTER_ALPHA_THRESHOLD", "0.55"))
-ALPHA_WARMUP = int(os.getenv("ASTER_ALPHA_WARMUP", "40"))
+ALPHA_THRESHOLD = float(os.getenv("ASTER_ALPHA_THRESHOLD", "0.50"))
+ALPHA_WARMUP = int(os.getenv("ASTER_ALPHA_WARMUP", "30"))
 ALPHA_LR = float(os.getenv("ASTER_ALPHA_LR", "0.05"))
 ALPHA_L2 = float(os.getenv("ASTER_ALPHA_L2", "0.0005"))
 ALPHA_MIN_CONF = float(os.getenv("ASTER_ALPHA_MIN_CONF", "0.2"))
@@ -652,7 +652,7 @@ DEFAULT_NOTIONAL = _env_float(
     _default_notional_fallback,
     allow_zero=False,
 )
-RISK_PER_TRADE = float(os.getenv("ASTER_RISK_PER_TRADE", "0.006"))
+RISK_PER_TRADE = float(os.getenv("ASTER_RISK_PER_TRADE", "0.005"))
 PRESET_NOTIONAL_BOUNDS = {
     key: (
         float(values.get("notional_min", _PRESET_SIZING_FALLBACK["notional_min"])),
