@@ -207,18 +207,18 @@ class AlphaModel:
         if ctx is None:
             return
         margin = self.reward_margin
+        if not math.isfinite(reward) or not math.isfinite(margin) or margin <= 0.0:
+            return
         weight = min(1.0, max(0.1, abs(reward)))
         if reward > margin:
             target = 1.0
         elif reward < -margin:
             target = 0.0
-        elif margin > 0.0:
+        else:
             norm = reward / margin
             target = 0.5 + 0.5 * norm
             target = float(np.clip(target, 0.05, 0.95))
             weight = max(0.05, abs(norm))
-        else:
-            return
         x_raw = self._vec(ctx)
         x_norm = self._norm(x_raw, update=True)
         x = np.append(x_norm, 1.0)
