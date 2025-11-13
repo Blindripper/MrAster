@@ -182,6 +182,8 @@ Curious about the engines, guardrails, and configuration surface? Expand the sec
 
 *When launched from the dashboard, values seed to 51/49 RSI and a 0.006 risk share (High preset in AI mode seeds 0.10). CLI-only launches fall back to 52/48 and 0.005 until overridden or synced via `dashboard_config.json`.*
 
+*High/ATT presets without a manual `ASTER_LEVERAGE` override now auto-select the lowest leverage rung that still covers the strategy's default notional when AI mode is active, preventing exchange-imposed notional caps from throttling position size.*
+
 </details>
 
 <details>

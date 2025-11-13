@@ -6098,6 +6098,7 @@ class RiskManager:
             info = self.exchange.get_exchange_info()
             filt: Dict[str, Dict[str, Any]] = {}
             bracket_caps: Dict[str, float] = {}
+            bracket_details: Dict[str, List[Tuple[float, Optional[float]]]] = {}
             if getattr(self.exchange, "api_key", None) and getattr(self.exchange, "api_secret", None):
                 try:
                     brackets = self.exchange.signed("get", "/fapi/v1/leverageBracket", {})
@@ -6117,17 +6118,24 @@ class RiskManager:
                             ladder = entry.get("brackets") or entry.get("leverageBrackets")
                             if not isinstance(ladder, list) or not ladder:
                                 continue
-                            try:
-                                top = ladder[0]
-                            except Exception:
-                                continue
-                            cap = _coerce_positive_float(
-                                top.get("initialLeverage")
-                                or top.get("maxLeverage")
-                                or top.get("leverage")
-                            )
-                            if cap > 0:
-                                bracket_caps[symbol_key] = cap
+                            processed: List[Tuple[float, Optional[float]]] = []
+                            for rung in ladder:
+                                lev = _coerce_positive_float(
+                                    rung.get("initialLeverage")
+                                    or rung.get("maxLeverage")
+                                    or rung.get("leverage")
+                                )
+                                if lev <= 0:
+                                    continue
+                                notional_cap = _coerce_positive_float(
+                                    rung.get("notionalCap")
+                                    or rung.get("notional_cap")
+                                    or rung.get("notionalLimit")
+                                )
+                                processed.append((lev, notional_cap if notional_cap > 0 else None))
+                            if processed:
+                                bracket_caps[symbol_key] = max(lev for lev, _ in processed)
+                                bracket_details[symbol_key] = processed
             for s in info.get("symbols", []):
                 sym = s.get("symbol", "")
                 fdict = {f.get("filterType"): f for f in s.get("filters", [])}
@@ -6150,12 +6158,25 @@ class RiskManager:
                     "maxLeverage": max_leverage,
                     "defaultLeverage": _coerce_positive_float(s.get("defaultLeverage")),
                 }
+                details = bracket_details.get(sym)
+                if details:
+                    filt[sym]["leverageBrackets"] = [
+                        {"leverage": float(lev), "notional_cap": (float(cap) if cap else None)}
+                        for lev, cap in details
+                    ]
             if bracket_caps:
                 for sym, cap in bracket_caps.items():
                     bucket = filt.setdefault(sym, {})
                     stored = _coerce_positive_float(bucket.get("maxLeverage"))
                     if cap > stored:
                         bucket["maxLeverage"] = cap
+            if bracket_details:
+                for sym, details in bracket_details.items():
+                    bucket = filt.setdefault(sym, {})
+                    bucket["leverageBrackets"] = [
+                        {"leverage": float(lev), "notional_cap": (float(cap) if cap else None)}
+                        for lev, cap in details
+                    ]
             self.symbol_filters = filt
         except Exception as e:
             log.warning(f"load_filters failed: {e}")
@@ -6403,9 +6424,75 @@ class RiskManager:
             cap = LEVERAGE
         if cap <= 0:
             cap = 20.0
+        state_cap = 0.0
+        if isinstance(self.state, dict):
+            stored = self.state.get("symbol_leverage")
+            if isinstance(stored, dict):
+                try:
+                    state_cap = _coerce_positive_float(stored.get(symbol))
+                    if state_cap <= 0:
+                        state_cap = _coerce_positive_float(stored.get(str(symbol).upper()))
+                except Exception:
+                    state_cap = 0.0
+        if state_cap > 0:
+            cap = min(cap, state_cap)
+        if (
+            LEVERAGE_IS_UNLIMITED
+            and PRESET_MODE in {"high", "att"}
+            and AI_MODE_ENABLED
+        ):
+            preferred = self._preferred_high_mode_leverage(symbol, cap)
+            if preferred is not None and preferred > 0:
+                cap = min(cap, preferred)
         if math.isfinite(LEVERAGE) and LEVERAGE > 0:
             return max(1.0, min(LEVERAGE, cap))
         return max(1.0, cap)
+
+    def _preferred_high_mode_leverage(self, symbol: str, cap: float) -> Optional[float]:
+        if cap <= 0:
+            return None
+        filters = self.symbol_filters.get(symbol, {}) if isinstance(self.symbol_filters, dict) else {}
+        bracket_info = filters.get("leverageBrackets")
+        if not isinstance(bracket_info, (list, tuple)) or not bracket_info:
+            return None
+        target = max(self.default_notional * 2.0, 4000.0)
+        equity = self._equity_cached()
+        if equity > 0:
+            target = max(target, equity * EQUITY_FRACTION * 1.2)
+        processed: List[Tuple[float, float]] = []
+        for entry in bracket_info:
+            try:
+                lev = _coerce_positive_float(entry.get("leverage"))
+            except Exception:
+                lev = 0.0
+            if lev <= 0:
+                continue
+            cap_val = entry.get("notional_cap")
+            if isinstance(cap_val, (int, float)):
+                try:
+                    cap_numeric = float(cap_val)
+                except (TypeError, ValueError):
+                    cap_numeric = 0.0
+            else:
+                cap_numeric = 0.0
+            if cap_numeric <= 0 or not math.isfinite(cap_numeric):
+                cap_numeric = float("inf")
+            processed.append((cap_numeric, lev))
+        if not processed:
+            return None
+        processed.sort(key=lambda item: (item[0], -item[1]))
+        chosen: Optional[float] = None
+        for cap_val, lev in processed:
+            if cap_val >= target:
+                chosen = lev
+                break
+        if chosen is None:
+            richest_cap, richest_lev = max(processed, key=lambda item: item[0])
+            if richest_cap > 0:
+                chosen = richest_lev
+        if chosen is None:
+            return None
+        return max(1.0, min(float(chosen), float(cap)))
 
     def compute_qty(self, symbol: str, entry: float, sl: float, size_mult: float) -> float:
         step = float(self.symbol_filters.get(symbol, {}).get("stepSize", 0.0001) or 0.0001)
