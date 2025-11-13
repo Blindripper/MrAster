@@ -652,7 +652,11 @@ DEFAULT_NOTIONAL = _env_float(
     _default_notional_fallback,
     allow_zero=False,
 )
-RISK_PER_TRADE = float(os.getenv("ASTER_RISK_PER_TRADE", "0.005"))
+_DEFAULT_RISK_PER_TRADE = 0.005
+if PRESET_MODE in {"high", "att"} and AI_MODE_ENABLED:
+    _DEFAULT_RISK_PER_TRADE = 0.10
+
+RISK_PER_TRADE = float(os.getenv("ASTER_RISK_PER_TRADE", str(_DEFAULT_RISK_PER_TRADE)))
 PRESET_NOTIONAL_BOUNDS = {
     key: (
         float(values.get("notional_min", _PRESET_SIZING_FALLBACK["notional_min"])),
