@@ -201,8 +201,9 @@
           class="card hero-active-positions hero-overview-card"
           id="active-positions-card"
           aria-label="Active positions overview"
+          data-mobile-collapsible
         >
-          <div class="card-header">
+          <div class="card-header" data-mobile-collapsible-header>
             <div>
               <h2 data-i18n="active.title">Active positions</h2>
               <p class="card-subtitle" data-i18n="active.subtitle">Live exposure across all modes.</p>
@@ -212,7 +213,7 @@
               <span class="active-positions-mode" id="active-positions-mode">0.00 USDT</span>
             </div>
           </div>
-          <div class="active-positions-body">
+          <div class="active-positions-body" data-mobile-collapsible-body>
             <div
               class="active-positions-notifications"
               id="active-positions-notifications"
@@ -242,14 +243,17 @@
         </section>
 
         <div class="hero-overview-grid">
-          <section class="card status" aria-label="Bot status overview">
-            <h2 data-i18n="status.title">Status</h2>
-            <div class="status-grid">
-              <div>
-                <span class="label" data-i18n="status.state">State</span>
-                <span id="status-indicator" class="pill neutral">–</span>
-              </div>
-              <div>
+          <section class="card status" aria-label="Bot status overview" data-mobile-collapsible>
+            <div class="card-header card-header--simple" data-mobile-collapsible-header>
+              <h2 data-i18n="status.title">Status</h2>
+            </div>
+            <div class="card-section-body" data-mobile-collapsible-body>
+              <div class="status-grid">
+                <div>
+                  <span class="label" data-i18n="status.state">State</span>
+                  <span id="status-indicator" class="pill neutral">–</span>
+                </div>
+                <div>
                 <span class="label" data-i18n="status.pid">PID</span>
                 <span id="status-pid">–</span>
               </div>
@@ -261,94 +265,112 @@
                 <span class="label" data-i18n="status.uptime">Uptime</span>
                 <span id="status-uptime">–</span>
               </div>
-            </div>
-            <div class="ai-budget" id="ai-budget" data-ai-only>
-              <div class="ai-budget-header">
-                <span class="label" data-i18n="status.aiBudget">AI budget (daily)</span>
-                <span class="ai-budget-mode" id="ai-budget-mode">Standard</span>
-              </div>
-              <div class="ai-budget-bar">
-                <div class="ai-budget-fill" id="ai-budget-fill" style="width: 0%"></div>
-              </div>
-              <div class="ai-budget-meta" id="ai-budget-meta" data-i18n="status.aiBudgetMeta">Budget not configured.</div>
-            </div>
-            <div class="status-stats">
-              <div class="status-stats-header">
-                <div class="decision-summary-group">
-                  <span class="label" data-i18n="status.tradeDecisions">Trade decisions</span>
-                  <div class="decision-summary" id="decision-summary">
-                    <span class="decision-metric" data-metric="taken">
-                      <span data-i18n="status.decisions.accepted">Accepted:</span>
-                      <strong>0</strong>
-                    </span>
-                    <span class="decision-metric" data-metric="skipped">
-                      <span data-i18n="status.decisions.skipped">Skipped:</span>
-                      <strong>0</strong>
-                    </span>
-                  </div>
+              <div class="ai-budget" id="ai-budget" data-ai-only>
+                <div class="ai-budget-header">
+                  <span class="label" data-i18n="status.aiBudget">AI budget (daily)</span>
+                  <span class="ai-budget-mode" id="ai-budget-mode">Standard</span>
                 </div>
-                <button
-                  id="decision-reasons-toggle"
-                  class="ghost collapse-toggle"
-                  type="button"
-                  aria-expanded="false"
-                  aria-controls="decision-reasons-container"
-                  hidden
-                >
-                  <span id="decision-reasons-toggle-label" data-i18n="status.decisions.showDetails">Details</span>
-                  <span class="collapse-toggle__icon" aria-hidden="true"></span>
-                </button>
+                <div class="ai-budget-bar">
+                  <div class="ai-budget-fill" id="ai-budget-fill" style="width: 0%"></div>
+                </div>
+                <div class="ai-budget-meta" id="ai-budget-meta" data-i18n="status.aiBudgetMeta">Budget not configured.</div>
               </div>
-              <div class="decision-reasons-container" id="decision-reasons-container" hidden>
-                <ul class="decision-reasons" id="decision-reasons">
-                  <li class="empty" data-i18n="status.decisions.empty">No trade decisions yet.</li>
-                </ul>
+              <div class="status-stats">
+                <div class="status-stats-header">
+                  <div class="decision-summary-group">
+                    <span class="label" data-i18n="status.tradeDecisions">Trade decisions</span>
+                    <div class="decision-summary" id="decision-summary">
+                      <span class="decision-metric" data-metric="taken">
+                        <span data-i18n="status.decisions.accepted">Accepted:</span>
+                        <strong>0</strong>
+                      </span>
+                      <span class="decision-metric" data-metric="skipped">
+                        <span data-i18n="status.decisions.skipped">Skipped:</span>
+                        <strong>0</strong>
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    id="decision-reasons-toggle"
+                    class="ghost collapse-toggle"
+                    type="button"
+                    aria-expanded="false"
+                    aria-controls="decision-reasons-container"
+                    hidden
+                  >
+                    <span id="decision-reasons-toggle-label" data-i18n="status.decisions.showDetails">Details</span>
+                    <span class="collapse-toggle__icon" aria-hidden="true"></span>
+                  </button>
+                </div>
+                <div class="decision-reasons-container" id="decision-reasons-container" hidden>
+                  <ul class="decision-reasons" id="decision-reasons">
+                    <li class="empty" data-i18n="status.decisions.empty">No trade decisions yet.</li>
+                  </ul>
+                </div>
               </div>
             </div>
           </section>
 
-          <section class="card hero-credentials" role="group" aria-label="Exchange credentials">
-            <div class="hero-credentials-title" data-i18n="credentials.title">Exchange credentials</div>
-            <label class="hero-credential">
-              <span data-i18n="credentials.apiKey.label">ASTER_API_KEY</span>
-              <input
-                id="input-api-key"
-                type="text"
-                autocomplete="off"
-                placeholder="Enter API key"
-                data-i18n="credentials.apiKey.placeholder"
-                data-i18n-attr="placeholder"
-              />
-            </label>
-            <label class="hero-credential">
-              <span data-i18n="credentials.apiSecret.label">ASTER_API_SECRET</span>
-              <input
-                id="input-api-secret"
-                type="password"
-                autocomplete="off"
-                placeholder="Enter API secret"
-                data-i18n="credentials.apiSecret.placeholder"
-                data-i18n-attr="placeholder"
-              />
-            </label>
-            <div class="hero-credentials-actions">
-              <button id="btn-start" class="primary" data-i18n="credentials.start">Start</button>
-              <button id="btn-stop" class="ghost" data-i18n="credentials.stop">Stop</button>
-              <button id="btn-save-credentials" class="primary subtle" data-i18n="credentials.save">Save</button>
+          <section
+            class="card hero-credentials"
+            role="group"
+            aria-label="Exchange credentials"
+            data-mobile-collapsible
+          >
+            <div class="card-header card-header--simple" data-mobile-collapsible-header>
+              <span class="hero-credentials-title" data-i18n="credentials.title">Exchange credentials</span>
+            </div>
+            <div class="hero-credentials-content" data-mobile-collapsible-body>
+              <div class="hero-credentials-grid">
+                <label class="hero-credential">
+                  <span data-i18n="credentials.apiKey.label">ASTER_API_KEY</span>
+                  <input
+                    id="input-api-key"
+                    type="text"
+                    autocomplete="off"
+                    placeholder="Enter API key"
+                    data-i18n="credentials.apiKey.placeholder"
+                    data-i18n-attr="placeholder"
+                  />
+                </label>
+                <label class="hero-credential">
+                  <span data-i18n="credentials.apiSecret.label">ASTER_API_SECRET</span>
+                  <input
+                    id="input-api-secret"
+                    type="password"
+                    autocomplete="off"
+                    placeholder="Enter API secret"
+                    data-i18n="credentials.apiSecret.placeholder"
+                    data-i18n-attr="placeholder"
+                  />
+                </label>
+                <div class="hero-credentials-actions">
+                  <button id="btn-start" class="primary" data-i18n="credentials.start">Start</button>
+                  <button id="btn-stop" class="ghost" data-i18n="credentials.stop">Stop</button>
+                  <button id="btn-save-credentials" class="primary subtle" data-i18n="credentials.save">Save</button>
+                </div>
+              </div>
             </div>
           </section>
 
-          <section class="card trades hero-overview-card" aria-label="Recent trade history" id="trades">
-            <div class="card-header trade-header">
+          <section
+            class="card trades hero-overview-card"
+            aria-label="Recent trade history"
+            id="trades"
+            data-mobile-collapsible
+          >
+            <div class="card-header trade-header" data-mobile-collapsible-header>
               <div class="trade-title">
                 <h2 data-i18n="trades.title">Trade history</h2>
                 <p class="card-subtitle" data-i18n="trades.subtitle">Latest fills and realized performance at a glance.</p>
               </div>
               <div class="trade-overview" id="trade-summary"></div>
             </div>
-            <div class="ai-hint" id="ai-hint" hidden></div>
-            <div class="trade-history">
-              <div id="trade-list" class="trade-list"></div>
+            <div class="card-section-body" data-mobile-collapsible-body>
+              <div class="ai-hint" id="ai-hint" hidden></div>
+              <div class="trade-history">
+                <div id="trade-list" class="trade-list"></div>
+              </div>
             </div>
           </section>
 
@@ -356,8 +378,9 @@
             class="card ai-request-log hero-overview-card"
             aria-label="AI decision history"
             data-ai-only
+            data-mobile-collapsible
           >
-            <div class="card-header">
+            <div class="card-header" data-mobile-collapsible-header>
               <div>
                 <h2 data-i18n="ai.requests.title">AI decisions</h2>
                 <p class="card-subtitle" data-i18n="ai.requests.subtitle">
@@ -365,39 +388,45 @@
                 </p>
               </div>
             </div>
-            <div class="ai-request-history">
+            <div class="ai-request-history" data-mobile-collapsible-body>
               <div id="ai-request-list" class="ai-request-list" role="list"></div>
             </div>
           </section>
 
-          <section class="card pnl-card hero-overview-card" aria-label="Performance overview">
-            <div class="card-header">
+          <section
+            class="card pnl-card hero-overview-card"
+            aria-label="Performance overview"
+            data-mobile-collapsible
+          >
+            <div class="card-header" data-mobile-collapsible-header>
               <div>
                 <h2 data-i18n="pnl.title">Performance overview</h2>
                 <p class="card-subtitle" data-i18n="pnl.subtitle">Cumulative realized PNL across your recorded trades.</p>
               </div>
             </div>
-            <div class="confidence-meter" id="alpha-confidence" hidden>
-              <div class="confidence-meter__label">
-                <span data-i18n="pnl.confidenceLabel">Model confidence</span>
-                <span class="confidence-meter__value" id="alpha-confidence-value">—</span>
+            <div class="card-section-body" data-mobile-collapsible-body>
+              <div class="confidence-meter" id="alpha-confidence" hidden>
+                <div class="confidence-meter__label">
+                  <span data-i18n="pnl.confidenceLabel">Model confidence</span>
+                  <span class="confidence-meter__value" id="alpha-confidence-value">—</span>
+                </div>
+                <div
+                  class="confidence-meter__bar"
+                  id="alpha-confidence-bar"
+                  role="progressbar"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  aria-valuenow="0"
+                  aria-valuetext="0 / 100"
+                >
+                  <div class="confidence-meter__fill" id="alpha-confidence-fill" style="width: 0%"></div>
+                </div>
               </div>
-              <div
-                class="confidence-meter__bar"
-                id="alpha-confidence-bar"
-                role="progressbar"
-                aria-valuemin="0"
-                aria-valuemax="100"
-                aria-valuenow="0"
-                aria-valuetext="0 / 100"
-              >
-                <div class="confidence-meter__fill" id="alpha-confidence-fill" style="width: 0%"></div>
-              </div>
-            </div>
-            <div class="pnl-chart-wrapper">
-              <canvas id="pnl-chart" aria-label="Cumulative PNL chart" style="display: none;"></canvas>
-              <div id="pnl-empty" class="empty-state" data-i18n="pnl.empty">
-                No PNL data yet. Execute trades to populate the performance graph.
+              <div class="pnl-chart-wrapper">
+                <canvas id="pnl-chart" aria-label="Cumulative PNL chart" style="display: none;"></canvas>
+                <div id="pnl-empty" class="empty-state" data-i18n="pnl.empty">
+                  No PNL data yet. Execute trades to populate the performance graph.
+                </div>
               </div>
             </div>
           </section>
@@ -406,8 +435,8 @@
     </header>
 
     <main class="layout">
-      <section class="card playbook-overview" data-ai-only id="playbook">
-        <div class="playbook-overview-header">
+      <section class="card playbook-overview" data-ai-only id="playbook" data-mobile-collapsible>
+        <div class="playbook-overview-header" data-mobile-collapsible-header>
           <div class="playbook-overview-header-main">
             <span class="playbook-badge" data-i18n="playbook.label">Playbook</span>
             <div class="playbook-overview-title">
@@ -418,7 +447,7 @@
             </div>
           </div>
         </div>
-        <div class="playbook-overview-body">
+        <div class="playbook-overview-body" data-mobile-collapsible-body>
           <section class="playbook-section playbook-summary-section" aria-labelledby="playbook-summary-title">
             <div class="playbook-section-header">
               <h3 id="playbook-summary-title" data-i18n="playbook.summary.title">Active regime snapshot</h3>
@@ -444,8 +473,8 @@
         </div>
       </section>
 
-      <section class="card chat-window" data-ai-only>
-        <div class="chat-window-header">
+      <section class="card chat-window" data-ai-only data-mobile-collapsible>
+        <div class="chat-window-header" data-mobile-collapsible-header>
           <div class="chat-window-header-main">
             <span class="chat-window-label" data-i18n="chat.label">Dashboard chat</span>
             <div class="chat-window-title">
@@ -457,7 +486,7 @@
           </div>
           <div class="chat-window-status" id="chat-key-indicator" role="status" aria-live="polite"></div>
         </div>
-        <div class="chat-window-body ai-chat-panel">
+        <div class="chat-window-body ai-chat-panel" data-mobile-collapsible-body>
           <div class="ai-chat-messages" id="ai-chat-messages" aria-live="polite">
             <div class="ai-chat-empty" data-i18n="chat.empty">Provide the Dashboard chat API key to start a conversation.</div>
           </div>
@@ -504,8 +533,8 @@
         </div>
       </section>
 
-      <section class="card mode-panel ai-config" data-ai-only>
-        <div class="card-header">
+      <section class="card mode-panel ai-config" data-ai-only data-mobile-collapsible>
+        <div class="card-header" data-mobile-collapsible-header>
           <div>
             <h2 data-i18n="ai.config.title">AI-Mode controls</h2>
             <p class="card-subtitle" data-i18n="ai.config.subtitle">
@@ -514,11 +543,12 @@
           </div>
           <button id="btn-save-ai" class="primary subtle" data-i18n="ai.config.save">Save</button>
         </div>
-        <div class="ai-config-panels">
-          <div class="ai-config-panel">
-            <h3 data-i18n="ai.config.access.title">Access</h3>
-            <label>
-              <span data-i18n="ai.config.access.openai">OpenAI API key</span>
+        <div class="card-section-body" data-mobile-collapsible-body>
+          <div class="ai-config-panels">
+            <div class="ai-config-panel">
+              <h3 data-i18n="ai.config.access.title">Access</h3>
+              <label>
+                <span data-i18n="ai.config.access.openai">OpenAI API key</span>
               <input
                 id="input-openai-key"
                 type="password"
@@ -546,12 +576,12 @@
               This separate OpenAI key powers the dashboard chat console and keeps trading calls isolated. The chat window is disabled until this key is saved.
             </p>
           </div>
-          <div class="ai-config-panel">
-            <h3 data-i18n="ai.config.budget.title">Daily budget</h3>
-            <label>
-              <span data-i18n="ai.config.budget.label">Daily budget (USD)</span>
-              <input
-                id="input-ai-budget"
+            <div class="ai-config-panel">
+              <h3 data-i18n="ai.config.budget.title">Daily budget</h3>
+              <label>
+                <span data-i18n="ai.config.budget.label">Daily budget (USD)</span>
+                <input
+                  id="input-ai-budget"
                 type="number"
                 min="0"
                 step="1"
@@ -561,15 +591,15 @@
                 data-i18n-attr="placeholder"
               />
             </label>
-            <p class="ai-config-panel-hint" data-i18n="ai.config.budget.hint">
-              Set a daily AI spend limit so autonomous actions stay within budget.
-            </p>
-          </div>
-          <div class="ai-config-panel">
-            <h3 data-i18n="ai.config.model.title">Model</h3>
-            <label>
-              <span data-i18n="ai.config.model.label">Model</span>
-              <select id="input-ai-model">
+              <p class="ai-config-panel-hint" data-i18n="ai.config.budget.hint">
+                Set a daily AI spend limit so autonomous actions stay within budget.
+              </p>
+            </div>
+            <div class="ai-config-panel">
+              <h3 data-i18n="ai.config.model.title">Model</h3>
+              <label>
+                <span data-i18n="ai.config.model.label">Model</span>
+                <select id="input-ai-model">
                 <optgroup
                   label="GPT-5 family"
                   data-i18n="ai.config.model.group.gpt5"
@@ -613,14 +643,14 @@
                 </optgroup>
               </select>
             </label>
-            <p class="ai-config-panel-hint" data-i18n="ai.config.model.hint">Choose the OpenAI foundation model that powers live analysis.</p>
-          </div>
-          <div class="ai-config-panel">
-            <h3 data-i18n="ai.config.baseline.title">Baseline stake</h3>
-            <label>
-              <span data-i18n="ai.config.baseline.label">Baseline notional per trade (USDT)</span>
-              <input
-                id="input-ai-default-notional"
+              <p class="ai-config-panel-hint" data-i18n="ai.config.model.hint">Choose the OpenAI foundation model that powers live analysis.</p>
+            </div>
+            <div class="ai-config-panel">
+              <h3 data-i18n="ai.config.baseline.title">Baseline stake</h3>
+              <label>
+                <span data-i18n="ai.config.baseline.label">Baseline notional per trade (USDT)</span>
+                <input
+                  id="input-ai-default-notional"
                 type="number"
                 min="0"
                 step="0.01"
@@ -629,131 +659,145 @@
                 data-i18n-attr="placeholder"
               />
             </label>
-            <p class="ai-config-panel-hint" data-i18n="ai.config.baseline.hint">
-              Defines <code>ASTER_DEFAULT_NOTIONAL</code>: the minimum USDT the AI targets per trade before applying its own multipliers or encountering risk-based limits.
-            </p>
+              <p class="ai-config-panel-hint" data-i18n="ai.config.baseline.hint">
+                Defines <code>ASTER_DEFAULT_NOTIONAL</code>: the minimum USDT the AI targets per trade before applying its own multipliers or encountering risk-based limits.
+              </p>
+            </div>
           </div>
+          <p class="ai-config-hint" data-i18n="ai.config.footer">
+            When AI-Mode is active, the strategy engine continuously calibrates position sizing, leverage, protective stops, and FastTP with your chosen model while honoring the daily spend limit.
+          </p>
         </div>
-        <p class="ai-config-hint" data-i18n="ai.config.footer">
-          When AI-Mode is active, the strategy engine continuously calibrates position sizing, leverage, protective stops, and FastTP with your chosen model while honoring the daily spend limit.
-        </p>
       </section>
 
-      <section class="card mode-panel quick-setup" data-normal-only data-hide-when-ai id="quick-setup">
-        <div class="card-header">
+      <section
+        class="card mode-panel quick-setup"
+        data-normal-only
+        data-hide-when-ai
+        id="quick-setup"
+        data-mobile-collapsible
+      >
+        <div class="card-header" data-mobile-collapsible-header>
           <div>
             <h2 data-i18n="quick.title">Quick strategy setup</h2>
             <p class="card-subtitle" data-i18n="quick.subtitle">Select a preset, then fine-tune risk and leverage for your comfort zone.</p>
           </div>
           <button id="btn-apply-preset" class="primary subtle" data-i18n="quick.apply">Apply preset</button>
         </div>
-        <div class="preset-buttons" role="group" aria-label="Risk presets">
-          <button class="preset" data-preset="low">
-            <span class="preset-title" data-i18n="quick.presets.low.title">Low</span>
-            <span class="preset-subtitle" data-i18n="quick.presets.low.subtitle">Few trades · 30% risk per trade · 33% equity use</span>
-          </button>
-          <button class="preset" data-preset="mid">
-            <span class="preset-title" data-i18n="quick.presets.mid.title">Mid</span>
-            <span class="preset-subtitle" data-i18n="quick.presets.mid.subtitle">Balanced trading · 50% risk per trade · 66% equity use</span>
-          </button>
-          <button class="preset" data-preset="high">
-            <span class="preset-title" data-i18n="quick.presets.high.title">High</span>
-            <span class="preset-subtitle" data-i18n="quick.presets.high.subtitle">Frequent · aggressive · 100% risk per trade</span>
-          </button>
-          <button class="preset" data-preset="att">
-            <span class="preset-title" data-i18n="quick.presets.att.title">ATT</span>
-            <span class="preset-subtitle" data-i18n="quick.presets.att.subtitle">Against the trend · 100% equity</span>
-          </button>
-        </div>
-        <div id="preset-description" class="preset-description" data-i18n="quick.description">Pick a profile to load recommended risk controls.</div>
-        <div class="risk-controls">
-          <div class="risk-control">
-            <div class="risk-control-header">
-              <span data-i18n="quick.risk.label">Risk per trade</span>
-              <span id="risk-value" class="risk-value">50.0%</span>
-            </div>
-            <input
-              type="range"
-              id="risk-slider"
-              min="0.25"
-              max="100"
-              step="0.25"
-              value="50"
-              aria-label="Risk per trade (%)"
-              data-i18n="quick.risk.aria"
-              data-i18n-attr="aria-label"
-            />
-            <div class="risk-scale">
-              <span data-i18n="quick.risk.min">0.25%</span>
-              <span data-i18n="quick.risk.max">100%</span>
-            </div>
+        <div class="card-section-body" data-mobile-collapsible-body>
+          <div class="preset-buttons" role="group" aria-label="Risk presets">
+            <button class="preset" data-preset="low">
+              <span class="preset-title" data-i18n="quick.presets.low.title">Low</span>
+              <span class="preset-subtitle" data-i18n="quick.presets.low.subtitle">Few trades · 30% risk per trade · 33% equity use</span>
+            </button>
+            <button class="preset" data-preset="mid">
+              <span class="preset-title" data-i18n="quick.presets.mid.title">Mid</span>
+              <span class="preset-subtitle" data-i18n="quick.presets.mid.subtitle">Balanced trading · 50% risk per trade · 66% equity use</span>
+            </button>
+            <button class="preset" data-preset="high">
+              <span class="preset-title" data-i18n="quick.presets.high.title">High</span>
+              <span class="preset-subtitle" data-i18n="quick.presets.high.subtitle">Frequent · aggressive · 100% risk per trade</span>
+            </button>
+            <button class="preset" data-preset="att">
+              <span class="preset-title" data-i18n="quick.presets.att.title">ATT</span>
+              <span class="preset-subtitle" data-i18n="quick.presets.att.subtitle">Against the trend · 100% equity</span>
+            </button>
           </div>
-          <div class="risk-control">
-            <div class="risk-control-header">
-              <span data-i18n="quick.leverage.label">Leverage</span>
-              <span id="leverage-value" class="risk-value">1×</span>
-            </div>
-            <input
-              type="range"
-              id="leverage-slider"
-              min="1"
-              max="25"
-              step="1"
-              value="1"
-              aria-label="Leverage multiplier"
-              data-i18n="quick.leverage.aria"
-              data-i18n-attr="aria-label"
-            />
-            <div class="risk-scale">
-              <span data-i18n="quick.leverage.min">1×</span>
-              <span data-i18n="quick.leverage.max">25× max</span>
-            </div>
-          </div>
-        </div>
-        <div class="quick-setup-baseline">
-          <label class="quick-setup-field" for="input-default-notional">
-            <span class="quick-setup-label" data-i18n="quick.baseline.label">Baseline stake per trade (USDT)</span>
-            <div class="quick-setup-input">
+          <div id="preset-description" class="preset-description" data-i18n="quick.description">Pick a profile to load recommended risk controls.</div>
+          <div class="risk-controls">
+            <div class="risk-control">
+              <div class="risk-control-header">
+                <span data-i18n="quick.risk.label">Risk per trade</span>
+                <span id="risk-value" class="risk-value">50.0%</span>
+              </div>
               <input
-                id="input-default-notional"
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="250"
-                data-i18n="quick.baseline.placeholder"
-                data-i18n-attr="placeholder"
+                type="range"
+                id="risk-slider"
+                min="0.25"
+                max="100"
+                step="0.25"
+                value="50"
+                aria-label="Risk per trade (%)"
+                data-i18n="quick.risk.aria"
+                data-i18n-attr="aria-label"
               />
-              <span class="quick-setup-unit" data-i18n="quick.baseline.unit">USDT</span>
+              <div class="risk-scale">
+                <span data-i18n="quick.risk.min">0.25%</span>
+                <span data-i18n="quick.risk.max">100%</span>
+              </div>
             </div>
-          </label>
-          <p class="quick-setup-field-hint" data-i18n="quick.baseline.hint">
-            Sets <code>ASTER_DEFAULT_NOTIONAL</code> — the baseline amount the bot aims to allocate to every trade before risk caps or multipliers adjust the final size.
-          </p>
-        </div>
-        <div class="preset-meta" id="preset-meta">
-          <div class="preset-meta-block">
-            <h3 data-i18n="quick.leverage.title">Leverage</h3>
-            <p id="preset-leverage-details" data-i18n="quick.leverage.placeholder">Leverage base: –</p>
+            <div class="risk-control">
+              <div class="risk-control-header">
+                <span data-i18n="quick.leverage.label">Leverage</span>
+                <span id="leverage-value" class="risk-value">1×</span>
+              </div>
+              <input
+                type="range"
+                id="leverage-slider"
+                min="1"
+                max="25"
+                step="1"
+                value="1"
+                aria-label="Leverage multiplier"
+                data-i18n="quick.leverage.aria"
+                data-i18n-attr="aria-label"
+              />
+              <div class="risk-scale">
+                <span data-i18n="quick.leverage.min">1×</span>
+                <span data-i18n="quick.leverage.max">25× max</span>
+              </div>
+            </div>
           </div>
-          <div class="preset-meta-block">
-            <h3 data-i18n="quick.notional.title">Sizing range</h3>
-            <p id="preset-notional-details" data-i18n="quick.notional.details">Adaptive position size: –</p>
+          <div class="quick-setup-baseline">
+            <label class="quick-setup-field" for="input-default-notional">
+              <span class="quick-setup-label" data-i18n="quick.baseline.label">Baseline stake per trade (USDT)</span>
+              <div class="quick-setup-input">
+                <input
+                  id="input-default-notional"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="250"
+                  data-i18n="quick.baseline.placeholder"
+                  data-i18n-attr="placeholder"
+                />
+                <span class="quick-setup-unit" data-i18n="quick.baseline.unit">USDT</span>
+              </div>
+            </label>
+            <p class="quick-setup-field-hint" data-i18n="quick.baseline.hint">
+              Sets <code>ASTER_DEFAULT_NOTIONAL</code> — the baseline amount the bot aims to allocate to every trade before risk caps or multipliers adjust the final size.
+            </p>
           </div>
-          <div class="preset-meta-block">
-            <h3 data-i18n="quick.funding.title">Funding filters</h3>
-            <p id="preset-funding-details" data-i18n="quick.funding.details">Funding controls are derived from the selected preset.</p>
-          </div>
-          <div class="preset-meta-block">
-            <h3 data-i18n="quick.ml.title">ML policy</h3>
-            <ul id="preset-ml-details">
-              <li class="preset-meta-empty" data-i18n="quick.ml.empty">ML policy details will appear once presets load.</li>
-            </ul>
+          <div class="preset-meta" id="preset-meta">
+            <div class="preset-meta-block">
+              <h3 data-i18n="quick.leverage.title">Leverage</h3>
+              <p id="preset-leverage-details" data-i18n="quick.leverage.placeholder">Leverage base: –</p>
+            </div>
+            <div class="preset-meta-block">
+              <h3 data-i18n="quick.notional.title">Sizing range</h3>
+              <p id="preset-notional-details" data-i18n="quick.notional.details">Adaptive position size: –</p>
+            </div>
+            <div class="preset-meta-block">
+              <h3 data-i18n="quick.funding.title">Funding filters</h3>
+              <p id="preset-funding-details" data-i18n="quick.funding.details">Funding controls are derived from the selected preset.</p>
+            </div>
+            <div class="preset-meta-block">
+              <h3 data-i18n="quick.ml.title">ML policy</h3>
+              <ul id="preset-ml-details">
+                <li class="preset-meta-empty" data-i18n="quick.ml.empty">ML policy details will appear once presets load.</li>
+              </ul>
+            </div>
           </div>
         </div>
       </section>
 
-      <section id="env-config-panel" class="card mode-panel config" data-pro-only>
-        <div class="card-header">
+      <section
+        id="env-config-panel"
+        class="card mode-panel config"
+        data-pro-only
+        data-mobile-collapsible
+      >
+        <div class="card-header" data-mobile-collapsible-header>
           <div class="card-header-main">
             <h2 data-i18n="env.title">Environment configuration</h2>
             <button
@@ -774,14 +818,16 @@
           </div>
           <button id="btn-save-config" class="primary subtle" data-i18n="env.save">Save</button>
         </div>
-        <p class="card-subtitle" data-i18n="env.subtitle">
-          Adjust every relevant <code>ASTER_*</code> parameter without restarting the service. Changes persist automatically.
-        </p>
-        <div id="env-settings" class="env-grid"></div>
+        <div class="card-section-body" data-mobile-collapsible-body>
+          <p class="card-subtitle" data-i18n="env.subtitle">
+            Adjust every relevant <code>ASTER_*</code> parameter without restarting the service. Changes persist automatically.
+          </p>
+          <div id="env-settings" class="env-grid"></div>
+        </div>
       </section>
 
-      <section class="card logs compact" id="logs">
-        <div class="card-header">
+      <section class="card logs compact" id="logs" data-mobile-collapsible>
+        <div class="card-header" data-mobile-collapsible-header>
           <div>
             <h2 data-i18n="logs.activity.title">Activity feed</h2>
             <p class="card-subtitle" data-i18n="logs.activity.subtitle">Key fills, warnings, and high-signal events.</p>
@@ -791,18 +837,22 @@
             <span data-i18n="common.autoScroll">Auto-scroll</span></label
           >
         </div>
-        <div id="log-brief" class="log-stream compact"></div>
+        <div class="card-section-body" data-mobile-collapsible-body>
+          <div id="log-brief" class="log-stream compact"></div>
+        </div>
       </section>
 
-      <section class="card logs" data-pro-only>
-        <div class="card-header">
+      <section class="card logs" data-pro-only data-mobile-collapsible>
+        <div class="card-header" data-mobile-collapsible-header>
           <h2 data-i18n="logs.debug.title">Debug live logs</h2>
           <label class="toggle"
             ><input type="checkbox" id="autoscroll-pro" data-autoscroll checked />
             <span data-i18n="common.autoScroll">Auto-scroll</span></label
           >
         </div>
-        <div id="log-stream" class="log-stream compact"></div>
+        <div class="card-section-body" data-mobile-collapsible-body>
+          <div id="log-stream" class="log-stream compact"></div>
+        </div>
       </section>
     </main>
 

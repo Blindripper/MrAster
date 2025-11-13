@@ -127,6 +127,7 @@ const i18nElements = document.querySelectorAll('[data-i18n]');
 const mobileSectionNav = document.querySelector('.mobile-section-nav');
 const mobileSectionNavToggle = document.querySelector('.mobile-section-nav__toggle');
 const mobileSectionNavMenu = document.getElementById('mobile-section-nav-menu');
+const mobileCollapsibleCards = Array.from(document.querySelectorAll('[data-mobile-collapsible]'));
 
 if (mobileSectionNav && mobileSectionNavToggle && mobileSectionNavMenu) {
   const setMobileNavExpanded = (expanded, { restoreFocus = true } = {}) => {
@@ -179,6 +180,102 @@ if (mobileSectionNav && mobileSectionNavToggle && mobileSectionNavMenu) {
     desktopQuery.addEventListener('change', handleDesktopChange);
   } else if (typeof desktopQuery.addListener === 'function') {
     desktopQuery.addListener(handleDesktopChange);
+  }
+}
+
+const mobileCollapsibleQuery = window.matchMedia('(max-width: 768px)');
+const mobileCollapsibleRegistry = new WeakMap();
+let mobileCollapsibleId = 0;
+
+const getCollapsibleLabel = (card, header) => {
+  if (card.getAttribute('aria-label')) return card.getAttribute('aria-label');
+  const labelledElement = header.querySelector('[data-mobile-title] h2, [data-mobile-title] h3');
+  if (labelledElement && labelledElement.textContent) return labelledElement.textContent.trim();
+  const heading = header.querySelector('h2, h3');
+  if (heading && heading.textContent) return heading.textContent.trim();
+  return header.textContent.trim();
+};
+
+const setCardCollapsed = (card, collapsed) => {
+  const state = mobileCollapsibleRegistry.get(card);
+  if (!state) return;
+  const isCollapsed = Boolean(collapsed);
+  card.dataset.mobileCollapsed = isCollapsed ? 'true' : 'false';
+  state.toggle.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+  state.body.hidden = isCollapsed;
+};
+
+const attachMobileCollapsible = (card) => {
+  if (mobileCollapsibleRegistry.has(card)) return;
+  const header = card.querySelector('[data-mobile-collapsible-header]');
+  const body = card.querySelector('[data-mobile-collapsible-body]');
+  if (!header || !body) return;
+
+  if (!body.id) {
+    mobileCollapsibleId += 1;
+    const generatedId = `${card.id || 'card'}-mobile-body-${mobileCollapsibleId}`;
+    body.id = generatedId;
+  }
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'card-collapse-toggle';
+  toggle.setAttribute('aria-controls', body.id);
+  toggle.setAttribute('aria-expanded', 'false');
+  const labelText = getCollapsibleLabel(card, header) || 'section';
+  toggle.setAttribute('aria-label', `${labelText} toggle`);
+
+  const icon = document.createElement('span');
+  icon.className = 'card-collapse-toggle__icon';
+  toggle.appendChild(icon);
+
+  header.appendChild(toggle);
+
+  const collapseState = { toggle, body, header };
+  mobileCollapsibleRegistry.set(card, collapseState);
+
+  toggle.addEventListener('click', () => {
+    const isCollapsed = card.dataset.mobileCollapsed !== 'false';
+    setCardCollapsed(card, !isCollapsed);
+  });
+
+  setCardCollapsed(card, true);
+};
+
+const detachMobileCollapsible = (card) => {
+  const state = mobileCollapsibleRegistry.get(card);
+  if (!state) return;
+  state.toggle.remove();
+  state.body.hidden = false;
+  card.removeAttribute('data-mobile-collapsed');
+  mobileCollapsibleRegistry.delete(card);
+};
+
+const applyMobileCollapsibles = () => {
+  mobileCollapsibleCards.forEach((card) => attachMobileCollapsible(card));
+};
+
+const teardownMobileCollapsibles = () => {
+  mobileCollapsibleCards.forEach((card) => detachMobileCollapsible(card));
+};
+
+if (mobileCollapsibleCards.length) {
+  if (mobileCollapsibleQuery.matches) {
+    applyMobileCollapsibles();
+  }
+
+  const handleMobileCollapsibleChange = (event) => {
+    if (event.matches) {
+      applyMobileCollapsibles();
+    } else {
+      teardownMobileCollapsibles();
+    }
+  };
+
+  if (typeof mobileCollapsibleQuery.addEventListener === 'function') {
+    mobileCollapsibleQuery.addEventListener('change', handleMobileCollapsibleChange);
+  } else if (typeof mobileCollapsibleQuery.addListener === 'function') {
+    mobileCollapsibleQuery.addListener(handleMobileCollapsibleChange);
   }
 }
 
