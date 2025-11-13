@@ -102,6 +102,7 @@ const heroTotalTrades = document.getElementById('hero-total-trades');
 const heroTotalPnl = document.getElementById('hero-total-pnl');
 const heroTotalPnlNote = document.getElementById('hero-total-pnl-note');
 const heroTotalWinRate = document.getElementById('hero-total-win-rate');
+const heroTotalVolume = document.getElementById('hero-total-volume');
 const alphaConfidenceContainer = document.getElementById('alpha-confidence');
 const alphaConfidenceValue = document.getElementById('alpha-confidence-value');
 const alphaConfidenceFill = document.getElementById('alpha-confidence-fill');
@@ -220,6 +221,7 @@ const TRANSLATIONS = {
     'hero.metrics.trades': 'Всего сделок',
     'hero.metrics.pnl': 'Совокупный PNL',
     'hero.metrics.winrate': 'Общий винрейт',
+    'hero.metrics.volume': 'Совокупный объем',
     'hero.mode.label': 'Режим',
     'hero.mode.standard': 'Стандарт',
     'hero.mode.pro': 'Профессиональный',
@@ -495,6 +497,7 @@ const TRANSLATIONS = {
     'hero.metrics.trades': 'Anzahl Trades',
     'hero.metrics.pnl': 'Gesamter PNL',
     'hero.metrics.winrate': 'Gesamte Trefferquote',
+    'hero.metrics.volume': 'Gesamtes Volumen',
     'hero.mode.label': 'Modus',
     'hero.mode.standard': 'Standard',
     'hero.mode.pro': 'Profi',
@@ -773,6 +776,7 @@ const TRANSLATIONS = {
     'hero.metrics.trades': '총 거래 수',
     'hero.metrics.pnl': '누적 PNL',
     'hero.metrics.winrate': '전체 승률',
+    'hero.metrics.volume': '총 거래량',
     'hero.mode.label': '모드',
     'hero.mode.standard': '스탠다드',
     'hero.mode.pro': '프로',
@@ -1051,6 +1055,7 @@ const TRANSLATIONS = {
     'hero.metrics.trades': 'Total des trades',
     'hero.metrics.pnl': 'PNL cumulé',
     'hero.metrics.winrate': 'Taux de réussite global',
+    'hero.metrics.volume': 'Volume total',
     'hero.mode.label': 'Mode',
     'hero.mode.standard': 'Standard',
     'hero.mode.pro': 'Pro',
@@ -1329,6 +1334,7 @@ const TRANSLATIONS = {
     'hero.metrics.trades': 'Operaciones totales',
     'hero.metrics.pnl': 'PNL acumulado',
     'hero.metrics.winrate': 'Ratio de aciertos total',
+    'hero.metrics.volume': 'Volumen total',
     'hero.mode.label': 'Modo',
     'hero.mode.standard': 'Estándar',
     'hero.mode.pro': 'Pro',
@@ -1606,6 +1612,7 @@ const TRANSLATIONS = {
     'hero.metrics.trades': 'Toplam işlem',
     'hero.metrics.pnl': 'Toplam PNL',
     'hero.metrics.winrate': 'Genel kazanma oranı',
+    'hero.metrics.volume': 'Toplam hacim',
     'hero.mode.label': 'Mod',
     'hero.mode.standard': 'Standart',
     'hero.mode.pro': 'Pro',
@@ -1877,6 +1884,7 @@ const TRANSLATIONS = {
     'hero.metrics.trades': '总成交数',
     'hero.metrics.pnl': '总盈亏',
     'hero.metrics.winrate': '总体胜率',
+    'hero.metrics.volume': '总成交量',
     'hero.mode.label': '模式',
     'hero.mode.standard': '标准',
     'hero.mode.pro': '专业',
@@ -9474,7 +9482,7 @@ function syncAiChatAvailability() {
 }
 
 function renderHeroMetrics(cumulativeStats, sessionStats) {
-  if (!heroTotalTrades || !heroTotalPnl || !heroTotalWinRate) return;
+  if (!heroTotalTrades || !heroTotalPnl || !heroTotalWinRate || !heroTotalVolume) return;
 
   const totals = cumulativeStats && typeof cumulativeStats === 'object' ? cumulativeStats : {};
   const fallback = sessionStats && typeof sessionStats === 'object' ? sessionStats : {};
@@ -9586,6 +9594,18 @@ function renderHeroMetrics(cumulativeStats, sessionStats) {
     heroTotalPnl.textContent = '0 USDT';
   }
 
+  heroTotalPnl.classList.remove(
+    'hero-total-pnl--positive',
+    'hero-total-pnl--negative',
+    'hero-total-pnl--neutral',
+  );
+  const pnlToneClass = netPnl > 0
+    ? 'hero-total-pnl--positive'
+    : netPnl < 0
+    ? 'hero-total-pnl--negative'
+    : 'hero-total-pnl--neutral';
+  heroTotalPnl.classList.add(pnlToneClass);
+
   if (heroTotalPnlNote) {
     const formatSignedValue = (value, unit) => {
       if (!Number.isFinite(value)) return `—`;
@@ -9625,6 +9645,17 @@ function renderHeroMetrics(cumulativeStats, sessionStats) {
   }
   heroTotalWinRate.textContent = `${(winRate * 100).toFixed(1)}%`;
 
+  const volumeCandidate =
+    totals.total_volume ?? totals.volume ?? fallback.total_volume ?? fallback.totalVolume ?? 0;
+  const totalVolumeRaw = Number(volumeCandidate);
+  const totalVolumeValue = Number.isFinite(totalVolumeRaw)
+    ? Math.max(Math.abs(totalVolumeRaw), 0)
+    : 0;
+  heroTotalVolume.textContent = `${totalVolumeValue.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} USDT`;
+
   heroMetricsSnapshot = {
     totalTrades,
     totalPnl: Number.isFinite(netPnl) ? netPnl : 0,
@@ -9633,6 +9664,8 @@ function renderHeroMetrics(cumulativeStats, sessionStats) {
     aiBudgetSpent: Number.isFinite(aiBudgetSpent) ? aiBudgetSpent : 0,
     winRate,
     winRateDisplay: heroTotalWinRate.textContent,
+    totalVolume: totalVolumeValue,
+    totalVolumeDisplay: heroTotalVolume.textContent,
   };
 }
 

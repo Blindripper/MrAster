@@ -8064,6 +8064,49 @@ class TradeManager:
         except Exception:
             return {}
 
+    def _estimate_trade_volume_usdt(self, trade: Dict[str, Any]) -> float:
+        volume_keys = (
+            "size_usdt",
+            "notional",
+            "notional_usdt",
+            "notionalUsd",
+            "positionNotional",
+        )
+        for key in volume_keys:
+            volume = _coerce_float(trade.get(key))
+            if volume is not None and volume > 0:
+                return float(abs(volume))
+
+        qty = _coerce_float(trade.get("qty"))
+        if qty is None or qty <= 0:
+            qty = _coerce_float(trade.get("size"))
+
+        price_keys = (
+            "notional_price",
+            "entry",
+            "entry_price",
+            "entryPrice",
+            "price",
+            "avg_price",
+            "avgPrice",
+            "mark",
+            "mark_price",
+            "exit",
+            "exit_price",
+            "exitPrice",
+        )
+        price = None
+        for key in price_keys:
+            candidate = _coerce_float(trade.get(key))
+            if candidate is not None and candidate > 0:
+                price = candidate
+                break
+
+        if qty is not None and qty > 0 and price is not None and price > 0:
+            return float(abs(qty) * price)
+
+        return 0.0
+
     def _rebuild_cumulative_metrics(self) -> Dict[str, Any]:
         metrics = {
             "total_trades": 0,
@@ -8071,6 +8114,7 @@ class TradeManager:
             "wins": 0,
             "losses": 0,
             "draws": 0,
+            "total_volume": 0.0,
         }
         history = self.state.get("trade_history", []) or []
         tolerance = 1e-9
@@ -8081,6 +8125,7 @@ class TradeManager:
                 pnl = 0.0
             metrics["total_trades"] += 1
             metrics["total_pnl"] += pnl
+            metrics["total_volume"] += self._estimate_trade_volume_usdt(trade)
             if pnl > tolerance:
                 metrics["wins"] += 1
             elif pnl < -tolerance:
@@ -8098,6 +8143,7 @@ class TradeManager:
                 "wins": int(raw_metrics.get("wins", 0) or 0),
                 "losses": int(raw_metrics.get("losses", 0) or 0),
                 "draws": int(raw_metrics.get("draws", 0) or 0),
+                "total_volume": float(raw_metrics.get("total_volume", 0.0) or 0.0),
             }
             if "updated_at" in raw_metrics:
                 metrics["updated_at"] = raw_metrics.get("updated_at")
@@ -8114,6 +8160,7 @@ class TradeManager:
             pnl = 0.0
         metrics["total_trades"] += 1
         metrics["total_pnl"] += pnl
+        metrics["total_volume"] += self._estimate_trade_volume_usdt(trade)
         tolerance = 1e-9
         if pnl > tolerance:
             metrics["wins"] += 1

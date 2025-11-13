@@ -3345,6 +3345,12 @@ def _cumulative_summary(
         "draws": int(metrics.get("draws", 0) or 0),
     }
 
+    total_volume = metrics.get("total_volume")
+    try:
+        summary["total_volume"] = float(total_volume or 0.0)
+    except (TypeError, ValueError):
+        summary["total_volume"] = 0.0
+
     realized_total: Optional[float] = None
     if stats is not None:
         realized_total = float(stats.total_pnl or 0.0)

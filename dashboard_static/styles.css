@@ -757,6 +757,18 @@ body.pro-mode [data-normal-only] {
   color: var(--accent);
 }
 
+.hero-metric dd.hero-total-pnl--positive {
+  color: var(--success);
+}
+
+.hero-metric dd.hero-total-pnl--negative {
+  color: var(--danger);
+}
+
+.hero-metric dd.hero-total-pnl--neutral {
+  color: var(--accent);
+}
+
 .hero-metric-note {
   margin: 0;
   font-size: 0.78rem;
