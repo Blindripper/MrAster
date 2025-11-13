@@ -234,6 +234,7 @@ const TRANSLATIONS = {
     'active.mode.unrealized': 'Совокупный нереализованный PNL',
     'active.empty': 'Нет активных позиций.',
     'active.empty.paper': 'Пока нет бумажных сделок.',
+    'active.notifications.closed': 'Позиция закрыта',
     'active.table.symbol': 'Символ',
     'active.table.size': 'Размер',
     'active.table.entry': 'Цена входа',
@@ -510,6 +511,7 @@ const TRANSLATIONS = {
     'active.mode.unrealized': 'Gesamter unrealisierter PNL',
     'active.empty': 'Keine aktiven Positionen.',
     'active.empty.paper': 'Noch keine Papier-Trades.',
+    'active.notifications.closed': 'Position geschlossen',
     'active.table.symbol': 'Symbol',
     'active.table.size': 'Positionsgröße',
     'active.table.entry': 'Einstiegspreis',
@@ -789,6 +791,7 @@ const TRANSLATIONS = {
     'active.mode.unrealized': '총 미실현 PNL',
     'active.empty': '활성 포지션이 없습니다.',
     'active.empty.paper': '아직 페이퍼 거래가 없습니다.',
+    'active.notifications.closed': '포지션이 종료되었습니다',
     'active.table.symbol': '심볼',
     'active.table.size': '포지션 규모',
     'active.table.entry': '진입가',
@@ -1068,6 +1071,7 @@ const TRANSLATIONS = {
     'active.mode.unrealized': 'PNL total non réalisé',
     'active.empty': 'Aucune position active.',
     'active.empty.paper': 'Aucun trade en mode papier pour l’instant.',
+    'active.notifications.closed': 'Position clôturée',
     'active.table.symbol': 'Symbole',
     'active.table.size': 'Taille',
     'active.table.entry': 'Prix d’entrée',
@@ -1347,6 +1351,7 @@ const TRANSLATIONS = {
     'active.mode.unrealized': 'PNL total no realizado',
     'active.empty': 'Sin posiciones activas.',
     'active.empty.paper': 'Todavía no hay operaciones simuladas.',
+    'active.notifications.closed': 'Posición cerrada',
     'active.table.symbol': 'Símbolo',
     'active.table.size': 'Tamaño',
     'active.table.entry': 'Precio de entrada',
@@ -1625,6 +1630,7 @@ const TRANSLATIONS = {
     'active.mode.unrealized': 'Toplam gerçekleşmemiş PNL',
     'active.empty': 'Aktif pozisyon yok.',
     'active.empty.paper': 'Henüz demo işlemi yok.',
+    'active.notifications.closed': 'Pozisyon kapatıldı',
     'active.table.symbol': 'Sembol',
     'active.table.size': 'Büyüklük',
     'active.table.entry': 'Giriş fiyatı',
@@ -1897,6 +1903,7 @@ const TRANSLATIONS = {
     'active.mode.unrealized': '总未实现PNL',
     'active.empty': '暂无持仓。',
     'active.empty.paper': '模拟交易尚未产生。',
+    'active.notifications.closed': '仓位已平仓',
     'active.table.symbol': '交易对',
     'active.table.size': '仓位规模',
     'active.table.entry': '开仓价',
@@ -5340,6 +5347,52 @@ function buildPositionManagementSummary(position, options = {}) {
   return container;
 }
 
+function buildClosedPositionNotification(position, options = {}) {
+  const container = document.createElement('div');
+  container.className = 'active-position-management';
+  container.dataset.action = 'closed';
+
+  const { includeSymbol = true, symbolText = null } = options || {};
+
+  if (includeSymbol) {
+    const symbolLabel = document.createElement('span');
+    symbolLabel.className = 'active-position-management-symbol';
+    symbolLabel.textContent = symbolText || getPositionSymbol(position);
+    container.append(symbolLabel);
+
+    const arrow = document.createElement('span');
+    arrow.className = 'active-position-management-arrow';
+    arrow.textContent = '→';
+    container.append(arrow);
+  }
+
+  const label = document.createElement('span');
+  label.className = 'active-position-management-label';
+  label.textContent = translate('active.notifications.closed', 'Position closed');
+  container.append(label);
+
+  const time = document.createElement('span');
+  time.className = 'active-position-management-time';
+  time.textContent = formatManagementRelativeTime(Date.now() / 1000);
+  container.append(time);
+
+  const detailParts = [];
+  const pnlField = pickNumericField(position, ACTIVE_POSITION_ALIASES.pnl || []);
+  if (Number.isFinite(pnlField.numeric)) {
+    detailParts.push(`${formatSignedNumber(pnlField.numeric, 2)} USDT`);
+  }
+  const roeField = pickNumericField(position, ACTIVE_POSITION_ALIASES.roe || []);
+  const pctField = formatPercentField(roeField, 2);
+  if (pctField && pctField.text) {
+    detailParts.push(pctField.text);
+  }
+  if (detailParts.length) {
+    container.title = detailParts.join(' · ');
+  }
+
+  return container;
+}
+
 function buildPositionProgressBar({ takeEntry, stopEntry, markPrice, side }) {
   const container = document.createElement('div');
   container.className = 'position-progress-container';
@@ -5383,8 +5436,9 @@ function getPositionTimestamp(position) {
   return Number.NEGATIVE_INFINITY;
 }
 
-function updateActivePositionsView() {
+function updateActivePositionsView(options = {}) {
   if (!activePositionsRows) return;
+  const { closedPositions = [] } = options || {};
   const positions = Array.isArray(activePositions) ? activePositions : [];
   const sorted = positions.slice().sort((a, b) => getPositionTimestamp(b) - getPositionTimestamp(a));
   const rowsFragment = document.createDocumentFragment();
@@ -5427,16 +5481,7 @@ function updateActivePositionsView() {
     }
   }
 
-  if (!hasRows) {
-    activePositionsRows.replaceChildren();
-    if (activePositionsNotifications) {
-      activePositionsNotifications.replaceChildren();
-      activePositionsNotifications.setAttribute('hidden', '');
-    }
-    return;
-  }
-
-  const notifications = [];
+  const managementNotifications = [];
 
   sorted.forEach((position) => {
     const row = document.createElement('tr');
@@ -5477,7 +5522,7 @@ function updateActivePositionsView() {
       symbolText: symbolValue,
     });
     if (managementSummary) {
-      notifications.push(managementSummary);
+      managementNotifications.push(managementSummary);
     }
     applyActivePositionLabel(symbolCell, 'symbol');
     row.append(symbolCell);
@@ -5605,6 +5650,14 @@ function updateActivePositionsView() {
     rowsFragment.append(row);
   });
 
+  const closedNotifications = Array.isArray(closedPositions)
+    ? closedPositions
+        .map((position) => buildClosedPositionNotification(position, { includeSymbol: true }))
+        .filter(Boolean)
+    : [];
+
+  const notifications = [...closedNotifications, ...managementNotifications];
+
   if (activePositionsNotifications) {
     if (notifications.length) {
       const notificationFragment = document.createDocumentFragment();
@@ -5623,8 +5676,32 @@ function updateActivePositionsView() {
 }
 
 function renderActivePositions(openPositions) {
-  activePositions = normaliseActivePositions(openPositions);
-  updateActivePositionsView();
+  const previousPositions = Array.isArray(activePositions) ? activePositions.slice() : [];
+  const nextPositions = normaliseActivePositions(openPositions);
+
+  const nextSymbols = new Set();
+  nextPositions.forEach((position) => {
+    const symbol = getNormalizedActivePositionSymbol(position);
+    if (symbol) {
+      nextSymbols.add(symbol);
+    }
+  });
+
+  const closedPositions = [];
+  const seenSymbols = new Set();
+  previousPositions.forEach((position) => {
+    const symbol = getNormalizedActivePositionSymbol(position);
+    if (!symbol || seenSymbols.has(symbol)) {
+      return;
+    }
+    if (!nextSymbols.has(symbol)) {
+      closedPositions.push(position);
+      seenSymbols.add(symbol);
+    }
+  });
+
+  activePositions = nextPositions;
+  updateActivePositionsView({ closedPositions });
   refreshTradeProposalPlacementAvailability();
 }
 
