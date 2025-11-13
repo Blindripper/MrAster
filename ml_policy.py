@@ -387,7 +387,8 @@ class BanditPolicy:
             take_ucb -= risk_penalty
         # Warmup: am Anfang eher großzügig
         if self.n_trades < self.warmup_trades:
-            take_ucb += 0.08
+            warmup_boost = max(0.0, 0.08 - risk_penalty)
+            take_ucb += warmup_boost
 
         # ε-greedy
         if random.random() < self.eps_gate:
