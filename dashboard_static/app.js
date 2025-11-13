@@ -5115,39 +5115,102 @@ function extractTpSlEntry(position, kind) {
   return { price: Number.isFinite(price) && price > 0 ? price : null, meta };
 }
 
-function computePositionProgressValue(takeEntry, stopEntry, markPrice, side) {
-  const takePrice = Number.isFinite(takeEntry?.price) ? takeEntry.price : null;
-  const stopPrice = Number.isFinite(stopEntry?.price) ? stopEntry.price : null;
-  const mark = Number.isFinite(markPrice) ? markPrice : null;
+function normalizeProgressSide(side) {
+  if (!side) return null;
+  const normalized = side.toString().toLowerCase();
+  if (normalized === 'buy' || normalized === 'long') return 'long';
+  if (normalized === 'sell' || normalized === 'short') return 'short';
+  return null;
+}
 
-  if (!Number.isFinite(takePrice) || !Number.isFinite(stopPrice) || !Number.isFinite(mark)) {
+function computePositionProgressValue({ takeEntry, stopEntry, markPrice, side, entryPrice }) {
+  const parsePrice = (value) => {
+    const numeric = toNumeric(value);
+    if (!Number.isFinite(numeric)) return null;
+    const normalized = Math.abs(numeric);
+    return normalized > 0 ? normalized : null;
+  };
+
+  const takePrice = parsePrice(takeEntry?.price);
+  const stopPrice = parsePrice(stopEntry?.price);
+  const entry = parsePrice(entryPrice);
+  const mark = parsePrice(markPrice);
+
+  if (!Number.isFinite(mark)) {
     return null;
   }
-  if (takePrice === stopPrice) {
-    return null;
-  }
 
-  const min = Math.min(takePrice, stopPrice);
-  const max = Math.max(takePrice, stopPrice);
-  const clamped = Math.min(Math.max(mark, min), max);
-  const relative = (clamped - min) / (max - min);
-  let profitIsMax = null;
+  const computeRatio = (profitAnchor, riskAnchor) => {
+    if (!Number.isFinite(profitAnchor) || !Number.isFinite(riskAnchor)) {
+      return null;
+    }
+    if (profitAnchor === riskAnchor) {
+      return null;
+    }
+    const min = Math.min(profitAnchor, riskAnchor);
+    const max = Math.max(profitAnchor, riskAnchor);
+    if (max === min) {
+      return null;
+    }
+    const clamped = Math.min(Math.max(mark, min), max);
+    const relative = (clamped - min) / (max - min);
+    const oriented = profitAnchor > riskAnchor ? relative : 1 - relative;
+    return Number.isFinite(oriented) ? Math.max(0, Math.min(1, oriented)) : null;
+  };
 
-  if (side) {
-    const normalized = side.toString().toLowerCase();
-    if (normalized === 'buy' || normalized === 'long') {
-      profitIsMax = true;
-    } else if (normalized === 'sell' || normalized === 'short') {
-      profitIsMax = false;
+  const normalizedSide = normalizeProgressSide(side);
+  const ranges = [];
+  const addRange = (profitAnchor, riskAnchor) => {
+    const ratio = computeRatio(profitAnchor, riskAnchor);
+    if (Number.isFinite(ratio)) {
+      ranges.push(ratio);
+    }
+  };
+
+  if (Number.isFinite(takePrice) && Number.isFinite(stopPrice) && takePrice !== stopPrice) {
+    const min = Math.min(takePrice, stopPrice);
+    const max = Math.max(takePrice, stopPrice);
+    if (normalizedSide === 'long') {
+      addRange(max, min);
+    } else if (normalizedSide === 'short') {
+      addRange(min, max);
+    } else {
+      const profitIsHigher = takePrice >= stopPrice;
+      addRange(profitIsHigher ? max : min, profitIsHigher ? min : max);
     }
   }
 
-  if (profitIsMax === null) {
-    profitIsMax = takePrice >= stopPrice;
+  if (!ranges.length && Number.isFinite(entry) && Number.isFinite(stopPrice) && entry !== stopPrice) {
+    const min = Math.min(entry, stopPrice);
+    const max = Math.max(entry, stopPrice);
+    if (normalizedSide === 'long') {
+      addRange(max, min);
+    } else if (normalizedSide === 'short') {
+      addRange(min, max);
+    } else {
+      const profitIsHigher = entry >= stopPrice;
+      addRange(profitIsHigher ? max : min, profitIsHigher ? min : max);
+    }
   }
-  const ratio = profitIsMax ? relative : 1 - relative;
 
-  return Math.max(0, Math.min(1, ratio));
+  if (!ranges.length && Number.isFinite(entry) && Number.isFinite(takePrice) && entry !== takePrice) {
+    const min = Math.min(entry, takePrice);
+    const max = Math.max(entry, takePrice);
+    if (normalizedSide === 'long') {
+      addRange(max, min);
+    } else if (normalizedSide === 'short') {
+      addRange(min, max);
+    } else {
+      const profitIsHigher = takePrice >= entry;
+      addRange(profitIsHigher ? max : min, profitIsHigher ? min : max);
+    }
+  }
+
+  if (ranges.length) {
+    return ranges[0];
+  }
+
+  return null;
 }
 
 function computeProgressIndicatorColor(progressValue) {
@@ -5340,7 +5403,7 @@ function buildPositionManagementSummary(position, options = {}) {
   return container;
 }
 
-function buildPositionProgressBar({ takeEntry, stopEntry, markPrice, side }) {
+function buildPositionProgressBar({ takeEntry, stopEntry, markPrice, side, entryPrice }) {
   const container = document.createElement('div');
   container.className = 'position-progress-container';
 
@@ -5352,7 +5415,13 @@ function buildPositionProgressBar({ takeEntry, stopEntry, markPrice, side }) {
   indicator.className = 'position-progress-indicator';
   track.append(indicator);
 
-  const progressValue = computePositionProgressValue(takeEntry, stopEntry, markPrice, side);
+  const progressValue = computePositionProgressValue({
+    takeEntry,
+    stopEntry,
+    markPrice,
+    side,
+    entryPrice,
+  });
   if (progressValue === null) {
     container.classList.add('is-inactive');
   } else {
@@ -5470,6 +5539,7 @@ function updateActivePositionsView() {
         stopEntry,
         markPrice: markField.numeric,
         side: sideValue,
+        entryPrice: entryField.numeric,
       }),
     );
     const managementSummary = buildPositionManagementSummary(position, {
