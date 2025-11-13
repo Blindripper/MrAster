@@ -119,6 +119,7 @@ ENV_DEFAULTS: Dict[str, str] = {
     "ASTER_AI_STRICT_BUDGET": "true",
     "ASTER_AI_SENTINEL_ENABLED": "true",
     "ASTER_AI_SENTINEL_DECAY_MINUTES": "60",
+    "ASTER_AI_CONF_SCALE": "25",
     "ASTER_AI_NEWS_ENDPOINT": "",
     "ASTER_AI_NEWS_API_KEY": "",
     "ASTER_CHAT_OPENAI_API_KEY": "",
@@ -3294,7 +3295,61 @@ def _friendly_decision_reason(reason: Optional[str]) -> Optional[str]:
     return token.replace("_", " ").strip().capitalize()
 
 
+def _extract_decision_confidence(state: Dict[str, Any]) -> Optional[float]:
+    stats = state.get("decision_stats") if isinstance(state, dict) else None
+    if not isinstance(stats, dict) or not stats:
+        return None
+
+    last_updated = stats.get("last_updated")
+    if not last_updated:
+        return None
+
+    try:
+        taken = int(stats.get("taken", 0) or 0)
+    except (TypeError, ValueError):
+        taken = 0
+    try:
+        rejected_total = int(stats.get("rejected_total", 0) or 0)
+    except (TypeError, ValueError):
+        rejected_total = 0
+
+    if taken < 0:
+        taken = 0
+    if rejected_total < 0:
+        rejected_total = 0
+
+    decision_total = taken + rejected_total
+    if decision_total <= 0:
+        return None
+
+    env_cfg = CONFIG.get("env") if isinstance(CONFIG, dict) else None
+    scale_value = None
+    if isinstance(env_cfg, dict):
+        scale_value = _safe_float(env_cfg.get("ASTER_AI_CONF_SCALE"))
+    if scale_value is None:
+        scale_value = _safe_float(ENV_DEFAULTS.get("ASTER_AI_CONF_SCALE"))
+    conf_scale = float(scale_value or 25.0)
+    if conf_scale <= 0:
+        conf_scale = 25.0
+
+    progress = 1.0 - math.exp(-decision_total / conf_scale)
+    if not math.isfinite(progress):
+        return None
+
+    acceptance_ratio = taken / decision_total if decision_total else 0.0
+    if not math.isfinite(acceptance_ratio):
+        acceptance_ratio = 0.0
+    acceptance_ratio = max(0.0, min(1.0, acceptance_ratio))
+
+    confidence = progress * acceptance_ratio
+    return max(0.0, min(1.0, confidence))
+
+
 def _extract_alpha_confidence(state: Dict[str, Any]) -> Optional[float]:
+    decision_confidence = _extract_decision_confidence(state)
+    if decision_confidence is not None:
+        return decision_confidence
+
     policy = state.get("policy")
     if not isinstance(policy, dict):
         return None
