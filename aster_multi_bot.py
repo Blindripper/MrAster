@@ -8872,31 +8872,23 @@ class FastTP:
         if ok:
             rec = self.state.get("live_trades", {}).get(symbol)
             if isinstance(rec, dict):
-                events = rec.setdefault("management_events", [])
-                if not isinstance(events, list):
-                    events = []
-                    rec["management_events"] = events
-                event_entry: Dict[str, Any] = {
-                    "ts": time.time(),
-                    "action": "fasttp_exit",
+                payload: Dict[str, Any] = {
                     "exit": float(new_exit),
                     "r": float(r_now),
                 }
                 try:
-                    event_entry["ret1"] = float(ret1)
+                    payload["ret1"] = float(ret1)
                 except (TypeError, ValueError):
                     pass
                 try:
-                    event_entry["ret3"] = float(ret3)
+                    payload["ret3"] = float(ret3)
                 except (TypeError, ValueError):
                     pass
                 try:
-                    event_entry["snap"] = float(snap)
+                    payload["snap"] = float(snap)
                 except (TypeError, ValueError):
                     pass
-                events.append(event_entry)
-                if len(events) > 50:
-                    del events[:-50]
+                self._log_management_event(rec, "fasttp_exit", payload)
             self.state.setdefault("fast_tp_cooldown", {})[symbol] = time.time() + FASTTP_COOLDOWN_S
             try:
                 with open(STATE_FILE, "w") as f:
@@ -9146,6 +9138,20 @@ class Bot:
         if payload:
             entry.update(payload)
         events.append(entry)
+        if len(events) > 50:
+            del events[:-50]
+
+        mgmt_block = rec.setdefault("management", {})
+        if not isinstance(mgmt_block, dict):
+            mgmt_block = {}
+            rec["management"] = mgmt_block
+        mgmt_events = mgmt_block.setdefault("events", [])
+        if not isinstance(mgmt_events, list):
+            mgmt_events = []
+            mgmt_block["events"] = mgmt_events
+        mgmt_events.append(dict(entry))
+        if len(mgmt_events) > 50:
+            del mgmt_events[:-50]
 
     def _submit_reduce_only(self, symbol: str, side: str, quantity: float, reason: str) -> bool:
         step = float(self.risk.symbol_filters.get(symbol, {}).get("stepSize", 0.0001) or 0.0001)
