@@ -5371,6 +5371,10 @@ function buildPositionManagementSummary(position, options = {}) {
   const container = document.createElement('div');
   container.className = 'active-position-management';
   container.dataset.action = latest.action || '';
+  const timestampNumeric = Number.isFinite(latest.ts) ? Number(latest.ts) : null;
+  if (timestampNumeric !== null) {
+    container.dataset.timestamp = timestampNumeric.toString();
+  }
 
   const { includeSymbol = false, symbolText = null } = options || {};
   if (includeSymbol) {
@@ -5430,6 +5434,9 @@ function buildClosedPositionNotification(position, options = {}) {
   const container = document.createElement('div');
   container.className = 'active-position-management';
   container.dataset.action = 'closed';
+  const closedTs = getPositionTimestamp(position);
+  const closedTimestamp = Number.isFinite(closedTs) && closedTs > 0 ? closedTs : Date.now() / 1000;
+  container.dataset.timestamp = closedTimestamp.toString();
 
   const { includeSymbol = true, symbolText = null } = options || {};
 
@@ -5756,11 +5763,22 @@ function updateActivePositionsView(options = {}) {
     : [];
 
   const notifications = [...closedNotifications, ...managementNotifications];
+  const sortedNotifications = notifications
+    .map((element) => {
+      const raw = element?.dataset?.timestamp;
+      const parsed = raw ? Number(raw) : Number.NaN;
+      return {
+        element,
+        ts: Number.isFinite(parsed) ? parsed : 0,
+      };
+    })
+    .sort((a, b) => b.ts - a.ts)
+    .map((entry) => entry.element);
 
   if (activePositionsNotifications) {
-    if (notifications.length) {
+    if (sortedNotifications.length) {
       const notificationFragment = document.createDocumentFragment();
-      notifications.forEach((notification) => {
+      sortedNotifications.forEach((notification) => {
         notificationFragment.append(notification);
       });
       activePositionsNotifications.replaceChildren(notificationFragment);
@@ -12723,7 +12741,7 @@ async function init() {
   await loadMostTradedCoins();
   connectLogs();
   setInterval(updateStatus, 5000);
-  setInterval(loadTrades, 8000);
+  setInterval(loadTrades, 5000);
   if (tickerContainer) {
     if (mostTradedTimer) {
       clearInterval(mostTradedTimer);
