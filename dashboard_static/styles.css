@@ -21,7 +21,10 @@
   --grid-line: rgba(148, 163, 184, 0.08);
   --glass-border: linear-gradient(135deg, rgba(245, 196, 107, 0.28), rgba(95, 81, 237, 0.18));
   --layout-max-width: 1560px;
+  --mobile-shell-width: 640px;
   --page-inline-padding: clamp(1.25rem, 3.5vw, 3rem);
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 html {
@@ -41,7 +44,7 @@ body {
   overflow-x: hidden;
   font-family: var(--font-sans);
   letter-spacing: -0.01em;
-  padding: 0 var(--page-inline-padding) clamp(2rem, 6vw, 4rem);
+  padding: 0 var(--page-inline-padding) calc(clamp(2rem, 6vw, 4rem) + var(--safe-area-bottom));
 }
 
 body::before,
@@ -183,21 +186,57 @@ body::after {
     display: flex;
     margin-inline: auto;
   }
+
+  .page {
+    width: min(100%, var(--mobile-shell-width));
+  }
+
+  body {
+    padding-top: calc(var(--safe-area-top) + 1.25rem);
+  }
+
+  .market-ticker {
+    width: min(100%, var(--mobile-shell-width));
+    margin-inline: auto;
+    border-radius: 1.5rem;
+    padding: clamp(1rem, 4vw, 1.2rem) clamp(1.1rem, 5vw, 1.75rem);
+    box-shadow: 0 22px 50px rgba(5, 6, 15, 0.55);
+  }
+
+  .layout {
+    width: min(100%, var(--mobile-shell-width));
+    margin-inline: auto;
+  }
+
+  footer {
+    width: min(100%, var(--mobile-shell-width));
+    margin-inline: auto;
+  }
 }
 
 @media (max-width: 768px) {
   .mobile-section-nav {
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: stretch;
     width: 100%;
-    max-width: 520px;
-    margin: clamp(1.2rem, 4vw, 1.8rem) auto 0;
+    max-width: min(100%, var(--mobile-shell-width));
+    margin: clamp(1rem, 4vw, 1.6rem) auto 0;
+    position: sticky;
+    top: calc(var(--safe-area-top) + 0.85rem);
+    z-index: 50;
+  }
+
+  .mobile-section-nav__toggle {
+    backdrop-filter: blur(18px);
+    box-shadow: 0 18px 32px rgba(5, 6, 15, 0.45);
   }
 
   .mobile-section-nav__menu {
     width: 100%;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    backdrop-filter: blur(18px);
+    box-shadow: 0 24px 48px rgba(5, 6, 15, 0.55);
   }
 
   .mobile-section-nav__link {
@@ -1676,26 +1715,41 @@ button:focus-visible {
   }
 
   .layout {
-    align-items: center;
+    align-items: stretch;
   }
 
   .card {
-    text-align: center;
+    width: 100%;
+    text-align: left;
   }
 
   .card-subtitle {
-    text-align: center;
+    text-align: left;
   }
 
   .status-grid {
-    text-align: center;
+    text-align: left;
+    justify-items: stretch;
   }
 
   .decision-summary,
   .trade-overview,
   .ai-request-card__meta,
   .trade-card-bottom {
-    justify-content: center;
+    justify-content: space-between;
+  }
+
+  .trade-card-bottom {
+    flex-wrap: wrap;
+    gap: 0.65rem;
+  }
+
+  .ai-request-card__meta {
+    align-items: flex-start;
+  }
+
+  .decision-summary {
+    width: 100%;
   }
 }
 
@@ -6081,7 +6135,8 @@ footer p {
 
 @media (max-width: 600px) {
   body {
-    padding: 1.5rem clamp(1rem, 6vw, 1.75rem) 2.6rem;
+    padding: calc(var(--safe-area-top) + 1.15rem) clamp(1rem, 6vw, 1.75rem)
+      calc(var(--safe-area-bottom) + 2.6rem);
   }
 
   .page {
@@ -6092,6 +6147,7 @@ footer p {
   .hero {
     padding: 2.2rem clamp(1.15rem, 6vw, 1.75rem) 1.8rem;
     gap: 1.75rem;
+    text-align: left;
   }
 
   .hero-lede h1 {
@@ -6103,8 +6159,15 @@ footer p {
     max-width: 100%;
   }
 
+  .hero-lede {
+    align-items: flex-start;
+    text-align: left;
+  }
+
   .hero-actions {
     width: 100%;
+    align-items: stretch;
+    gap: 0.75rem;
   }
 
   .hero-actions > * {
@@ -6141,14 +6204,14 @@ footer p {
 
   .card-header {
     flex-direction: column;
-    align-items: center;
-    gap: 0.75rem;
-    text-align: center;
+    align-items: stretch;
+    gap: 0.85rem;
+    text-align: left;
   }
 
   .card-header > * {
     width: 100%;
-    text-align: center;
+    text-align: left;
   }
 
   .card-header button,
@@ -6161,12 +6224,13 @@ footer p {
 
   .active-positions-summary {
     width: 100%;
-    align-items: center;
-    text-align: center;
+    align-items: flex-start;
+    text-align: left;
+    gap: 0.35rem;
   }
 
   .active-positions-summary-label {
-    text-align: center;
+    text-align: left;
     width: 100%;
   }
 
@@ -6220,10 +6284,10 @@ footer p {
   }
 
   .trade-header {
-    gap: 1.25rem;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
+    gap: 1.1rem;
+    align-items: stretch;
+    justify-content: space-between;
+    text-align: left;
   }
 
   .trade-metric {
@@ -6232,8 +6296,8 @@ footer p {
   }
 
   .trade-title {
-    align-items: center;
-    text-align: center;
+    align-items: flex-start;
+    text-align: left;
   }
 
   .pnl-chart-wrapper {
@@ -6261,7 +6325,7 @@ footer p {
   }
 
   .trade-overview {
-    justify-items: center;
+    justify-items: stretch;
   }
 
   .trade-context {
@@ -6277,18 +6341,18 @@ footer p {
 
   .ai-request-card__header {
     flex-direction: column;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.55rem;
-    text-align: center;
+    text-align: left;
   }
 
   .ai-request-card__meta {
     flex-direction: column;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.45rem;
     font-size: 0.85rem;
     line-height: 1.45;
-    text-align: center;
+    text-align: left;
   }
 
   footer {
@@ -6299,7 +6363,7 @@ footer p {
 
 @media (max-width: 480px) {
   body {
-    padding-bottom: clamp(1.5rem, 10vw, 2.5rem);
+    padding-bottom: calc(var(--safe-area-bottom) + clamp(1.5rem, 10vw, 2.5rem));
   }
 
   .card {
@@ -6371,7 +6435,7 @@ footer p {
 
 @media (max-width: 420px) {
   body {
-    padding: 1.35rem 0.9rem 2.4rem;
+    padding: calc(var(--safe-area-top) + 1rem) 0.9rem calc(var(--safe-area-bottom) + 2.4rem);
   }
 
   .hero {
