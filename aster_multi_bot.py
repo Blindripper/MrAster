@@ -663,7 +663,7 @@ PRESET_NOTIONAL_BOUNDS = {
 _PRESET_LEVERAGE_DEFAULTS = {
     "low": "3",
     "mid": "5",
-    "high": "10",
+    "high": "max",
     "att": "max",
 }
 _leverage_seed = os.getenv("ASTER_LEVERAGE")
@@ -672,7 +672,19 @@ if not _leverage_seed:
 LEVERAGE_SOURCE = str(_leverage_seed or "5")
 LEVERAGE = _parse_leverage_env(LEVERAGE_SOURCE, 5.0)
 LEVERAGE_IS_UNLIMITED = not math.isfinite(LEVERAGE)
-EQUITY_FRACTION = float(os.getenv("ASTER_EQUITY_FRACTION", "0.66"))
+_equity_fraction_seed = os.getenv("ASTER_EQUITY_FRACTION")
+if _equity_fraction_seed is None or str(_equity_fraction_seed).strip() == "":
+    if PRESET_MODE in {"high", "att"}:
+        _equity_fraction_seed = "1.0"
+    elif PRESET_MODE == "low":
+        _equity_fraction_seed = "0.33"
+    else:
+        _equity_fraction_seed = "0.66"
+try:
+    EQUITY_FRACTION = float(_equity_fraction_seed)
+except (TypeError, ValueError):
+    EQUITY_FRACTION = 0.66
+EQUITY_FRACTION = max(0.05, min(1.0, EQUITY_FRACTION))
 MIN_NOTIONAL_ENV = float(os.getenv("ASTER_MIN_NOTIONAL_USDT", "5"))
 MAX_NOTIONAL_USDT = float(os.getenv("ASTER_MAX_NOTIONAL_USDT", "0"))  # 0 = kein Cap
 
@@ -6417,14 +6429,22 @@ class RiskManager:
                 risk_notional = target_loss / max(stop_dist / max(entry, 1e-9), 1e-9)
         except Exception:
             risk_notional = 0.0
+        high_mode = PRESET_MODE in {"high", "att"}
         if risk_notional > 0:
             notional = risk_notional
             if notional_base > 0:
-                lower = notional_base * 0.4
-                upper = notional_base * 2.2
+                lower_mult = 0.4
+                upper_mult = 2.2
+                blend_weight = 0.7
+                if high_mode:
+                    lower_mult = 0.6
+                    blend_weight = 0.9
+                lower = notional_base * lower_mult
                 notional = max(notional, lower)
-                notional = min(notional, upper)
-                notional = (notional * 0.7) + (notional_base * 0.3)
+                if not high_mode:
+                    upper = notional_base * upper_mult
+                    notional = min(notional, upper)
+                notional = (notional * blend_weight) + (notional_base * (1.0 - blend_weight))
         else:
             notional = notional_base
         notional = max(tier_min, notional)
