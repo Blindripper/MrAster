@@ -916,7 +916,7 @@ def _build_playbook_process(
             return "requested"
         if kind in {"error", "alert"} or "failed" in headline:
             return "failed"
-        if kind in {"playbook", "info"} and (
+        if kind in {"playbook", "info", "tuning"} and (
             entry.get("mode")
             or entry.get("bias")
             or entry.get("size_bias")
