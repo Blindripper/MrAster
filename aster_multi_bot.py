@@ -726,6 +726,8 @@ RSI_BUY_MIN = float(os.getenv("ASTER_RSI_BUY_MIN", "52"))
 RSI_SELL_MAX = float(os.getenv("ASTER_RSI_SELL_MAX", "48"))
 ALLOW_ALIGN = os.getenv("ASTER_ALLOW_TREND_ALIGN", "false").lower() in ("1", "true", "yes", "on")
 ALIGN_RSI_PAD = float(os.getenv("ASTER_ALIGN_RSI_PAD", "1.0"))
+EARLY_ENTRY_MODE = os.getenv("ASTER_EARLY_ENTRY_MODE", "enabled").strip().lower()
+EARLY_ENTRY_ENABLED = EARLY_ENTRY_MODE not in {"off", "false", "disabled", "none"}
 TREND_BIAS = os.getenv("ASTER_TREND_BIAS", "with").strip().lower()
 CONTRARIAN = TREND_BIAS in ("against", "att", "contrarian")
 ADX_MIN_THRESHOLD = float(os.getenv("ASTER_ADX_MIN", "23.0"))
@@ -742,8 +744,10 @@ BB_SHORT_MAX = float(os.getenv("ASTER_BB_SHORT_MAX", "0.03"))
 ORDERBOOK_BIAS_CONFLICT = float(os.getenv("ASTER_ORDERBOOK_BIAS_CONFLICT", "0.33"))
 ORDERBOOK_BIAS_BUY_MIN = float(os.getenv("ASTER_ORDERBOOK_BIAS_BUY_MIN", "-0.05"))
 ORDERBOOK_BIAS_SELL_MAX = float(os.getenv("ASTER_ORDERBOOK_BIAS_SELL_MAX", "0.05"))
+ORDERBOOK_BIAS_REQUIRED = os.getenv("ASTER_ORDERBOOK_BIAS_REQUIRED", "true").lower() in ("1", "true", "yes", "on")
 FUNDING_EDGE_MIN = float(os.getenv("ASTER_FUNDING_EDGE_MIN", "0.0"))
 QUALITY_LEVERAGE = float(os.getenv("ASTER_QUALITY_LEVERAGE", "9.0"))
+STRUCTURED_EVENT_BLOCK_MIN = float(os.getenv("ASTER_STRUCTURED_EVENT_BLOCK_MIN", "0.4"))
 
 _PRESET_SIGNAL_TUNING: Dict[str, Dict[str, Any]] = {
     "low": {
@@ -859,6 +863,28 @@ if _preset_tuning:
                 globals()[_key] = _value
 if "ASTER_ALLOW_TREND_ALIGN" not in os.environ and _preset_tuning.get("allow_align") is not None:
     ALLOW_ALIGN = bool(_preset_tuning.get("allow_align"))
+
+if EARLY_ENTRY_ENABLED:
+    early_adx_shift = float(os.getenv("ASTER_EARLY_ENTRY_ADX_SHIFT", "2.0"))
+    early_edge_factor = float(os.getenv("ASTER_EARLY_ENTRY_EDGE_FACTOR", "0.65"))
+    early_align_pad = float(os.getenv("ASTER_EARLY_ENTRY_ALIGN_PAD", "2.5"))
+    early_stoch_pad = float(os.getenv("ASTER_EARLY_ENTRY_STOCH_PAD", "6.0"))
+    early_bb_pad = float(os.getenv("ASTER_EARLY_ENTRY_BB_PAD", "0.05"))
+
+    ADX_MIN_THRESHOLD = max(8.0, ADX_MIN_THRESHOLD - early_adx_shift)
+    MIN_EDGE_R = max(0.04, MIN_EDGE_R * early_edge_factor)
+    STOCHRSI_LONG_MAX = min(60.0, STOCHRSI_LONG_MAX + early_stoch_pad)
+    STOCHRSI_SHORT_MIN = max(30.0, STOCHRSI_SHORT_MIN - early_stoch_pad)
+    ALIGN_RSI_PAD = max(ALIGN_RSI_PAD, early_align_pad)
+    BB_LONG_MIN = max(0.0, BB_LONG_MIN - early_bb_pad)
+    BB_SHORT_MAX = min(0.4, BB_SHORT_MAX + early_bb_pad)
+
+    ORDERBOOK_BIAS_BUY_MIN = float(ORDERBOOK_BIAS_BUY_MIN) - 0.06
+    ORDERBOOK_BIAS_SELL_MAX = float(ORDERBOOK_BIAS_SELL_MAX) + 0.06
+    ORDERBOOK_BIAS_BUY_MIN = max(-0.45, ORDERBOOK_BIAS_BUY_MIN)
+    ORDERBOOK_BIAS_SELL_MAX = min(0.45, ORDERBOOK_BIAS_SELL_MAX)
+    if "ASTER_ORDERBOOK_BIAS_REQUIRED" not in os.environ:
+        ORDERBOOK_BIAS_REQUIRED = False
 
 # ========= Utils =========
 def ema(data: List[float], period: int) -> List[float]:
@@ -7622,11 +7648,13 @@ class Strategy:
                 quality_gate_pass = False
                 ctx_base["bb_position_gate"] = float(bb_position)
                 sig = "NONE"
-            elif not orderbook_sampled or not isinstance(lob_bias_value, (int, float)):
+            elif ORDERBOOK_BIAS_REQUIRED and (
+                not orderbook_sampled or not isinstance(lob_bias_value, (int, float))
+            ):
                 quality_gate_pass = False
                 ctx_base["orderbook_bias_required"] = float(ORDERBOOK_BIAS_BUY_MIN)
                 sig = "NONE"
-            elif lob_bias_value < ORDERBOOK_BIAS_BUY_MIN:
+            elif isinstance(lob_bias_value, (int, float)) and lob_bias_value < ORDERBOOK_BIAS_BUY_MIN:
                 quality_gate_pass = False
                 ctx_base["orderbook_bias_required"] = float(ORDERBOOK_BIAS_BUY_MIN)
                 sig = "NONE"
@@ -7651,11 +7679,13 @@ class Strategy:
             elif supertrend_gate_enabled and supertrend_dir_last > 0.0:
                 ctx_base["supertrend_conflict"] = float(supertrend_dir_last)
                 sig = "NONE"
-            elif not orderbook_sampled or not isinstance(lob_bias_value, (int, float)):
+            elif ORDERBOOK_BIAS_REQUIRED and (
+                not orderbook_sampled or not isinstance(lob_bias_value, (int, float))
+            ):
                 quality_gate_pass = False
                 ctx_base["orderbook_bias_required"] = float(ORDERBOOK_BIAS_SELL_MAX)
                 sig = "NONE"
-            elif lob_bias_value > ORDERBOOK_BIAS_SELL_MAX:
+            elif isinstance(lob_bias_value, (int, float)) and lob_bias_value > ORDERBOOK_BIAS_SELL_MAX:
                 quality_gate_pass = False
                 ctx_base["orderbook_bias_required"] = float(ORDERBOOK_BIAS_SELL_MAX)
                 sig = "NONE"

@@ -1,6 +1,7 @@
 """AI-driven learning helpers for MrAster bot."""
 from __future__ import annotations
 
+import os
 from datetime import datetime
 import re
 import time
@@ -688,6 +689,10 @@ class PlaybookManager:
         "breadth": ("breadth", "playbook_feature_breadth"),
         "trend_strength": ("trend", "regime_slope", "playbook_feature_trend", "pm_trend_bias"),
     }
+
+    STRUCTURED_EVENT_BLOCK_MIN = float(
+        os.getenv("ASTER_STRUCTURED_EVENT_BLOCK_MIN", "0.4") or 0.0
+    )
     _RISK_KEYWORD_TILTS = {
         "cautious": -0.25,
         "defensive": -0.3,
@@ -1467,6 +1472,23 @@ class PlaybookManager:
                 multiplier = 1.0
             multiplier = float(max(0.05, min(4.0, multiplier)))
             if effect == "hard_block":
+                condition = entry.get("condition")
+                if (
+                    self.STRUCTURED_EVENT_BLOCK_MIN > 0
+                    and isinstance(condition, dict)
+                ):
+                    metric = condition.get("metric")
+                    if metric == "event_risk":
+                        current_event = self._resolve_metric_value(ctx, metric)
+                        if (
+                            current_event is not None
+                            and current_event < self.STRUCTURED_EVENT_BLOCK_MIN
+                        ):
+                            if note:
+                                notes.append(
+                                    f"ignored block {note}: event_risk {current_event:.2f} < {self.STRUCTURED_EVENT_BLOCK_MIN:.2f}"
+                                )
+                            continue
                 hard_block = True
                 block_reason = note or block_reason or entry.get("effect")
                 if note:
