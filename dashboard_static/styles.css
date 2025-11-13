@@ -1839,6 +1839,15 @@ button:focus-visible {
   gap: 1.3rem;
 }
 
+.card[data-stale='true'] {
+  opacity: 0.78;
+  transition: opacity 0.2s ease;
+}
+
+.card[data-stale='true']::before {
+  opacity: 0.5;
+}
+
 .card::before {
   content: "";
   position: absolute;

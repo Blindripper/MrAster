@@ -89,6 +89,16 @@ const activePositionsWrapper = document.getElementById('active-positions-wrapper
 const activePositionsEmpty = document.getElementById('active-positions-empty');
 const activePositionsRows = document.getElementById('active-positions-rows');
 const activePositionsNotifications = document.getElementById('active-positions-notifications');
+const statusCard = document.querySelector('.card.status');
+const tradesCard = document.getElementById('trades');
+const aiRequestsCard = aiRequestList ? aiRequestList.closest('.card') : null;
+const pnlCard = pnlChartWrapper ? pnlChartWrapper.closest('.card') : null;
+const playbookCard = playbookSummaryContainer
+  ? playbookSummaryContainer.closest('.card')
+  : document.getElementById('playbook');
+const tradeDataCards = [tradesCard, aiRequestsCard, pnlCard, playbookCard, activePositionsCard].filter(
+  Boolean,
+);
 const automationToggle = document.getElementById('automation-toggle');
 const automationIntervalInput = document.getElementById('automation-interval');
 const automationCountdown = document.getElementById('automation-countdown');
@@ -2172,6 +2182,9 @@ let lastMostTradedAssets = [];
 let latestTradesSnapshot = null;
 let lastTradeStats = null;
 let lastBotStatus = { ...DEFAULT_BOT_STATUS };
+let statusHydrated = false;
+let tradesHydrated = false;
+let tradesRefreshInFlight = null;
 let aiChatHistory = [];
 let aiChatPending = false;
 let aiAnalyzePending = false;
@@ -3630,6 +3643,75 @@ function formatDuration(seconds) {
   return `${h}:${m}:${s}`;
 }
 
+function markStale(element, stale) {
+  if (!element) return;
+  if (stale) {
+    element.setAttribute('data-stale', 'true');
+  } else {
+    element.removeAttribute('data-stale');
+  }
+}
+
+function setTradeDataStale(stale) {
+  tradeDataCards.forEach((card) => markStale(card, stale));
+}
+
+function mergeTradeSnapshot(previous, next) {
+  const snapshot = next && typeof next === 'object' ? { ...next } : {};
+
+  if (!Array.isArray(snapshot.history)) {
+    snapshot.history = Array.isArray(previous?.history) ? previous.history : [];
+  }
+
+  if (!snapshot.stats || typeof snapshot.stats !== 'object') {
+    snapshot.stats = previous?.stats ?? null;
+  }
+
+  if (!snapshot.decision_stats || typeof snapshot.decision_stats !== 'object') {
+    snapshot.decision_stats = previous?.decision_stats ?? null;
+  }
+
+  if (!snapshot.cumulative_stats || typeof snapshot.cumulative_stats !== 'object') {
+    snapshot.cumulative_stats = previous?.cumulative_stats ?? null;
+  }
+
+  if (!snapshot.ai_budget || typeof snapshot.ai_budget !== 'object') {
+    snapshot.ai_budget = previous?.ai_budget ?? null;
+  }
+
+  if (!Array.isArray(snapshot.ai_requests)) {
+    snapshot.ai_requests = Array.isArray(previous?.ai_requests) ? previous.ai_requests : [];
+  }
+
+  if (!snapshot.playbook || typeof snapshot.playbook !== 'object') {
+    snapshot.playbook = previous?.playbook ?? null;
+  }
+
+  if (!Array.isArray(snapshot.playbook_activity)) {
+    snapshot.playbook_activity = Array.isArray(previous?.playbook_activity)
+      ? previous.playbook_activity
+      : [];
+  }
+
+  if (!Array.isArray(snapshot.playbook_process)) {
+    snapshot.playbook_process = Array.isArray(previous?.playbook_process)
+      ? previous.playbook_process
+      : [];
+  }
+
+  if (!snapshot.open || typeof snapshot.open !== 'object') {
+    snapshot.open = previous?.open ?? {};
+  }
+
+  if (!Array.isArray(snapshot.ai_trade_proposals)) {
+    snapshot.ai_trade_proposals = Array.isArray(previous?.ai_trade_proposals)
+      ? previous.ai_trade_proposals
+      : [];
+  }
+
+  return snapshot;
+}
+
 function formatNumber(num, digits = 2) {
   if (num === undefined || num === null || Number.isNaN(num)) return '–';
   return Number(num).toFixed(digits);
@@ -3975,7 +4057,7 @@ async function loadMostTradedCoins() {
     }
     renderMostTradedTicker(assets);
   } catch (err) {
-    console.warn(err);
+    console.warn('Failed to load most traded assets', err);
     if (lastMostTradedAssets.length > 0) {
       renderMostTradedTicker(lastMostTradedAssets);
     } else {
@@ -6412,7 +6494,7 @@ function scheduleTradesRefresh(delay = 0) {
 async function updateStatus() {
   try {
     const res = await fetch('/api/bot/status');
-    if (!res.ok) throw new Error();
+    if (!res.ok) throw new Error('Unable to refresh status');
     const data = await res.json();
     lastBotStatus = data;
     const running = data.running;
@@ -6421,17 +6503,26 @@ async function updateStatus() {
       : translate('status.indicator.stopped', 'Stopped');
     statusIndicator.className = `pill ${running ? 'running' : 'stopped'}`;
     statusPid.textContent = data.pid ?? '–';
-    statusStarted.textContent = data.started_at ? new Date(data.started_at * 1000).toLocaleString() : '–';
+    statusStarted.textContent = data.started_at
+      ? new Date(data.started_at * 1000).toLocaleString()
+      : '–';
     statusUptime.textContent = running ? formatDuration(data.uptime_s) : '–';
     btnStart.disabled = running;
     btnStop.disabled = !running;
-  } catch {
-    lastBotStatus = { ...DEFAULT_BOT_STATUS };
-    statusIndicator.textContent = translate('status.indicator.offline', 'Offline');
-    statusIndicator.className = 'pill stopped';
-    statusPid.textContent = '–';
-    statusStarted.textContent = '–';
-    statusUptime.textContent = '–';
+    statusHydrated = true;
+    markStale(statusCard, false);
+  } catch (err) {
+    console.warn('Failed to refresh bot status', err);
+    if (!statusHydrated) {
+      lastBotStatus = { ...DEFAULT_BOT_STATUS };
+      statusIndicator.textContent = translate('status.indicator.offline', 'Offline');
+      statusIndicator.className = 'pill stopped';
+      statusPid.textContent = '–';
+      statusStarted.textContent = '–';
+      statusUptime.textContent = '–';
+      return;
+    }
+    markStale(statusCard, true);
   }
 }
 
@@ -12198,26 +12289,50 @@ async function downloadTradeHistory() {
 }
 
 async function loadTrades() {
-  try {
-    const res = await fetch('/api/trades');
-    if (!res.ok) throw new Error('Unable to load trades');
-    const data = await res.json();
-    latestTradesSnapshot = data;
-    renderTradeHistory(data.history);
-    renderTradeSummary(data.stats);
-    renderHeroMetrics(data.cumulative_stats, data.stats);
-    renderDecisionStats(data.decision_stats);
-    renderPnlChart(data.history);
-    renderAiBudget(data.ai_budget);
-    renderAiRequests(data.ai_requests);
-    renderPlaybookOverview(data.playbook, data.playbook_activity, data.playbook_process);
-    renderActivePositions(data.open);
-    const proposals = Array.isArray(data.ai_trade_proposals) ? data.ai_trade_proposals : [];
-    proposals.forEach((proposal) => appendTradeProposalCard(proposal));
-    pruneTradeProposalRegistry(proposals);
-  } catch (err) {
-    console.warn(err);
+  if (tradesRefreshInFlight) {
+    return tradesRefreshInFlight;
   }
+
+  const previousSnapshot = latestTradesSnapshot;
+
+  const refreshPromise = (async () => {
+    try {
+      const res = await fetch('/api/trades');
+      if (!res.ok) throw new Error('Unable to load trades');
+      const data = await res.json();
+      const snapshot = mergeTradeSnapshot(previousSnapshot, data);
+      latestTradesSnapshot = snapshot;
+      tradesHydrated = true;
+      setTradeDataStale(false);
+      renderTradeHistory(snapshot.history);
+      renderTradeSummary(snapshot.stats);
+      renderHeroMetrics(snapshot.cumulative_stats, snapshot.stats);
+      renderDecisionStats(snapshot.decision_stats);
+      renderPnlChart(snapshot.history);
+      renderAiBudget(snapshot.ai_budget);
+      renderAiRequests(snapshot.ai_requests);
+      renderPlaybookOverview(snapshot.playbook, snapshot.playbook_activity, snapshot.playbook_process);
+      renderActivePositions(snapshot.open);
+      const proposals = Array.isArray(snapshot.ai_trade_proposals)
+        ? snapshot.ai_trade_proposals
+        : [];
+      proposals.forEach((proposal) => appendTradeProposalCard(proposal));
+      pruneTradeProposalRegistry(proposals);
+      return snapshot;
+    } catch (err) {
+      console.warn('Failed to refresh dashboard data', err);
+      if (previousSnapshot && tradesHydrated) {
+        setTradeDataStale(true);
+        return previousSnapshot;
+      }
+      return null;
+    } finally {
+      tradesRefreshInFlight = null;
+    }
+  })();
+
+  tradesRefreshInFlight = refreshPromise;
+  return refreshPromise;
 }
 
 async function handleTakeTradeProposals() {
