@@ -76,6 +76,10 @@ const playbookModalClose = document.getElementById('playbook-modal-close');
 const playbookModalBody = document.getElementById('playbook-modal-body');
 const playbookModalTitle = document.getElementById('playbook-modal-title');
 const playbookModalSubtitle = document.getElementById('playbook-modal-subtitle');
+const playbookRiskIndicator = document.getElementById('playbook-risk-indicator');
+const playbookRiskValue = document.getElementById('playbook-risk-value');
+const playbookRiskStatus = document.getElementById('playbook-risk-status');
+const playbookRiskFill = document.getElementById('playbook-risk-fill');
 const aiChatMessages = document.getElementById('ai-chat-messages');
 const aiChatForm = document.getElementById('ai-chat-form');
 const aiChatInput = document.getElementById('ai-chat-input');
@@ -2321,6 +2325,7 @@ let pendingPlaybookResponseCount = 0;
 let lastPlaybookState = null;
 let lastPlaybookActivity = [];
 let lastPlaybookProcess = [];
+let lastPlaybookMarketOverview = null;
 const tradeProposalRegistry = new Map();
 const fallbackProposalKeys = new Map();
 let fallbackProposalCounter = 0;
@@ -3351,6 +3356,14 @@ const CONTEXT_KEYS = [
   'sentinel_factor',
 ];
 
+const EVENT_RISK_SEVERITY_BANDS = [
+  { min: 0.75, key: 'critical', fallback: 'Critical risk' },
+  { min: 0.55, key: 'high', fallback: 'High risk' },
+  { min: 0.35, key: 'elevated', fallback: 'Elevated' },
+  { min: 0.2, key: 'watch', fallback: 'Watch' },
+  { min: 0, key: 'calm', fallback: 'Calm' },
+];
+
 const DECISION_REASON_LABELS = {
   spread: 'Spread too wide',
   wicky: 'Wicks too volatile',
@@ -3794,6 +3807,10 @@ function mergeTradeSnapshot(previous, next) {
     snapshot.playbook_process = Array.isArray(previous?.playbook_process)
       ? previous.playbook_process
       : [];
+  }
+
+  if (!snapshot.playbook_market_overview || typeof snapshot.playbook_market_overview !== 'object') {
+    snapshot.playbook_market_overview = previous?.playbook_market_overview ?? null;
   }
 
   if (!snapshot.open || typeof snapshot.open !== 'object') {
@@ -8100,12 +8117,15 @@ function createPlaybookSummaryContent(state, { hint } = {}) {
   return fragment;
 }
 
-function renderPlaybookOverview(playbook, activity, process) {
+function renderPlaybookOverview(playbook, activity, process, marketOverview) {
   lastPlaybookState = playbook && typeof playbook === 'object' ? { ...playbook } : null;
   lastPlaybookActivity = Array.isArray(activity) ? activity.slice() : [];
   lastPlaybookProcess = Array.isArray(process) ? process.slice() : [];
+  lastPlaybookMarketOverview =
+    marketOverview && typeof marketOverview === 'object' ? { ...marketOverview } : null;
   renderPlaybookSummarySection();
   renderPlaybookRequestList();
+  renderPlaybookRiskIndicator();
   updatePlaybookPendingState();
 }
 
@@ -8170,6 +8190,107 @@ function renderPlaybookRequestList() {
     }
   });
   playbookRequestList.replaceChildren(fragment);
+}
+
+function describeEventRisk(value) {
+  const numeric = clampValue(Number(value) || 0, 0, 1);
+  for (const band of EVENT_RISK_SEVERITY_BANDS) {
+    if (numeric >= band.min) {
+      return {
+        level: band.key,
+        label: translate(`playbook.risk.level.${band.key}`, band.fallback),
+        value: numeric,
+      };
+    }
+  }
+  const fallback = EVENT_RISK_SEVERITY_BANDS[EVENT_RISK_SEVERITY_BANDS.length - 1];
+  return {
+    level: fallback.key,
+    label: translate(`playbook.risk.level.${fallback.key}`, fallback.fallback),
+    value: numeric,
+  };
+}
+
+function renderPlaybookRiskIndicator() {
+  if (!playbookRiskIndicator) return;
+
+  const indicator = playbookRiskIndicator;
+  const valueNode = playbookRiskValue;
+  const statusNode = playbookRiskStatus;
+
+  const resetFill = () => {
+    if (!playbookRiskFill) return;
+    playbookRiskFill.style.width = '12%';
+    playbookRiskFill.style.background = '';
+    playbookRiskFill.style.boxShadow = '';
+  };
+
+  if (!aiMode) {
+    indicator.dataset.state = 'disabled';
+    indicator.removeAttribute('data-level');
+    if (valueNode) valueNode.textContent = '–';
+    if (statusNode) {
+      statusNode.textContent = translate('playbook.risk.disabled', 'Enable AI mode to see event risk');
+    }
+    resetFill();
+    indicator.setAttribute(
+      'aria-label',
+      translate('playbook.risk.aria.disabled', 'Global event risk indicator is disabled while AI mode is off.'),
+    );
+    return;
+  }
+
+  const sentinelOverview =
+    lastPlaybookMarketOverview && typeof lastPlaybookMarketOverview === 'object'
+      ? lastPlaybookMarketOverview.sentinel || null
+      : null;
+  const avgRiskRaw =
+    sentinelOverview && typeof sentinelOverview === 'object'
+      ? Number(sentinelOverview.avg_event_risk)
+      : Number.NaN;
+
+  if (!Number.isFinite(avgRiskRaw)) {
+    indicator.dataset.state = 'pending';
+    indicator.removeAttribute('data-level');
+    if (valueNode) valueNode.textContent = '–';
+    if (statusNode) {
+      statusNode.textContent = translate('playbook.risk.pending', 'Waiting for telemetry…');
+    }
+    resetFill();
+    indicator.setAttribute(
+      'aria-label',
+      translate('playbook.risk.aria.pending', 'Waiting for global event risk telemetry'),
+    );
+    return;
+  }
+
+  const clamped = clampValue(avgRiskRaw, 0, 1);
+  const severity = describeEventRisk(clamped);
+  const digits = clamped >= 0.1 ? 0 : 1;
+  const displayValue = `${(clamped * 100).toFixed(digits)}%`;
+
+  indicator.dataset.state = 'ready';
+  indicator.dataset.level = severity.level;
+  if (valueNode) valueNode.textContent = displayValue;
+  if (statusNode) statusNode.textContent = severity.label;
+
+  const hue = Math.round((1 - clamped) * 120);
+  const saturation = 84;
+  const lightness = clamped > 0.65 ? 56 : 52;
+  const color = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+  if (playbookRiskFill) {
+    playbookRiskFill.style.width = `${Math.max(6, clamped * 100)}%`;
+    playbookRiskFill.style.background = color;
+    playbookRiskFill.style.boxShadow = `0 0 22px hsla(${hue}, ${saturation}%, ${lightness}%, 0.45)`;
+  }
+
+  indicator.setAttribute(
+    'aria-label',
+    translate('playbook.risk.aria.value', 'Global event risk {{value}} ({{status}})', {
+      value: displayValue,
+      status: severity.label,
+    }),
+  );
 }
 
 function buildPlaybookRequestCard(entry) {
@@ -12203,7 +12324,12 @@ function setAiMode(state) {
   }
   document.body.classList.toggle('ai-mode', aiMode);
   renderAiBudget(lastAiBudget);
-  renderPlaybookOverview(lastPlaybookState, lastPlaybookActivity, lastPlaybookProcess);
+  renderPlaybookOverview(
+    lastPlaybookState,
+    lastPlaybookActivity,
+    lastPlaybookProcess,
+    lastPlaybookMarketOverview,
+  );
   syncAiChatAvailability();
 }
 
@@ -12408,7 +12534,12 @@ async function loadTrades() {
       renderPnlChart(snapshot.history);
       renderAiBudget(snapshot.ai_budget);
       renderAiRequests(snapshot.ai_requests);
-      renderPlaybookOverview(snapshot.playbook, snapshot.playbook_activity, snapshot.playbook_process);
+      renderPlaybookOverview(
+        snapshot.playbook,
+        snapshot.playbook_activity,
+        snapshot.playbook_process,
+        snapshot.playbook_market_overview,
+      );
       renderActivePositions(snapshot.open);
       const proposals = Array.isArray(snapshot.ai_trade_proposals)
         ? snapshot.ai_trade_proposals

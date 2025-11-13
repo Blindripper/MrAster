@@ -438,6 +438,78 @@ def _summarize_playbook_snapshot_meta(meta: Optional[Dict[str, Any]]) -> Optiona
     return " · ".join(parts)
 
 
+def _aggregate_sentinel_overview(raw: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(raw, dict) or not raw:
+        return None
+
+    count = 0
+    event_values: List[float] = []
+    hype_values: List[float] = []
+    warning_symbols = 0
+    hard_blocks = 0
+    max_event: Optional[Tuple[str, float]] = None
+
+    for symbol, entry in raw.items():
+        if not isinstance(entry, dict):
+            continue
+        count += 1
+
+        event_risk = _safe_float(entry.get("event_risk"))
+        if event_risk is not None:
+            event_values.append(event_risk)
+            if event_risk >= 0.25:
+                warning_symbols += 1
+            if not max_event or event_risk > max_event[1]:
+                max_event = (str(symbol), event_risk)
+
+        hype_score = _safe_float(entry.get("hype_score"))
+        if hype_score is not None:
+            hype_values.append(hype_score)
+
+        actions = entry.get("actions")
+        if isinstance(actions, dict) and actions.get("hard_block"):
+            hard_blocks += 1
+
+    if count <= 0:
+        return None
+
+    overview: Dict[str, Any] = {"count": count}
+    if event_values:
+        avg_event = sum(event_values) / float(len(event_values))
+        overview["avg_event_risk"] = round(avg_event, 3)
+    if hype_values:
+        avg_hype = sum(hype_values) / float(len(hype_values))
+        overview["avg_hype_score"] = round(avg_hype, 3)
+    if warning_symbols:
+        overview["warning_symbols"] = int(warning_symbols)
+    if hard_blocks:
+        overview["hard_blocks"] = int(hard_blocks)
+    if max_event and max_event[0]:
+        overview["max_event_risk"] = {
+            "symbol": max_event[0],
+            "value": round(max_event[1], 3),
+        }
+    return overview
+
+
+def _extract_playbook_market_overview(state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    snapshot = state.get("playbook_snapshot")
+    if isinstance(snapshot, dict):
+        overview = snapshot.get("market_overview")
+        if isinstance(overview, dict) and overview:
+            return overview
+
+    stored_overview = state.get("playbook_market_overview")
+    if isinstance(stored_overview, dict) and stored_overview:
+        return stored_overview
+
+    sentinel_state = state.get("sentinel")
+    sentinel_overview = _aggregate_sentinel_overview(sentinel_state)
+    if sentinel_overview:
+        return {"sentinel": sentinel_overview}
+    return None
+
+
 def _normalize_playbook_state(raw: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(raw, dict):
         return None
@@ -6736,6 +6808,7 @@ async def trades() -> Dict[str, Any]:
     playbook_activity = _collect_playbook_activity(ai_activity)
     playbook_state = _resolve_playbook_state(state.get("ai_playbook"), playbook_activity)
     playbook_process = _build_playbook_process(playbook_activity)
+    market_overview = _extract_playbook_market_overview(state)
     proposals: List[Dict[str, Any]] = []
     raw_proposals = state.get("ai_trade_proposals")
     if isinstance(raw_proposals, list):
@@ -6764,6 +6837,7 @@ async def trades() -> Dict[str, Any]:
         "playbook": playbook_state,
         "playbook_activity": playbook_activity,
         "playbook_process": playbook_process,
+        "playbook_market_overview": market_overview,
         "ai_trade_proposals": proposals,
     }
 

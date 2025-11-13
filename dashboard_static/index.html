@@ -438,6 +438,16 @@
       <section class="card playbook-overview" data-ai-only id="playbook" data-mobile-collapsible>
         <div class="playbook-overview-header" data-mobile-collapsible-header>
           <div class="playbook-overview-header-main">
+            <div class="playbook-risk-indicator" id="playbook-risk-indicator" role="status" aria-live="polite">
+              <div class="playbook-risk-track" aria-hidden="true">
+                <div class="playbook-risk-fill" id="playbook-risk-fill"></div>
+              </div>
+              <div class="playbook-risk-meta">
+                <span class="playbook-risk-label" data-i18n="playbook.risk.label">Global event risk</span>
+                <span class="playbook-risk-value" id="playbook-risk-value">–</span>
+                <span class="playbook-risk-status" id="playbook-risk-status"></span>
+              </div>
+            </div>
             <span class="playbook-badge" data-i18n="playbook.label">Playbook</span>
             <div class="playbook-overview-title">
               <h2 data-i18n="playbook.title">Playbook Overview</h2>
