@@ -5115,39 +5115,74 @@ function extractTpSlEntry(position, kind) {
   return { price: Number.isFinite(price) && price > 0 ? price : null, meta };
 }
 
-function computePositionProgressValue(takeEntry, stopEntry, markPrice, side) {
-  const takePrice = Number.isFinite(takeEntry?.price) ? takeEntry.price : null;
-  const stopPrice = Number.isFinite(stopEntry?.price) ? stopEntry.price : null;
-  const mark = Number.isFinite(markPrice) ? markPrice : null;
+function normalizeProgressSide(side) {
+  if (!side) return null;
+  const normalized = side.toString().toLowerCase();
+  if (normalized === 'buy' || normalized === 'long') return 'long';
+  if (normalized === 'sell' || normalized === 'short') return 'short';
+  return null;
+}
 
-  if (!Number.isFinite(takePrice) || !Number.isFinite(stopPrice) || !Number.isFinite(mark)) {
+function computePositionProgressValue({ takeEntry, stopEntry, markPrice, side, entryPrice }) {
+  const takePrice =
+    Number.isFinite(takeEntry?.price) && Math.abs(takeEntry.price) > 0 ? Math.abs(takeEntry.price) : null;
+  const stopPrice =
+    Number.isFinite(stopEntry?.price) && Math.abs(stopEntry.price) > 0 ? Math.abs(stopEntry.price) : null;
+  const entry =
+    Number.isFinite(entryPrice) && Math.abs(entryPrice) > 0 ? Math.abs(entryPrice) : null;
+  const mark = Number.isFinite(markPrice) ? Math.abs(markPrice) : null;
+
+  if (!Number.isFinite(mark)) {
     return null;
   }
-  if (takePrice === stopPrice) {
-    return null;
-  }
 
-  const min = Math.min(takePrice, stopPrice);
-  const max = Math.max(takePrice, stopPrice);
-  const clamped = Math.min(Math.max(mark, min), max);
-  const relative = (clamped - min) / (max - min);
-  let profitIsMax = null;
-
-  if (side) {
-    const normalized = side.toString().toLowerCase();
-    if (normalized === 'buy' || normalized === 'long') {
-      profitIsMax = true;
-    } else if (normalized === 'sell' || normalized === 'short') {
-      profitIsMax = false;
+  const computeBetween = (profitPrice, riskPrice) => {
+    if (!Number.isFinite(profitPrice) || !Number.isFinite(riskPrice)) {
+      return null;
     }
+    if (profitPrice === riskPrice) {
+      return null;
+    }
+    const min = Math.min(profitPrice, riskPrice);
+    const max = Math.max(profitPrice, riskPrice);
+    if (max === min) {
+      return null;
+    }
+    const clamped = Math.min(Math.max(mark, min), max);
+    const relative = (clamped - min) / (max - min);
+    return profitPrice > riskPrice ? relative : 1 - relative;
+  };
+
+  if (Number.isFinite(takePrice) && Number.isFinite(stopPrice) && takePrice !== stopPrice) {
+    const normalizedSide = normalizeProgressSide(side);
+    const min = Math.min(takePrice, stopPrice);
+    const max = Math.max(takePrice, stopPrice);
+    if (normalizedSide === 'long') {
+      const ratio = computeBetween(max, min);
+      return Number.isFinite(ratio) ? Math.max(0, Math.min(1, ratio)) : null;
+    }
+    if (normalizedSide === 'short') {
+      const ratio = computeBetween(min, max);
+      return Number.isFinite(ratio) ? Math.max(0, Math.min(1, ratio)) : null;
+    }
+    const profitIsMax = takePrice >= stopPrice;
+    const profitPrice = profitIsMax ? max : min;
+    const riskPrice = profitIsMax ? min : max;
+    const ratio = computeBetween(profitPrice, riskPrice);
+    return Number.isFinite(ratio) ? Math.max(0, Math.min(1, ratio)) : null;
   }
 
-  if (profitIsMax === null) {
-    profitIsMax = takePrice >= stopPrice;
+  if (Number.isFinite(takePrice) && Number.isFinite(entry) && takePrice !== entry) {
+    const ratio = computeBetween(takePrice, entry);
+    return Number.isFinite(ratio) ? Math.max(0, Math.min(1, ratio)) : null;
   }
-  const ratio = profitIsMax ? relative : 1 - relative;
 
-  return Math.max(0, Math.min(1, ratio));
+  if (Number.isFinite(stopPrice) && Number.isFinite(entry) && stopPrice !== entry) {
+    const ratio = computeBetween(entry, stopPrice);
+    return Number.isFinite(ratio) ? Math.max(0, Math.min(1, ratio)) : null;
+  }
+
+  return null;
 }
 
 function computeProgressIndicatorColor(progressValue) {
@@ -5340,7 +5375,7 @@ function buildPositionManagementSummary(position, options = {}) {
   return container;
 }
 
-function buildPositionProgressBar({ takeEntry, stopEntry, markPrice, side }) {
+function buildPositionProgressBar({ takeEntry, stopEntry, markPrice, side, entryPrice }) {
   const container = document.createElement('div');
   container.className = 'position-progress-container';
 
@@ -5352,7 +5387,13 @@ function buildPositionProgressBar({ takeEntry, stopEntry, markPrice, side }) {
   indicator.className = 'position-progress-indicator';
   track.append(indicator);
 
-  const progressValue = computePositionProgressValue(takeEntry, stopEntry, markPrice, side);
+  const progressValue = computePositionProgressValue({
+    takeEntry,
+    stopEntry,
+    markPrice,
+    side,
+    entryPrice,
+  });
   if (progressValue === null) {
     container.classList.add('is-inactive');
   } else {
@@ -5470,6 +5511,7 @@ function updateActivePositionsView() {
         stopEntry,
         markPrice: markField.numeric,
         side: sideValue,
+        entryPrice: entryField.numeric,
       }),
     );
     const managementSummary = buildPositionManagementSummary(position, {
