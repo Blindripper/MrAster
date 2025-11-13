@@ -5430,8 +5430,11 @@ function updateActivePositionsView() {
   if (!hasRows) {
     activePositionsRows.replaceChildren();
     if (activePositionsNotifications) {
-      activePositionsNotifications.replaceChildren();
-      activePositionsNotifications.setAttribute('hidden', '');
+      if (activePositionsNotifications.childElementCount > 0) {
+        activePositionsNotifications.removeAttribute('hidden');
+      } else {
+        activePositionsNotifications.setAttribute('hidden', '');
+      }
     }
     return;
   }
