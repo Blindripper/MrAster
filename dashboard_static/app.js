@@ -5393,7 +5393,7 @@ function buildClosedPositionNotification(position, options = {}) {
   return container;
 }
 
-function buildPositionProgressBar({ takeEntry, stopEntry, markPrice, side }) {
+function buildPositionProgressBar({ takeEntry, stopEntry, markPrice, side, pnlTone }) {
   const container = document.createElement('div');
   container.className = 'position-progress-container';
 
@@ -5406,11 +5406,23 @@ function buildPositionProgressBar({ takeEntry, stopEntry, markPrice, side }) {
   track.append(indicator);
 
   const progressValue = computePositionProgressValue(takeEntry, stopEntry, markPrice, side);
-  if (progressValue === null) {
+  let indicatorValue = progressValue;
+
+  if (indicatorValue === null && Number.isFinite(pnlTone)) {
+    if (pnlTone > 0) {
+      indicatorValue = 1;
+    } else if (pnlTone < 0) {
+      indicatorValue = 0;
+    } else {
+      indicatorValue = 0.5;
+    }
+  }
+
+  if (indicatorValue === null) {
     container.classList.add('is-inactive');
   } else {
-    indicator.style.left = `${(progressValue * 100).toFixed(2)}%`;
-    const indicatorColors = computeProgressIndicatorColor(progressValue);
+    indicator.style.left = `${(indicatorValue * 100).toFixed(2)}%`;
+    const indicatorColors = computeProgressIndicatorColor(indicatorValue);
     if (indicatorColors) {
       indicator.style.background = indicatorColors.solid;
       indicator.style.borderColor = indicatorColors.solid;
@@ -5493,6 +5505,13 @@ function updateActivePositionsView(options = {}) {
     const markField = pickNumericField(position, ACTIVE_POSITION_ALIASES.mark || []);
     const takeEntry = extractTpSlEntry(position, 'take');
     const stopEntry = extractTpSlEntry(position, 'stop');
+    const pnlField = pickNumericField(position, ACTIVE_POSITION_ALIASES.pnl || []);
+    const roePercentSource = pickNumericField(position, ACTIVE_POSITION_ALIASES.roe || []);
+    const pnlToneNumeric = Number.isFinite(pnlField.numeric)
+      ? pnlField.numeric
+      : Number.isFinite(roePercentSource.numeric)
+          ? roePercentSource.numeric
+          : null;
 
     const symbolCell = document.createElement('td');
     symbolCell.className = 'active-positions-symbol-cell';
@@ -5515,6 +5534,7 @@ function updateActivePositionsView(options = {}) {
         stopEntry,
         markPrice: markField.numeric,
         side: sideValue,
+        pnlTone: pnlToneNumeric,
       }),
     );
     const managementSummary = buildPositionManagementSummary(position, {
@@ -5621,8 +5641,6 @@ function updateActivePositionsView(options = {}) {
 
     const pnlCell = document.createElement('td');
     pnlCell.className = 'numeric';
-    const pnlField = pickNumericField(position, ACTIVE_POSITION_ALIASES.pnl || []);
-    const roePercentSource = pickNumericField(position, ACTIVE_POSITION_ALIASES.roe || []);
     const pnlPercentField = formatPercentField(roePercentSource, 2);
     let pnlDisplay = '–';
     let pnlTone = null;
