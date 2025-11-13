@@ -5123,10 +5123,47 @@ function extractTpSlEntry(position, kind) {
   return { price: Number.isFinite(price) && price > 0 ? price : null, meta };
 }
 
+function resolveTpSlEffectivePrice(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+
+  const candidates = [];
+  const seen = new Set();
+  const pushCandidate = (value) => {
+    const numeric = toNumeric(value);
+    if (!Number.isFinite(numeric)) return;
+    const absolute = Math.abs(numeric);
+    if (absolute <= 0) return;
+    if (seen.has(absolute)) return;
+    seen.add(absolute);
+    candidates.push(absolute);
+  };
+
+  const meta = entry.meta && typeof entry.meta === 'object' ? entry.meta : null;
+  if (meta) {
+    ['triggerPrice', 'stopPrice', 'price', 'limitPrice'].forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(meta, key)) {
+        pushCandidate(meta[key]);
+      }
+    });
+  }
+
+  ['triggerPrice', 'stopPrice', 'price', 'limitPrice'].forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(entry, key)) {
+      pushCandidate(entry[key]);
+    }
+  });
+
+  if (Number.isFinite(entry.price)) {
+    pushCandidate(entry.price);
+  }
+
+  return candidates.length ? candidates[0] : null;
+}
+
 function computePositionProgressValue(takeEntry, stopEntry, markPrice, side) {
-  const takePrice = Number.isFinite(takeEntry?.price) ? takeEntry.price : null;
-  const stopPrice = Number.isFinite(stopEntry?.price) ? stopEntry.price : null;
-  const mark = Number.isFinite(markPrice) ? markPrice : null;
+  const takePrice = resolveTpSlEffectivePrice(takeEntry);
+  const stopPrice = resolveTpSlEffectivePrice(stopEntry);
+  const mark = Number.isFinite(markPrice) ? Math.abs(markPrice) : null;
 
   if (!Number.isFinite(takePrice) || !Number.isFinite(stopPrice) || !Number.isFinite(mark)) {
     return null;
