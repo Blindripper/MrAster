@@ -1023,6 +1023,9 @@ def _build_playbook_process(
         record["steps"] = steps
 
         has_request_id = bool(record.get("request_id"))
+        if not has_request_id:
+            continue
+
         has_meaningful_stage = any(
             step.get("stage") in {"requested", "applied", "failed"} for step in steps
         )
@@ -1051,7 +1054,7 @@ def _build_playbook_process(
         if pending_cycle_marker:
             continue
 
-        if not (has_request_id or has_meaningful_stage or has_signal_payload):
+        if not (has_meaningful_stage or has_signal_payload):
             continue
 
         process.append(record)

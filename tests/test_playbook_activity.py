@@ -267,7 +267,7 @@ class PlaybookProcessTests(unittest.TestCase):
         process = _build_playbook_process(activity)
         self.assertEqual(process, [])
 
-    def test_process_coalesces_signal_entries_without_request_id(self):
+    def test_process_skips_signal_entries_without_request_id(self):
         raw = [
             {
                 "kind": "playbook",
@@ -297,11 +297,7 @@ class PlaybookProcessTests(unittest.TestCase):
         self.assertEqual(len(activity), 2)
 
         process = _build_playbook_process(activity)
-        self.assertEqual(len(process), 1)
-        entry = process[0]
-        self.assertIsNone(entry.get("request_id"))
-        self.assertEqual(entry.get("status"), "applied")
-        self.assertGreaterEqual(len(entry.get("steps", [])), 2)
+        self.assertEqual(process, [])
 
 
 class PlaybookStateTests(unittest.TestCase):
