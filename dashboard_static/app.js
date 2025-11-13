@@ -5379,7 +5379,7 @@ function updateActivePositionsView() {
   if (!activePositionsRows) return;
   const positions = Array.isArray(activePositions) ? activePositions : [];
   const sorted = positions.slice().sort((a, b) => getPositionTimestamp(b) - getPositionTimestamp(a));
-  activePositionsRows.innerHTML = '';
+  const rowsFragment = document.createDocumentFragment();
 
   const hasRows = sorted.length > 0;
 
@@ -5420,8 +5420,9 @@ function updateActivePositionsView() {
   }
 
   if (!hasRows) {
+    activePositionsRows.replaceChildren();
     if (activePositionsNotifications) {
-      activePositionsNotifications.innerHTML = '';
+      activePositionsNotifications.replaceChildren();
       activePositionsNotifications.setAttribute('hidden', '');
     }
     return;
@@ -5593,20 +5594,24 @@ function updateActivePositionsView() {
     applyActivePositionLabel(pnlCell, 'pnl');
     row.append(pnlCell);
 
-    activePositionsRows.append(row);
+    rowsFragment.append(row);
   });
 
   if (activePositionsNotifications) {
-    activePositionsNotifications.innerHTML = '';
     if (notifications.length) {
+      const notificationFragment = document.createDocumentFragment();
       notifications.forEach((notification) => {
-        activePositionsNotifications.append(notification);
+        notificationFragment.append(notification);
       });
+      activePositionsNotifications.replaceChildren(notificationFragment);
       activePositionsNotifications.removeAttribute('hidden');
     } else {
+      activePositionsNotifications.replaceChildren();
       activePositionsNotifications.setAttribute('hidden', '');
     }
   }
+
+  activePositionsRows.replaceChildren(rowsFragment);
 }
 
 function renderActivePositions(openPositions) {
@@ -6735,13 +6740,13 @@ function extractRealizedPnl(trade) {
 
 function renderTradeHistory(history) {
   if (!tradeList) return;
-  tradeList.innerHTML = '';
-
   if (!history || history.length === 0) {
+    const fragment = document.createDocumentFragment();
     const empty = document.createElement('div');
     empty.className = 'trade-empty';
     empty.textContent = translate('trades.empty', 'No trades yet.');
-    tradeList.append(empty);
+    fragment.append(empty);
+    tradeList.replaceChildren(fragment);
     tradeList.style.removeProperty('max-height');
     tradeList.removeAttribute('data-viewport-locked');
     return;
@@ -6749,10 +6754,13 @@ function renderTradeHistory(history) {
 
   const sortedHistory = [...history].sort((a, b) => getTradeTimestamp(b) - getTradeTimestamp(a));
 
+  const fragment = document.createDocumentFragment();
   sortedHistory.forEach((trade) => {
     const card = buildTradeSummaryCard(trade);
-    tradeList.append(card);
+    fragment.append(card);
   });
+
+  tradeList.replaceChildren(fragment);
 
   requestTradeListViewportSync();
 }
@@ -7714,14 +7722,15 @@ function renderPlaybookOverview(playbook, activity, process) {
 function renderPlaybookSummarySection() {
   if (!playbookSummaryContainer) return;
   const hintNode = aiHint && playbookSummaryContainer.contains(aiHint) ? aiHint : null;
-  playbookSummaryContainer.innerHTML = '';
+  const fragment = document.createDocumentFragment();
 
   if (!aiMode) {
     const disabled = document.createElement('p');
     disabled.className = 'playbook-empty';
     disabled.textContent = translate('playbook.disabled', 'Enable AI mode to view the playbook overview.');
-    playbookSummaryContainer.append(disabled);
-    if (hintNode) playbookSummaryContainer.append(hintNode);
+    fragment.append(disabled);
+    if (hintNode) fragment.append(hintNode);
+    playbookSummaryContainer.replaceChildren(fragment);
     return;
   }
 
@@ -7729,25 +7738,28 @@ function renderPlaybookSummarySection() {
     const empty = document.createElement('p');
     empty.className = 'playbook-empty';
     empty.textContent = translate('playbook.empty', 'No playbook has been applied yet.');
-    playbookSummaryContainer.append(empty);
-    if (hintNode) playbookSummaryContainer.append(hintNode);
+    fragment.append(empty);
+    if (hintNode) fragment.append(hintNode);
+    playbookSummaryContainer.replaceChildren(fragment);
     return;
   }
   const summaryContent = createPlaybookSummaryContent(lastPlaybookState, { hint: hintNode });
   if (summaryContent) {
-    playbookSummaryContainer.append(summaryContent);
+    fragment.append(summaryContent);
   }
+  playbookSummaryContainer.replaceChildren(fragment);
 }
 
 function renderPlaybookRequestList() {
   if (!playbookRequestList) return;
-  playbookRequestList.innerHTML = '';
+  const fragment = document.createDocumentFragment();
 
   if (!aiMode) {
     const disabled = document.createElement('p');
     disabled.className = 'playbook-request-empty';
     disabled.textContent = translate('playbook.disabled', 'Enable AI mode to view the playbook overview.');
-    playbookRequestList.append(disabled);
+    fragment.append(disabled);
+    playbookRequestList.replaceChildren(fragment);
     return;
   }
 
@@ -7756,16 +7768,18 @@ function renderPlaybookRequestList() {
     const empty = document.createElement('p');
     empty.className = 'playbook-request-empty';
     empty.textContent = translate('playbook.process.empty', 'No refresh activity recorded yet.');
-    playbookRequestList.append(empty);
+    fragment.append(empty);
+    playbookRequestList.replaceChildren(fragment);
     return;
   }
 
   entries.forEach((entry) => {
     const card = buildPlaybookRequestCard(entry);
     if (card) {
-      playbookRequestList.append(card);
+      fragment.append(card);
     }
   });
+  playbookRequestList.replaceChildren(fragment);
 }
 
 function buildPlaybookRequestCard(entry) {
@@ -8736,12 +8750,13 @@ function buildAiRequestDetailContent(item) {
 
 function renderAiRequests(requests) {
   if (!aiRequestList) return;
-  aiRequestList.innerHTML = '';
+  const fragment = document.createDocumentFragment();
   if (!aiMode) {
     const disabled = document.createElement('div');
     disabled.className = 'ai-request-empty';
     disabled.textContent = translate('ai.feed.disabled', 'Enable AI mode to view the activity feed.');
-    aiRequestList.append(disabled);
+    fragment.append(disabled);
+    aiRequestList.replaceChildren(fragment);
     return;
   }
   const items = Array.isArray(requests) ? requests.slice(0, 30) : [];
@@ -8752,7 +8767,8 @@ function renderAiRequests(requests) {
       'ai.requests.empty',
       'AI decisions will appear here once the bot consults the strategy copilot.'
     );
-    aiRequestList.append(empty);
+    fragment.append(empty);
+    aiRequestList.replaceChildren(fragment);
     return;
   }
   items.forEach((rawItem) => {
@@ -8867,8 +8883,9 @@ function renderAiRequests(requests) {
 
     card.addEventListener('click', () => openAiRequestModal(item, card));
 
-    aiRequestList.append(card);
+    fragment.append(card);
   });
+  aiRequestList.replaceChildren(fragment);
 }
 
 function openAiRequestModal(request, returnTarget) {
@@ -10137,7 +10154,7 @@ async function handlePostToX(event) {
 
 function renderTradeSummary(stats) {
   lastTradeStats = stats || null;
-  tradeSummary.innerHTML = '';
+  const fragment = document.createDocumentFragment();
   if (!stats) {
     const placeholder = document.createElement('div');
     placeholder.className = 'trade-metric muted';
@@ -10145,7 +10162,8 @@ function renderTradeSummary(stats) {
       <span class="metric-label">${translate('trades.summary.placeholder.label', 'Performance')}</span>
       <span class="metric-value">${translate('trades.summary.placeholder.value', 'No data yet')}</span>
     `;
-    tradeSummary.append(placeholder);
+    fragment.append(placeholder);
+    tradeSummary.replaceChildren(fragment);
     setAiHintMessage(
       translate('trades.summary.hint', 'AI insight will appear once new telemetry is available.')
     );
@@ -10181,8 +10199,9 @@ function renderTradeSummary(stats) {
       <span class="metric-label">${metric.label}</span>
       <span class="metric-value">${metric.value}</span>
     `;
-    tradeSummary.append(el);
+    fragment.append(el);
   }
+  tradeSummary.replaceChildren(fragment);
   setAiHintMessage(stats.ai_hint);
 }
 
@@ -10240,7 +10259,7 @@ function renderDecisionStats(stats) {
     skippedMetric.textContent = rejectedTotal.toString();
   }
 
-  decisionReasons.innerHTML = '';
+  const fragment = document.createDocumentFragment();
 
   const items = Object.entries(rejectedCounts)
     .map(([reason, count]) => ({
@@ -10256,7 +10275,8 @@ function renderDecisionStats(stats) {
     li.textContent = taken > 0
       ? translate('status.decisions.noneSkipped', 'No skipped trades recorded.')
       : translate('status.decisions.noneYet', 'No trade decisions yet.');
-    decisionReasons.append(li);
+    fragment.append(li);
+    decisionReasons.replaceChildren(fragment);
     decisionReasonsExpanded = false;
     decisionReasonsAvailable = false;
     updateDecisionReasonsVisibility();
@@ -10283,9 +10303,10 @@ function renderDecisionStats(stats) {
     countEl.className = 'reason-count';
     countEl.textContent = item.count.toString();
     li.append(labelEl, countEl);
-    decisionReasons.append(li);
+    fragment.append(li);
   }
 
+  decisionReasons.replaceChildren(fragment);
   decisionReasonsAvailable = true;
   updateDecisionReasonsVisibility();
 }
