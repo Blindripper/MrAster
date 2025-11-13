@@ -307,8 +307,8 @@ const TRANSLATIONS = {
     'trades.modal.noMetadata': 'Дополнительные данные отсутствуют.',
     'pnl.title': 'Обзор эффективности',
     'pnl.subtitle': 'Совокупный реализованный PNL по вашим сделкам.',
-    'pnl.confidenceLabel': 'Уверенность альфа-модели',
-    'pnl.confidenceAria': 'Прогресс уверенности альфа-модели',
+    'pnl.confidenceLabel': 'Уверенность модели',
+    'pnl.confidenceAria': 'Прогресс уверенности модели',
     'pnl.empty': 'Данных PNL пока нет. Выполните сделки, чтобы заполнить график.',
     'pnl.expandAria': 'Открыть расширенный график эффективности',
     'ai.feed.label': 'Автопоток',
@@ -584,8 +584,8 @@ const TRANSLATIONS = {
     'trades.modal.noMetadata': 'Keine zusätzlichen Daten vorhanden.',
     'pnl.title': 'Performance-Überblick',
     'pnl.subtitle': 'Kumulierte realisierte PNL aus deinen Trades.',
-    'pnl.confidenceLabel': 'Alpha-Vertrauen',
-    'pnl.confidenceAria': 'Fortschritt des Alpha-Vertrauens',
+    'pnl.confidenceLabel': 'Modellvertrauen',
+    'pnl.confidenceAria': 'Fortschritt des Modellvertrauens',
     'pnl.empty': 'Noch keine PNL-Daten. Führe Trades aus, um das Diagramm zu füllen.',
     'pnl.expandAria': 'Erweiterten Performance-Chart öffnen',
     'ai.feed.label': 'Autopilot',
@@ -864,8 +864,8 @@ const TRANSLATIONS = {
     'trades.modal.noMetadata': '추가 메타데이터가 없습니다.',
     'pnl.title': '성과 개요',
     'pnl.subtitle': '거래 기반 누적 실현 PNL입니다.',
-    'pnl.confidenceLabel': '알파 신뢰도',
-    'pnl.confidenceAria': '알파 신뢰도 진행률',
+    'pnl.confidenceLabel': '모델 신뢰도',
+    'pnl.confidenceAria': '모델 신뢰도 진행률',
     'pnl.empty': '아직 PNL 데이터가 없습니다. 거래를 실행하면 차트가 채워집니다.',
     'pnl.expandAria': '성과 차트 확장 보기 열기',
     'ai.feed.label': '오토파일럿',
@@ -1144,8 +1144,8 @@ const TRANSLATIONS = {
     'trades.modal.noMetadata': 'Aucune donnée supplémentaire.',
     'pnl.title': 'Vue d’ensemble des performances',
     'pnl.subtitle': 'PNL réalisé cumulé sur vos trades.',
-    'pnl.confidenceLabel': 'Confiance de l’alpha',
-    'pnl.confidenceAria': 'Progression de la confiance de l’alpha',
+    'pnl.confidenceLabel': 'Confiance du modèle',
+    'pnl.confidenceAria': 'Progression de la confiance du modèle',
     'pnl.empty': 'Pas encore de données de PNL. Exécutez des trades pour alimenter le graphique.',
     'pnl.expandAria': 'Ouvrir le graphique de performance étendu',
     'ai.feed.label': 'Autopilote',
@@ -1424,8 +1424,8 @@ const TRANSLATIONS = {
     'trades.modal.noMetadata': 'No hay datos adicionales.',
     'pnl.title': 'Resumen de rendimiento',
     'pnl.subtitle': 'PNL realizado acumulado de tus operaciones.',
-    'pnl.confidenceLabel': 'Confianza del alpha',
-    'pnl.confidenceAria': 'Progreso de la confianza del alpha',
+    'pnl.confidenceLabel': 'Confianza del modelo',
+    'pnl.confidenceAria': 'Progreso de la confianza del modelo',
     'pnl.empty': 'Sin datos de PNL por ahora. Ejecuta operaciones para poblar el gráfico.',
     'pnl.expandAria': 'Abrir gráfico de rendimiento ampliado',
     'ai.feed.label': 'Autopiloto',
@@ -1703,8 +1703,8 @@ const TRANSLATIONS = {
     'trades.modal.noMetadata': 'Ek veri yok.',
     'pnl.title': 'Performans özeti',
     'pnl.subtitle': 'İşlemlerinizin kümülatif gerçekleşen PNL’i.',
-    'pnl.confidenceLabel': 'Alpha güveni',
-    'pnl.confidenceAria': 'Alpha güveni ilerlemesi',
+    'pnl.confidenceLabel': 'Model güveni',
+    'pnl.confidenceAria': 'Model güveni ilerlemesi',
     'pnl.empty': 'Henüz PNL verisi yok. Grafiği doldurmak için işlem yapın.',
     'pnl.expandAria': 'Genişletilmiş performans grafiğini aç',
     'ai.feed.label': 'Otopilot',
@@ -1976,8 +1976,8 @@ const TRANSLATIONS = {
     'trades.modal.noMetadata': '没有更多补充数据。',
     'pnl.title': '绩效概览',
     'pnl.subtitle': '基于您的交易计算的累计已实现盈亏。',
-    'pnl.confidenceLabel': 'Alpha 置信度',
-    'pnl.confidenceAria': 'Alpha 置信度进度',
+    'pnl.confidenceLabel': '模型置信度',
+    'pnl.confidenceAria': '模型置信度进度',
     'pnl.empty': '尚无盈亏数据。完成交易后即可生成图表。',
     'pnl.expandAria': '打开绩效图表的扩展视图',
     'ai.feed.label': '自动播报',
@@ -9592,7 +9592,7 @@ function renderHeroMetrics(cumulativeStats, sessionStats) {
         alphaConfidenceBar.setAttribute('aria-valuetext', `${percent} / 100`);
         alphaConfidenceBar.setAttribute(
           'aria-label',
-          translate('pnl.confidenceAria', 'Alpha confidence progress'),
+          translate('pnl.confidenceAria', 'Model confidence progress'),
         );
       }
       alphaConfidenceContainer.removeAttribute('hidden');
@@ -9608,7 +9608,7 @@ function renderHeroMetrics(cumulativeStats, sessionStats) {
         alphaConfidenceBar.setAttribute('aria-valuetext', '0 / 100');
         alphaConfidenceBar.setAttribute(
           'aria-label',
-          translate('pnl.confidenceAria', 'Alpha confidence progress'),
+          translate('pnl.confidenceAria', 'Model confidence progress'),
         );
       }
       alphaConfidenceContainer.setAttribute('hidden', '');
@@ -11234,7 +11234,7 @@ function summariseDataRecord(record) {
     scalarMap.delete('alpha_prob');
   }
   if (Number.isFinite(Number(record.alpha_conf))) {
-    confidenceParts.push(`alpha confidence ${formatNumber(record.alpha_conf)}`);
+    confidenceParts.push(`model confidence ${formatNumber(record.alpha_conf)}`);
     scalarMap.delete('alpha_conf');
   }
   if (confidenceParts.length > 0) {
