@@ -184,6 +184,7 @@ const DEFAULT_LANGUAGE = 'en';
 const SUPPORTED_LANGUAGES = ['en', 'ru', 'zh', 'ko', 'de', 'fr', 'es', 'tr'];
 const COMPACT_SKIP_AGGREGATION_WINDOW = 600; // seconds
 const MAX_MANAGEMENT_EVENTS = 50;
+const activePositionManagementCache = new Map();
 
 const PLAYBOOK_CARD_TIMESTAMP_KEYS = {
   summary: ['requested_ts', 'requested', 'refreshed_ts', 'refreshed', 'applied_ts', 'applied'],
@@ -5262,6 +5263,48 @@ function normaliseManagementEvents(position) {
   return normalized;
 }
 
+function cacheLatestManagementEvent(position, event) {
+  if (!position || typeof position !== 'object' || !event) {
+    return;
+  }
+  const symbolKey = getNormalizedActivePositionSymbol(position);
+  if (!symbolKey) {
+    return;
+  }
+  activePositionManagementCache.set(symbolKey, {
+    action: event.action,
+    rawAction: event.rawAction,
+    ts: event.ts,
+    data: event.data,
+  });
+}
+
+function recallCachedManagementEvent(position) {
+  const symbolKey = getNormalizedActivePositionSymbol(position);
+  if (!symbolKey) {
+    return null;
+  }
+  return activePositionManagementCache.get(symbolKey) || null;
+}
+
+function clearCachedManagementEvent(position) {
+  const symbolKey = getNormalizedActivePositionSymbol(position);
+  if (!symbolKey) {
+    return;
+  }
+  activePositionManagementCache.delete(symbolKey);
+}
+
+function resolveLatestManagementEvent(position) {
+  const events = normaliseManagementEvents(position);
+  if (events.length) {
+    const latest = events[0];
+    cacheLatestManagementEvent(position, latest);
+    return latest;
+  }
+  return recallCachedManagementEvent(position);
+}
+
 function formatManagementRelativeTime(ts) {
   if (!Number.isFinite(ts)) return null;
   const now = Date.now() / 1000;
@@ -5285,10 +5328,9 @@ function formatManagementRelativeTime(ts) {
 }
 
 function buildPositionManagementSummary(position, options = {}) {
-  const events = normaliseManagementEvents(position);
-  if (!events.length) return null;
+  const latest = resolveLatestManagementEvent(position);
+  if (!latest) return null;
 
-  const latest = events[0];
   const container = document.createElement('div');
   container.className = 'active-position-management';
   container.dataset.action = latest.action || '';
@@ -5667,6 +5709,8 @@ function updateActivePositionsView(options = {}) {
 
     rowsFragment.append(row);
   });
+
+  closedPositions.forEach((position) => clearCachedManagementEvent(position));
 
   const closedNotifications = Array.isArray(closedPositions)
     ? closedPositions
