@@ -6480,7 +6480,7 @@ class RiskManager:
             processed.append((cap_numeric, lev))
         if not processed:
             return None
-        processed.sort(key=lambda item: (item[0], -item[1]))
+        processed.sort(key=lambda item: (-item[0], item[1]))
         chosen: Optional[float] = None
         for cap_val, lev in processed:
             if cap_val >= target:
