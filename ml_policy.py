@@ -206,13 +206,19 @@ class AlphaModel:
     def learn(self, ctx: Dict[str, float], reward: float) -> None:
         if ctx is None:
             return
-        if reward > self.reward_margin:
+        margin = self.reward_margin
+        weight = min(1.0, max(0.1, abs(reward)))
+        if reward > margin:
             target = 1.0
-        elif reward < -self.reward_margin:
+        elif reward < -margin:
             target = 0.0
+        elif margin > 0.0:
+            norm = reward / margin
+            target = 0.5 + 0.5 * norm
+            target = float(np.clip(target, 0.05, 0.95))
+            weight = max(0.05, abs(norm))
         else:
             return
-        weight = min(1.0, max(0.1, abs(reward)))
         x_raw = self._vec(ctx)
         x_norm = self._norm(x_raw, update=True)
         x = np.append(x_norm, 1.0)
@@ -365,12 +371,14 @@ class BanditPolicy:
         event_risk = float(ctx.get("sentinel_event_risk", 0.0) or 0.0)
         hype_score = float(ctx.get("sentinel_hype", 0.0) or 0.0)
         risk_penalty = 0.0
+        event_penalty = 0.0
         if event_risk > 0.35:
-            risk_penalty += (event_risk - 0.35) * 0.9
+            event_penalty += (event_risk - 0.35) * 0.9
             if event_risk > 0.60:
-                risk_penalty += 0.03
+                event_penalty += 0.03
         if hype_score > 0.90:
-            risk_penalty += (hype_score - 0.90) * 0.4
+            event_penalty += (hype_score - 0.90) * 0.4
+        risk_penalty += event_penalty
         try:
             playbook_risk_bias = float(ctx.get("playbook_risk_bias", 1.0) or 1.0)
         except (TypeError, ValueError):
@@ -433,9 +441,10 @@ class BanditPolicy:
                 extras["size_bucket"] = size_bucket
                 # kein direkter Eingriff in LinUCB; Bucket-Anpassung reicht
 
-        if decision == "TAKE" and self.enable_size and (event_risk > 0.50 or risk_penalty >= 0.25):
+        hazard_penalty = event_penalty
+        if decision == "TAKE" and self.enable_size and (event_risk > 0.55 or hazard_penalty >= 0.25):
             demote_steps = 1
-            if event_risk > 0.70 or risk_penalty >= 0.40:
+            if event_risk > 0.75 or hazard_penalty >= 0.40:
                 demote_steps = 2
             size_bucket = self._demote_bucket(size_bucket, demote_steps)
             extras["size_bucket"] = size_bucket
