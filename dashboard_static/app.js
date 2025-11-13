@@ -2168,6 +2168,7 @@ let aiChatHistory = [];
 let aiChatPending = false;
 let aiAnalyzePending = false;
 let activePositions = [];
+let latestActivePositionNotifications = [];
 let tradesRefreshTimer = null;
 let tradeViewportSyncHandle = null;
 let lastDecisionStats = null;
@@ -5430,8 +5431,11 @@ function updateActivePositionsView() {
   if (!hasRows) {
     activePositionsRows.replaceChildren();
     if (activePositionsNotifications) {
-      activePositionsNotifications.replaceChildren();
-      activePositionsNotifications.setAttribute('hidden', '');
+      if (activePositionsNotifications.childElementCount > 0) {
+        activePositionsNotifications.removeAttribute('hidden');
+      } else {
+        activePositionsNotifications.setAttribute('hidden', '');
+      }
     }
     return;
   }
@@ -5608,8 +5612,18 @@ function updateActivePositionsView() {
   if (activePositionsNotifications) {
     if (notifications.length) {
       const notificationFragment = document.createDocumentFragment();
+      const notificationSnapshots = [];
       notifications.forEach((notification) => {
         notificationFragment.append(notification);
+        notificationSnapshots.push(notification.cloneNode(true));
+      });
+      latestActivePositionNotifications = notificationSnapshots;
+      activePositionsNotifications.replaceChildren(notificationFragment);
+      activePositionsNotifications.removeAttribute('hidden');
+    } else if (latestActivePositionNotifications.length) {
+      const notificationFragment = document.createDocumentFragment();
+      latestActivePositionNotifications.forEach((notification) => {
+        notificationFragment.append(notification.cloneNode(true));
       });
       activePositionsNotifications.replaceChildren(notificationFragment);
       activePositionsNotifications.removeAttribute('hidden');
