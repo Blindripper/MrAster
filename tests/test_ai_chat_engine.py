@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from dashboard_server import AIChatEngine, CONFIG, _safe_float
+from dashboard_server import AIChatEngine, CONFIG, ENV_DEFAULTS, _safe_float
 
 
 @pytest.fixture
@@ -97,7 +97,8 @@ def test_normalize_trade_proposal_falls_back_to_default_notional(engine: AIChatE
     }
     normalized = engine._normalize_trade_proposal(payload)
     assert normalized is not None
-    assert normalized["notional"] == pytest.approx(0.0)
+    default_notional = float(ENV_DEFAULTS.get("ASTER_DEFAULT_NOTIONAL", "0") or 0.0)
+    assert normalized["notional"] == pytest.approx(default_notional)
 
 
 def test_structured_trade_proposals_handle_plain_text_blocks(engine: AIChatEngine) -> None:
@@ -135,7 +136,8 @@ def test_structured_trade_proposals_handle_plain_text_blocks(engine: AIChatEngin
     assert eth["entry_price"] == pytest.approx(3860.0)
     assert eth["stop_loss"] == pytest.approx(3800.0)
     assert eth["take_profit"] == pytest.approx(4050.0)
-    assert eth["notional"] == pytest.approx(0.0)
+    default_notional = float(ENV_DEFAULTS.get("ASTER_DEFAULT_NOTIONAL", "0") or 0.0)
+    assert eth["notional"] == pytest.approx(default_notional)
 
     sol = by_symbol["SOLUSDT"]
     assert sol["direction"] == "SHORT"
@@ -143,7 +145,8 @@ def test_structured_trade_proposals_handle_plain_text_blocks(engine: AIChatEngin
     assert sol["entry_price"] == pytest.approx(184.5)
     assert sol["stop_loss"] == pytest.approx(188.0)
     assert sol["take_profit"] == pytest.approx(175.0)
-    assert sol["notional"] == pytest.approx(0.0)
+    default_notional = float(ENV_DEFAULTS.get("ASTER_DEFAULT_NOTIONAL", "0") or 0.0)
+    assert sol["notional"] == pytest.approx(default_notional)
 
 
 def test_place_trade_proposal_rescales_thousand_style_prices(
