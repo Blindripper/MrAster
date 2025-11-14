@@ -602,12 +602,68 @@ MIN_EDGE_R = float(os.getenv("ASTER_MIN_EDGE_R", "0.22"))
 
 BANDIT_FLAG = os.getenv("ASTER_BANDIT_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 BANDIT_ENABLED = BANDIT_FLAG and not AI_MODE_ENABLED
-SIZE_MULT_BASE = float(os.getenv("ASTER_SIZE_MULT", "1.00"))
-SIZE_MULT_S = float(os.getenv("ASTER_SIZE_MULT_S", str(SIZE_MULT_BASE)))
-SIZE_MULT_M = float(os.getenv("ASTER_SIZE_MULT_M", str(1.4 * SIZE_MULT_BASE)))
-SIZE_MULT_L = float(os.getenv("ASTER_SIZE_MULT_L", str(1.9 * SIZE_MULT_BASE)))
+_min_notional_env_raw = os.getenv("ASTER_MIN_NOTIONAL_USDT", "5")
+try:
+    MIN_NOTIONAL_ENV = float(_min_notional_env_raw)
+except (TypeError, ValueError):
+    MIN_NOTIONAL_ENV = 5.0
+MIN_NOTIONAL_ENV = max(0.0, MIN_NOTIONAL_ENV)
+
+_policy_floor_seed = _active_sizing_defaults.get("notional_min", _PRESET_SIZING_FALLBACK["notional_min"])
+try:
+    _policy_floor_seed = float(_policy_floor_seed)
+except (TypeError, ValueError):
+    _policy_floor_seed = float(_PRESET_SIZING_FALLBACK["notional_min"])
+_policy_floor_seed = max(float(MIN_NOTIONAL_ENV), 1.0, _policy_floor_seed)
+
+_policy_default_seed = _active_sizing_defaults.get(
+    "default_notional",
+    _PRESET_SIZING_FALLBACK["default_notional"],
+)
+try:
+    _policy_default_seed = float(_policy_default_seed)
+except (TypeError, ValueError):
+    _policy_default_seed = float(_PRESET_SIZING_FALLBACK["default_notional"])
+if _policy_default_seed <= 0 or not math.isfinite(_policy_default_seed):
+    _policy_default_seed = max(_policy_floor_seed, float(_PRESET_SIZING_FALLBACK["default_notional"]))
+
+_bucket_base = _policy_floor_seed / max(_policy_default_seed, 1e-9)
+if not math.isfinite(_bucket_base) or _bucket_base <= 0:
+    _bucket_base = 1.0
+_bucket_seed_s = _bucket_base
+_bucket_seed_m = _bucket_seed_s * 3.0
+_bucket_seed_l = _bucket_seed_s * 10.0
+
+SIZE_MULT_BASE = _env_float("ASTER_SIZE_MULT", 1.0, allow_zero=False)
+
+def _policy_multiplier_env(key: str, fallback: float) -> float:
+    value = _env_float(key, fallback, allow_zero=False)
+    if value <= 0 or not math.isfinite(value):
+        return fallback
+    return value
+
+SIZE_MULT_S = _policy_multiplier_env(
+    "ASTER_SIZE_MULT_S",
+    _bucket_seed_s * SIZE_MULT_BASE,
+)
+SIZE_MULT_S = max(SIZE_MULT_S, _bucket_seed_s * SIZE_MULT_BASE)
+
+SIZE_MULT_M = _policy_multiplier_env(
+    "ASTER_SIZE_MULT_M",
+    _bucket_seed_m * SIZE_MULT_BASE,
+)
+SIZE_MULT_M = max(SIZE_MULT_M, SIZE_MULT_S * 3.0)
+
+SIZE_MULT_L = _policy_multiplier_env(
+    "ASTER_SIZE_MULT_L",
+    _bucket_seed_l * SIZE_MULT_BASE,
+)
+SIZE_MULT_L = max(SIZE_MULT_L, SIZE_MULT_S * 10.0)
+
 SIZE_MULT_FLOOR = max(0.0, min(5.0, float(os.getenv("ASTER_SIZE_MULT_FLOOR", "0.0"))))
-SIZE_MULT_CAP = max(0.1, float(os.getenv("ASTER_SIZE_MULT_CAP", "3.0")))
+_default_mult_cap = max(3.0, SIZE_MULT_L)
+SIZE_MULT_CAP = _policy_multiplier_env("ASTER_SIZE_MULT_CAP", _default_mult_cap)
+SIZE_MULT_CAP = max(SIZE_MULT_CAP, SIZE_MULT_L)
 
 _confidence_min_default = float(
     _active_sizing_defaults.get("confidence_min", _PRESET_SIZING_FALLBACK["confidence_min"])
@@ -689,7 +745,6 @@ try:
 except (TypeError, ValueError):
     EQUITY_FRACTION = 0.66
 EQUITY_FRACTION = max(0.05, min(1.0, EQUITY_FRACTION))
-MIN_NOTIONAL_ENV = float(os.getenv("ASTER_MIN_NOTIONAL_USDT", "5"))
 MAX_NOTIONAL_USDT = float(os.getenv("ASTER_MAX_NOTIONAL_USDT", "0"))  # 0 = kein Cap
 
 SL_ATR_MULT = float(os.getenv("ASTER_SL_ATR_MULT", "1.50"))

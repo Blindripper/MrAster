@@ -326,7 +326,7 @@ class BanditPolicy:
         self.gate = LinUCB(alpha=gate_alpha, l2=l2, d=d)
         self.size = LinUCB(alpha=size_alpha, l2=l2, d=d)
         self.enable_size = bool(enable_size)
-        self.size_multipliers = dict(size_multipliers or {"S":1.0,"M":1.4,"L":1.9})
+        self.size_multipliers = self._normalize_multipliers(size_multipliers)
         self.warmup_trades = int(warmup_trades)
 
         self.feature_names = tuple(FEATURES)
@@ -363,6 +363,25 @@ class BanditPolicy:
         # Puffer falls Bot Einhänge nicht jedes Mal übergibt
         self._last_ctx: Optional[Dict[str, float]] = None
         self._last_size_bucket: Optional[str] = None
+
+    @staticmethod
+    def _normalize_multipliers(raw: Optional[Dict[str, float]]) -> Dict[str, float]:
+        base = {"S": 1.0, "M": 3.0, "L": 10.0}
+        result: Dict[str, float] = {}
+        if isinstance(raw, dict):
+            for key, value in raw.items():
+                try:
+                    result[str(key).upper()] = float(value)
+                except (TypeError, ValueError):
+                    continue
+        s_val = result.get("S", base["S"])
+        if not math.isfinite(s_val) or s_val <= 0:
+            s_val = base["S"]
+        m_val = result.get("M", base["M"])
+        l_val = result.get("L", base["L"])
+        m_val = max(m_val, s_val * 3.0)
+        l_val = max(l_val, s_val * 10.0)
+        return {"S": float(s_val), "M": float(m_val), "L": float(l_val)}
 
     # ---------- API ----------
     def decide(self, ctx: Dict[str, float]) -> Tuple[str, Dict[str, Any]]:
