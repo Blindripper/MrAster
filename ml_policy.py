@@ -353,6 +353,8 @@ class BanditPolicy:
         self.gate_margin: float = -0.02     # Margin-Anforderung auf UCB>0 (negativ = aggressiver)
         self.anti_stall_min: int = 60       # Mindestsekunden zwischen Trades (Anti-Stall aus)
         self.skip_push: float = -0.03       # Bonus auf SKIP (negativ = weniger konservativ)
+        self.eps_size: float = 0.12         # ε-greedy Chance auf größeren Bucket
+        self.size_tie_epsilon: float = 1e-3 # relative Toleranz für Bucket-Gleichstand
 
         # Laufzeit-Stats
         self.n_trades: int = 0
@@ -404,17 +406,38 @@ class BanditPolicy:
         else:
             decision = "TAKE" if (take_ucb - self.gate_margin) > 0.0 else "SKIP"
 
-        # Größe: UCB-Argmax über Buckets
+        # Größe: UCB-Argmax über Buckets (mit leichter Exploration)
         if not self.enable_size:
             size_bucket = "S"
+            extras: Dict[str, Any] = {"size_bucket": size_bucket}
         else:
             scores = {}
-            for b in ("S","M","L"):
+            for b in ("S", "M", "L"):
                 # simple trick: unterschiedliche „Arme“ simulieren mit skaliertem Feature
                 xb = x * self.size_multipliers[b]
                 scores[b] = self.size.predict_ucb(xb)
-            size_bucket = max(scores.items(), key=lambda kv: kv[1])[0]
-        extras: Dict[str, Any] = {"size_bucket": size_bucket}
+
+            size_choice_reason = "ucb"
+            if random.random() < self.eps_size:
+                size_bucket = random.choices(("S", "M", "L"), weights=(0.25, 0.35, 0.40))[0]
+                size_choice_reason = "explore"
+            else:
+                max_score = max(scores.values())
+                tol = max(1e-9, abs(max_score) * self.size_tie_epsilon)
+                top_buckets = [b for b, score in scores.items() if (max_score - score) <= tol]
+                if len(top_buckets) == 1:
+                    size_bucket = top_buckets[0]
+                else:
+                    size_bucket = "S"
+                    for preferred in ("L", "M", "S"):
+                        if preferred in top_buckets:
+                            size_bucket = preferred
+                            size_choice_reason = "tie_bias"
+                            break
+            extras = {"size_bucket": size_bucket}
+            if size_choice_reason != "ucb":
+                extras["size_choice_reason"] = size_choice_reason
+                extras["size_scores"] = scores
         extras["playbook_risk_bias"] = playbook_risk_bias
         if risk_penalty > 0.0:
             extras["risk_penalty"] = risk_penalty
