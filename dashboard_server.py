@@ -114,6 +114,7 @@ ENV_DEFAULTS: Dict[str, str] = {
     "ASTER_HISTORY_MAX": "250",
     "ASTER_BOT_SCRIPT": "aster_multi_bot.py",
     "ASTER_OPENAI_API_KEY": "",
+    "ASTER_AI_MODE": "false",
     "ASTER_AI_MODEL": "gpt-4.1",
     "ASTER_AI_DAILY_BUDGET_USD": "20",
     "ASTER_AI_STRICT_BUDGET": "true",
@@ -157,6 +158,13 @@ ALLOWED_ENV_KEYS = set(ENV_DEFAULTS.keys())
 
 
 REALIZED_PNL_MATCH_PADDING_SECONDS = 180.0
+
+
+def _is_truthy(value: Optional[str]) -> bool:
+    if value is None:
+        return False
+    token = str(value).strip().lower()
+    return token in {"1", "true", "yes", "on"}
 
 
 CG_ID: Dict[str, str] = {
@@ -2481,6 +2489,21 @@ def _load_config() -> Dict[str, Any]:
         env_cfg = {}
 
     merged = {k: os.getenv(k, env_cfg.get(k, v)) for k, v in ENV_DEFAULTS.items()}
+
+    if os.getenv("ASTER_RISK_PER_TRADE") is None:
+        stored_risk = env_cfg.get("ASTER_RISK_PER_TRADE")
+        default_risk = ENV_DEFAULTS.get("ASTER_RISK_PER_TRADE")
+        looks_default = stored_risk is None or str(stored_risk).strip() == str(default_risk)
+        if looks_default:
+            preset = (merged.get("ASTER_PRESET_MODE") or "").strip().lower()
+            mode = (merged.get("ASTER_MODE") or "").strip().lower()
+            ai_flag = os.getenv("ASTER_AI_MODE")
+            if ai_flag is None:
+                ai_flag = merged.get("ASTER_AI_MODE")
+            ai_enabled = mode == "ai" or _is_truthy(ai_flag)
+            if ai_enabled and preset in {"high", "att"}:
+                merged["ASTER_RISK_PER_TRADE"] = "0.10"
+
     config = {"env": merged}
     CONFIG_FILE.write_text(json.dumps(config, indent=2, sort_keys=True))
     return config
