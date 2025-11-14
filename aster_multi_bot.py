@@ -6309,15 +6309,36 @@ class RiskManager:
             return float(self._equity)
         try:
             bal = self.exchange.signed("get", "/fapi/v2/balance", {})
-            eq = 0.0
-            for b in bal:
-                if b.get("asset") == QUOTE:
-                    eq = float(b.get("balance", 0.0) or 0.0)
-                    break
-            self._equity = eq; self._equity_ts = now
-            return float(eq)
         except Exception:
-            return 0.0
+            return float(self._equity or 0.0)
+
+        quote_token = str(QUOTE or "").upper()
+        best_equity = 0.0
+        equity_keys = (
+            "availableBalance",
+            "maxWithdrawAmount",
+            "crossWalletBalance",
+            "totalWalletBalance",
+            "totalMarginBalance",
+            "walletBalance",
+            "balance",
+            "equity",
+            "equityValue",
+        )
+        for entry in bal:
+            asset = str(entry.get("asset") or entry.get("symbol") or entry.get("currency") or "").upper()
+            if asset != quote_token:
+                continue
+            for key in equity_keys:
+                value = _coerce_positive_float(entry.get(key))
+                if value > 0 and value > best_equity:
+                    best_equity = value
+            if best_equity > 0:
+                break
+
+        self._equity = float(best_equity)
+        self._equity_ts = now
+        return float(best_equity)
 
     def attach_state(self, state: Optional[Dict[str, Any]]) -> None:
         self.state = state if isinstance(state, dict) else None
