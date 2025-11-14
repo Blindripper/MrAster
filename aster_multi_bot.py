@@ -6352,37 +6352,41 @@ class RiskManager:
         low_cut = 0.85
         high_cut = 1.35
 
-        low_floor = max(MIN_NOTIONAL_ENV, 1.0)
-        low_ceiling = 200.0
-        normal_floor = max(low_ceiling, 200.0)
-        normal_ceiling = max(self.default_notional, 1500.0)
-        high_floor = max(normal_ceiling, 1500.0)
+        try:
+            preset_min = float(self._preset_min_notional)
+        except Exception:
+            preset_min = _PRESET_SIZING_FALLBACK["notional_min"]
+        try:
+            preset_max = float(self._preset_max_notional)
+        except Exception:
+            preset_max = _PRESET_SIZING_FALLBACK["notional_max"]
 
-        def _blend(ratio: float, start: float, end: float) -> float:
-            ratio = max(0.0, min(1.0, ratio))
-            return start + ratio * (end - start)
+        tier_min = max(MIN_NOTIONAL_ENV, 1.0, preset_min)
+        tier_max: float
+        if not math.isfinite(preset_max) or preset_max <= 0:
+            tier_max = float("inf")
+        else:
+            tier_max = max(tier_min, preset_max)
+
+        base_seed = self.default_notional if self.default_notional > 0 else _default_notional_fallback
+        if base_seed <= 0 or not math.isfinite(base_seed):
+            base_seed = tier_min
+
+        base = base_seed * score
+        if not math.isfinite(base) or base <= 0:
+            base = tier_min
+
+        base = max(tier_min, base)
+        if math.isfinite(tier_max):
+            base = min(tier_max, base)
 
         if score <= low_cut:
-            span = max(low_cut - 0.35, 1e-9)
-            ratio = (score - 0.35) / span
-            base = _blend(ratio, low_floor, low_ceiling)
-            return "low", base, low_floor, low_ceiling
+            return "low", base, tier_min, tier_max
 
         if score < high_cut:
-            span = max(high_cut - low_cut, 1e-9)
-            ratio = (score - low_cut) / span
-            base = _blend(ratio, normal_floor, normal_ceiling)
-            return "normal", base, normal_floor, normal_ceiling
+            return "normal", base, tier_min, tier_max
 
-        span = max(2.5 - high_cut, 1e-9)
-        ratio = (score - high_cut) / span
-        equity = self._equity_cached()
-        if equity > 0:
-            high_ceiling = max(high_floor, equity * EQUITY_FRACTION)
-        else:
-            high_ceiling = high_floor * 2.0
-        base = _blend(ratio, high_floor, high_ceiling)
-        return "high", base, high_floor, float("inf")
+        return "high", base, tier_min, tier_max
 
     def _drawdown_factor(self) -> float:
         if not self.state:
