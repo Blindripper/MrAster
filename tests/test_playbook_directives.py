@@ -1,7 +1,3 @@
-import time
-
-import pytest
-
 import os
 import sys
 import time
@@ -92,6 +88,51 @@ def test_playbook_risk_bias_tracks_mode_bias_and_confidence():
     assert pytest.approx(ctx["playbook_confidence"], rel=0.01) == 0.2
 
 
+def test_high_preset_boosts_bias_and_confidence(monkeypatch):
+    monkeypatch.setenv("ASTER_PRESET_MODE", "high")
+    state = {}
+    mgr = PlaybookManager(state, request_fn=lambda kind, payload: None)
+    now = time.time()
+    payload = {
+        "mode": "baseline",
+        "bias": "neutral",
+        "size_bias": {"BUY": 1.0, "SELL": 1.0},
+        "sl_bias": 1.0,
+        "tp_bias": 1.0,
+        "features": {},
+        "confidence": 0.6,
+    }
+    active = mgr._normalize_playbook(payload, now)  # pylint: disable=protected-access
+    assert active["size_bias"]["BUY"] > 1.0
+    assert active["size_bias"]["SELL"] > 1.0
+    assert active["risk_bias"] > 1.0
+    assert pytest.approx(active["confidence"], rel=1e-6) == 0.65
+    mgr._state["active"] = active  # pylint: disable=protected-access
+    ctx = {"side": "BUY", "symbol": "ETHUSDT"}
+    mgr.inject_context(ctx)
+    assert ctx["playbook_size_bias_buy"] == pytest.approx(active["size_bias"]["BUY"], rel=0.01)
+    assert ctx["playbook_confidence"] == pytest.approx(active["confidence"], rel=0.01)
+
+
+def test_low_preset_tempers_bias_and_confidence(monkeypatch):
+    monkeypatch.setenv("ASTER_PRESET_MODE", "low")
+    state = {}
+    mgr = PlaybookManager(state, request_fn=lambda kind, payload: None)
+    now = time.time()
+    payload = {
+        "mode": "baseline",
+        "bias": "neutral",
+        "size_bias": {"BUY": 1.0, "SELL": 1.0},
+        "sl_bias": 1.0,
+        "tp_bias": 1.0,
+        "features": {},
+        "confidence": 0.6,
+    }
+    active = mgr._normalize_playbook(payload, now)  # pylint: disable=protected-access
+    assert active["size_bias"]["BUY"] < 1.0
+    assert active["size_bias"]["SELL"] < 1.0
+    assert active["risk_bias"] < 1.0
+    assert pytest.approx(active["confidence"], rel=1e-6) == 0.55
 def test_playbook_context_surfaces_structured_features_and_biases():
     mgr = _manager()
     now = time.time()
