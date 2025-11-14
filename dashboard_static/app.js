@@ -3150,6 +3150,7 @@ const PRESETS = {
     label: 'Low',
     summary:
       'Capital preservation first: slower signal intake, narrower exposure, 30% base risk per trade, a 4× base leverage cap, and a 33% equity utilisation guard.',
+    riskProfile: 'conservative',
     risk: 30,
     leverage: 4,
     edgeMinR: 0.08,
@@ -3192,6 +3193,7 @@ const PRESETS = {
     label: 'Mid',
     summary:
       'Balanced cadence with moderate risk, 50% base risk per trade, 10× base leverage, and a 66% equity utilisation ceiling geared toward steady account growth.',
+    riskProfile: 'balanced',
     risk: 50,
     leverage: 10,
     edgeMinR: 0.06,
@@ -3234,6 +3236,7 @@ const PRESETS = {
     label: 'High',
     summary:
       'High-frequency execution with wider risk budgets, 100% base risk per trade, leverage auto-set to the exchange maximum, an unlimited AI spend cap, and full (100%) equity deployment when signals align.',
+    riskProfile: 'aggressive',
     unlimitedBudget: true,
     risk: 100,
     leverage: 'max',
@@ -3277,6 +3280,7 @@ const PRESETS = {
     label: 'ATT',
     summary:
       'Against-the-trend fading: contrarian plays with tighter stops, disciplined sizing, exchange-max leverage, and no AI budget ceiling.',
+    riskProfile: 'aggressive',
     unlimitedBudget: true,
     risk: 0.75,
     leverage: 'max',
@@ -12146,6 +12150,7 @@ function buildQuickSetupPayload() {
     ASTER_PRESET_MODE: presetKey,
     ASTER_RISK_PER_TRADE: toFixedString(safeRisk / 100, 4),
     ASTER_LEVERAGE: unlimited ? 'max' : toFixedString(safeLeverage, 0),
+    ASTER_RISK_PROFILE: preset.riskProfile || 'balanced',
     ASTER_SL_ATR_MULT: toFixedString(preset.slAtr, 2),
     ASTER_TP_ATR_MULT: toFixedString(preset.tpAtr, 2),
     ASTER_TREND_BIAS: preset.trendBias || 'with',

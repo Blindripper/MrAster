@@ -155,16 +155,17 @@ Curious about the engines, guardrails, and configuration surface? Expand the sec
 | `ASTER_SPREAD_BPS_MAX` | `0.0030` | Maximum tolerated bid/ask spread (bps). |
 | `ASTER_WICKINESS_MAX` | `0.97` | Filter against overly volatile candles. |
 | `ASTER_MIN_EDGE_R` | `0.30` | Minimum edge (in R) required to approve a trade. |
-| `ASTER_DEFAULT_NOTIONAL` | `0` | Baseline notional for trades when no adaptive sizing data is available (0 lets the AI compute from scratch). |
-| `ASTER_SIZE_MULT_FLOOR` | `0` | Minimum position-size multiplier for autonomous trades (set to `1.0` to enforce the baseline notional before risk caps). |
+| `ASTER_DEFAULT_NOTIONAL` | `1000` | Baseline notional for trades when no adaptive sizing data is available (raised to 1000 USDT by the aggressive risk profile). |
+| `ASTER_SIZE_MULT_FLOOR` | `0.75` | Minimum position-size multiplier for autonomous trades (set higher to keep the AI close to the configured baseline stake). |
 | `ASTER_MAX_NOTIONAL_USDT` | `0` | Optional hard cap on order notional (set to `0` to let leverage and equity guards decide). |
-| `ASTER_SIZE_MULT_CAP` | `3.0` | Maximum position-size multiplier allowed after all adjustments. |
+| `ASTER_SIZE_MULT_CAP` | `5.0` | Maximum position-size multiplier allowed after all adjustments. |
 | `ASTER_CONFIDENCE_SIZING` | `true` | Enables confidence-weighted sizing. When `true`, AI confidence blends between the configured multiplier bounds. |
 | `ASTER_CONFIDENCE_SIZE_MIN` / `ASTER_CONFIDENCE_SIZE_MAX` | `1.0` / `3.0` | Lower and upper multiplier targets when confidence-based sizing is active (identical values lock the multiplier to a fixed × value). |
 | `ASTER_CONFIDENCE_SIZE_BLEND` / `ASTER_CONFIDENCE_SIZE_EXP` | `1` / `2.0` | Blend weight between baseline and confidence target, plus the exponent shaping the curve (values >1 favour high confidence). |
-| `ASTER_RISK_PER_TRADE` | `0.005`* (High/AI: `0.10`) | Share of equity per trade. |
-| `ASTER_EQUITY_FRACTION` | `0.66` | Maximum equity utilization across open positions (33% / 66% / 100% via Low / Mid / High & ATT presets). |
-| `ASTER_LEVERAGE` | `10` | Default leverage for orders. Dashboard presets apply 4× (Low), 10× (Mid), or the per-symbol exchange maximum (High / ATT). |
+| `ASTER_RISK_PER_TRADE` | `0.02`* | Share of equity per trade (floor enforced by the aggressive risk profile; balanced/conservative modes lower it). |
+| `ASTER_EQUITY_FRACTION` | `0.90` | Maximum equity utilization across open positions (tuned upward by the aggressive profile, with lower ceilings in other profiles). |
+| `ASTER_LEVERAGE` | `12` | Default leverage floor for orders. Dashboard presets apply 4× (Low), 10× (Mid), or the per-symbol exchange maximum (High / ATT). |
+| `ASTER_RISK_PROFILE` | `aggressive` | Bundled sizing preset (`conservative`, `balanced`, `aggressive`) that bumps leverage, equity usage, and multiplier floors in one toggle. |
 | `ASTER_MAX_OPEN_GLOBAL` | `0` | Global cap on concurrent positions (0 = unlimited, rely on equity guard). |
 | `ASTER_MAX_OPEN_PER_SYMBOL` | `1` | Per-symbol position limit (0 = unlimited, netting on exchange). |
 | `ASTER_SL_ATR_MULT` / `ASTER_TP_ATR_MULT` | `1.0` / `1.6` | ATR multiples for stop and take-profit. |
@@ -180,7 +181,7 @@ Curious about the engines, guardrails, and configuration surface? Expand the sec
 | `ASTER_NON_ARB_EDGE_THRESHOLD` | `0.00005` | Funding edge tolerated before the guard blocks a biased entry. |
 | `ASTER_NON_ARB_SKIP_GAP` | `0.0015` | Absolute mark/oracle gap that forces a skip regardless of direction. |
 
-*When launched from the dashboard, values seed to 51/49 RSI and a 0.006 risk share (High preset in AI mode seeds 0.10). CLI-only launches fall back to 52/48 and 0.005 until overridden or synced via `dashboard_config.json`.*
+*When launched from the dashboard, values seed to 51/49 RSI and inherit the selected risk profile (default `aggressive`, i.e. a 0.02 risk share — High preset in AI mode still escalates to 0.10). CLI-only launches fall back to 52/48 and the profile floor until overridden or synced via `dashboard_config.json`.*
 
 *High/ATT presets without a manual `ASTER_LEVERAGE` override now auto-select the lowest leverage rung that still covers the strategy's default notional when AI mode is active, preventing exchange-imposed notional caps from throttling position size.*
 

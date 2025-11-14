@@ -713,6 +713,24 @@ if PRESET_MODE in {"high", "att"} and AI_MODE_ENABLED:
     _DEFAULT_RISK_PER_TRADE = 0.10
 
 RISK_PER_TRADE = float(os.getenv("ASTER_RISK_PER_TRADE", str(_DEFAULT_RISK_PER_TRADE)))
+RISK_PROFILE = os.getenv("ASTER_RISK_PROFILE", "aggressive").strip().lower()
+
+def _set_leverage_floor(min_leverage: float) -> None:
+    global LEVERAGE, LEVERAGE_SOURCE, LEVERAGE_IS_UNLIMITED
+    if math.isfinite(LEVERAGE) and LEVERAGE < min_leverage:
+        LEVERAGE = float(min_leverage)
+        LEVERAGE_SOURCE = str(int(LEVERAGE)) if float(LEVERAGE).is_integer() else str(LEVERAGE)
+        LEVERAGE_IS_UNLIMITED = False
+
+
+def _set_leverage_cap(max_leverage: float) -> None:
+    global LEVERAGE, LEVERAGE_SOURCE, LEVERAGE_IS_UNLIMITED
+    if math.isfinite(LEVERAGE) and LEVERAGE > max_leverage:
+        LEVERAGE = float(max_leverage)
+        LEVERAGE_SOURCE = str(int(LEVERAGE)) if float(LEVERAGE).is_integer() else str(LEVERAGE)
+        LEVERAGE_IS_UNLIMITED = False
+
+
 PRESET_NOTIONAL_BOUNDS = {
     key: (
         float(values.get("notional_min", _PRESET_SIZING_FALLBACK["notional_min"])),
@@ -744,7 +762,56 @@ try:
     EQUITY_FRACTION = float(_equity_fraction_seed)
 except (TypeError, ValueError):
     EQUITY_FRACTION = 0.66
+if RISK_PROFILE == "aggressive":
+    if DEFAULT_NOTIONAL < 1000.0:
+        DEFAULT_NOTIONAL = 1000.0
+    if RISK_PER_TRADE < 0.02:
+        RISK_PER_TRADE = 0.02
+    if EQUITY_FRACTION < 0.9:
+        EQUITY_FRACTION = 0.9
+    _set_leverage_floor(12.0)
+    SIZE_MULT_FLOOR = max(SIZE_MULT_FLOOR, 0.75)
+    if SIZE_MULT_S < 0.75:
+        SIZE_MULT_S = 0.75
+    if SIZE_MULT_M < 1.8:
+        SIZE_MULT_M = 1.8
+    if SIZE_MULT_L < 3.0:
+        SIZE_MULT_L = 3.0
+    SIZE_MULT_CAP = max(SIZE_MULT_CAP, 5.0)
+elif RISK_PROFILE == "balanced":
+    if DEFAULT_NOTIONAL < 750.0:
+        DEFAULT_NOTIONAL = 750.0
+    if RISK_PER_TRADE < 0.0125:
+        RISK_PER_TRADE = 0.0125
+    if EQUITY_FRACTION < 0.75:
+        EQUITY_FRACTION = 0.75
+    _set_leverage_floor(8.0)
+    SIZE_MULT_FLOOR = max(SIZE_MULT_FLOOR, 0.5)
+    if SIZE_MULT_S < 0.5:
+        SIZE_MULT_S = 0.5
+    if SIZE_MULT_M < 1.2:
+        SIZE_MULT_M = 1.2
+    if SIZE_MULT_L < 2.2:
+        SIZE_MULT_L = 2.2
+    SIZE_MULT_CAP = max(SIZE_MULT_CAP, 3.5)
+elif RISK_PROFILE == "conservative":
+    if RISK_PER_TRADE > 0.0075:
+        RISK_PER_TRADE = 0.0075
+    if EQUITY_FRACTION > 0.55:
+        EQUITY_FRACTION = 0.55
+    _set_leverage_cap(6.0)
+    SIZE_MULT_FLOOR = min(SIZE_MULT_FLOOR, 0.4)
+    if SIZE_MULT_S > 0.6:
+        SIZE_MULT_S = 0.6
+    if SIZE_MULT_M > 1.0:
+        SIZE_MULT_M = 1.0
+    if SIZE_MULT_L > 1.6:
+        SIZE_MULT_L = 1.6
+    SIZE_MULT_CAP = min(SIZE_MULT_CAP, 2.8)
 EQUITY_FRACTION = max(0.05, min(1.0, EQUITY_FRACTION))
+SIZE_MULT_M = max(SIZE_MULT_M, SIZE_MULT_S)
+SIZE_MULT_L = max(SIZE_MULT_L, SIZE_MULT_M)
+SIZE_MULT_CAP = max(SIZE_MULT_CAP, SIZE_MULT_L)
 MAX_NOTIONAL_USDT = float(os.getenv("ASTER_MAX_NOTIONAL_USDT", "0"))  # 0 = kein Cap
 
 SL_ATR_MULT = float(os.getenv("ASTER_SL_ATR_MULT", "1.50"))
