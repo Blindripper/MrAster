@@ -36,6 +36,7 @@ from urllib.parse import urlencode
 from typing import Dict, List, Tuple, Optional, Any, Callable, Sequence, Set
 
 from collections import OrderedDict, deque
+from collections.abc import Mapping
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 
 import requests
@@ -6325,16 +6326,31 @@ class RiskManager:
             "equity",
             "equityValue",
         )
-        for entry in bal:
-            asset = str(entry.get("asset") or entry.get("symbol") or entry.get("currency") or "").upper()
-            if asset != quote_token:
-                continue
-            for key in equity_keys:
-                value = _coerce_positive_float(entry.get(key))
-                if value > 0 and value > best_equity:
-                    best_equity = value
-            if best_equity > 0:
-                break
+        try:
+            iterator = iter(bal)
+        except TypeError:
+            return float(self._equity or 0.0)
+
+        try:
+            for entry in iterator:
+                if not isinstance(entry, Mapping):
+                    continue
+                asset = str(
+                    entry.get("asset")
+                    or entry.get("symbol")
+                    or entry.get("currency")
+                    or ""
+                ).upper()
+                if asset != quote_token:
+                    continue
+                for key in equity_keys:
+                    value = _coerce_positive_float(entry.get(key))
+                    if value > 0 and value > best_equity:
+                        best_equity = value
+                if best_equity > 0:
+                    break
+        except Exception:
+            return float(self._equity or 0.0)
 
         self._equity = float(best_equity)
         self._equity_ts = now
