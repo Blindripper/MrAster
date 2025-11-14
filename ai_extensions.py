@@ -690,6 +690,33 @@ class PlaybookManager:
         "trend_strength": ("trend", "regime_slope", "playbook_feature_trend", "pm_trend_bias"),
     }
 
+    _AGGRESSIVE_PRESETS = {"high", "att"}
+    _STRUCTURED_SOFTEN_SLACK = {
+        "event_risk": 0.12,
+        "hype": 0.08,
+        "volatility": 0.1,
+        "breadth": 0.08,
+        "trend_strength": 0.08,
+    }
+    _STRUCTURED_STRICT_TERMS = (
+        "halt",
+        "suspend",
+        "freeze",
+        "blackout",
+        "do not trade",
+        "forbid",
+        "stop trading",
+        "no trading",
+    )
+
+    _SIZE_BIAS_DELTA = {"low": -0.08, "mid": 0.0, "high": 0.12, "att": 0.18}
+    _RISK_BIAS_DELTA = {"low": -0.08, "mid": 0.0, "high": 0.12, "att": 0.18}
+    _CONFIDENCE_DELTA = {"low": -0.05, "mid": 0.0, "high": 0.05, "att": 0.08}
+
+    _SELL_DELTA_RATIO = 0.65
+
+    _SOFT_BLOCK_FACTOR = 0.45
+
     STRUCTURED_EVENT_BLOCK_MIN = float(
         os.getenv("ASTER_STRUCTURED_EVENT_BLOCK_MIN", "0.4") or 0.0
     )
@@ -751,6 +778,13 @@ class PlaybookManager:
         self._bootstrap_retry = 90.0
         self._bootstrap_cooldown_until = 0.0
         self._event_cb = event_cb
+        preset = os.getenv("ASTER_PRESET_MODE", "mid").strip().lower() or "mid"
+        self._preset_mode = preset if preset in {"low", "mid", "high", "att"} else "mid"
+        self._aggressive_mode = self._preset_mode in self._AGGRESSIVE_PRESETS
+        self._size_bias_delta = self._SIZE_BIAS_DELTA.get(self._preset_mode, 0.0)
+        self._sell_bias_delta = self._size_bias_delta * self._SELL_DELTA_RATIO
+        self._risk_bias_delta = self._RISK_BIAS_DELTA.get(self._preset_mode, 0.0)
+        self._confidence_delta = self._CONFIDENCE_DELTA.get(self._preset_mode, 0.0)
 
     @staticmethod
     def _clean_string(value: Any) -> Optional[str]:
@@ -1438,6 +1472,9 @@ class PlaybookManager:
             "playbook_structured_tp_multiplier",
             "playbook_structured_hard_block",
             "playbook_structured_block_reason",
+            "playbook_structured_soft_block",
+            "playbook_structured_soft_factor",
+            "playbook_structured_soft_reason",
             "playbook_structured_notes",
         ]
         if not directives:
@@ -1453,6 +1490,9 @@ class PlaybookManager:
         hard_block = False
         block_reason: Optional[str] = None
         notes: List[str] = []
+        soft_block = False
+        soft_reasons: List[str] = []
+        soft_factor = 1.0
         side = str(ctx.get("side") or "").upper() or "ANY"
 
         for entry in directives:
@@ -1489,6 +1529,23 @@ class PlaybookManager:
                                     f"ignored block {note}: event_risk {current_event:.2f} < {self.STRUCTURED_EVENT_BLOCK_MIN:.2f}"
                                 )
                             continue
+                if self._aggressive_mode:
+                    softened, soften_reason = self._should_soften_hard_block(ctx, entry)
+                    if softened:
+                        soft_block = True
+                        soft_factor *= self._SOFT_BLOCK_FACTOR
+                        size_mult *= self._SOFT_BLOCK_FACTOR
+                        resolved_reason = soften_reason or note or entry.get("effect")
+                        if resolved_reason:
+                            notes.append(
+                                f"soft×{self._SOFT_BLOCK_FACTOR:.2f}: {resolved_reason}"
+                            )
+                            soft_reasons.append(resolved_reason)
+                        else:
+                            notes.append(
+                                f"soft×{self._SOFT_BLOCK_FACTOR:.2f}: playbook hard block throttled"
+                            )
+                        continue
                 hard_block = True
                 block_reason = note or block_reason or entry.get("effect")
                 if note:
@@ -1523,6 +1580,18 @@ class PlaybookManager:
         else:
             ctx.pop("playbook_structured_hard_block", None)
             ctx.pop("playbook_structured_block_reason", None)
+
+        if soft_block:
+            ctx["playbook_structured_soft_block"] = True
+            ctx["playbook_structured_soft_factor"] = float(max(0.1, min(3.5, soft_factor)))
+            if soft_reasons:
+                ctx["playbook_structured_soft_reason"] = "; ".join(
+                    reason for reason in soft_reasons if reason
+                )
+        else:
+            ctx.pop("playbook_structured_soft_block", None)
+            ctx.pop("playbook_structured_soft_factor", None)
+            ctx.pop("playbook_structured_soft_reason", None)
 
         size_mult = float(max(0.1, min(3.5, size_mult)))
         sl_mult = float(max(0.3, min(3.5, sl_mult)))
@@ -1563,6 +1632,13 @@ class PlaybookManager:
             "BUY": float(max(0.4, min(2.5, float(size_bias.get("BUY", 1.0) or 1.0)))),
             "SELL": float(max(0.4, min(2.5, float(size_bias.get("SELL", 1.0) or 1.0)))),
         }
+        if self._size_bias_delta:
+            normalized_size["BUY"] = float(
+                max(0.4, min(2.5, normalized_size["BUY"] + self._size_bias_delta))
+            )
+            normalized_size["SELL"] = float(
+                max(0.4, min(2.5, normalized_size["SELL"] + self._sell_bias_delta))
+            )
         features = payload.get("features") or {}
         normalized_features: Dict[str, float] = {}
         feature_aliases: Dict[str, float] = {}
@@ -1604,9 +1680,13 @@ class PlaybookManager:
         }
         if feature_aliases:
             active["feature_aliases"] = feature_aliases
-        active["risk_bias"] = self._derive_risk_bias(payload)
+        risk_bias = self._derive_risk_bias(payload)
+        if self._risk_bias_delta:
+            risk_bias = float(max(0.5, min(1.6, risk_bias + self._risk_bias_delta)))
+        active["risk_bias"] = risk_bias
         if confidence is not None:
-            active["confidence"] = confidence
+            adjusted_conf = confidence + self._confidence_delta
+            active["confidence"] = max(0.0, min(1.0, adjusted_conf))
         if reason_text:
             active["reason"] = reason_text
         if strategy:
@@ -1628,6 +1708,62 @@ class PlaybookManager:
         if symbol_directives:
             active["symbol_directives"] = symbol_directives
         return active
+
+    def _aggressive_condition_slack(self, metric: Optional[str]) -> float:
+        if not metric:
+            return 0.1
+        return float(self._STRUCTURED_SOFTEN_SLACK.get(metric, 0.08))
+
+    def _should_soften_hard_block(
+        self, ctx: Dict[str, Any], entry: Dict[str, Any]
+    ) -> Tuple[bool, Optional[str]]:
+        if not self._aggressive_mode:
+            return False, None
+        note = self._clean_string(entry.get("note") or entry.get("id"))
+        if note:
+            lowered = note.lower()
+            if any(term in lowered for term in self._STRUCTURED_STRICT_TERMS):
+                return False, None
+        condition = entry.get("condition")
+        if not isinstance(condition, dict):
+            return True, note
+        metric = condition.get("metric")
+        if not metric:
+            return True, note
+        metric_value = self._resolve_metric_value(ctx, metric)
+        if metric_value is None:
+            return True, note or f"{metric} unavailable"
+        try:
+            threshold = float(condition.get("value"))
+        except (TypeError, ValueError):
+            return True, note
+        op = condition.get("operator") or ">"
+        slack = self._aggressive_condition_slack(metric)
+        if op in (">", ">="):
+            if metric_value <= threshold + slack:
+                reason = note or f"{metric} {metric_value:.2f} ≈ {threshold:.2f}"
+                return True, reason
+            return False, None
+        if op in ("<", "<="):
+            if metric_value >= threshold - slack:
+                reason = note or f"{metric} {metric_value:.2f} ≈ {threshold:.2f}"
+                return True, reason
+            return False, None
+        if op == "between":
+            try:
+                upper = float(condition.get("value2"))
+            except (TypeError, ValueError):
+                return True, note
+            low = min(threshold, upper)
+            high = max(threshold, upper)
+            if not (low <= metric_value <= high):
+                return False, None
+            distance = min(metric_value - low, high - metric_value)
+            if distance <= slack:
+                reason = note or f"{metric} near boundary"
+                return True, reason
+            return False, None
+        return True, note
 
     def _collect_symbol_directives(self, payload: Dict[str, Any], now: float) -> Dict[str, Any]:
         directives: Dict[str, Dict[str, Any]] = {}
