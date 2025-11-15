@@ -1321,8 +1321,14 @@ def _format_decimal(value: float) -> str:
     return s or "0"
 
 
+def _floor_to_step(qty: float, step: float) -> float:
+    if step <= 0:
+        return max(0.0, float(qty))
+    return max(0.0, math.floor(float(qty) / step) * step)
+
+
 def format_qty(qty: float, step: float) -> str:
-    q = max(0.0, math.floor(qty / step) * step)
+    q = _floor_to_step(qty, step)
     return _format_decimal(q)
 
 
@@ -6785,6 +6791,7 @@ class RiskManager:
                 sym = s.get("symbol", "")
                 fdict = {f.get("filterType"): f for f in s.get("filters", [])}
                 lot = fdict.get("LOT_SIZE", {})
+                market_lot = fdict.get("MARKET_LOT_SIZE", {})
                 price = fdict.get("PRICE_FILTER", {})
                 max_leverage = _coerce_positive_float(s.get("maxLeverage"))
                 if max_leverage <= 0:
@@ -6797,6 +6804,9 @@ class RiskManager:
                     "minQty": float(lot.get("minQty", "0") or 0),
                     "maxQty": float(lot.get("maxQty", "0") or 0),
                     "stepSize": float(lot.get("stepSize", "0.0001") or 0.0001),
+                    "marketMinQty": float(market_lot.get("minQty", "0") or 0),
+                    "marketMaxQty": float(market_lot.get("maxQty", "0") or 0),
+                    "marketStepSize": float(market_lot.get("stepSize", "0") or 0),
                     "minPrice": float(price.get("minPrice", "0") or 0),
                     "maxPrice": float(price.get("maxPrice", "0") or 0),
                     "tickSize": float(price.get("tickSize", "0.0001") or 0.0001),
@@ -7171,7 +7181,9 @@ class RiskManager:
         return max(1.0, min(float(chosen), float(cap)))
 
     def compute_qty(self, symbol: str, entry: float, sl: float, size_mult: float) -> float:
-        step = float(self.symbol_filters.get(symbol, {}).get("stepSize", 0.0001) or 0.0001)
+        filters = self.symbol_filters.get(symbol, {}) if isinstance(self.symbol_filters, dict) else {}
+        step = float(filters.get("stepSize", 0.0001) or 0.0001)
+        market_step = float(filters.get("marketStepSize", 0.0) or 0.0)
         # a) Basiskapital
         adaptive_mult = self._adaptive_size_multiplier(symbol, entry, sl)
         tier, tier_base, tier_min, tier_max = self._ai_notional_tier(adaptive_mult)
@@ -7246,15 +7258,25 @@ class RiskManager:
             notional = min(notional, preset_max)
         qty = notional / max(entry, 1e-9)
         # d) Runden auf stepSize
-        qty = max(0.0, math.floor(qty / step) * step)
+        qty = _floor_to_step(qty, step)
+        if market_step > 0 and not math.isclose(market_step, step):
+            qty = _floor_to_step(qty, market_step)
         # e) minNotional
         if entry * qty < MIN_NOTIONAL_ENV:
             return 0.0
         # f) maxQty, falls vorhanden
-        maxQty = float(self.symbol_filters.get(symbol, {}).get("maxQty", 0.0) or 0.0)
-        if maxQty and qty > maxQty:
-            qty = maxQty
-            qty = max(0.0, math.floor(qty / step) * step)
+        caps = [
+            float(filters.get("maxQty", 0.0) or 0.0),
+            float(filters.get("marketMaxQty", 0.0) or 0.0),
+        ]
+        valid_caps = [cap for cap in caps if cap and cap > 0]
+        if valid_caps:
+            cap_qty = min(valid_caps)
+            if qty > cap_qty:
+                qty = cap_qty
+                qty = _floor_to_step(qty, step)
+                if market_step > 0 and not math.isclose(market_step, step):
+                    qty = _floor_to_step(qty, market_step)
         if isinstance(self.state, dict):
             try:
                 sizing_state = self.state.setdefault("risk_sizing", {})
@@ -7276,6 +7298,19 @@ class RiskManager:
             except Exception:
                 pass
         return qty
+
+    def step_size(self, symbol: str) -> float:
+        filters = self.symbol_filters.get(symbol, {}) if isinstance(self.symbol_filters, dict) else {}
+        step = float(filters.get("stepSize", 0.0001) or 0.0001)
+        market_step = float(filters.get("marketStepSize", 0.0) or 0.0)
+        if market_step > 0:
+            if step <= 0:
+                step = market_step
+            elif not math.isclose(step, market_step):
+                step = max(step, market_step)
+        if step <= 0:
+            step = 0.0001
+        return step
 
 # ========= Strategy =========
 class Strategy:
@@ -10308,9 +10343,9 @@ class Bot:
             del mgmt_events[:-50]
 
     def _submit_reduce_only(self, symbol: str, side: str, quantity: float, reason: str) -> bool:
-        step = float(self.risk.symbol_filters.get(symbol, {}).get("stepSize", 0.0001) or 0.0001)
+        step = self.risk.step_size(symbol) if hasattr(self, "risk") else 0.0001
         qty_abs = max(0.0, abs(quantity))
-        floored = max(0.0, math.floor(qty_abs / step) * step)
+        floored = _floor_to_step(qty_abs, step)
         if floored <= 0:
             return False
         qty_text = format_qty(floored, step)
@@ -10368,7 +10403,7 @@ class Bot:
         if qty_abs <= 1e-12:
             return
         r_now = (mid - entry) / risk if amount > 0 else (entry - mid) / risk
-        step = float(self.risk.symbol_filters.get(symbol, {}).get("stepSize", 0.0001) or 0.0001)
+        step = self.risk.step_size(symbol) if hasattr(self, "risk") else 0.0001
         tick = float(self.risk.symbol_filters.get(symbol, {}).get("tickSize", 0.0001) or 0.0001)
         mgmt = rec.setdefault("management", {})
         if not isinstance(mgmt, dict):
@@ -13145,12 +13180,12 @@ class Bot:
         sl = round_price(symbol, sl, tick)
         tp = round_price(symbol, tp, tick)
 
-        step = float(self.risk.symbol_filters.get(symbol, {}).get("stepSize", 0.0001) or 0.0001)
+        step = self.risk.step_size(symbol)
 
         qty = self.risk.compute_qty(symbol, px, sl, size_mult)
         if manual_override and manual_notional is not None:
             manual_qty = manual_notional / max(px, 1e-9)
-            manual_qty = max(0.0, math.floor(manual_qty / step) * step)
+            manual_qty = _floor_to_step(manual_qty, step)
             if manual_qty > 0:
                 qty = manual_qty
         if qty <= 0:
