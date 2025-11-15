@@ -896,6 +896,23 @@ FUNDING_EDGE_MIN = float(os.getenv("ASTER_FUNDING_EDGE_MIN", "0.0"))
 QUALITY_LEVERAGE = float(os.getenv("ASTER_QUALITY_LEVERAGE", "9.0"))
 STRUCTURED_EVENT_BLOCK_MIN = float(os.getenv("ASTER_STRUCTURED_EVENT_BLOCK_MIN", "0.4"))
 
+RANGE_ADX_MAX = float(os.getenv("ASTER_RANGE_ADX_MAX", "22.0"))
+RANGE_SLOPE_MAX = float(os.getenv("ASTER_RANGE_SLOPE_MAX", "0.0040"))
+RANGE_BB_EDGE = float(os.getenv("ASTER_RANGE_BB_EDGE", "0.12"))
+RANGE_STOCH_OS = float(os.getenv("ASTER_RANGE_STOCH_OS", "24.0"))
+RANGE_STOCH_OB = float(os.getenv("ASTER_RANGE_STOCH_OB", "76.0"))
+RANGE_EXPECTED_R_MULT = float(os.getenv("ASTER_RANGE_EXPECTED_R_MULT", "0.85"))
+
+BREAKOUT_ADX_MIN = float(os.getenv("ASTER_BREAKOUT_ADX_MIN", "18.0"))
+BREAKOUT_SLOPE_MIN = float(os.getenv("ASTER_BREAKOUT_SLOPE_MIN", "0.0035"))
+BREAKOUT_RETEST_BARS = max(2, int(os.getenv("ASTER_BREAKOUT_RETEST_BARS", "3")))
+BREAKOUT_WIDTH_SQUEEZE = float(os.getenv("ASTER_BREAKOUT_WIDTH_SQUEEZE", "0.65"))
+BREAKOUT_EXPECTED_R_MULT = float(os.getenv("ASTER_BREAKOUT_EXPECTED_R_MULT", "1.10"))
+
+FILTER_PENALTY_HARD = float(os.getenv("ASTER_FILTER_PENALTY_HARD", "1.65"))
+FILTER_PENALTY_WARN = float(os.getenv("ASTER_FILTER_PENALTY_WARN", "1.05"))
+FILTER_BONUS_CAP = float(os.getenv("ASTER_FILTER_BONUS_CAP", "0.8"))
+
 _PRESET_SIGNAL_TUNING: Dict[str, Dict[str, Any]] = {
     "low": {
         "MIN_QUOTE_VOL": 1_150_000.0,
@@ -6882,7 +6899,7 @@ class RiskManager:
         factor = self._try_float(record.get("size_factor"))
         if factor is None:
             return None
-        return max(0.35, min(1.6, factor))
+        return max(0.35, min(1.85, factor))
 
     def _technical_snapshot(self, symbol: str) -> Optional[Dict[str, Any]]:
         record = self._state_record("technical_snapshot", symbol)
@@ -7060,7 +7077,13 @@ class RiskManager:
         if peak <= 0:
             return 1.0
         ratio = max(0.0, min(1.0, drawdown / max(abs(peak), 1e-9)))
-        return max(0.45, 1.0 - ratio * 0.55)
+        base = max(0.45, 1.0 - ratio * 0.55)
+        net_gain = running
+        if net_gain > 0 and peak > 0:
+            win_ratio = net_gain / max(peak, 1e-9)
+            boost = min(0.35, win_ratio * 0.4)
+            base = min(1.35, base * (1.0 + boost))
+        return base
 
     def max_leverage_for(self, symbol: str) -> float:
         filters = self.symbol_filters.get(symbol, {}) if isinstance(self.symbol_filters, dict) else {}
@@ -8133,6 +8156,158 @@ class Strategy:
             float(price or payload.get("mid_price") or payload.get("last_price") or 0.0),
         )
 
+    def _range_reversion_signal(
+        self,
+        *,
+        price: float,
+        bb_position: float,
+        bb_width: float,
+        stoch_d: float,
+        rsi_last: float,
+        adx: float,
+        slope_fast: float,
+        atr_pct: float,
+    ) -> Optional[Tuple[str, str, Dict[str, float]]]:
+        if price <= 0 or bb_width <= 0:
+            return None
+        if adx > RANGE_ADX_MAX * 1.3:
+            return None
+        if abs(slope_fast) > RANGE_SLOPE_MAX * 1.35:
+            return None
+        width_pct = bb_width / max(price, 1e-9)
+        if width_pct < 0.006:
+            return None
+
+        extras: Dict[str, float] = {
+            "range_width_pct": float(width_pct),
+            "range_bb_position": float(bb_position),
+            "range_atr_pct": float(atr_pct),
+            "range_quality": 0.0,
+        }
+
+        edge_band = min(bb_position, 1.0 - bb_position)
+        if edge_band < 0:
+            edge_band = 0.0
+
+        if bb_position <= RANGE_BB_EDGE and stoch_d <= RANGE_STOCH_OS and rsi_last <= LONG_RSI_MAX:
+            depth = max(0.0, RANGE_BB_EDGE - bb_position)
+            osc = max(0.0, RANGE_STOCH_OS - stoch_d) / 100.0
+            quality = clamp(depth / max(RANGE_BB_EDGE, 1e-9) + osc, 0.0, 1.6)
+            extras.update(
+                {
+                    "range_quality": float(quality),
+                    "range_edge_distance": float(depth),
+                    "range_direction": 1.0,
+                }
+            )
+            return "BUY", "setup_range_reversion", extras
+
+        if bb_position >= (1.0 - RANGE_BB_EDGE) and stoch_d >= RANGE_STOCH_OB and rsi_last >= SHORT_RSI_MIN:
+            depth = max(0.0, bb_position - (1.0 - RANGE_BB_EDGE))
+            osc = max(0.0, stoch_d - RANGE_STOCH_OB) / 100.0
+            quality = clamp(depth / max(RANGE_BB_EDGE, 1e-9) + osc, 0.0, 1.6)
+            extras.update(
+                {
+                    "range_quality": float(quality),
+                    "range_edge_distance": float(depth),
+                    "range_direction": -1.0,
+                }
+            )
+            return "SELL", "setup_range_reversion", extras
+
+        return None
+
+    def _breakout_retest_signal(
+        self,
+        *,
+        price: float,
+        ema_fast: Sequence[float],
+        ema_slow: Sequence[float],
+        highs: Sequence[float],
+        lows: Sequence[float],
+        supertrend_line: Sequence[float],
+        supertrend_dir: Sequence[float],
+        bb_width_series: Sequence[float],
+        atr: float,
+        adx: float,
+        slope_fast: float,
+    ) -> Optional[Tuple[str, str, Dict[str, float]]]:
+        if price <= 0:
+            return None
+        if not ema_fast or not ema_slow or not supertrend_line or not bb_width_series:
+            return None
+        if len(supertrend_line) != len(supertrend_dir):
+            return None
+        if adx < BREAKOUT_ADX_MIN * 0.75:
+            return None
+        if abs(slope_fast) < BREAKOUT_SLOPE_MIN * 0.65:
+            return None
+
+        tail = bb_width_series[-8:]
+        if not tail:
+            return None
+        width_now = float(tail[-1])
+        if width_now <= 0:
+            return None
+        avg_width = sum(float(x) for x in tail) / len(tail)
+        min_width = min(float(x) for x in tail)
+        if avg_width <= 0:
+            return None
+        squeeze_ratio = min_width / avg_width
+        expansion_ratio = width_now / max(min_width, 1e-9)
+        if squeeze_ratio > BREAKOUT_WIDTH_SQUEEZE and expansion_ratio < 1.15:
+            return None
+
+        lookback = min(len(lows), len(supertrend_line), BREAKOUT_RETEST_BARS)
+        if lookback <= 0:
+            return None
+        try:
+            touch_distance = min(
+                abs(float(lows[-i]) - float(supertrend_line[-i])) for i in range(1, lookback + 1)
+            )
+        except Exception:
+            touch_distance = float("inf")
+
+        extras: Dict[str, float] = {
+            "breakout_squeeze_ratio": float(squeeze_ratio),
+            "breakout_width_ratio": float(width_now / max(avg_width, 1e-9)),
+            "breakout_expansion_ratio": float(expansion_ratio),
+            "breakout_touch_distance": float(touch_distance if math.isfinite(touch_distance) else 0.0),
+            "breakout_quality": 0.0,
+        }
+
+        ema_fast_last = float(ema_fast[-1])
+        ema_slow_last = float(ema_slow[-1])
+        st_dir_last = float(supertrend_dir[-1])
+        st_line_last = float(supertrend_line[-1])
+
+        if atr <= 0:
+            atr = max(price * 0.0025, 1e-9)
+
+        if ema_fast_last > ema_slow_last and st_dir_last >= 0 and price > st_line_last:
+            quality = clamp(
+                (max(0.0, adx - BREAKOUT_ADX_MIN) / max(ADX_MIN_THRESHOLD, 1.0))
+                + max(0.0, expansion_ratio - 1.0),
+                0.0,
+                2.0,
+            )
+            extras.update({"breakout_quality": float(quality), "breakout_direction": 1.0})
+            if touch_distance <= atr * 1.05:
+                return "BUY", "setup_breakout_retest", extras
+
+        if ema_fast_last < ema_slow_last and st_dir_last <= 0 and price < st_line_last:
+            quality = clamp(
+                (max(0.0, adx - BREAKOUT_ADX_MIN) / max(ADX_MIN_THRESHOLD, 1.0))
+                + max(0.0, expansion_ratio - 1.0),
+                0.0,
+                2.0,
+            )
+            extras.update({"breakout_quality": float(quality), "breakout_direction": -1.0})
+            if touch_distance <= atr * 1.05:
+                return "SELL", "setup_breakout_retest", extras
+
+        return None
+
     def compute_signal(
         self,
         symbol: str,
@@ -8300,6 +8475,7 @@ class Strategy:
             }
         )
 
+
         adx_val, adx_delta = adx_latest(kl, 14)
         slope_fast = (ema_fast[-1] - ema_fast[-5]) / max(abs(ema_fast[-5]), 1e-9)
         ctx_base.update(
@@ -8310,29 +8486,6 @@ class Strategy:
             }
         )
 
-        if adx_val < ADX_MIN_THRESHOLD:
-            quality_gate_pass = False
-            ctx_base["adx_filter"] = float(adx_val)
-            return self._skip(
-                "adx_strength",
-                symbol,
-                {"adx": f"{adx_val:.2f}", "min": f"{ADX_MIN_THRESHOLD:.2f}"},
-                ctx=ctx_base,
-                price=mid,
-                atr=atr,
-            )
-        if adx_delta <= ADX_DELTA_MIN:
-            quality_gate_pass = False
-            ctx_base["adx_delta_filter"] = float(adx_delta)
-            return self._skip(
-                "adx_momentum",
-                symbol,
-                {"delta": f"{adx_delta:.2f}", "min": f"{ADX_DELTA_MIN:.2f}"},
-                ctx=ctx_base,
-                price=mid,
-                atr=atr,
-            )
-
         htf_trend_up = ema_htf[-1] > ema_htf[-5]
         htf_trend_down = ema_htf[-1] < ema_htf[-5]
         ctx_base.update(
@@ -8342,38 +8495,139 @@ class Strategy:
             }
         )
 
+        range_candidate = self._range_reversion_signal(
+            price=float(last),
+            bb_position=float(bb_position),
+            bb_width=float(bb_width_last),
+            stoch_d=float(stoch_d_last),
+            rsi_last=float(rsi14[-1]),
+            adx=float(adx_val),
+            slope_fast=float(slope_fast),
+            atr_pct=float(atrp),
+        )
+        breakout_candidate = self._breakout_retest_signal(
+            price=float(last),
+            ema_fast=ema_fast,
+            ema_slow=ema_slow,
+            highs=highs,
+            lows=lows,
+            supertrend_line=supertrend_line,
+            supertrend_dir=supertrend_dir,
+            bb_width_series=bb_width,
+            atr=float(atr),
+            adx=float(adx_val),
+            slope_fast=float(slope_fast),
+        )
+
+        setup_flags: Dict[str, float] = {
+            "setup_trend_follow": 0.0,
+            "setup_range_reversion": 0.0,
+            "setup_breakout_retest": 0.0,
+        }
+        filter_penalty = 0.0
+        filter_bonus = 0.0
+        filter_reasons: Dict[str, str] = {}
         quality_gate_pass = True
+
         sig = "NONE"
         continuation_long = False
+        chosen_flag: Optional[str] = None
+
         if cross_up and rsi14[-1] > RSI_BUY_MIN and htf_trend_up:
             sig = "BUY"
+            chosen_flag = "setup_trend_follow"
         elif cross_dn and rsi14[-1] < RSI_SELL_MAX and htf_trend_down:
             sig = "SELL"
-        elif ALLOW_ALIGN:
-            # Fallback: Trend-Align (ohne frischen Cross), leicht entspannte RSI-Schwellen
-            if ema_fast[-1] > ema_slow[-1] and htf_trend_up and rsi14[-1] > (RSI_BUY_MIN - ALIGN_RSI_PAD):
-                sig = "BUY"
-                continuation_long = True
-            elif ema_fast[-1] < ema_slow[-1] and htf_trend_down and rsi14[-1] < (RSI_SELL_MAX + ALIGN_RSI_PAD):
-                sig = "SELL"
-            else:
-                return self._skip("no_cross", symbol, ctx=ctx_base, price=mid, atr=atr)
+            chosen_flag = "setup_trend_follow"
         else:
-            return self._skip("no_cross", symbol, ctx=ctx_base, price=mid, atr=atr)
+            align_checked = False
+            if ALLOW_ALIGN:
+                align_checked = True
+                if ema_fast[-1] > ema_slow[-1] and htf_trend_up and rsi14[-1] > (RSI_BUY_MIN - ALIGN_RSI_PAD):
+                    sig = "BUY"
+                    continuation_long = True
+                    chosen_flag = "setup_trend_follow"
+                elif ema_fast[-1] < ema_slow[-1] and htf_trend_down and rsi14[-1] < (RSI_SELL_MAX + ALIGN_RSI_PAD):
+                    sig = "SELL"
+                    chosen_flag = "setup_trend_follow"
+            if sig == "NONE":
+                candidate = breakout_candidate or range_candidate
+                if candidate:
+                    sig, candidate_flag, candidate_extras = candidate
+                    chosen_flag = candidate_flag
+                    ctx_base.update(candidate_extras)
+                else:
+                    reason = "no_cross" if not align_checked else "no_cross"
+                    return self._skip(reason, symbol, ctx=ctx_base, price=mid, atr=atr)
+
+        if chosen_flag:
+            setup_flags[chosen_flag] = 1.0
+        ctx_base.update({k: float(v) for k, v in setup_flags.items()})
+        ctx_base.setdefault("range_quality", 0.0)
+        ctx_base.setdefault("breakout_quality", 0.0)
+        ctx_base.setdefault("range_direction", 0.0)
+        ctx_base.setdefault("breakout_direction", 0.0)
+
+        def _add_penalty(key: str, value: float, detail: Optional[str] = None) -> None:
+            nonlocal filter_penalty
+            if value <= 0:
+                return
+            penalty_val = float(max(0.0, value))
+            filter_penalty += penalty_val
+            ctx_base[f"penalty_{key}"] = float(penalty_val)
+            if detail:
+                filter_reasons.setdefault(key, detail)
+
+        def _add_bonus(key: str, value: float) -> None:
+            nonlocal filter_bonus
+            if value <= 0:
+                return
+            bonus_val = float(max(0.0, value))
+            filter_bonus += bonus_val
+            ctx_base[f"bonus_{key}"] = float(bonus_val)
+
+        ctx_base["adx_filter"] = float(adx_val)
+        ctx_base["adx_delta_filter"] = float(adx_delta)
+
+        if chosen_flag in ("setup_trend_follow", "setup_breakout_retest"):
+            if adx_val < ADX_MIN_THRESHOLD:
+                deficit = ADX_MIN_THRESHOLD - adx_val
+                penalty = clamp(deficit / max(ADX_MIN_THRESHOLD, 1.0), 0.0, FILTER_PENALTY_HARD)
+                _add_penalty("adx", penalty, f"{adx_val:.2f}<{ADX_MIN_THRESHOLD:.2f}")
+            if adx_delta <= ADX_DELTA_MIN:
+                gap = ADX_DELTA_MIN - adx_delta
+                base = max(abs(ADX_DELTA_MIN), 1.0)
+                penalty = clamp(gap / base, 0.0, FILTER_PENALTY_WARN + 0.4)
+                _add_penalty("adx_delta", penalty, f"{adx_delta:.2f}<{ADX_DELTA_MIN:.2f}")
+        else:
+            if adx_val > RANGE_ADX_MAX:
+                excess = adx_val - RANGE_ADX_MAX
+                penalty = clamp(excess / max(RANGE_ADX_MAX, 1.0), 0.0, FILTER_PENALTY_WARN)
+                _add_penalty("range_adx", penalty, f"{adx_val:.2f}>{RANGE_ADX_MAX:.2f}")
 
         if sig == "BUY" and continuation_long:
             continuation_block: Dict[str, str] = {}
+            cont_penalty = 0.0
             if adx_delta < CONTINUATION_ADX_DELTA_MIN:
                 ctx_base["continuation_adx_delta_gate"] = float(adx_delta)
                 continuation_block["adx_delta"] = (
                     f"{adx_delta:.2f} < {CONTINUATION_ADX_DELTA_MIN:.2f}"
                 )
+                if CONTINUATION_ADX_DELTA_MIN > 0:
+                    cont_penalty += clamp(
+                        (CONTINUATION_ADX_DELTA_MIN - adx_delta) / max(CONTINUATION_ADX_DELTA_MIN, 1.0),
+                        0.0,
+                        0.9,
+                    )
+                else:
+                    cont_penalty += 0.3
             if stoch_k_last < CONTINUATION_STOCHRSI_MIN:
                 ctx_base["continuation_stoch_rsi_gate"] = float(stoch_k_last)
                 continuation_block["stoch_rsi_k"] = (
                     f"{stoch_k_last:.1f} < {CONTINUATION_STOCHRSI_MIN:.1f}"
                 )
-            if continuation_block:
+                cont_penalty += clamp((CONTINUATION_STOCHRSI_MIN - stoch_k_last) / 100.0 * 2.0, 0.0, 0.8)
+            if continuation_block and cont_penalty >= FILTER_PENALTY_HARD:
                 ctx_base["continuation_momentum_gate"] = True
                 return self._skip(
                     "continuation_momentum",
@@ -8383,6 +8637,8 @@ class Strategy:
                     price=mid,
                     atr=atr,
                 )
+            elif cont_penalty > 0:
+                _add_penalty("continuation", cont_penalty)
 
         supertrend_gate_enabled = True
         if CONTRARIAN:
@@ -8392,103 +8648,140 @@ class Strategy:
                 sig = "BUY"
             supertrend_gate_enabled = False
 
+        lob_bias = ctx_base.get("orderbook_bias")
+        if ORDERBOOK_BIAS_REQUIRED and not orderbook_sampled:
+            _add_penalty("orderbook_missing", 0.7, "missing")
+        if isinstance(lob_bias, (int, float)):
+            if sig == "BUY":
+                if lob_bias < -ORDERBOOK_BIAS_CONFLICT:
+                    _add_penalty(
+                        "orderbook_conflict",
+                        min(FILTER_PENALTY_HARD, abs(lob_bias + ORDERBOOK_BIAS_CONFLICT) * 2.0 + 0.4),
+                        f"{lob_bias:+.2f}",
+                    )
+                elif lob_bias < ORDERBOOK_BIAS_BUY_MIN:
+                    _add_penalty(
+                        "orderbook_bias",
+                        min(FILTER_PENALTY_WARN, (ORDERBOOK_BIAS_BUY_MIN - lob_bias) * 3.0),
+                        f"{lob_bias:+.2f}",
+                    )
+                else:
+                    _add_bonus("orderbook_bias", min(FILTER_BONUS_CAP, (lob_bias - ORDERBOOK_BIAS_BUY_MIN) * 1.2))
+            elif sig == "SELL":
+                if lob_bias > ORDERBOOK_BIAS_CONFLICT:
+                    _add_penalty(
+                        "orderbook_conflict",
+                        min(FILTER_PENALTY_HARD, abs(lob_bias - ORDERBOOK_BIAS_CONFLICT) * 2.0 + 0.4),
+                        f"{lob_bias:+.2f}",
+                    )
+                elif lob_bias > ORDERBOOK_BIAS_SELL_MAX:
+                    _add_penalty(
+                        "orderbook_bias",
+                        min(FILTER_PENALTY_WARN, (lob_bias - ORDERBOOK_BIAS_SELL_MAX) * 3.0),
+                        f"{lob_bias:+.2f}",
+                    )
+                else:
+                    _add_bonus("orderbook_bias", min(FILTER_BONUS_CAP, (ORDERBOOK_BIAS_SELL_MAX - lob_bias) * 1.2))
+        lob_gap_score = ctx_base.get("lob_gap_score")
+        if isinstance(lob_gap_score, (int, float)) and lob_gap_score > 3.0:
+            ctx_base["lob_gap_alert"] = float(lob_gap_score)
+            _add_penalty("orderbook_gap", clamp((lob_gap_score - 3.0) * 0.35, 0.0, FILTER_PENALTY_HARD), f"{lob_gap_score:.2f}")
+        lob_levels = ctx_base.get("orderbook_levels")
+        if orderbook_sampled and isinstance(lob_levels, (int, float)) and lob_levels < 3:
+            ctx_base["lob_depth_issue"] = float(lob_levels)
+            _add_penalty("orderbook_depth", clamp((3.0 - lob_levels) * 0.3, 0.0, FILTER_PENALTY_WARN + 0.2), f"{lob_levels:.2f}")
+
+        if sig == "BUY":
+            if stoch_d_last >= STOCHRSI_OVERBOUGHT:
+                ctx_base["stoch_rsi_overbought"] = float(stoch_d_last)
+                _add_penalty("stoch_rsi", clamp((stoch_d_last - STOCHRSI_OVERBOUGHT) / 100.0 * 3.0 + 0.4, 0.0, FILTER_PENALTY_HARD), f"{stoch_d_last:.1f}")
+            elif stoch_d_last > STOCHRSI_LONG_MAX:
+                ctx_base["stoch_rsi_gate"] = float(stoch_d_last)
+                _add_penalty("stoch_rsi", clamp((stoch_d_last - STOCHRSI_LONG_MAX) / 100.0 * 2.0, 0.0, FILTER_PENALTY_WARN), f"{stoch_d_last:.1f}")
+            if rsi14[-1] >= LONG_RSI_MAX:
+                ctx_base["rsi_gate"] = float(rsi14[-1])
+                _add_penalty("rsi", clamp((rsi14[-1] - LONG_RSI_MAX) / 50.0, 0.0, FILTER_PENALTY_HARD), f"{rsi14[-1]:.1f}")
+            if bb_position < BB_LONG_MIN:
+                ctx_base["bb_position_gate"] = float(bb_position)
+                _add_penalty("bollinger", clamp((BB_LONG_MIN - bb_position) * 4.0, 0.0, FILTER_PENALTY_WARN + 0.2), f"{bb_position:.2f}")
+            if bb_position >= BB_LONG_MAX:
+                ctx_base["bb_overextended"] = float(bb_position)
+                _add_penalty("bollinger", clamp((bb_position - BB_LONG_MAX) * 5.0 + 0.2, 0.0, FILTER_PENALTY_HARD), f"{bb_position:.2f}")
+            if supertrend_gate_enabled and supertrend_dir_last < 0.0:
+                ctx_base["supertrend_conflict"] = float(supertrend_dir_last)
+                _add_penalty("supertrend", clamp(abs(supertrend_dir_last) * 0.6 + 0.4, 0.0, FILTER_PENALTY_HARD), f"{supertrend_dir_last:.2f}")
+        elif sig == "SELL":
+            if stoch_d_last <= STOCHRSI_OVERSOLD:
+                ctx_base["stoch_rsi_oversold"] = float(stoch_d_last)
+                _add_penalty("stoch_rsi", clamp((STOCHRSI_OVERSOLD - stoch_d_last) / 100.0 * 3.0 + 0.4, 0.0, FILTER_PENALTY_HARD), f"{stoch_d_last:.1f}")
+            elif stoch_d_last < STOCHRSI_SHORT_MIN:
+                ctx_base["stoch_rsi_gate"] = float(stoch_d_last)
+                _add_penalty("stoch_rsi", clamp((STOCHRSI_SHORT_MIN - stoch_d_last) / 100.0 * 2.0, 0.0, FILTER_PENALTY_WARN), f"{stoch_d_last:.1f}")
+            if rsi14[-1] < SHORT_RSI_MIN:
+                ctx_base["rsi_gate"] = float(rsi14[-1])
+                _add_penalty("rsi", clamp((SHORT_RSI_MIN - rsi14[-1]) / 50.0, 0.0, FILTER_PENALTY_HARD), f"{rsi14[-1]:.1f}")
+            if bb_position <= BB_SHORT_MAX:
+                ctx_base["bb_overextended"] = float(bb_position)
+                _add_penalty("bollinger", clamp((BB_SHORT_MAX - bb_position) * 5.0 + 0.2, 0.0, FILTER_PENALTY_HARD), f"{bb_position:.2f}")
+            if supertrend_gate_enabled and supertrend_dir_last > 0.0:
+                ctx_base["supertrend_conflict"] = float(supertrend_dir_last)
+                _add_penalty("supertrend", clamp(abs(supertrend_dir_last) * 0.6 + 0.4, 0.0, FILTER_PENALTY_HARD), f"{supertrend_dir_last:.2f}")
+
         slope_htf = (ema_htf[-1] - ema_htf[-5]) / max(1e-9, ema_htf[-5])
-        trend_strength = 0.5 + max(adx_val - 20.0, 0.0) / 50.0
-        expected_R = abs(slope_htf) * 20.0 * trend_strength
-        if expected_R < MIN_EDGE_R:
-            ctx_base.update({"slope_htf": float(slope_htf), "expected_r": float(expected_R)})
+        ctx_base["slope_htf"] = float(slope_htf)
+
+        if chosen_flag == "setup_range_reversion":
+            width_pct = bb_width_last / max(last, 1e-9)
+            range_quality = float(ctx_base.get("range_quality", 0.0) or 0.0)
+            base_r = max(atrp * 0.45, width_pct * RANGE_EXPECTED_R_MULT)
+            expected_R = base_r * (0.7 + min(1.6, max(0.0, range_quality)) * 0.18)
+            min_edge = MIN_EDGE_R * 0.7
+        elif chosen_flag == "setup_breakout_retest":
+            breakout_quality = float(ctx_base.get("breakout_quality", 0.0) or 0.0)
+            trend_strength = 0.5 + max(adx_val - 18.0, 0.0) / 45.0
+            base_r = abs(slope_htf) * 18.0 * BREAKOUT_EXPECTED_R_MULT * trend_strength
+            expected_R = base_r * (0.75 + min(2.0, max(0.0, breakout_quality)) * 0.12)
+            min_edge = MIN_EDGE_R * 0.9
+        else:
+            trend_strength = 0.5 + max(adx_val - 20.0, 0.0) / 50.0
+            expected_R = abs(slope_htf) * 20.0 * trend_strength
+            min_edge = MIN_EDGE_R
+
+        penalty_scale = max(0.3, 1.0 - filter_penalty * 0.35)
+        bonus_scale = 1.0 + min(FILTER_BONUS_CAP, filter_bonus) * 0.2
+        expected_R *= penalty_scale * bonus_scale
+        ctx_base["expected_r"] = float(expected_R)
+
+        if expected_R < min_edge:
+            ctx_base["min_expected_r"] = float(min_edge)
             return self._skip(
                 "edge_r",
                 symbol,
-                {"expR": f"{expected_R:.3f}", "minR": f"{MIN_EDGE_R:.3f}"},
+                {"expR": f"{expected_R:.3f}", "minR": f"{min_edge:.3f}"},
                 ctx=ctx_base,
                 price=mid,
                 atr=atr,
             )
-        ctx_base.update({"slope_htf": float(slope_htf), "expected_r": float(expected_R)})
+
+        quality_gate_pass = filter_penalty < FILTER_PENALTY_WARN
+        ctx_base["quality_gate_pass"] = 1.0 if quality_gate_pass else 0.0
+        ctx_base["filter_penalty_score"] = float(min(filter_penalty, FILTER_PENALTY_HARD * 1.2))
+        ctx_base["filter_bonus_score"] = float(min(filter_bonus, FILTER_BONUS_CAP))
+
+        if filter_penalty >= FILTER_PENALTY_HARD:
+            detail = {f"filtered_{k}": v for k, v in filter_reasons.items()}
+            detail["filter_penalty"] = f"{filter_penalty:.2f}"
+            detail["filtered_signal"] = sig
+            return self._skip(
+                "filtered",
+                symbol,
+                detail,
+                ctx=ctx_base,
+                price=mid,
+                atr=atr,
+            )
 
         filtered_signal = sig
-
-        lob_bias = ctx_base.get("orderbook_bias")
-        if isinstance(lob_bias, (int, float)):
-            if sig == "BUY" and lob_bias < -ORDERBOOK_BIAS_CONFLICT:
-                ctx_base["lob_conflict"] = float(lob_bias)
-                ctx_base["lob_conflict_threshold"] = float(ORDERBOOK_BIAS_CONFLICT)
-                sig = "NONE"
-            elif sig == "SELL" and lob_bias > ORDERBOOK_BIAS_CONFLICT:
-                ctx_base["lob_conflict"] = float(lob_bias)
-                ctx_base["lob_conflict_threshold"] = float(ORDERBOOK_BIAS_CONFLICT)
-                sig = "NONE"
-        lob_gap_score = ctx_base.get("lob_gap_score")
-        if isinstance(lob_gap_score, (int, float)) and lob_gap_score > 3.0:
-            ctx_base["lob_gap_alert"] = float(lob_gap_score)
-            sig = "NONE"
-        lob_levels = ctx_base.get("orderbook_levels")
-        if orderbook_sampled and isinstance(lob_levels, (int, float)) and lob_levels < 3:
-            ctx_base["lob_depth_issue"] = float(lob_levels)
-            sig = "NONE"
-
-        if sig == "BUY":
-            if stoch_d_last > STOCHRSI_LONG_MAX:
-                quality_gate_pass = False
-                ctx_base["stoch_rsi_gate"] = float(stoch_d_last)
-                sig = "NONE"
-            elif rsi14[-1] >= LONG_RSI_MAX:
-                quality_gate_pass = False
-                ctx_base["rsi_gate"] = float(rsi14[-1])
-                sig = "NONE"
-            elif bb_position < BB_LONG_MIN:
-                quality_gate_pass = False
-                ctx_base["bb_position_gate"] = float(bb_position)
-                sig = "NONE"
-            elif ORDERBOOK_BIAS_REQUIRED and (
-                not orderbook_sampled or not isinstance(lob_bias_value, (int, float))
-            ):
-                quality_gate_pass = False
-                ctx_base["orderbook_bias_required"] = float(ORDERBOOK_BIAS_BUY_MIN)
-                sig = "NONE"
-            elif isinstance(lob_bias_value, (int, float)) and lob_bias_value < ORDERBOOK_BIAS_BUY_MIN:
-                quality_gate_pass = False
-                ctx_base["orderbook_bias_required"] = float(ORDERBOOK_BIAS_BUY_MIN)
-                sig = "NONE"
-            elif supertrend_gate_enabled and supertrend_dir_last < 0.0:
-                ctx_base["supertrend_conflict"] = float(supertrend_dir_last)
-                sig = "NONE"
-            elif stoch_d_last >= STOCHRSI_OVERBOUGHT:
-                ctx_base["stoch_rsi_overbought"] = float(stoch_d_last)
-                sig = "NONE"
-            elif bb_position >= BB_LONG_MAX:
-                ctx_base["bb_overextended"] = float(bb_position)
-                sig = "NONE"
-        elif sig == "SELL":
-            if stoch_d_last < STOCHRSI_SHORT_MIN:
-                quality_gate_pass = False
-                ctx_base["stoch_rsi_gate"] = float(stoch_d_last)
-                sig = "NONE"
-            elif rsi14[-1] < SHORT_RSI_MIN:
-                quality_gate_pass = False
-                ctx_base["rsi_gate"] = float(rsi14[-1])
-                sig = "NONE"
-            elif supertrend_gate_enabled and supertrend_dir_last > 0.0:
-                ctx_base["supertrend_conflict"] = float(supertrend_dir_last)
-                sig = "NONE"
-            elif ORDERBOOK_BIAS_REQUIRED and (
-                not orderbook_sampled or not isinstance(lob_bias_value, (int, float))
-            ):
-                quality_gate_pass = False
-                ctx_base["orderbook_bias_required"] = float(ORDERBOOK_BIAS_SELL_MAX)
-                sig = "NONE"
-            elif isinstance(lob_bias_value, (int, float)) and lob_bias_value > ORDERBOOK_BIAS_SELL_MAX:
-                quality_gate_pass = False
-                ctx_base["orderbook_bias_required"] = float(ORDERBOOK_BIAS_SELL_MAX)
-                sig = "NONE"
-            elif stoch_d_last <= STOCHRSI_OVERSOLD:
-                ctx_base["stoch_rsi_oversold"] = float(stoch_d_last)
-                sig = "NONE"
-            elif bb_position <= BB_SHORT_MAX:
-                ctx_base["bb_overextended"] = float(bb_position)
-                sig = "NONE"
-
         if isinstance(self.state, dict):
             try:
                 tech_state = self.state.setdefault("technical_snapshot", {})
