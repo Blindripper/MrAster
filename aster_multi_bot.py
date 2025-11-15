@@ -33,7 +33,7 @@ import threading
 from pathlib import Path
 from datetime import datetime, timezone, date
 from urllib.parse import urlencode
-from typing import Dict, List, Tuple, Optional, Any, Callable, Sequence, Set
+from typing import Dict, List, Tuple, Optional, Any, Callable, Sequence, Set, Iterable
 
 from collections import OrderedDict, deque
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
@@ -1910,6 +1910,88 @@ class AITradeAdvisor:
         "active_positions",
         "max_active_positions",
     }
+    _PERSONA_FOCUS_FEATURE_MAP: Dict[str, Set[str]] = {
+        "persona_focus_trend": {
+            "trend",
+            "momentum",
+            "breakout",
+            "pullback",
+            "trendfollower",
+            "trendfollowing",
+            "trendline",
+        },
+        "persona_focus_range": {
+            "range",
+            "mean",
+            "meanreversion",
+            "mean_reversion",
+            "oscillator",
+            "fade",
+            "balance",
+            "channel",
+        },
+        "persona_focus_event": {
+            "event",
+            "events",
+            "macro",
+            "news",
+            "headline",
+            "catalyst",
+        },
+        "persona_focus_risk": {
+            "risk",
+            "hedge",
+            "defensive",
+            "protect",
+            "caution",
+            "volatility",
+            "guardrail",
+            "guardrails",
+        },
+    }
+    _GUARDRAIL_REASON_KEYWORDS: Dict[str, Set[str]] = {
+        "playbook_guardrail_reason_event": {
+            "event",
+            "events",
+            "macro",
+            "headline",
+            "news",
+            "calendar",
+            "earnings",
+        },
+        "playbook_guardrail_reason_volatility": {
+            "volatility",
+            "vol",
+            "whipsaw",
+            "chop",
+            "storm",
+            "swing",
+        },
+        "playbook_guardrail_reason_spread": {
+            "spread",
+            "liquidity",
+            "slippage",
+            "depth",
+            "book",
+            "imbalance",
+        },
+        "playbook_guardrail_reason_sl": {
+            "stop",
+            "stoploss",
+            "stoplosses",
+            "risk",
+            "sl",
+            "tighten",
+        },
+        "playbook_guardrail_reason_tp": {
+            "target",
+            "takeprofit",
+            "take",
+            "profit",
+            "tp",
+            "trim",
+        },
+    }
     MODEL_PRICING: Dict[str, Dict[str, float]] = {
         "gpt-4o": {"input": 0.000005, "output": 0.000015},
         "gpt-4o-mini": {"input": 0.0000006, "output": 0.0000024},
@@ -2426,6 +2508,14 @@ class AITradeAdvisor:
                         ctx[f"budget_{key}"] = float(value)
                     elif isinstance(value, str):
                         ctx[f"budget_{key}"] = value
+        except Exception:
+            pass
+        try:
+            self._inject_persona_focus_features(ctx)
+        except Exception:
+            pass
+        try:
+            self._inject_guardrail_reason_features(ctx)
         except Exception:
             pass
         cap = self._resolve_leverage_cap(symbol)
@@ -3507,7 +3597,187 @@ class AITradeAdvisor:
         source = persona.get("source")
         if isinstance(source, str) and source:
             result["advisor_persona_source"] = source
+        reason = persona.get("reason")
+        if isinstance(reason, str) and reason.strip():
+            result["advisor_persona_reason"] = reason.strip()
         return result
+
+    @staticmethod
+    def _tokenize_focus_term(term: str) -> Set[str]:
+        tokens: Set[str] = set()
+        if not isinstance(term, str):
+            return tokens
+        for token in re.findall(r"[a-z0-9]+", term.lower()):
+            if token:
+                tokens.add(token)
+        if {"mean", "reversion"}.issubset(tokens):
+            tokens.add("meanreversion")
+            tokens.add("mean_reversion")
+        if {"stop", "loss"}.issubset(tokens):
+            tokens.add("stoploss")
+        if {"take", "profit"}.issubset(tokens):
+            tokens.add("takeprofit")
+        return tokens
+
+    @staticmethod
+    def _safe_float(value: Any) -> Optional[float]:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(numeric):
+            return None
+        return numeric
+
+    @classmethod
+    def _multiplier_delta(cls, values: Iterable[Any]) -> float:
+        delta = 0.0
+        for value in values:
+            numeric = cls._safe_float(value)
+            if numeric is None:
+                continue
+            delta = max(delta, min(1.0, abs(numeric - 1.0)))
+        return delta
+
+    def _inject_persona_focus_features(self, ctx: Dict[str, Any]) -> None:
+        focus_terms: List[str] = []
+        raw_focus = ctx.get("advisor_persona_focus")
+        if isinstance(raw_focus, (list, tuple, set)):
+            for term in raw_focus:
+                if isinstance(term, str):
+                    focus_terms.append(term)
+        persona_entry = self._active_persona_entry()
+        if persona_entry:
+            for term in persona_entry.get("focus_keywords", []):
+                if isinstance(term, str):
+                    focus_terms.append(term)
+            reason = persona_entry.get("reason")
+            if isinstance(reason, str) and reason.strip():
+                focus_terms.append(reason)
+        plan_reason = ctx.get("advisor_persona_reason")
+        if isinstance(plan_reason, str) and plan_reason.strip():
+            focus_terms.append(plan_reason)
+        playbook_terms = ctx.get("playbook_action_focus_terms")
+        if isinstance(playbook_terms, (list, tuple, set)):
+            for term in playbook_terms:
+                if isinstance(term, str):
+                    focus_terms.append(term)
+        if not focus_terms:
+            return
+        tokens: Set[str] = set()
+        for term in focus_terms:
+            tokens.update(self._tokenize_focus_term(term))
+        if not tokens:
+            return
+        scores: Dict[str, float] = {
+            feature: 0.0 for feature in self._PERSONA_FOCUS_FEATURE_MAP
+        }
+        for token in tokens:
+            for feature, keywords in self._PERSONA_FOCUS_FEATURE_MAP.items():
+                if token in keywords:
+                    scores[feature] = min(1.0, scores[feature] + 0.5)
+        if not any(value > 0.0 for value in scores.values()):
+            return
+        for feature, value in scores.items():
+            if value > 0.0:
+                ctx[feature] = value
+
+    def _inject_guardrail_reason_features(self, ctx: Dict[str, Any]) -> None:
+        guardrail_tokens: Set[str] = set()
+        for key in (
+            "playbook_structured_block_reason",
+            "playbook_structured_soft_reason",
+        ):
+            value = ctx.get(key)
+            if isinstance(value, str) and value.strip():
+                guardrail_tokens.update(self._tokenize_focus_term(value))
+        for collection_key in (
+            "playbook_structured_notes",
+            "playbook_strategy_risk_controls",
+        ):
+            entries = ctx.get(collection_key)
+            if isinstance(entries, (list, tuple, set)):
+                for entry in entries:
+                    if isinstance(entry, str) and entry.strip():
+                        guardrail_tokens.update(self._tokenize_focus_term(entry))
+        severity = 0.0
+        if ctx.get("playbook_structured_hard_block"):
+            severity = 1.0
+        elif ctx.get("playbook_structured_soft_block"):
+            factor = self._safe_float(ctx.get("playbook_structured_soft_factor"))
+            if factor is None:
+                factor = 1.0
+            factor = max(0.0, min(float(factor), 2.0))
+            if factor < 1.0:
+                severity = max(0.2, min(1.0, 1.0 - factor))
+        size_delta = self._multiplier_delta(
+            [
+                ctx.get("playbook_structured_size_multiplier"),
+                ctx.get("playbook_focus_side_multiplier"),
+                ctx.get("playbook_focus_risk_multiplier"),
+            ]
+        )
+        sl_delta = self._multiplier_delta(
+            [
+                ctx.get("playbook_structured_sl_multiplier"),
+                ctx.get("playbook_focus_sl_multiplier"),
+            ]
+        )
+        tp_delta = self._multiplier_delta(
+            [
+                ctx.get("playbook_structured_tp_multiplier"),
+                ctx.get("playbook_focus_tp_multiplier"),
+            ]
+        )
+        relevant_signal = (
+            bool(guardrail_tokens)
+            or size_delta > 0.0
+            or sl_delta > 0.0
+            or tp_delta > 0.0
+            or severity > 0.0
+        )
+        if not relevant_signal:
+            return
+        scores: Dict[str, float] = {
+            feature: 0.0 for feature in self._GUARDRAIL_REASON_KEYWORDS
+        }
+        for token in guardrail_tokens:
+            for feature, keywords in self._GUARDRAIL_REASON_KEYWORDS.items():
+                if token in keywords:
+                    scores[feature] = max(scores[feature], 0.4)
+        if severity > 0.0:
+            for feature in scores:
+                scores[feature] = max(scores[feature], severity)
+        if size_delta > 0.0:
+            scores["playbook_guardrail_reason_spread"] = max(
+                scores.get("playbook_guardrail_reason_spread", 0.0),
+                min(1.0, size_delta),
+            )
+        if sl_delta > 0.0:
+            scores["playbook_guardrail_reason_sl"] = max(
+                scores.get("playbook_guardrail_reason_sl", 0.0),
+                min(1.0, sl_delta),
+            )
+        if tp_delta > 0.0:
+            scores["playbook_guardrail_reason_tp"] = max(
+                scores.get("playbook_guardrail_reason_tp", 0.0),
+                min(1.0, tp_delta),
+            )
+        event_risk_val = self._safe_float(ctx.get("sentinel_event_risk"))
+        if event_risk_val is not None and event_risk_val > 0.0:
+            scores["playbook_guardrail_reason_event"] = max(
+                scores.get("playbook_guardrail_reason_event", 0.0),
+                min(1.0, event_risk_val),
+            )
+        volatility_hint = self._safe_float(ctx.get("atr_pct"))
+        if volatility_hint is not None and volatility_hint > 0.0:
+            scores["playbook_guardrail_reason_volatility"] = max(
+                scores.get("playbook_guardrail_reason_volatility", 0.0),
+                min(1.0, volatility_hint),
+            )
+        for feature, value in scores.items():
+            if value > 0.0:
+                ctx[feature] = min(1.0, float(value))
 
     def _resolve_temperature(self) -> Optional[float]:
         raw = os.getenv("ASTER_AI_TEMPERATURE")

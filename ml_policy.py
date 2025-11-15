@@ -65,6 +65,15 @@ FEATURES = (
     "sentinel_event_risk",
     "sentinel_hype",
     "expected_r",
+    "persona_focus_trend",
+    "persona_focus_range",
+    "persona_focus_event",
+    "persona_focus_risk",
+    "playbook_guardrail_reason_event",
+    "playbook_guardrail_reason_volatility",
+    "playbook_guardrail_reason_spread",
+    "playbook_guardrail_reason_sl",
+    "playbook_guardrail_reason_tp",
 )
 
 def _vec_from_ctx(ctx: Dict[str, float]) -> "np.ndarray":
