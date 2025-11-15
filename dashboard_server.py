@@ -3422,6 +3422,9 @@ def _extract_decision_confidence(state: Dict[str, Any]) -> Optional[float]:
     if decision_total <= 0:
         return None
 
+    if taken <= 0:
+        return None
+
     env_cfg = CONFIG.get("env") if isinstance(CONFIG, dict) else None
     scale_value = None
     if isinstance(env_cfg, dict):
