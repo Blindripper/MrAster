@@ -2601,6 +2601,94 @@ class LogHub:
             await self.unregister(ws)
 
 
+class PositionStream:
+    """Broadcast real-time active position updates to connected clients."""
+
+    def __init__(self, poll_interval: float = 1.0) -> None:
+        self.clients: Set[WebSocket] = set()
+        self._lock = asyncio.Lock()
+        self._task: Optional[asyncio.Task] = None
+        self._latest_payload: Optional[Any] = None
+        self._last_signature: Optional[str] = None
+        self.poll_interval = poll_interval
+
+    async def register(self, ws: WebSocket) -> None:
+        await ws.accept()
+        async with self._lock:
+            self.clients.add(ws)
+            snapshot = copy.deepcopy(self._latest_payload)
+        if snapshot is not None:
+            await self._safe_send(ws, snapshot)
+
+    async def unregister(self, ws: WebSocket) -> None:
+        async with self._lock:
+            self.clients.discard(ws)
+
+    def start(self) -> None:
+        if self._task and not self._task.done():
+            return
+        loop = asyncio.get_event_loop()
+        self._task = loop.create_task(self._run())
+
+    async def stop(self) -> None:
+        if not self._task:
+            return
+        task = self._task
+        self._task = None
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:  # pragma: no cover - shutdown best effort
+            pass
+
+    async def _run(self) -> None:
+        while True:
+            try:
+                await self._refresh()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # pragma: no cover - diagnostic logging
+                logger.debug("position stream refresh failed: %s", exc)
+            await asyncio.sleep(self.poll_interval)
+
+    async def _refresh(self) -> None:
+        state = _read_state()
+        open_payload = state.get("live_trades", {})
+        signature = self._hash_payload(open_payload)
+        if signature == self._last_signature:
+            return
+        env_cfg = CONFIG.get("env", {})
+        try:
+            enriched = await asyncio.to_thread(enrich_open_positions, open_payload, env_cfg)
+        except Exception as exc:
+            logger.debug("position stream enrichment error: %s", exc)
+            enriched = open_payload
+        self._last_signature = signature
+        async with self._lock:
+            self._latest_payload = enriched
+            clients = list(self.clients)
+        payload = {"type": "positions", "open": enriched}
+        for ws in clients:
+            await self._safe_send(ws, payload)
+
+    def _hash_payload(self, payload: Any) -> str:
+        try:
+            encoded = json.dumps(
+                payload,
+                sort_keys=True,
+                default=lambda obj: obj if isinstance(obj, (int, float, str, bool)) else repr(obj),
+            ).encode("utf-8")
+        except Exception:
+            encoded = repr(payload).encode("utf-8", errors="ignore")
+        return hashlib.sha1(encoded).hexdigest()
+
+    async def _safe_send(self, ws: WebSocket, payload: Dict[str, Any]) -> None:
+        try:
+            await ws.send_json(payload)
+        except Exception:
+            await self.unregister(ws)
+
+
 def _resolve_python() -> str:
     """Return an executable python interpreter for subprocesses."""
 
@@ -2797,6 +2885,7 @@ class BotRunner:
 
 
 loghub = LogHub()
+position_stream = PositionStream()
 runner = BotRunner(loghub)
 
 app = FastAPI(title="Aster Bot Control Center")
@@ -2807,6 +2896,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.on_event("startup")
+async def _startup() -> None:
+    position_stream.start()
+
+
+@app.on_event("shutdown")
+async def _shutdown() -> None:
+    await position_stream.stop()
 
 
 @app.get("/")
@@ -6886,6 +6985,16 @@ async def ws_logs(ws: WebSocket) -> None:
             await ws.receive_text()
     except WebSocketDisconnect:
         await loghub.unregister(ws)
+
+
+@app.websocket("/ws/positions")
+async def ws_positions(ws: WebSocket) -> None:
+    await position_stream.register(ws)
+    try:
+        while True:
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        await position_stream.unregister(ws)
 
 
 if __name__ == "__main__":
