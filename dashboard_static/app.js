@@ -93,6 +93,7 @@ const activePositionsCard = document.getElementById('active-positions-card');
 const activePositionsModeLabel = document.getElementById('active-positions-mode');
 const activePositionsWrapper = document.getElementById('active-positions-wrapper');
 const activePositionsEmpty = document.getElementById('active-positions-empty');
+const activePositionsNotificationsPanel = document.getElementById('active-positions-notifications-panel');
 const activePositionsRows = document.getElementById('active-positions-rows');
 const activePositionsNotifications = document.getElementById('active-positions-notifications');
 const statusCard = document.querySelector('.card.status');
@@ -346,6 +347,8 @@ const TRANSLATIONS = {
     'active.mode': 'Все режимы',
     'active.mode.paper': 'Бумажный режим',
     'active.mode.unrealized': 'Совокупный нереализованный PNL',
+    'active.notifications.title': 'Обновления по позициям',
+    'active.notifications.subtitle': 'Последние действия по управлению и закрытию позиций.',
     'active.empty': 'Нет активных позиций.',
     'active.empty.paper': 'Пока нет бумажных сделок.',
     'active.notifications.closed': 'Позиция закрыта',
@@ -623,6 +626,8 @@ const TRANSLATIONS = {
     'active.mode': 'Alle Modi',
     'active.mode.paper': 'Papiermodus',
     'active.mode.unrealized': 'Gesamter unrealisierter PNL',
+    'active.notifications.title': 'Positions-Updates',
+    'active.notifications.subtitle': 'Neueste Management- und Schließungsereignisse.',
     'active.empty': 'Keine aktiven Positionen.',
     'active.empty.paper': 'Noch keine Papier-Trades.',
     'active.notifications.closed': 'Position geschlossen',
@@ -903,6 +908,8 @@ const TRANSLATIONS = {
     'active.mode': '전체 모드',
     'active.mode.paper': '페이퍼 모드',
     'active.mode.unrealized': '총 미실현 PNL',
+    'active.notifications.title': '포지션 업데이트',
+    'active.notifications.subtitle': '최근 관리 및 청산 이벤트.',
     'active.empty': '활성 포지션이 없습니다.',
     'active.empty.paper': '아직 페이퍼 거래가 없습니다.',
     'active.notifications.closed': '포지션이 종료되었습니다',
@@ -1183,6 +1190,8 @@ const TRANSLATIONS = {
     'active.mode': 'Tous les modes',
     'active.mode.paper': 'Mode papier',
     'active.mode.unrealized': 'PNL total non réalisé',
+    'active.notifications.title': 'Mises à jour des positions',
+    'active.notifications.subtitle': 'Dernières actions de gestion et de clôture.',
     'active.empty': 'Aucune position active.',
     'active.empty.paper': 'Aucun trade en mode papier pour l’instant.',
     'active.notifications.closed': 'Position clôturée',
@@ -1463,6 +1472,8 @@ const TRANSLATIONS = {
     'active.mode': 'Todos los modos',
     'active.mode.paper': 'Modo simulado',
     'active.mode.unrealized': 'PNL total no realizado',
+    'active.notifications.title': 'Actualizaciones de posiciones',
+    'active.notifications.subtitle': 'Últimos eventos de gestión y cierre.',
     'active.empty': 'Sin posiciones activas.',
     'active.empty.paper': 'Todavía no hay operaciones simuladas.',
     'active.notifications.closed': 'Posición cerrada',
@@ -1742,6 +1753,8 @@ const TRANSLATIONS = {
     'active.mode': 'Tüm modlar',
     'active.mode.paper': 'Demo modu',
     'active.mode.unrealized': 'Toplam gerçekleşmemiş PNL',
+    'active.notifications.title': 'Pozisyon güncellemeleri',
+    'active.notifications.subtitle': 'En son yönetim ve kapatma olayları.',
     'active.empty': 'Aktif pozisyon yok.',
     'active.empty.paper': 'Henüz demo işlemi yok.',
     'active.notifications.closed': 'Pozisyon kapatıldı',
@@ -2015,6 +2028,8 @@ const TRANSLATIONS = {
     'active.mode': '全部模式',
     'active.mode.paper': '模拟模式',
     'active.mode.unrealized': '总未实现PNL',
+    'active.notifications.title': '仓位更新',
+    'active.notifications.subtitle': '最新的风控与平仓动态。',
     'active.empty': '暂无持仓。',
     'active.empty.paper': '模拟交易尚未产生。',
     'active.notifications.closed': '仓位已平仓',
@@ -2292,6 +2307,9 @@ let aiChatHistory = [];
 let aiChatPending = false;
 let aiAnalyzePending = false;
 let activePositions = [];
+let tradeHistoryEmptyStreak = 0;
+let aiRequestsEmptyStreak = 0;
+let activePositionsEmptyStreak = 0;
 let tradesRefreshTimer = null;
 let tradeViewportSyncHandle = null;
 let lastDecisionStats = null;
@@ -5572,6 +5590,7 @@ function buildPositionManagementSummary(position, options = {}) {
 
   const container = document.createElement('div');
   container.className = 'active-position-management';
+  container.setAttribute('role', 'listitem');
   container.dataset.action = latest.action || '';
   const timestampNumeric = Number.isFinite(latest.ts) ? Number(latest.ts) : null;
   if (timestampNumeric !== null) {
@@ -5635,6 +5654,7 @@ function buildPositionManagementSummary(position, options = {}) {
 function buildClosedPositionNotification(position, options = {}) {
   const container = document.createElement('div');
   container.className = 'active-position-management';
+  container.setAttribute('role', 'listitem');
   container.dataset.action = 'closed';
   const closedTs = getPositionTimestamp(position);
   const closedTimestamp = Number.isFinite(closedTs) && closedTs > 0 ? closedTs : Date.now() / 1000;
@@ -5985,10 +6005,15 @@ function updateActivePositionsView(options = {}) {
     .sort((a, b) => b.ts - a.ts)
     .map((entry) => entry.element);
 
+  const limitedNotifications = sortedNotifications.slice(0, 5);
+
   if (activePositionsNotifications) {
-    if (sortedNotifications.length) {
+    if (limitedNotifications.length) {
       const notificationFragment = document.createDocumentFragment();
-      sortedNotifications.forEach((notification) => {
+      limitedNotifications.forEach((notification) => {
+        if (notification && !notification.hasAttribute('role')) {
+          notification.setAttribute('role', 'listitem');
+        }
         notificationFragment.append(notification);
       });
       activePositionsNotifications.replaceChildren(notificationFragment);
@@ -5999,12 +6024,34 @@ function updateActivePositionsView(options = {}) {
     }
   }
 
+  if (activePositionsNotificationsPanel) {
+    if (limitedNotifications.length) {
+      activePositionsNotificationsPanel.removeAttribute('hidden');
+    } else {
+      activePositionsNotificationsPanel.setAttribute('hidden', '');
+    }
+  }
+
   activePositionsRows.replaceChildren(rowsFragment);
 }
 
 function renderActivePositions(openPositions) {
   const previousPositions = Array.isArray(activePositions) ? activePositions.slice() : [];
   const nextPositions = normaliseActivePositions(openPositions);
+
+  const hadRowsPreviously = previousPositions.length > 0;
+  const hasNextRows = nextPositions.length > 0;
+
+  if (!hasNextRows && hadRowsPreviously) {
+    activePositionsEmptyStreak += 1;
+    if (activePositionsEmptyStreak === 1) {
+      updateActivePositionsView();
+      return;
+    }
+    activePositionsEmptyStreak = Math.min(activePositionsEmptyStreak, 2);
+  } else {
+    activePositionsEmptyStreak = 0;
+  }
 
   const nextSymbols = new Set();
   nextPositions.forEach((position) => {
@@ -7161,7 +7208,13 @@ function extractRealizedPnl(trade) {
 
 function renderTradeHistory(history) {
   if (!tradeList) return;
-  if (!history || history.length === 0) {
+
+  const hasHistory = Array.isArray(history) && history.length > 0;
+  if (!hasHistory) {
+    tradeHistoryEmptyStreak += 1;
+    if (tradeList.childElementCount > 0 && tradeHistoryEmptyStreak === 1) {
+      return;
+    }
     const fragment = document.createDocumentFragment();
     const empty = document.createElement('div');
     empty.className = 'trade-empty';
@@ -7170,8 +7223,11 @@ function renderTradeHistory(history) {
     tradeList.replaceChildren(fragment);
     tradeList.style.removeProperty('max-height');
     tradeList.removeAttribute('data-viewport-locked');
+    tradeHistoryEmptyStreak = Math.min(Math.max(tradeHistoryEmptyStreak, 1), 2);
     return;
   }
+
+  tradeHistoryEmptyStreak = 0;
 
   const sortedHistory = [...history].sort((a, b) => getTradeTimestamp(b) - getTradeTimestamp(a));
 
@@ -9277,6 +9333,7 @@ function renderAiRequests(requests) {
   if (!aiRequestList) return;
   const fragment = document.createDocumentFragment();
   if (!aiMode) {
+    aiRequestsEmptyStreak = 0;
     const disabled = document.createElement('div');
     disabled.className = 'ai-request-empty';
     disabled.textContent = translate('ai.feed.disabled', 'Enable AI mode to view the activity feed.');
@@ -9286,6 +9343,10 @@ function renderAiRequests(requests) {
   }
   const items = Array.isArray(requests) ? requests.slice(0, 30) : [];
   if (items.length === 0) {
+    aiRequestsEmptyStreak += 1;
+    if (aiRequestList.childElementCount > 0 && aiRequestsEmptyStreak === 1) {
+      return;
+    }
     const empty = document.createElement('div');
     empty.className = 'ai-request-empty';
     empty.textContent = translate(
@@ -9294,8 +9355,10 @@ function renderAiRequests(requests) {
     );
     fragment.append(empty);
     aiRequestList.replaceChildren(fragment);
+    aiRequestsEmptyStreak = Math.min(Math.max(aiRequestsEmptyStreak, 1), 2);
     return;
   }
+  aiRequestsEmptyStreak = 0;
   items.forEach((rawItem) => {
     if (!rawItem || typeof rawItem !== 'object') return;
     const item = rawItem;
@@ -11211,6 +11274,14 @@ function renderPnlChart(history) {
     });
 
   if (prepared.length === 0) {
+    if (
+      tradeHistoryEmptyStreak === 1 &&
+      lastPnlChartPayload &&
+      Array.isArray(lastPnlChartPayload.values) &&
+      lastPnlChartPayload.values.length > 0
+    ) {
+      return;
+    }
     if (pnlChart) {
       pnlChart.destroy();
       pnlChart = null;

@@ -214,12 +214,22 @@
             </div>
           </div>
           <div class="active-positions-body" data-mobile-collapsible-body>
-            <div
-              class="active-positions-notifications"
-              id="active-positions-notifications"
-              aria-live="polite"
-              hidden
-            ></div>
+            <div class="active-positions-updates-panel" id="active-positions-notifications-panel" hidden>
+              <div class="active-positions-updates-header">
+                <h3 class="active-positions-updates-title" data-i18n="active.notifications.title">
+                  Position updates
+                </h3>
+                <p class="active-positions-updates-subtitle" data-i18n="active.notifications.subtitle">
+                  Latest management and closure events.
+                </p>
+              </div>
+              <div
+                class="active-positions-notifications"
+                id="active-positions-notifications"
+                aria-live="polite"
+                role="list"
+              ></div>
+            </div>
             <div class="active-positions-empty" id="active-positions-empty" data-i18n="active.empty">
               No active positions.
             </div>
