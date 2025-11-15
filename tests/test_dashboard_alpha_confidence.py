@@ -64,6 +64,30 @@ def test_confidence_ignores_stale_decision_stats(monkeypatch):
     assert math.isclose(confidence, 0.6)
 
 
+def test_confidence_requires_acceptances_for_decision_stats(monkeypatch):
+    original = _with_config({})
+    try:
+        state = {
+            "decision_stats": {
+                "taken": 0,
+                "rejected_total": 7,
+                "last_updated": 1_720_000_000.0,
+            },
+            "policy": {
+                "alpha": {
+                    "train_count": 12.0,
+                    "conf_scale": 40.0,
+                    "min_conf": 0.55,
+                }
+            },
+        }
+        confidence = _extract_alpha_confidence(state)
+        assert math.isclose(confidence, 0.55)
+    finally:
+        CONFIG.clear()
+        CONFIG.update(original)
+
+
 def test_confidence_falls_back_to_defaults(monkeypatch):
     original = _with_config({})
     try:
