@@ -19,7 +19,7 @@ export function derivePositionMarkPrice({
   if (!Number.isFinite(signedQuantity) || signedQuantity === 0) {
     const notionalValue = Number.isFinite(notional) && Math.abs(notional) > 0 ? notional : null;
     if (Number.isFinite(notionalValue) && entryPrice > 0) {
-      const magnitude = notionalValue / entryPrice;
+      const magnitude = Math.abs(notionalValue) / entryPrice;
       if (Number.isFinite(magnitude) && Math.abs(magnitude) > 0) {
         let direction = null;
         if (side) {
