@@ -814,6 +814,9 @@ SIZE_MULT_L = max(SIZE_MULT_L, SIZE_MULT_M)
 SIZE_MULT_CAP = max(SIZE_MULT_CAP, SIZE_MULT_L)
 MAX_NOTIONAL_USDT = float(os.getenv("ASTER_MAX_NOTIONAL_USDT", "0"))  # 0 = kein Cap
 
+# Maximaler Anteil des Kapitals, der pro Trade eingesetzt werden darf
+MAX_EQUITY_PER_TRADE = 0.10
+
 SL_ATR_MULT = float(os.getenv("ASTER_SL_ATR_MULT", "1.50"))
 TP_ATR_MULT = float(os.getenv("ASTER_TP_ATR_MULT", "2.10"))
 
@@ -6702,8 +6705,11 @@ class RiskManager:
         equity = self._equity_cached()
         leverage_cap = self.max_leverage_for(symbol)
         dyn_cap = float("inf")
-        if equity > 0 and math.isfinite(leverage_cap) and leverage_cap > 0:
-            dyn_cap = equity * leverage_cap * EQUITY_FRACTION
+        if equity > 0:
+            if MAX_EQUITY_PER_TRADE > 0:
+                dyn_cap = min(dyn_cap, equity * MAX_EQUITY_PER_TRADE)
+            if math.isfinite(leverage_cap) and leverage_cap > 0:
+                dyn_cap = min(dyn_cap, equity * leverage_cap * EQUITY_FRACTION)
         if MAX_NOTIONAL_USDT > 0:
             dyn_cap = min(dyn_cap, MAX_NOTIONAL_USDT)
         if math.isfinite(preset_max):
