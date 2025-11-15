@@ -1974,7 +1974,7 @@ class PlaybookManager:
             multiplier = float(max(0.05, min(4.0, multiplier)))
             if effect == "hard_block":
                 condition = entry.get("condition")
-                if not isinstance(condition, dict):
+                if not condition or not isinstance(condition, dict):
                     directive_label = str(
                         ctx.get("playbook_symbol_directive") or ""
                     ).strip().lower()
