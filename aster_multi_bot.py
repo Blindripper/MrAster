@@ -59,6 +59,9 @@ from ai_extensions import (
     ParameterTuner,
     PlaybookManager,
     PostmortemLearning,
+    advisor_active_persona,
+    advisor_clear_persona,
+    advisor_register_persona,
 )
 from brackets_guard import BracketGuard, replace_tp_for_open_position as _bg_replace_tp
 
@@ -1757,9 +1760,48 @@ class NewsTrendSentinel:
             ctx["sentinel_event_risk"] = float(payload.get("event_risk", 0.0) or 0.0)
             ctx["sentinel_hype"] = float(payload.get("hype_score", 0.0) or 0.0)
             ctx["sentinel_label"] = payload.get("label", "green")
+        if not store_only:
+            self._update_persona(symbol, payload)
         if store_only:
             return payload
         return payload
+
+    def _update_persona(self, symbol: str, payload: Dict[str, Any]) -> None:
+        if not isinstance(self.state, dict):
+            return
+        event_risk = 0.0
+        try:
+            event_risk = float(payload.get("event_risk", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            event_risk = 0.0
+        label = str(payload.get("label", "")).strip().lower()
+        actions = payload.get("actions") if isinstance(payload.get("actions"), dict) else {}
+        hard_block = bool(actions.get("hard_block")) if isinstance(actions, dict) else False
+        events = payload.get("events") if isinstance(payload.get("events"), list) else []
+        severe = label == "red" or hard_block
+        if not severe and isinstance(events, list):
+            severe = any(
+                str(event.get("severity", "")).lower() in {"critical", "warning"}
+                for event in events
+                if isinstance(event, dict)
+            )
+        if event_risk >= 0.6 or severe:
+            reason = f"{symbol} sentinel {label or 'event'} (risk {event_risk:.2f})"
+            ttl = 900.0 if label == "red" or hard_block else 600.0
+            focus_terms = ["event_risk", "news", "hedge", "reduce"]
+            if symbol:
+                focus_terms.insert(0, symbol.lower())
+            advisor_register_persona(
+                self.state,
+                "sentinel",
+                "event_risk",
+                reason=reason,
+                focus=focus_terms,
+                ttl=ttl,
+                now=time.time(),
+            )
+        else:
+            advisor_clear_persona(self.state, "sentinel")
 POSTMORTEM_VOLATILITY_SCORES: Dict[str, float] = {
     "spike": 0.85,
     "shock": 0.9,
@@ -3378,6 +3420,95 @@ class AITradeAdvisor:
             + completion_tokens * pricing.get("output", 0.0)
         )
 
+    def _active_persona_entry(self) -> Optional[Dict[str, Any]]:
+        try:
+            persona = advisor_active_persona(self.state or {})
+        except Exception:
+            return None
+        if not isinstance(persona, dict):
+            return None
+        payload = {
+            "key": persona.get("key"),
+            "label": persona.get("label"),
+            "source": persona.get("source"),
+            "focus_keywords": persona.get("focus_keywords", []),
+        }
+        try:
+            payload["confidence_bias"] = float(
+                persona.get("confidence_bias", 0.0) or 0.0
+            )
+        except (TypeError, ValueError):
+            payload["confidence_bias"] = 0.0
+        prompt = persona.get("prompt")
+        if isinstance(prompt, str) and prompt.strip():
+            payload["prompt"] = prompt.strip()
+        reason = persona.get("reason")
+        if isinstance(reason, str) and reason.strip():
+            payload["reason"] = reason.strip()
+        return payload
+
+    @staticmethod
+    def _persona_user_payload(persona: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if not isinstance(persona, dict):
+            return None
+        payload: Dict[str, Any] = {}
+        for key in ("key", "label", "source", "reason"):
+            value = persona.get(key)
+            if isinstance(value, str) and value:
+                payload[key] = value
+        focus_terms = persona.get("focus_keywords")
+        if isinstance(focus_terms, list) and focus_terms:
+            payload["focus"] = [str(term) for term in focus_terms if isinstance(term, str)]
+        bias = persona.get("confidence_bias")
+        try:
+            if bias is not None:
+                payload["confidence_bias"] = float(bias)
+        except (TypeError, ValueError):
+            pass
+        return payload or None
+
+    @staticmethod
+    def _persona_confidence_bias(request_payload: Optional[Dict[str, Any]]) -> float:
+        if not isinstance(request_payload, dict):
+            return 0.0
+        persona = request_payload.get("persona")
+        if not isinstance(persona, dict):
+            return 0.0
+        try:
+            return float(persona.get("confidence_bias", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    @staticmethod
+    def _persona_plan_meta(request_payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        result: Dict[str, Any] = {}
+        if not isinstance(request_payload, dict):
+            return result
+        persona = request_payload.get("persona")
+        if not isinstance(persona, dict):
+            return result
+        key = persona.get("key")
+        if isinstance(key, str) and key:
+            result["advisor_persona"] = key
+        label = persona.get("label")
+        if isinstance(label, str) and label:
+            result["advisor_persona_label"] = label
+        focus = persona.get("focus") or persona.get("focus_keywords")
+        if isinstance(focus, list) and focus:
+            result["advisor_persona_focus"] = [
+                str(term) for term in focus if isinstance(term, str)
+            ]
+        bias = persona.get("confidence_bias")
+        try:
+            if bias is not None:
+                result["advisor_persona_confidence_bias"] = float(bias)
+        except (TypeError, ValueError):
+            pass
+        source = persona.get("source")
+        if isinstance(source, str) and source:
+            result["advisor_persona_source"] = source
+        return result
+
     def _resolve_temperature(self) -> Optional[float]:
         raw = os.getenv("ASTER_AI_TEMPERATURE")
         if raw is None or not raw.strip():
@@ -3947,6 +4078,14 @@ class AITradeAdvisor:
                     confidence_value = clamp(float(numeric), 0.0, 1.0)
                     plan["confidence"] = confidence_value
 
+        persona_bias = self._persona_confidence_bias(request_payload)
+        if confidence_value is not None and persona_bias:
+            adjusted = clamp(confidence_value + persona_bias, 0.0, 1.0)
+            if abs(adjusted - confidence_value) > 1e-6:
+                plan["confidence"] = adjusted
+                confidence_value = adjusted
+                plan["advisor_persona_confidence_bias_applied"] = float(persona_bias)
+
         if CONFIDENCE_SIZING_ENABLED and confidence_value is not None:
             target_mult = _confidence_size_target(confidence_value)
             current_mult = plan.get("size_multiplier")
@@ -3988,6 +4127,10 @@ class AITradeAdvisor:
         )
         if isinstance(tp_px, (int, float)) and tp_px > 0:
             plan["take_profit"] = float(tp_px)
+        persona_meta = self._persona_plan_meta(request_payload)
+        if persona_meta:
+            for key, value in persona_meta.items():
+                plan.setdefault(key, value)
         return plan
 
     def _apply_trend_plan_overrides(
@@ -4055,6 +4198,7 @@ class AITradeAdvisor:
         risk_note = parsed.get("risk_note")
         explanation = parsed.get("explanation") or parsed.get("rationale")
         confidence = parsed.get("confidence") or parsed.get("score")
+        confidence_value: Optional[float] = None
 
         symbol_hint: Optional[str] = None
         if isinstance(request_payload, dict):
@@ -4090,7 +4234,8 @@ class AITradeAdvisor:
         if isinstance(explanation, str) and explanation.strip():
             plan["explanation"] = self._ensure_bounds(explanation, fallback.get("explanation", ""))
         if isinstance(confidence, (int, float)):
-            plan["confidence"] = clamp(float(confidence), 0.0, 1.0)
+            confidence_value = clamp(float(confidence), 0.0, 1.0)
+            plan["confidence"] = confidence_value
         elif isinstance(confidence, str):
             token = confidence.strip()
             if token:
@@ -4102,7 +4247,16 @@ class AITradeAdvisor:
                 except (TypeError, ValueError):
                     numeric = None
                 else:
-                    plan["confidence"] = clamp(float(numeric), 0.0, 1.0)
+                    confidence_value = clamp(float(numeric), 0.0, 1.0)
+                    plan["confidence"] = confidence_value
+
+        persona_bias = self._persona_confidence_bias(request_payload)
+        if confidence_value is not None and persona_bias:
+            adjusted = clamp(confidence_value + persona_bias, 0.0, 1.0)
+            if abs(adjusted - confidence_value) > 1e-6:
+                plan["confidence"] = adjusted
+                confidence_value = adjusted
+                plan["advisor_persona_confidence_bias_applied"] = float(persona_bias)
 
         entry_px = (
             parsed.get("entry_price")
@@ -4128,6 +4282,10 @@ class AITradeAdvisor:
         )
         if isinstance(tp_px, (int, float)) and tp_px > 0:
             plan["take_profit"] = float(tp_px)
+        persona_meta = self._persona_plan_meta(request_payload)
+        if persona_meta:
+            for key, value in persona_meta.items():
+                plan.setdefault(key, value)
         return plan
 
     def plan_trade(
@@ -4219,6 +4377,24 @@ class AITradeAdvisor:
         recent_plan = self._recent_plan_lookup(throttle_key, now)
         if recent_plan is not None:
             return recent_plan
+
+        persona_entry = self._active_persona_entry()
+        persona_payload = self._persona_user_payload(persona_entry)
+        if persona_entry:
+            key = persona_entry.get("key")
+            if key:
+                fallback["advisor_persona"] = key
+            label = persona_entry.get("label")
+            if label:
+                fallback["advisor_persona_label"] = label
+            bias = persona_entry.get("confidence_bias", 0.0)
+            try:
+                fallback["advisor_persona_confidence_bias"] = float(bias)
+            except (TypeError, ValueError):
+                pass
+            focus_terms = persona_entry.get("focus_keywords")
+            if isinstance(focus_terms, list) and focus_terms:
+                fallback["advisor_persona_focus"] = list(focus_terms)
 
         if not self._has_pending_capacity(throttle_key):
             self._recent_plan_store(throttle_key, fallback, now)
@@ -4569,6 +4745,24 @@ class AITradeAdvisor:
         if recent_plan is not None:
             return recent_plan
 
+        persona_entry = self._active_persona_entry()
+        persona_payload = self._persona_user_payload(persona_entry)
+        if persona_entry:
+            key = persona_entry.get("key")
+            if key:
+                fallback["advisor_persona"] = key
+            label = persona_entry.get("label")
+            if label:
+                fallback["advisor_persona_label"] = label
+            bias = persona_entry.get("confidence_bias", 0.0)
+            try:
+                fallback["advisor_persona_confidence_bias"] = float(bias)
+            except (TypeError, ValueError):
+                pass
+            focus_terms = persona_entry.get("focus_keywords")
+            if isinstance(focus_terms, list) and focus_terms:
+                fallback["advisor_persona_focus"] = list(focus_terms)
+
         if not self._has_pending_capacity(throttle_key):
             self._recent_plan_store(throttle_key, fallback, now)
             return self._pending_stub(
@@ -4585,6 +4779,13 @@ class AITradeAdvisor:
             "sl_multiplier, tp_multiplier, leverage, risk_note, explanation, fasttp_overrides (enabled,min_r,ret1,ret3,snap_atr), "
             "confidence (0-1) and optional levels entry_price, stop_loss, take_profit. Declines should leave explanation empty."
         )
+        persona_prompt = (
+            persona_entry.get("prompt", "").strip()
+            if persona_entry and isinstance(persona_entry.get("prompt"), str)
+            else ""
+        )
+        if persona_prompt:
+            system_prompt = f"{persona_prompt} {system_prompt}"
         stats_block = self._extract_stat_block(ctx)
         sentinel_payload = self._summarize_sentinel(sentinel)
         constraints: Dict[str, Any] = {}
@@ -4598,6 +4799,8 @@ class AITradeAdvisor:
             "atr_abs": atr_abs,
             "distance": {"stop": base_sl, "target": base_tp},
         }
+        if persona_payload:
+            user_payload["persona"] = persona_payload
         extra_context: Dict[str, Any] = {}
         for key in (
             "policy_bucket",
