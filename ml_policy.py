@@ -74,6 +74,15 @@ FEATURES = (
     "playbook_guardrail_reason_spread",
     "playbook_guardrail_reason_sl",
     "playbook_guardrail_reason_tp",
+    "filter_penalty_score",
+    "filter_bonus_score",
+    "setup_trend_follow",
+    "setup_range_reversion",
+    "setup_breakout_retest",
+    "range_quality",
+    "breakout_quality",
+    "range_direction",
+    "breakout_direction",
 )
 
 def _vec_from_ctx(ctx: Dict[str, float]) -> "np.ndarray":
@@ -331,6 +340,7 @@ class BanditPolicy:
         alpha_min_conf: float = 0.2,
         alpha_promote_delta: float = 0.15,
         alpha_reward_margin: float = 0.05,
+        alpha_influence: float = 0.35,
     ) -> None:
         self.gate = LinUCB(alpha=gate_alpha, l2=l2, d=d)
         self.size = LinUCB(alpha=size_alpha, l2=l2, d=d)
@@ -348,6 +358,8 @@ class BanditPolicy:
         self.alpha_lr = float(alpha_lr)
         self.alpha_l2 = float(alpha_l2)
         self.alpha_enabled = bool(alpha_enabled)
+        self.alpha_gate_weight = float(alpha_influence)
+        self.alpha_size_weight = 0.45
         self.alpha: Optional[AlphaModel] = None
         if self.alpha_enabled:
             self.alpha = AlphaModel(
@@ -423,16 +435,37 @@ class BanditPolicy:
             take_ucb += pb_bonus
         if risk_penalty > 0.0:
             take_ucb -= risk_penalty
+
+        alpha_prob = 0.5
+        alpha_conf = self.alpha_min_conf
+        alpha_ready = False
+        alpha_bias = 0.0
+        if self.alpha:
+            try:
+                alpha_prob, alpha_conf = self.alpha.predict(ctx)
+            except Exception:
+                alpha_prob, alpha_conf = 0.5, self.alpha_min_conf
+            alpha_ready = alpha_conf >= self.alpha_min_conf and self.n_trades >= self.alpha_warmup
+            if alpha_ready:
+                alpha_bias = (alpha_prob - 0.5) * 2.0
+                take_ucb += alpha_bias * self.alpha_gate_weight
+                if alpha_bias < 0:
+                    penalty_alpha = abs(alpha_bias) * 0.05
+                    risk_penalty += penalty_alpha
+                    take_ucb -= penalty_alpha
+
         # Warmup: am Anfang eher großzügig
         if self.n_trades < self.warmup_trades:
             warmup_boost = max(0.0, 0.08 - risk_penalty)
             take_ucb += warmup_boost
 
+        gate_score = take_ucb
+
         # ε-greedy
         if random.random() < self.eps_gate:
             decision = "TAKE"
         else:
-            decision = "TAKE" if (take_ucb - self.gate_margin) > 0.0 else "SKIP"
+            decision = "TAKE" if (gate_score - self.gate_margin) > 0.0 else "SKIP"
 
         # Größe: UCB-Argmax über Buckets (mit leichter Exploration)
         if not self.enable_size:
@@ -477,20 +510,26 @@ class BanditPolicy:
             extras["playbook_risk_bonus"] = pb_bonus
 
         if self.alpha:
-            try:
-                prob, conf = self.alpha.predict(ctx)
-            except Exception:
-                prob, conf = 0.5, self.alpha_min_conf
-            extras["alpha_prob"] = prob
-            extras["alpha_conf"] = conf
-            ready = conf >= self.alpha_min_conf and self.n_trades >= self.alpha_warmup
-            extras["alpha_ready"] = ready
-            if ready and prob < self.alpha_threshold:
+            extras["alpha_prob"] = alpha_prob
+            extras["alpha_conf"] = alpha_conf
+            extras["alpha_ready"] = alpha_ready
+        if alpha_ready:
+            extras["alpha_bias"] = alpha_bias
+            high_bar = min(0.99, self.alpha_threshold + self.alpha_promote_delta)
+            if decision == "SKIP" and (gate_score - self.gate_margin) >= -0.05 and alpha_prob > high_bar:
+                decision = "TAKE"
+                extras["alpha_override"] = "promote_gate"
+            elif decision == "TAKE" and alpha_prob < self.alpha_threshold:
                 decision = "SKIP"
-            elif ready and prob > min(0.99, self.alpha_threshold + self.alpha_promote_delta):
-                size_bucket = self._promote_bucket(size_bucket)
+                extras["alpha_override"] = "below_threshold"
+            elif alpha_prob > high_bar:
+                promote_steps = 1
+                if alpha_prob > high_bar + self.alpha_size_weight * 0.15:
+                    promote_steps = 2
+                for _ in range(promote_steps):
+                    size_bucket = self._promote_bucket(size_bucket)
                 extras["size_bucket"] = size_bucket
-                # kein direkter Eingriff in LinUCB; Bucket-Anpassung reicht
+                extras["alpha_size_adjustment"] = f"promote_{promote_steps}"
 
         hazard_penalty = event_penalty
         if decision == "TAKE" and self.enable_size and (event_risk > 0.55 or hazard_penalty >= 0.25):
@@ -605,6 +644,7 @@ class BanditPolicy:
             "alpha_reward_margin": self.alpha_reward_margin,
             "alpha_lr": self.alpha_lr,
             "alpha_l2": self.alpha_l2,
+            "alpha_influence": self.alpha_gate_weight,
         }
         if self.alpha:
             try:
@@ -629,6 +669,7 @@ class BanditPolicy:
         alpha_min_conf = float(overrides.get("alpha_min_conf", d.get("alpha_min_conf", 0.2)))
         alpha_promote_delta = float(overrides.get("alpha_promote_delta", d.get("alpha_promote_delta", 0.15)))
         alpha_reward_margin = float(overrides.get("alpha_reward_margin", d.get("alpha_reward_margin", 0.05)))
+        alpha_influence = float(overrides.get("alpha_influence", d.get("alpha_influence", 0.35)))
         obj = cls(
             gate_alpha=gate_alpha,
             size_alpha=size_alpha,
@@ -644,6 +685,7 @@ class BanditPolicy:
             alpha_min_conf=alpha_min_conf,
             alpha_promote_delta=alpha_promote_delta,
             alpha_reward_margin=alpha_reward_margin,
+            alpha_influence=alpha_influence,
         )
         try:
             obj.gate = LinUCB.from_dict(d["gate"], target_dim=len(FEATURES))
