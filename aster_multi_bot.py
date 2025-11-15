@@ -6707,7 +6707,8 @@ class RiskManager:
         dyn_cap = float("inf")
         if equity > 0:
             if MAX_EQUITY_PER_TRADE > 0:
-                dyn_cap = min(dyn_cap, equity * MAX_EQUITY_PER_TRADE)
+                effective_leverage = leverage_cap if math.isfinite(leverage_cap) and leverage_cap > 0 else 1.0
+                dyn_cap = min(dyn_cap, equity * MAX_EQUITY_PER_TRADE * effective_leverage)
             if math.isfinite(leverage_cap) and leverage_cap > 0:
                 dyn_cap = min(dyn_cap, equity * leverage_cap * EQUITY_FRACTION)
         if MAX_NOTIONAL_USDT > 0:
