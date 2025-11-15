@@ -9753,6 +9753,10 @@ class FastTP:
 
 # ========= Bot =========
 class Bot:
+    HYPE_HISTORY_KEY = "hype_correlation"
+    HYPE_HISTORY_LIMIT = 24
+    HYPE_HISTORY_WINDOW_SEC = 3600.0
+
     def __init__(self):
         if not API_KEY:
             log.warning(
@@ -9784,6 +9788,10 @@ class Bot:
         self.state.setdefault("ai_trade_proposals", [])
         self.state.setdefault("manual_trade_requests", [])
         self.state.setdefault("manual_trade_history", [])
+        hype_history = self.state.get(self.HYPE_HISTORY_KEY)
+        if not isinstance(hype_history, dict):
+            hype_history = {}
+        self.state[self.HYPE_HISTORY_KEY] = hype_history
         pending_state = self.state.get("ai_pending_requests")
         if not isinstance(pending_state, list):
             self.state["ai_pending_requests"] = []
@@ -9808,6 +9816,7 @@ class Bot:
         self._quote_volume_cooldown_dirty = False
         self._universe_state_dirty = False
         self._management_dirty = False
+        self._hype_history_dirty = False
         raw_veto_cache = self.state.get("playbook_veto_cache")
         veto_cache: Dict[str, Dict[str, Any]] = {}
         now = time.time()
@@ -10386,6 +10395,167 @@ class Bot:
                 self.trade_mgr.save()
             except Exception as exc:
                 log.debug(f"ban persist failed {symbol}: {exc}")
+
+    def _record_hype_score(self, symbol: str, hype_score: float) -> None:
+        if not isinstance(self.state, dict):
+            return
+        try:
+            numeric = float(hype_score)
+        except (TypeError, ValueError):
+            return
+        if not math.isfinite(numeric):
+            return
+        history_map = self.state.get(self.HYPE_HISTORY_KEY)
+        if not isinstance(history_map, dict):
+            history_map = {}
+            self.state[self.HYPE_HISTORY_KEY] = history_map
+        now = time.time()
+        cutoff = now - self.HYPE_HISTORY_WINDOW_SEC
+        history = history_map.get(symbol)
+        cleaned: List[Dict[str, float]] = []
+        if isinstance(history, list):
+            for item in history:
+                ts: Optional[float]
+                value: Optional[float]
+                if isinstance(item, dict):
+                    ts = _coerce_float(item.get("ts"))
+                    value = _coerce_float(item.get("value"))
+                elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                    ts = _coerce_float(item[0])
+                    value = _coerce_float(item[1])
+                else:
+                    ts = None
+                    value = None
+                if ts is None or value is None:
+                    continue
+                if ts < cutoff:
+                    continue
+                cleaned.append({"ts": ts, "value": value})
+        cleaned.append({"ts": now, "value": numeric})
+        cleaned.sort(key=lambda entry: entry.get("ts", 0.0))
+        if len(cleaned) > self.HYPE_HISTORY_LIMIT:
+            cleaned = cleaned[-self.HYPE_HISTORY_LIMIT :]
+        history_map[symbol] = cleaned
+        self.state[self.HYPE_HISTORY_KEY] = history_map
+        self._hype_history_dirty = True
+
+    def _hype_series(self, symbol: str) -> List[Tuple[float, float]]:
+        if not isinstance(self.state, dict):
+            return []
+        history_map = self.state.get(self.HYPE_HISTORY_KEY)
+        if not isinstance(history_map, dict):
+            return []
+        history = history_map.get(symbol)
+        if not isinstance(history, list):
+            return []
+        now = time.time()
+        cutoff = now - self.HYPE_HISTORY_WINDOW_SEC
+        series: List[Tuple[float, float]] = []
+        for item in history:
+            if isinstance(item, dict):
+                ts = _coerce_float(item.get("ts"))
+                value = _coerce_float(item.get("value"))
+            elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                ts = _coerce_float(item[0])
+                value = _coerce_float(item[1])
+            else:
+                ts = None
+                value = None
+            if ts is None or value is None:
+                continue
+            if ts < cutoff:
+                continue
+            series.append((ts, value))
+        series.sort(key=lambda entry: entry[0])
+        if len(series) > self.HYPE_HISTORY_LIMIT:
+            series = series[-self.HYPE_HISTORY_LIMIT :]
+        return series
+
+    def _hype_correlation(self, symbol: str, other: str) -> Optional[float]:
+        if not symbol or not other or symbol == other:
+            return None
+        series_a = self._hype_series(symbol)
+        series_b = self._hype_series(other)
+        if not series_a or not series_b:
+            return None
+        n = min(len(series_a), len(series_b))
+        if n < 4:
+            return None
+        values_a = [value for _, value in series_a[-n:]]
+        values_b = [value for _, value in series_b[-n:]]
+        mean_a = sum(values_a) / n
+        mean_b = sum(values_b) / n
+        var_a = sum((x - mean_a) ** 2 for x in values_a)
+        var_b = sum((y - mean_b) ** 2 for y in values_b)
+        if var_a <= 1e-9 or var_b <= 1e-9:
+            return None
+        cov = sum((x - mean_a) * (y - mean_b) for x, y in zip(values_a, values_b))
+        denom = math.sqrt(var_a * var_b)
+        if denom <= 0:
+            return None
+        corr = cov / denom
+        if not math.isfinite(corr):
+            return None
+        return max(-1.0, min(1.0, corr))
+
+    @staticmethod
+    def _resolve_breadth_score(ctx: Dict[str, Any]) -> Optional[float]:
+        if not isinstance(ctx, dict):
+            return None
+        for key in ("breadth", "playbook_feature_breadth"):
+            value = _coerce_float(ctx.get(key))
+            if value is not None:
+                return value
+        for bucket_key in ("playbook_features", "playbook_features_raw"):
+            features = ctx.get(bucket_key)
+            if not isinstance(features, dict):
+                continue
+            for key, value in features.items():
+                if "breadth" not in str(key).lower():
+                    continue
+                numeric = _coerce_float(value)
+                if numeric is not None:
+                    return numeric
+        return None
+
+    def _check_correlated_hype(
+        self,
+        symbol: str,
+        side: str,
+        pos_map: Dict[str, float],
+        ctx: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        result = {
+            "blocked": False,
+            "penalty": 1.0,
+            "breadth": self._resolve_breadth_score(ctx),
+            "conflicts": [],
+        }
+        if str(side or "").upper() != "BUY":
+            return result
+        conflicts: List[Tuple[str, float]] = []
+        for other, raw_amount in pos_map.items():
+            if not other or other == symbol:
+                continue
+            try:
+                qty = float(raw_amount)
+            except (TypeError, ValueError):
+                continue
+            if qty <= 0:
+                continue
+            corr = self._hype_correlation(symbol, other)
+            if corr is None or corr <= 0.7:
+                continue
+            conflicts.append((other, corr))
+        if not conflicts:
+            return result
+        result["conflicts"] = conflicts
+        breadth = result["breadth"]
+        if breadth is None or breadth <= 0.9:
+            result["blocked"] = True
+            return result
+        result["penalty"] = 0.5
+        return result
 
     def _price_filter_limits(self, symbol: str) -> Tuple[float, float]:
         limits = self.risk.symbol_filters.get(symbol, {}) if hasattr(self, "risk") else {}
@@ -11497,6 +11667,52 @@ class Bot:
         sentinel_label = str(sentinel_info.get("label", "green") or "").lower()
         ctx["sentinel_event_risk"] = event_risk
         ctx["sentinel_hype"] = hype_score
+        self._record_hype_score(symbol, hype_score)
+
+        correlated_hype_penalty = 1.0
+        guard_decision = self._check_correlated_hype(symbol, sig, pos_map, ctx)
+        conflicts = guard_decision.get("conflicts") or []
+        if conflicts:
+            ctx["correlated_hype_conflicts"] = [sym for sym, _ in conflicts]
+            peak_corr = max((corr for _, corr in conflicts), default=0.0)
+            ctx["correlated_hype_peak_corr"] = float(peak_corr)
+            breadth_value = guard_decision.get("breadth")
+            if breadth_value is not None:
+                ctx["market_breadth_score"] = float(breadth_value)
+        if guard_decision.get("blocked"):
+            if self.decision_tracker:
+                self.decision_tracker.record_rejection("hype_correlation")
+            target_sym, target_corr = conflicts[0]
+            breadth_value = guard_decision.get("breadth")
+            breadth_display = (
+                f"{breadth_value:.2f}"
+                if isinstance(breadth_value, (int, float))
+                else "n/a"
+            )
+            log.info(
+                "Skip %s — correlated hype exposure with %s (corr=%.2f, breadth=%s).",
+                symbol,
+                target_sym,
+                float(target_corr),
+                breadth_display,
+            )
+            ctx["correlated_hype_block"] = True
+            if manual_override:
+                self._complete_manual_request(
+                    manual_req,
+                    "failed",
+                    error="Correlated hype exposure — staggering long entries",
+                )
+            return
+        elif guard_decision.get("penalty", 1.0) < 1.0 and conflicts:
+            correlated_hype_penalty = float(guard_decision.get("penalty", 1.0))
+            ctx["correlated_hype_penalty"] = correlated_hype_penalty
+            log.info(
+                "Correlated hype exposure for %s vs %s (corr=%.2f) — halving size due to strong breadth.",
+                symbol,
+                conflicts[0][0],
+                float(conflicts[0][1]),
+            )
 
         if self.ai_advisor:
             try:
@@ -11659,6 +11875,10 @@ class Bot:
         if sentinel_label == "yellow" and ctx.get("quality_gate_pass", 0.0) >= 0.5:
             sentinel_factor = max(sentinel_factor, 0.9)
             ctx["sentinel_yellow_quality_boost"] = 1.0
+
+        if correlated_hype_penalty < 1.0:
+            sentinel_factor *= correlated_hype_penalty
+            ctx["sentinel_correlated_hype_penalty"] = correlated_hype_penalty
 
         sentinel_risk_cap_active = sentinel_label == "yellow" or event_risk > 0.5
         sentinel_multiplier_cap: Optional[float] = 0.8 if sentinel_risk_cap_active else None
@@ -13156,12 +13376,14 @@ class Bot:
             or self._quote_volume_cooldown_dirty
             or self._universe_state_dirty
             or self._management_dirty
+            or self._hype_history_dirty
         ):
             self.trade_mgr.save()
             self._manual_state_dirty = False
             self._quote_volume_cooldown_dirty = False
             self._universe_state_dirty = False
             self._management_dirty = False
+            self._hype_history_dirty = False
         self._maybe_emit_ai_debug_state(f"cycle_end#{cycle_index}")
 
     def run(self, loop: bool = True):
