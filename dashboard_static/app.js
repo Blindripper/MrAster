@@ -1,3 +1,5 @@
+import { derivePositionMarkPrice } from './position_math.js';
+
 const envContainer = document.getElementById('env-settings');
 const envPanel = document.getElementById('env-config-panel');
 const btnToggleEnv = document.getElementById('btn-toggle-env');
@@ -5813,12 +5815,20 @@ function updateActivePositionsView(options = {}) {
     if (sideBadge) {
       symbolWrapper.append(sideBadge);
     }
+    const markNumeric = derivePositionMarkPrice({
+      mark: markField.numeric,
+      entry: entryField.numeric,
+      quantity: signedQuantityField.numeric,
+      notional: notionalField.numeric,
+      pnl: pnlField.numeric,
+      side: sideValue,
+    });
     symbolCell.append(symbolWrapper);
     symbolCell.append(
       buildPositionProgressBar({
         takeEntry,
         stopEntry,
-        markPrice: markField.numeric,
+        markPrice: markNumeric,
         side: sideValue,
         pnlTone: pnlToneNumeric,
       }),
@@ -5875,7 +5885,7 @@ function updateActivePositionsView(options = {}) {
 
     const markCell = document.createElement('td');
     markCell.className = 'numeric';
-    markCell.textContent = formatPriceDisplay(markField.numeric, {
+    markCell.textContent = formatPriceDisplay(markNumeric, {
       minimumFractionDigits: 6,
       maximumFractionDigits: 6,
     });
@@ -5899,8 +5909,8 @@ function updateActivePositionsView(options = {}) {
         marginNumeric = notionalNumeric / leverageNumeric;
       }
       if (!Number.isFinite(marginNumeric) || marginNumeric <= 0) {
-        const priceForNotional = Number.isFinite(markField.numeric)
-          ? Math.abs(markField.numeric)
+        const priceForNotional = Number.isFinite(markNumeric)
+          ? Math.abs(markNumeric)
           : Number.isFinite(entryField.numeric)
               ? Math.abs(entryField.numeric)
               : null;
