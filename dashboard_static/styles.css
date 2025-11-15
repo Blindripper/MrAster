@@ -1293,6 +1293,12 @@ body.paper-mode .hero-paper-toggle span {
   transition: border-color 0.18s ease, background 0.18s ease;
 }
 
+.active-position-management--empty {
+  justify-content: center;
+  text-align: center;
+  font-style: italic;
+}
+
 .active-position-management:hover,
 .active-position-management:focus-visible {
   border-color: rgba(245, 196, 107, 0.28);
