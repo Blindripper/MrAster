@@ -11417,6 +11417,7 @@ class Bot:
         actions = sentinel_info.get("actions", {}) or {}
         event_risk = float(sentinel_info.get("event_risk", 0.0) or 0.0)
         hype_score = float(sentinel_info.get("hype_score", 0.0) or 0.0)
+        sentinel_label = str(sentinel_info.get("label", "green") or "").lower()
         ctx["sentinel_event_risk"] = event_risk
         ctx["sentinel_hype"] = hype_score
 
@@ -11551,9 +11552,20 @@ class Bot:
             except Exception as e:
                 log.debug(f"policy decide fail: {e}")
 
+        confidence_factor = 1.0
         if alpha_prob is not None:
             ctx["alpha_prob"] = float(alpha_prob)
             ctx["alpha_conf"] = float(alpha_conf or 0.0)
+            try:
+                if alpha_conf is not None:
+                    confidence_factor = float(alpha_conf)
+            except (TypeError, ValueError):
+                confidence_factor = 1.0
+        if alpha_conf is None:
+            confidence_factor = 1.0
+        else:
+            confidence_factor = max(0.1, min(1.0, float(confidence_factor)))
+        ctx["alpha_conf_multiplier"] = float(confidence_factor)
 
         policy_size_mult = float(size_mult)
         ctx["policy_bucket"] = bucket
@@ -11567,12 +11579,14 @@ class Bot:
             sentinel_factor *= min(1.4, 1.0 + (hype_score - 1.0) * 0.25)
         elif hype_score < 0.4:
             sentinel_factor *= max(0.55, 0.85 + hype_score * 0.3)
-        if (
-            sentinel_info.get("label", "green") == "yellow"
-            and ctx.get("quality_gate_pass", 0.0) >= 0.5
-        ):
+        if sentinel_label == "yellow" and ctx.get("quality_gate_pass", 0.0) >= 0.5:
             sentinel_factor = max(sentinel_factor, 0.9)
             ctx["sentinel_yellow_quality_boost"] = 1.0
+
+        sentinel_risk_cap_active = sentinel_label == "yellow" or event_risk > 0.5
+        sentinel_multiplier_cap: Optional[float] = 0.8 if sentinel_risk_cap_active else None
+        if sentinel_multiplier_cap is not None:
+            ctx["sentinel_multiplier_cap"] = float(sentinel_multiplier_cap)
 
         if not manual_override and (
             directive_label_raw in {"warning", "caution"}
@@ -11847,7 +11861,12 @@ class Bot:
         except (TypeError, ValueError):
             structured_size_floor = None
 
-        size_mult = policy_size_mult * sentinel_factor * structured_size_mult
+        size_mult = (
+            policy_size_mult
+            * sentinel_factor
+            * confidence_factor
+            * structured_size_mult
+        )
         if not manual_override:
             size_mult *= performance_factor
             size_mult *= tuning_bucket_factor
@@ -11870,8 +11889,14 @@ class Bot:
             size_mult = min(size_mult, structured_size_cap)
             ctx["playbook_structured_cap_applied"] = float(structured_size_cap)
         if structured_size_floor is not None:
-            size_mult = max(size_mult, structured_size_floor)
-            ctx["playbook_structured_floor_applied"] = float(structured_size_floor)
+            applied_structured_floor = float(structured_size_floor)
+            if (
+                sentinel_multiplier_cap is not None
+                and applied_structured_floor > sentinel_multiplier_cap
+            ):
+                applied_structured_floor = float(sentinel_multiplier_cap)
+            size_mult = max(size_mult, applied_structured_floor)
+            ctx["playbook_structured_floor_applied"] = float(applied_structured_floor)
 
         if sentinel_soft_block and not manual_override:
             soft_override = ctx.get("sentinel_soft_override")
@@ -11882,10 +11907,18 @@ class Bot:
             size_mult *= soft_mult
             ctx["sentinel_soft_multiplier"] = float(soft_mult)
         if not manual_override:
-            size_mult = max(SIZE_MULT_FLOOR, size_mult)
-            ctx["size_multiplier_floor"] = float(SIZE_MULT_FLOOR)
+            floor_value = float(SIZE_MULT_FLOOR)
+            if (
+                sentinel_multiplier_cap is not None
+                and floor_value > sentinel_multiplier_cap
+            ):
+                floor_value = float(sentinel_multiplier_cap)
+            size_mult = max(floor_value, size_mult)
+            ctx["size_multiplier_floor"] = float(floor_value)
         else:
             size_mult = max(0.0, size_mult)
+        if sentinel_multiplier_cap is not None:
+            size_mult = min(size_mult, sentinel_multiplier_cap)
         ctx["tuning_size_bucket_multiplier"] = float(tuning_bucket_factor)
         ctx["playbook_size_multiplier"] = float(playbook_size_factor)
         ctx["playbook_structured_size_multiplier_applied"] = float(structured_size_mult)
