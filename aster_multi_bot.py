@@ -9960,11 +9960,24 @@ class DecisionTracker:
 
 # ========= FastTP =========
 class FastTP:
-    def __init__(self, exchange: Exchange, guard: BracketGuard, state: Dict[str, Any]):
+    def __init__(
+        self,
+        exchange: Exchange,
+        guard: BracketGuard,
+        state: Dict[str, Any],
+        log_management_event: Optional[Callable[[Dict[str, Any], str, Optional[Dict[str, Any]]], None]] = None,
+    ):
         self.exchange = exchange
         self.guard = guard
         self.state = state
         self.buf: Dict[str, List[Tuple[float, float]]] = {}
+        # FastTP can run independently from the Bot class (e.g. in tests),
+        # so we keep the callback optional and fall back to a no-op if it is
+        # not provided.
+        if log_management_event is None:
+            self._log_management_event = lambda *args, **kwargs: None  # type: ignore[assignment]
+        else:
+            self._log_management_event = log_management_event
 
     def track(self, symbol: str, price: float):
         buf = self.buf.setdefault(symbol, [])
@@ -10225,7 +10238,12 @@ class Bot:
             except Exception as exc:
                 log.debug(f"user stream initialization failed: {exc}")
         self._reset_decision_stats()
-        self.fasttp = FastTP(self.exchange, self.guard, self.state)
+        self.fasttp = FastTP(
+            self.exchange,
+            self.guard,
+            self.state,
+            log_management_event=self._log_management_event,
+        )
         self.decision_tracker = DecisionTracker(self.state, self.trade_mgr.save)
         self._strategy = Strategy(
             self.exchange,
@@ -10343,7 +10361,10 @@ class Bot:
             del mgmt_events[:-50]
 
     def _submit_reduce_only(self, symbol: str, side: str, quantity: float, reason: str) -> bool:
-        step = self.risk.step_size(symbol) if hasattr(self, "risk") else 0.0001
+        if hasattr(self, "risk") and hasattr(self.risk, "step_size"):
+            step = self.risk.step_size(symbol)
+        else:
+            step = 0.0001
         qty_abs = max(0.0, abs(quantity))
         floored = _floor_to_step(qty_abs, step)
         if floored <= 0:
@@ -10403,7 +10424,10 @@ class Bot:
         if qty_abs <= 1e-12:
             return
         r_now = (mid - entry) / risk if amount > 0 else (entry - mid) / risk
-        step = self.risk.step_size(symbol) if hasattr(self, "risk") else 0.0001
+        if hasattr(self, "risk") and hasattr(self.risk, "step_size"):
+            step = self.risk.step_size(symbol)
+        else:
+            step = 0.0001
         tick = float(self.risk.symbol_filters.get(symbol, {}).get("tickSize", 0.0001) or 0.0001)
         mgmt = rec.setdefault("management", {})
         if not isinstance(mgmt, dict):
