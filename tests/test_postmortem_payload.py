@@ -156,3 +156,30 @@ def test_generate_postmortem_uses_compact_payload(monkeypatch: pytest.MonkeyPatc
     assert "sentinel" in payload
     assert "ai_take_profit" not in json.dumps(payload)
 
+
+def test_postmortem_compression_flag_in_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    advisor = _make_advisor()
+    advisor.enabled = True
+    trade = _sample_trade()
+
+    def fake_chat(system_prompt: str, user_prompt: str, **kwargs: Any) -> str:
+        req_id = kwargs.get("request_meta", {}).get("request_id", "req")
+        return json.dumps(
+            {
+                "request_id": req_id,
+                "analysis": "Range compression capped upside and delayed payoff.",
+                "feature_scores": {"trend": -0.4},
+                "volatility_descriptor": "compression",
+            }
+        )
+
+    monkeypatch.setattr(advisor, "_chat", fake_chat)
+
+    result = advisor.generate_postmortem(trade)
+    assert result is not None
+
+    ctx: Dict[str, Any] = {"symbol": trade["symbol"]}
+    advisor.inject_context_features(trade["symbol"], ctx)
+
+    assert ctx.get("pm_volatility_compression_flag", 0.0) > 0.05
+

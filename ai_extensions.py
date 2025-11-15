@@ -423,6 +423,7 @@ POSTMORTEM_EXTRA_FEATURES = (
     "pm_adx_bias",
     "pm_ema_slope",
     "pm_spread_bias",
+    "pm_volatility_compression_flag",
 )
 POSTMORTEM_DEFAULT_WEIGHT = 0.15
 POSTMORTEM_DECAY = 0.92

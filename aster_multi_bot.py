@@ -30,6 +30,7 @@ import textwrap
 import re
 import copy
 import threading
+import random
 from pathlib import Path
 from datetime import datetime, timezone, date
 from urllib.parse import urlencode
@@ -4235,6 +4236,7 @@ class AITradeAdvisor:
             "entry_price": float(price),
             "stop_loss": float(price - base_sl if side == "BUY" else price + base_sl),
             "take_profit": float(price + base_tp if side == "BUY" else price - base_tp),
+            "atr_abs": float(atr_abs),
         }
 
     def _apply_plan_overrides(
@@ -4324,6 +4326,27 @@ class AITradeAdvisor:
                 "snap_atr": float(fasttp_overrides.get("snap_atr", FASTTP_SNAP_ATR)),
             }
             plan["fasttp_overrides"] = overrides
+
+        atr_hint: Optional[float] = None
+        if isinstance(request_payload, dict):
+            raw_atr = request_payload.get("atr_abs")
+            if isinstance(raw_atr, (int, float)):
+                atr_hint = float(raw_atr)
+        if atr_hint is None and isinstance(fallback, dict):
+            fallback_atr = fallback.get("atr_abs")
+            if isinstance(fallback_atr, (int, float)):
+                atr_hint = float(fallback_atr)
+        if atr_hint is not None and 0 < atr_hint < 0.01:
+            tuned_source = plan.get("fasttp_overrides")
+            tuned = dict(tuned_source) if isinstance(tuned_source, dict) else {}
+            tuned["enabled"] = True
+            min_r_base = float(tuned.get("min_r", FASTTP_MIN_R))
+            tuned["min_r"] = min(min_r_base, 0.08)
+            tuned["ret1"] = float(tuned.get("ret1", FAST_TP_RET1))
+            tuned["ret3"] = float(tuned.get("ret3", FAST_TP_RET3))
+            snap_base = float(tuned.get("snap_atr", FASTTP_SNAP_ATR))
+            tuned["snap_atr"] = min(snap_base, 0.25)
+            plan["fasttp_overrides"] = tuned
         if isinstance(risk_note, str) and risk_note.strip():
             plan["risk_note"] = risk_note.strip()
         if isinstance(explanation, str):
@@ -5508,11 +5531,16 @@ class AITradeAdvisor:
                 liquidity_label = _first_descriptor(
                     "liquidity", "liquidity_type", "liquidity_descriptor"
                 )
+                normalized_vol_label: Optional[str] = None
                 if volatility_label:
+                    token = re.sub(r"[^a-z0-9]+", "_", volatility_label.strip().lower())
+                    normalized_vol_label = token.strip("_") or token
                     score = _score_category(volatility_label, POSTMORTEM_VOLATILITY_SCORES)
                     if score is not None:
                         feature_scores["pm_volatility_bias"] = score
                     fallback["volatility"] = volatility_label
+                    if normalized_vol_label == "compression":
+                        feature_scores["pm_volatility_compression_flag"] = 1.0
                 if execution_label:
                     score = _score_category(execution_label, POSTMORTEM_EXECUTION_SCORES)
                     if score is not None:
@@ -10031,7 +10059,8 @@ class Bot:
             opened_ts = float(opened_at or 0.0)
         except (TypeError, ValueError):
             opened_ts = 0.0
-        elapsed = max(0.0, time.time() - opened_ts) if opened_ts > 0 else 0.0
+        now_ts = time.time()
+        elapsed = max(0.0, now_ts - opened_ts) if opened_ts > 0 else 0.0
         side = str(rec.get("side") or ("BUY" if amount > 0 else "SELL")).upper()
         qty_abs = abs(amount)
         if qty_abs <= 1e-12:
@@ -10043,6 +10072,54 @@ class Bot:
         if not isinstance(mgmt, dict):
             mgmt = {}
             rec["management"] = mgmt
+        ctx = rec.get("ctx") if isinstance(rec.get("ctx"), dict) else {}
+        compression_bias = 0.0
+        if isinstance(ctx, dict):
+            raw_bias = ctx.get("pm_volatility_compression_flag")
+            if isinstance(raw_bias, (int, float)):
+                compression_bias = float(raw_bias)
+        favourable_move = (mid - entry) if amount > 0 else (entry - mid)
+        if favourable_move > 0:
+            prev_move = float(mgmt.get("max_favourable_move", 0.0) or 0.0)
+            if favourable_move > prev_move:
+                mgmt["max_favourable_move"] = float(favourable_move)
+        prev_r = float(mgmt.get("max_r", r_now) or 0.0)
+        if r_now > prev_r:
+            mgmt["max_r"] = float(r_now)
+        atr_context = atr_abs
+        if atr_context <= 0 and isinstance(rec.get("atr_abs"), (int, float)):
+            atr_context = float(rec.get("atr_abs") or 0.0)
+        if atr_context <= 0 and isinstance(ctx, dict):
+            ctx_atr = ctx.get("atr_abs")
+            if isinstance(ctx_atr, (int, float)):
+                atr_context = float(ctx_atr)
+        compression_active = compression_bias >= 0.05 and atr_context > 0 and opened_ts > 0
+        if compression_active:
+            deadline = mgmt.get("compression_exit_deadline")
+            if not isinstance(deadline, (int, float)):
+                jitter = random.uniform(600.0, 720.0)
+                deadline = opened_ts + jitter
+                mgmt["compression_exit_deadline"] = float(deadline)
+            target_move = 0.5 * atr_context
+            max_move = float(mgmt.get("max_favourable_move", max(favourable_move, 0.0)) or 0.0)
+            if (
+                not mgmt.get("compression_time_cut_executed")
+                and now_ts >= float(deadline or 0.0)
+                and max_move < target_move
+            ):
+                if self._submit_reduce_only(symbol, side, qty_abs, "compression_time_cut"):
+                    mgmt["compression_time_cut_executed"] = True
+                    self._management_dirty = True
+                    self._log_management_event(
+                        rec,
+                        "compression_time_cut",
+                        {
+                            "elapsed": elapsed,
+                            "max_move": float(max_move),
+                            "atr_half": float(target_move),
+                        },
+                    )
+                    return
         if (
             entry > 0
             and qty_abs > 0
