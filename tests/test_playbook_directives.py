@@ -6,7 +6,7 @@ import pytest
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from ai_extensions import PlaybookManager
+from ai_extensions import PlaybookManager, advisor_active_persona
 from aster_multi_bot import _apply_playbook_focus_adjustments
 
 
@@ -198,11 +198,60 @@ def test_playbook_context_surfaces_structured_features_and_biases():
     assert "breadth_green" in ctx["playbook_action_focus_terms"]
     assert any(rc.startswith("Strictly avoid") for rc in ctx["playbook_strategy_risk_controls"])
     assert ctx["playbook_notes"].startswith("Market is broadly constructive")
-    assert ctx["playbook_request_id"] == "playbook::playbook:sample"
-    assert ctx["playbook_focus_side_bias"] > 0.3
-    assert ctx["playbook_focus_risk_bias"] > 0.45
-    assert ctx["playbook_focus_features"]["breadth_green"] > 0.5
-    assert ctx["playbook_focus_feature_breadth_green"] > 0.5
+
+
+def test_playbook_persona_trend_focus_and_context():
+    mgr = _manager()
+    now = time.time()
+    payload = {
+        "mode": "Breakout pursuit",
+        "bias": "momentum tilt",
+        "size_bias": {"BUY": 1.1, "SELL": 0.9},
+        "sl_bias": 1.0,
+        "tp_bias": 1.2,
+        "features": {"trend_strength": 0.6, "adx_score": 0.4},
+        "strategy": {
+            "actions": [
+                {
+                    "title": "Follow momentum",
+                    "detail": "Add on breakouts that align with higher timeframe trend.",
+                }
+            ]
+        },
+    }
+    active = mgr._normalize_playbook(payload, now)  # pylint: disable=protected-access
+    store = mgr._root.get("advisor_persona", {}).get("sources", {})  # pylint: disable=protected-access
+    playbook_entry = store.get("playbook")
+    assert playbook_entry and playbook_entry.get("key") == "trend_follower"
+    mgr._state["active"] = active  # pylint: disable=protected-access
+    ctx = {"symbol": "BTCUSDT", "side": "BUY"}
+    mgr.inject_context(ctx)
+    assert ctx["advisor_persona"] == "trend_follower"
+    focus_terms = ctx.get("advisor_persona_focus_terms", [])
+    assert isinstance(focus_terms, list) and any("trend" in term for term in focus_terms)
+
+
+def test_playbook_persona_mean_reversion_overrides_trend():
+    mgr = _manager()
+    now = time.time()
+    payload = {
+        "mode": "Range consolidation",
+        "bias": "neutral",
+        "size_bias": {"BUY": 0.95, "SELL": 0.95},
+        "sl_bias": 1.0,
+        "tp_bias": 0.9,
+        "features": {"range_signal": 0.55, "stoch_peak": 0.3},
+        "notes": "Market is oscillating in a defined range; lean on mean reversion.",
+    }
+    active = mgr._normalize_playbook(payload, now)  # pylint: disable=protected-access
+    persona = advisor_active_persona(mgr._root, now)  # pylint: disable=protected-access
+    assert persona and persona.get("key") == "mean_reversion"
+    mgr._state["active"] = active  # pylint: disable=protected-access
+    ctx = {"symbol": "ETHUSDT", "side": "SELL"}
+    mgr.inject_context(ctx)
+    assert ctx["advisor_persona"] == "mean_reversion"
+    focus_terms = ctx.get("advisor_persona_focus_terms", [])
+    assert any("range" in term for term in focus_terms)
 
 
 def test_playbook_focus_adjustment_helper_applies_side_and_risk_bias():

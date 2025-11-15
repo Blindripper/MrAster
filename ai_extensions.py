@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 import re
 import time
-from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 _ACTION_FOCUS_STOPWORDS: Set[str] = {
     "and",
@@ -169,6 +169,194 @@ _FOCUS_FEATURE_BASE_TERMS: Set[str] = {
     "stoch",
     "ema",
 }
+
+_ADVISOR_PERSONA_DEFINITIONS: Dict[str, Dict[str, Any]] = {
+    "trend_follower": {
+        "label": "Trendfolger",
+        "prompt": (
+            "You are operating as the Trendfolger persona. Prioritise breakout and trend-"
+            "continuation checklists: validate higher timeframe alignment, momentum breadth,"
+            " and progressive stop management before approving entries."
+        ),
+        "focus_keywords": [
+            "trend",
+            "momentum",
+            "breakout",
+            "pullback",
+        ],
+        "confidence_bias": 0.05,
+        "priority": 1,
+    },
+    "mean_reversion": {
+        "label": "Mean-Reversion",
+        "prompt": (
+            "You are operating as the Mean-Reversion persona. Emphasise range-bound checklists:"
+            " confirm support/resistance, oscillator extremes, liquidity pockets, and plan quick risk release."
+        ),
+        "focus_keywords": [
+            "range",
+            "oscillator",
+            "support",
+            "fade",
+        ],
+        "confidence_bias": -0.02,
+        "priority": 1,
+    },
+    "event_risk": {
+        "label": "Event-Risk",
+        "prompt": (
+            "You are operating as the Event-Risk guardian persona. Focus on catalyst-driven checklists:"
+            " audit news drivers, tighten sizing, prefer hedges, and decline trades lacking mitigation."
+        ),
+        "focus_keywords": [
+            "event_risk",
+            "hedge",
+            "reduce",
+            "news",
+        ],
+        "confidence_bias": -0.08,
+        "priority": 5,
+    },
+}
+
+
+def _advisor_persona_store(root: Dict[str, Any]) -> Dict[str, Any]:
+    store = root.setdefault("advisor_persona", {}) if isinstance(root, dict) else {}
+    sources = store.get("sources")
+    if not isinstance(sources, dict):
+        sources = {}
+    store["sources"] = sources
+    return store
+
+
+def _advisor_persona_definition(key: str) -> Optional[Dict[str, Any]]:
+    if not isinstance(key, str):
+        return None
+    token = key.strip().lower()
+    if not token:
+        return None
+    return _ADVISOR_PERSONA_DEFINITIONS.get(token)
+
+
+def _advisor_persona_refresh(store: Dict[str, Any], now: Optional[float] = None) -> None:
+    if not isinstance(store, dict):
+        return
+    sources = store.get("sources")
+    if not isinstance(sources, dict):
+        sources = {}
+        store["sources"] = sources
+    ts = time.time() if now is None else float(now)
+    changed = False
+    for source, entry in list(sources.items()):
+        if not isinstance(entry, dict):
+            sources.pop(source, None)
+            changed = True
+            continue
+        expires = entry.get("expires")
+        if expires is not None:
+            try:
+                expiry_ts = float(expires)
+            except (TypeError, ValueError):
+                expiry_ts = ts
+            if expiry_ts <= ts:
+                sources.pop(source, None)
+                changed = True
+    active: Optional[Dict[str, Any]] = None
+    for entry in sources.values():
+        if not isinstance(entry, dict):
+            continue
+        candidate = dict(entry)
+        if active is None:
+            active = candidate
+            continue
+        priority = int(candidate.get("priority", 0))
+        active_priority = int(active.get("priority", 0))
+        if priority > active_priority:
+            active = candidate
+            continue
+        if priority == active_priority:
+            updated = float(candidate.get("updated", 0.0) or 0.0)
+            active_updated = float(active.get("updated", 0.0) or 0.0)
+            if updated > active_updated:
+                active = candidate
+    if active is not None:
+        store["active"] = dict(active)
+    elif "active" in store:
+        store.pop("active", None)
+    if changed:
+        store["sources"] = sources
+
+
+def advisor_register_persona(
+    root: Dict[str, Any],
+    source: str,
+    key: str,
+    *,
+    reason: Optional[str] = None,
+    focus: Optional[Iterable[str]] = None,
+    ttl: Optional[float] = None,
+    confidence_bias: Optional[float] = None,
+    priority: Optional[int] = None,
+    now: Optional[float] = None,
+) -> Optional[Dict[str, Any]]:
+    definition = _advisor_persona_definition(key)
+    if not definition:
+        return None
+    store = _advisor_persona_store(root)
+    ts = time.time() if now is None else float(now)
+    focus_terms: List[str] = []
+    base_focus = definition.get("focus_keywords", [])
+    if isinstance(base_focus, (list, tuple)):
+        for term in base_focus:
+            if isinstance(term, str) and term and term not in focus_terms:
+                focus_terms.append(term)
+    if focus:
+        for term in focus:
+            if isinstance(term, str):
+                token = term.strip()
+                if token and token not in focus_terms:
+                    focus_terms.append(token)
+    entry = {
+        "key": key,
+        "label": definition.get("label", key.title()),
+        "prompt": definition.get("prompt", ""),
+        "focus_keywords": focus_terms[:12],
+        "confidence_bias": float(
+            confidence_bias
+            if confidence_bias is not None
+            else definition.get("confidence_bias", 0.0)
+        ),
+        "priority": int(priority if priority is not None else definition.get("priority", 0)),
+        "source": str(source or "unknown"),
+        "updated": ts,
+    }
+    if reason:
+        entry["reason"] = str(reason)
+    if ttl is not None:
+        try:
+            ttl_value = float(ttl)
+        except (TypeError, ValueError):
+            ttl_value = 0.0
+        if ttl_value > 0:
+            entry["expires"] = ts + ttl_value
+    store.setdefault("sources", {})[entry["source"]] = entry
+    _advisor_persona_refresh(store, ts)
+    return dict(entry)
+
+
+def advisor_clear_persona(root: Dict[str, Any], source: str) -> None:
+    store = _advisor_persona_store(root)
+    sources = store.get("sources", {})
+    if source in sources:
+        sources.pop(source, None)
+        _advisor_persona_refresh(store)
+
+
+def advisor_active_persona(root: Dict[str, Any], now: Optional[float] = None) -> Optional[Dict[str, Any]]:
+    store = _advisor_persona_store(root)
+    _advisor_persona_refresh(store, now)
+    active = store.get("active")
+    return dict(active) if isinstance(active, dict) else None
 
 
 def _extract_action_focus_terms(texts: Iterable[Optional[str]], *, limit: int = 6) -> List[str]:
@@ -785,6 +973,15 @@ class PlaybookManager:
         self._sell_bias_delta = self._size_bias_delta * self._SELL_DELTA_RATIO
         self._risk_bias_delta = self._RISK_BIAS_DELTA.get(self._preset_mode, 0.0)
         self._confidence_delta = self._CONFIDENCE_DELTA.get(self._preset_mode, 0.0)
+        if not advisor_active_persona(self._root):
+            advisor_register_persona(
+                self._root,
+                "playbook",
+                "trend_follower",
+                reason="bootstrap",
+                focus=["trend", "momentum", "breakout"],
+                now=time.time(),
+            )
 
     @staticmethod
     def _clean_string(value: Any) -> Optional[str]:
@@ -1208,6 +1405,25 @@ class PlaybookManager:
 
     def inject_context(self, ctx: Dict[str, Any]) -> None:
         active = self.active()
+        persona_active = advisor_active_persona(self._root)
+        if persona_active:
+            ctx["advisor_persona"] = persona_active.get("key")
+            ctx["advisor_persona_label"] = persona_active.get("label")
+            ctx["advisor_persona_source"] = persona_active.get("source")
+            focus_terms = persona_active.get("focus_keywords")
+            if isinstance(focus_terms, list) and focus_terms:
+                ctx["advisor_persona_focus_terms"] = list(focus_terms)
+            try:
+                ctx["advisor_persona_confidence_bias"] = float(
+                    persona_active.get("confidence_bias", 0.0) or 0.0
+                )
+            except (TypeError, ValueError):
+                pass
+        hint = active.get("persona_hint")
+        if isinstance(hint, dict):
+            ctx["playbook_persona"] = hint.get("key")
+            if hint.get("focus_keywords"):
+                ctx["playbook_persona_focus"] = hint.get("focus_keywords")
         features = active.get("features", {})
         feature_aliases = active.get("feature_aliases", {})
         raw_features: Dict[str, float] = {}
@@ -1707,7 +1923,151 @@ class PlaybookManager:
         symbol_directives = self._collect_symbol_directives(payload, now)
         if symbol_directives:
             active["symbol_directives"] = symbol_directives
+        self._apply_persona_hint(active, now)
         return active
+
+    def _feature_keyword_score(
+        self, features: Dict[str, Any], keywords: Sequence[str]
+    ) -> float:
+        total = 0.0
+        for name, raw_value in features.items():
+            lowered = str(name).lower()
+            if not any(term in lowered for term in keywords):
+                continue
+            try:
+                numeric = abs(float(raw_value))
+            except (TypeError, ValueError):
+                continue
+            total += numeric
+        return float(total)
+
+    def _persona_focus_terms(self, active: Dict[str, Any]) -> List[str]:
+        focus_terms: List[str] = []
+        features = active.get("features", {})
+        if isinstance(features, dict):
+            try:
+                ordered = sorted(
+                    (
+                        (key, abs(float(value)))
+                        for key, value in features.items()
+                    ),
+                    key=lambda item: item[1],
+                    reverse=True,
+                )
+            except Exception:
+                ordered = []
+            for key, weight in ordered[:6]:
+                if weight < 0.08:
+                    continue
+                slug = self._normalize_feature_key(key) or str(key)
+                if slug and slug not in focus_terms:
+                    focus_terms.append(slug)
+        strategy = active.get("strategy")
+        if isinstance(strategy, dict):
+            actions = strategy.get("actions")
+            if isinstance(actions, list):
+                for action in actions:
+                    if not isinstance(action, dict):
+                        continue
+                    tokens = _extract_action_focus_terms(
+                        (
+                            action.get("title"),
+                            action.get("detail"),
+                            action.get("trigger"),
+                        )
+                    )
+                    for token in tokens:
+                        if token not in focus_terms:
+                            focus_terms.append(token)
+                        if len(focus_terms) >= 10:
+                            break
+        return focus_terms[:10]
+
+    def _select_persona_key(
+        self, active: Dict[str, Any]
+    ) -> Tuple[str, str, List[str]]:
+        features = active.get("features", {}) if isinstance(active.get("features"), dict) else {}
+        mode_text = str(active.get("mode", "")).lower()
+        bias_text = str(active.get("bias", "")).lower()
+        notes_text = str(active.get("notes", "")).lower()
+        reason_text = str(active.get("reason", "")).lower()
+        strategy = active.get("strategy")
+        strategy_bits: List[str] = []
+        if isinstance(strategy, dict):
+            for key in ("name", "objective", "why_active"):
+                value = strategy.get(key)
+                if isinstance(value, str):
+                    strategy_bits.append(value.lower())
+        combined_text = " ".join(
+            bit for bit in [mode_text, bias_text, notes_text, reason_text] + strategy_bits if bit
+        )
+        event_score = self._feature_keyword_score(features, ("event", "risk", "news"))
+        range_score = self._feature_keyword_score(
+            features, ("range", "mean", "oscillator", "stoch", "rsi")
+        )
+        trend_score = self._feature_keyword_score(
+            features, ("trend", "momentum", "adx", "breakout")
+        )
+
+        persona_key = "trend_follower"
+        persona_reason = mode_text or "trend"
+        event_terms = ("event", "risk", "catalyst", "shock", "news", "volatility")
+        range_terms = (
+            "range",
+            "mean reversion",
+            "range-bound",
+            "oscillation",
+            "balance",
+            "consolidation",
+            "chop",
+            "sideways",
+        )
+        trend_terms = ("trend", "impulse", "breakout", "momentum", "swing")
+
+        if event_score >= 0.35 or any(term in combined_text for term in event_terms):
+            persona_key = "event_risk"
+            persona_reason = "event risk bias"
+        elif range_score >= max(trend_score, 0.18) or any(
+            term in combined_text for term in range_terms
+        ):
+            persona_key = "mean_reversion"
+            persona_reason = "range bias"
+        elif trend_score >= 0.12 or any(term in combined_text for term in trend_terms):
+            persona_key = "trend_follower"
+            persona_reason = "trend bias"
+        focus_terms = self._persona_focus_terms(active)
+        return persona_key, persona_reason, focus_terms
+
+    def _apply_persona_hint(self, active: Dict[str, Any], now: float) -> None:
+        persona_key, reason, focus_terms = self._select_persona_key(active)
+        entry = advisor_register_persona(
+            self._root,
+            "playbook",
+            persona_key,
+            reason=reason,
+            focus=focus_terms,
+            now=now,
+        )
+        if not entry:
+            return
+        hint: Dict[str, Any] = {
+            "key": entry.get("key"),
+            "label": entry.get("label"),
+            "focus_keywords": entry.get("focus_keywords", []),
+            "confidence_bias": entry.get("confidence_bias", 0.0),
+        }
+        if entry.get("reason"):
+            hint["reason"] = entry.get("reason")
+        active["persona_hint"] = hint
+        active_persona = advisor_active_persona(self._root, now)
+        if active_persona:
+            active["persona_active"] = {
+                "key": active_persona.get("key"),
+                "label": active_persona.get("label"),
+                "source": active_persona.get("source"),
+                "focus_keywords": active_persona.get("focus_keywords", []),
+                "confidence_bias": active_persona.get("confidence_bias", 0.0),
+            }
 
     def _aggressive_condition_slack(self, metric: Optional[str]) -> float:
         if not metric:
