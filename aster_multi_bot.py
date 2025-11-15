@@ -876,6 +876,8 @@ TREND_BIAS = os.getenv("ASTER_TREND_BIAS", "with").strip().lower()
 CONTRARIAN = TREND_BIAS in ("against", "att", "contrarian")
 ADX_MIN_THRESHOLD = float(os.getenv("ASTER_ADX_MIN", "23.0"))
 ADX_DELTA_MIN = float(os.getenv("ASTER_ADX_DELTA_MIN", "0.0"))
+CONTINUATION_ADX_DELTA_MIN = max(0.0, float(os.getenv("ASTER_CONT_ADX_DELTA_MIN", "0.0")))
+CONTINUATION_STOCHRSI_MIN = float(os.getenv("ASTER_CONT_STOCHRSI_MIN", "20.0"))
 LONG_RSI_MAX = float(os.getenv("ASTER_LONG_RSI_MAX", "70.0"))
 SHORT_RSI_MIN = float(os.getenv("ASTER_SHORT_RSI_MIN", "30.0"))
 STOCHRSI_LONG_MAX = float(os.getenv("ASTER_STOCHRSI_LONG_MAX", "24.0"))
@@ -8314,6 +8316,7 @@ class Strategy:
 
         quality_gate_pass = True
         sig = "NONE"
+        continuation_long = False
         if cross_up and rsi14[-1] > RSI_BUY_MIN and htf_trend_up:
             sig = "BUY"
         elif cross_dn and rsi14[-1] < RSI_SELL_MAX and htf_trend_down:
@@ -8322,12 +8325,36 @@ class Strategy:
             # Fallback: Trend-Align (ohne frischen Cross), leicht entspannte RSI-Schwellen
             if ema_fast[-1] > ema_slow[-1] and htf_trend_up and rsi14[-1] > (RSI_BUY_MIN - ALIGN_RSI_PAD):
                 sig = "BUY"
+                continuation_long = True
             elif ema_fast[-1] < ema_slow[-1] and htf_trend_down and rsi14[-1] < (RSI_SELL_MAX + ALIGN_RSI_PAD):
                 sig = "SELL"
             else:
                 return self._skip("no_cross", symbol, ctx=ctx_base, price=mid, atr=atr)
         else:
             return self._skip("no_cross", symbol, ctx=ctx_base, price=mid, atr=atr)
+
+        if sig == "BUY" and continuation_long:
+            continuation_block: Dict[str, str] = {}
+            if adx_delta < CONTINUATION_ADX_DELTA_MIN:
+                ctx_base["continuation_adx_delta_gate"] = float(adx_delta)
+                continuation_block["adx_delta"] = (
+                    f"{adx_delta:.2f} < {CONTINUATION_ADX_DELTA_MIN:.2f}"
+                )
+            if stoch_k_last < CONTINUATION_STOCHRSI_MIN:
+                ctx_base["continuation_stoch_rsi_gate"] = float(stoch_k_last)
+                continuation_block["stoch_rsi_k"] = (
+                    f"{stoch_k_last:.1f} < {CONTINUATION_STOCHRSI_MIN:.1f}"
+                )
+            if continuation_block:
+                ctx_base["continuation_momentum_gate"] = True
+                return self._skip(
+                    "continuation_momentum",
+                    symbol,
+                    continuation_block,
+                    ctx=ctx_base,
+                    price=mid,
+                    atr=atr,
+                )
 
         supertrend_gate_enabled = True
         if CONTRARIAN:
@@ -8508,6 +8535,18 @@ class Strategy:
             ob_req = ctx_base.get("orderbook_bias_required")
             if isinstance(ob_req, (int, float)):
                 filter_meta["orderbook_bias"] = f"{float(ob_req):+.2f}"
+
+            cont_adx_gate = ctx_base.get("continuation_adx_delta_gate")
+            if isinstance(cont_adx_gate, (int, float)):
+                filter_meta["continuation_adx_delta"] = (
+                    f"{float(cont_adx_gate):.2f} (<{CONTINUATION_ADX_DELTA_MIN:.2f})"
+                )
+
+            cont_stoch_gate = ctx_base.get("continuation_stoch_rsi_gate")
+            if isinstance(cont_stoch_gate, (int, float)):
+                filter_meta["continuation_stoch_rsi_k"] = (
+                    f"{float(cont_stoch_gate):.1f} (<{CONTINUATION_STOCHRSI_MIN:.1f})"
+                )
 
             adx_gate = ctx_base.get("adx_filter")
             if isinstance(adx_gate, (int, float)):
