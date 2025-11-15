@@ -92,3 +92,33 @@ def test_compute_qty_limits_position_to_ten_percent_equity():
     margin = notional / 50.0
 
     assert margin == pytest.approx(100.0)
+
+
+def test_compute_qty_respects_market_max_qty_cap():
+    exchange = DummyExchange([[]])
+    risk = RiskManager(exchange, DEFAULT_NOTIONAL)
+
+    risk._equity = 50000.0
+    risk._equity_ts = time.time()
+    risk._equity_ttl = 3600
+
+    risk.symbol_filters = {
+        "TRUSTUSDT": {
+            "stepSize": 1.0,
+            "marketStepSize": 1.0,
+            "maxQty": 25000.0,
+            "marketMaxQty": 10000.0,
+        }
+    }
+    risk._preset_min_notional = 0.0
+    risk._preset_max_notional = float("inf")
+
+    risk._drawdown_factor = lambda: 1.0  # type: ignore
+    risk._adaptive_size_multiplier = lambda *args, **kwargs: 1.0  # type: ignore
+    risk._ai_notional_tier = lambda *args, **kwargs: ("tier", 20000.0, 0.0, float("inf"))  # type: ignore
+    risk.max_leverage_for = lambda symbol: 50.0  # type: ignore
+
+    qty = risk.compute_qty("TRUSTUSDT", entry=0.15, sl=0.13, size_mult=5.0)
+
+    assert qty <= 10000.0
+    assert qty == pytest.approx(10000.0)
