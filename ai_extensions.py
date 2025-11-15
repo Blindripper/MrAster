@@ -428,6 +428,49 @@ POSTMORTEM_DEFAULT_WEIGHT = 0.15
 POSTMORTEM_DECAY = 0.92
 
 
+ADVISOR_MEMORY_TEMPLATES: Dict[str, str] = {
+    "funding": "Funding regime kept catching us off guard. Add a dedicated funding skew check before sizing new trades.",
+    "funding_edge": "Funding divergence kept hurting outcomes. Review perp vs. spot funding before taking the next setup.",
+    "oracle_gap": "Oracle vs. spot gaps repeated. Validate cross-venue pricing before committing risk.",
+    "pm_liquidity_gap": "Liquidity gaps were ignored. Demand confirmation of resting depth and slippage before re-entering.",
+    "pm_execution_delay": "Execution delays eroded performance. Pre-plan order routing to avoid hesitation on entries/exits.",
+    "pm_trend_break": "Trend breaks surprised the plan. Require HTF confirmation when structure fractures.",
+    "pm_macro_event": "Macro catalysts blindsided trades. Check the macro/event calendar before deploying capital.",
+    "pm_news_driver": "News-driven moves were missed. Monitor catalyst feeds before acting on signals.",
+    "pm_sentiment_conflict": "Sentiment conflicts kept biting. Align positioning with sentiment data or size down.",
+    "pm_volatility_bias": "Volatility regime misread. Respect current vol profile when sizing risk.",
+    "pm_spread_bias": "Spreads chewed through edge. Re-evaluate liquidity costs and avoid thin books.",
+    "pm_liquidity_profile": "Liquidity quality disappointed. Verify venue depth before scaling.",
+    "pm_execution_quality": "Execution quality lagged. Tighten broker/venue routing before next wave.",
+    "pm_event_risk": "Event risk was underestimated. Gate trades when event risk spikes.",
+    "pm_hype_bias": "Hype-driven froth hurt trades. Fade hype or reduce exposure when crowding builds.",
+    "pm_trend_bias": "Trend bias misalignment repeated. Sync entries with prevailing regime.",
+    "pm_adx_bias": "Trend strength filter slipped. Re-calibrate ADX thresholds before entries.",
+    "pm_ema_slope": "EMA slope context misread. Validate slope/stack alignment in the checklist.",
+}
+
+ADVISOR_MEMORY_ALIAS_MAP: Dict[str, Set[str]] = {
+    "funding": {"funding", "funding_edge"},
+    "funding_edge": {"funding_edge", "funding"},
+    "oracle_gap": {"oracle_gap", "oracle_gap_clamped"},
+    "pm_liquidity_gap": {"pm_liquidity_gap", "liquidity_gap"},
+    "pm_execution_delay": {"pm_execution_delay", "execution_delay"},
+    "pm_trend_break": {"pm_trend_break", "trend_break", "pm_trend_bias", "trend"},
+    "pm_macro_event": {"pm_macro_event", "macro_event"},
+    "pm_news_driver": {"pm_news_driver", "news_driver"},
+    "pm_sentiment_conflict": {"pm_sentiment_conflict", "sentiment_conflict"},
+    "pm_volatility_bias": {"pm_volatility_bias", "volatility", "atr_pct"},
+    "pm_spread_bias": {"pm_spread_bias", "spread", "spread_bps"},
+    "pm_liquidity_profile": {"pm_liquidity_profile", "liquidity_profile"},
+    "pm_execution_quality": {"pm_execution_quality", "execution_quality"},
+    "pm_event_risk": {"pm_event_risk", "event_risk", "sentinel_event_risk"},
+    "pm_hype_bias": {"pm_hype_bias", "hype", "sentinel_hype"},
+    "pm_trend_bias": {"pm_trend_bias", "trend", "regime_slope"},
+    "pm_adx_bias": {"pm_adx_bias", "adx"},
+    "pm_ema_slope": {"pm_ema_slope", "ema_slope"},
+}
+
+
 class PostmortemLearning:
     """Track qualitative LLM post-mortem labels and expose them as numeric features."""
 
@@ -543,6 +586,19 @@ class ParameterTuner:
         self._min_trades = 4
         self._ai_interval = 5 * 60
         self._history_cap = 220
+        self._lesson_threshold = 0.35
+        self._lesson_min_severity = 0.4
+        self._lesson_min_count = 2
+        self._lesson_retention = 3 * 24 * 60 * 60
+        memory_bucket = self._root.setdefault(
+            "advisor_memory", {"lessons": {}, "updated": 0.0}
+        )
+        if not isinstance(memory_bucket, dict):
+            memory_bucket = {"lessons": {}, "updated": 0.0}
+            self._root["advisor_memory"] = memory_bucket
+        memory_bucket.setdefault("lessons", {})
+        memory_bucket.setdefault("updated", 0.0)
+        self._memory = memory_bucket
 
     def observe(self, trade: Dict[str, Any], features: Dict[str, float]) -> None:
         record = {
@@ -560,6 +616,7 @@ class ParameterTuner:
         self._state["history"] = history
         self._recompute_local_overrides()
         self._maybe_request_ai()
+        self._update_advisor_memory()
 
     def overrides(self) -> Dict[str, Any]:
         return dict(self._state.get("overrides", {}))
@@ -583,6 +640,7 @@ class ParameterTuner:
                 except (TypeError, ValueError):
                     continue
         ctx["tuning_active"] = 1.0 if overrides else 0.0
+        self._apply_advisor_memory(ctx)
 
     def _recompute_local_overrides(self) -> None:
         history: List[Dict[str, Any]] = self._state.get("history", [])
@@ -800,6 +858,192 @@ class ParameterTuner:
         if isinstance(overrides, dict) and overrides:
             snapshot["current_overrides"] = overrides
         return snapshot
+
+
+    def advisor_memory(self) -> Dict[str, Any]:
+        lessons = {
+            key: dict(value)
+            for key, value in (self._memory.get("lessons", {}) or {}).items()
+        }
+        return {"lessons": lessons, "updated": self._memory.get("updated", 0.0)}
+
+    def _canonical_feature_key(self, key: Any) -> Optional[str]:
+        if key is None:
+            return None
+        if isinstance(key, str):
+            token = key.strip().lower()
+        else:
+            token = str(key).strip().lower()
+        if not token:
+            return None
+        if token in POSTMORTEM_FEATURE_MAP:
+            token = POSTMORTEM_FEATURE_MAP[token]
+        return token
+
+    def _collect_issue_stats(self) -> Dict[str, Dict[str, float]]:
+        history: List[Dict[str, Any]] = self._state.get("history", [])
+        if not history:
+            return {}
+        stats: Dict[str, Dict[str, float]] = {}
+        now = time.time()
+        window = history[-120:]
+        for record in window:
+            pnl_r = float(record.get("pnl_r", 0.0) or 0.0)
+            if pnl_r >= -0.1:
+                continue
+            features = record.get("features")
+            if not isinstance(features, dict):
+                continue
+            ts = float(record.get("ts", now) or now)
+            weight = min(abs(pnl_r), 3.0)
+            for raw_key, raw_value in features.items():
+                canonical = self._canonical_feature_key(raw_key)
+                if not canonical:
+                    continue
+                try:
+                    value = float(raw_value)
+                except (TypeError, ValueError):
+                    continue
+                if abs(value) < self._lesson_threshold:
+                    continue
+                bucket = stats.setdefault(
+                    canonical,
+                    {"score": 0.0, "weight": 0.0, "count": 0, "last_ts": ts},
+                )
+                bucket["score"] += value * weight
+                bucket["weight"] += weight
+                bucket["count"] += 1
+                if ts > bucket.get("last_ts", 0.0):
+                    bucket["last_ts"] = ts
+        for detail in stats.values():
+            weight = detail.get("weight", 0.0)
+            detail["avg"] = detail["score"] / weight if weight else 0.0
+            detail["avg_abs"] = abs(detail.get("avg", 0.0))
+        return stats
+
+    def _lesson_aliases(self, feature: str) -> Set[str]:
+        aliases = set(ADVISOR_MEMORY_ALIAS_MAP.get(feature, set()))
+        aliases.add(feature)
+        for raw_key, mapped in POSTMORTEM_FEATURE_MAP.items():
+            if mapped == feature:
+                aliases.add(raw_key)
+        return aliases
+
+    @staticmethod
+    def _lesson_label(feature: str) -> str:
+        label = feature
+        if label.startswith("pm_"):
+            label = label[3:]
+        label = label.replace("_", " ")
+        return label.strip().lower()
+
+    def _lesson_snippet(self, feature: str, avg: float) -> str:
+        template = ADVISOR_MEMORY_TEMPLATES.get(feature)
+        if template:
+            return template
+        label = self._lesson_label(feature)
+        return (
+            f"Postmortems keep flagging {label} issues. "
+            "Add this check to the pre-trade routine."
+        )
+
+    def _update_advisor_memory(self) -> None:
+        stats = self._collect_issue_stats()
+        lessons = self._memory.get("lessons")
+        if not isinstance(lessons, dict):
+            lessons = {}
+            self._memory["lessons"] = lessons
+        now = time.time()
+        changed = False
+        for feature, detail in stats.items():
+            if detail.get("count", 0) < self._lesson_min_count:
+                continue
+            if detail.get("avg_abs", 0.0) < self._lesson_min_severity:
+                continue
+            snippet = self._lesson_snippet(feature, detail.get("avg", 0.0))
+            entry = lessons.get(feature, {})
+            match_keys = sorted(self._lesson_aliases(feature))
+            payload = {
+                "feature": feature,
+                "snippet": snippet,
+                "avg_score": detail.get("avg", 0.0),
+                "severity": detail.get("avg_abs", 0.0),
+                "count": detail.get("count", 0),
+                "weight": detail.get("weight", 0.0),
+                "last_triggered": detail.get("last_ts", now),
+                "threshold": self._lesson_threshold,
+                "match_keys": match_keys,
+                "source": "postmortem",
+                "updated": now,
+            }
+            if entry != payload:
+                lessons[feature] = payload
+                changed = True
+        for feature in list(lessons.keys()):
+            if feature in stats:
+                continue
+            entry = lessons.get(feature, {})
+            last_ts = float(entry.get("last_triggered", 0.0) or 0.0)
+            if now - last_ts > self._lesson_retention:
+                del lessons[feature]
+                changed = True
+        if changed:
+            self._memory["updated"] = now
+            self._root["advisor_memory"] = self._memory
+
+    def _apply_advisor_memory(self, ctx: Dict[str, Any]) -> None:
+        lessons = self._memory.get("lessons")
+        if not isinstance(lessons, dict) or not lessons:
+            return
+        matches: List[Dict[str, Any]] = []
+        snippets: List[str] = []
+        for feature, entry in lessons.items():
+            snippet = entry.get("snippet")
+            if not snippet:
+                continue
+            threshold = float(entry.get("threshold", self._lesson_threshold) or 0.0)
+            keys = entry.get("match_keys") or [feature]
+            matched = False
+            peak = 0.0
+            for key in keys:
+                if key not in ctx:
+                    continue
+                try:
+                    value = float(ctx.get(key, 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    continue
+                if abs(value) >= threshold:
+                    matched = True
+                    peak = max(peak, abs(value))
+            if not matched:
+                continue
+            if snippet not in snippets:
+                snippets.append(snippet)
+            matches.append(
+                {
+                    "feature": feature,
+                    "snippet": snippet,
+                    "match_keys": list(keys),
+                    "peak": peak,
+                }
+            )
+        if not snippets:
+            return
+        existing = ctx.get("advisor_memory_snippets")
+        if isinstance(existing, list):
+            for snippet in snippets:
+                if snippet not in existing:
+                    existing.append(snippet)
+        else:
+            ctx["advisor_memory_snippets"] = list(snippets)
+        ctx["advisor_memory_active"] = 1.0
+        ctx.setdefault("advisor_memory_matches", []).extend(matches)
+        focus_list = ctx.setdefault("advisor_memory_focus", [])
+        for item in matches:
+            feature_name = item.get("feature")
+            if feature_name and feature_name not in focus_list:
+                focus_list.append(feature_name)
+        ctx["advisor_memory_updated"] = float(self._memory.get("updated", 0.0) or 0.0)
 
 
 class PlaybookManager:
