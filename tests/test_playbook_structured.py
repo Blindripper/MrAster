@@ -40,6 +40,38 @@ def test_playbook_structured_hard_block_trigger():
     assert "Event risk" in ctx["playbook_structured_block_reason"]
 
 
+def test_unconditional_hard_block_requires_symbol_flag():
+    state = {}
+    mgr = PlaybookManager(state, request_fn=_noop_request)
+    active = _base_active_state()
+    active["structured_risk_controls"] = [
+        {
+            "id": "global_hard_block_guard",
+            "effect": "hard_block",
+            "note": "No trading on hard-blocked symbols.",
+        }
+    ]
+    mgr._state["active"] = active  # pylint: disable=protected-access
+
+    ctx = {"side": "BUY", "symbol": "SOLUSDT"}
+    mgr.inject_context(ctx)
+
+    assert "playbook_structured_hard_block" not in ctx
+
+    active["symbol_directives"] = {
+        "SOLUSDT": {
+            "label": "block",
+            "level": PlaybookManager._DIRECTIVE_LEVEL["block"],  # pylint: disable=protected-access
+            "updated": time.time(),
+        }
+    }
+
+    ctx2 = {"side": "SELL", "symbol": "SOLUSDT"}
+    mgr.inject_context(ctx2)
+
+    assert ctx2.get("playbook_structured_hard_block") is True
+
+
 def test_playbook_structured_size_and_sl_tp_adjustments():
     state = {}
     mgr = PlaybookManager(state, request_fn=_noop_request)

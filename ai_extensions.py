@@ -1838,14 +1838,6 @@ class PlaybookManager:
                 ctx["playbook_focus_features"] = dict(focus_features)
                 for slug, weight in focus_features.items():
                     ctx.setdefault(f"playbook_focus_feature_{slug}", weight)
-        structured_directives: List[Dict[str, Any]] = []
-        actions_structured = active.get("structured_actions")
-        if isinstance(actions_structured, list):
-            structured_directives.extend(actions_structured)
-        risk_structured = active.get("structured_risk_controls")
-        if isinstance(risk_structured, list):
-            structured_directives.extend(risk_structured)
-        self._apply_structured_directives(ctx, structured_directives)
         symbol = str(ctx.get("symbol") or "").strip().upper()
         if symbol:
             directive = self.symbol_directive(symbol)
@@ -1868,6 +1860,14 @@ class PlaybookManager:
                 updated = directive.get("updated")
                 if isinstance(updated, (int, float)):
                     ctx["playbook_symbol_directive_updated"] = float(updated)
+        structured_directives: List[Dict[str, Any]] = []
+        actions_structured = active.get("structured_actions")
+        if isinstance(actions_structured, list):
+            structured_directives.extend(actions_structured)
+        risk_structured = active.get("structured_risk_controls")
+        if isinstance(risk_structured, list):
+            structured_directives.extend(risk_structured)
+        self._apply_structured_directives(ctx, structured_directives)
 
     @classmethod
     def _resolve_metric_value(cls, ctx: Dict[str, Any], metric: str) -> Optional[float]:
@@ -1974,6 +1974,25 @@ class PlaybookManager:
             multiplier = float(max(0.05, min(4.0, multiplier)))
             if effect == "hard_block":
                 condition = entry.get("condition")
+                if not isinstance(condition, dict):
+                    directive_label = str(
+                        ctx.get("playbook_symbol_directive") or ""
+                    ).strip().lower()
+                    try:
+                        directive_level = float(
+                            ctx.get("playbook_symbol_directive_level", 0.0) or 0.0
+                        )
+                    except (TypeError, ValueError):
+                        directive_level = 0.0
+                    block_threshold = float(
+                        self._DIRECTIVE_LEVEL.get("block", 2.6)
+                    )
+                    if directive_label != "block" and directive_level < block_threshold:
+                        if note:
+                            notes.append(
+                                f"ignored block {note}: no symbol hard-block context"
+                            )
+                        continue
                 if (
                     self.STRUCTURED_EVENT_BLOCK_MIN > 0
                     and isinstance(condition, dict)
