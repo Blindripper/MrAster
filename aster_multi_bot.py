@@ -6331,10 +6331,12 @@ class RiskManager:
         except TypeError:
             return float(self._equity or 0.0)
 
+        parsed_mapping = False
         try:
             for entry in iterator:
                 if not isinstance(entry, Mapping):
                     continue
+                parsed_mapping = True
                 asset = str(
                     entry.get("asset")
                     or entry.get("symbol")
@@ -6350,6 +6352,9 @@ class RiskManager:
                 if best_equity > 0:
                     break
         except Exception:
+            return float(self._equity or 0.0)
+
+        if not parsed_mapping:
             return float(self._equity or 0.0)
 
         self._equity = float(best_equity)
