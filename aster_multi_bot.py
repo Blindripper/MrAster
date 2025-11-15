@@ -6598,6 +6598,29 @@ class RiskManager:
             return max(1.0, min(LEVERAGE, cap))
         return max(1.0, cap)
 
+    def _active_leverage_for(self, symbol: str, cap: Optional[float] = None) -> float:
+        if cap is None or cap <= 0 or not math.isfinite(cap):
+            cap = self.max_leverage_for(symbol)
+        leverage = 0.0
+        if isinstance(self.state, dict):
+            try:
+                stored = self.state.get("symbol_leverage")
+                if isinstance(stored, dict):
+                    leverage = _coerce_positive_float(stored.get(symbol))
+                    if leverage <= 0:
+                        leverage = _coerce_positive_float(stored.get(str(symbol).upper()))
+            except Exception:
+                leverage = 0.0
+        if leverage <= 0 and math.isfinite(LEVERAGE) and LEVERAGE > 0:
+            leverage = float(LEVERAGE)
+        if leverage <= 0:
+            leverage = _coerce_positive_float(cap)
+        if cap and cap > 0 and math.isfinite(cap) and leverage > cap:
+            leverage = cap
+        if leverage <= 0 or not math.isfinite(leverage):
+            leverage = 1.0
+        return float(leverage)
+
     def _preferred_high_mode_leverage(self, symbol: str, cap: float) -> Optional[float]:
         if cap <= 0:
             return None
@@ -6704,13 +6727,16 @@ class RiskManager:
         # c) Cap via Leverage & Equity-Fraction
         equity = self._equity_cached()
         leverage_cap = self.max_leverage_for(symbol)
+        active_leverage = self._active_leverage_for(symbol, leverage_cap)
         dyn_cap = float("inf")
         if equity > 0:
             if MAX_EQUITY_PER_TRADE > 0:
-                effective_leverage = leverage_cap if math.isfinite(leverage_cap) and leverage_cap > 0 else 1.0
+                effective_leverage = (
+                    active_leverage if math.isfinite(active_leverage) and active_leverage > 0 else 1.0
+                )
                 dyn_cap = min(dyn_cap, equity * MAX_EQUITY_PER_TRADE * effective_leverage)
-            if math.isfinite(leverage_cap) and leverage_cap > 0:
-                dyn_cap = min(dyn_cap, equity * leverage_cap * EQUITY_FRACTION)
+            if math.isfinite(active_leverage) and active_leverage > 0:
+                dyn_cap = min(dyn_cap, equity * active_leverage * EQUITY_FRACTION)
         if MAX_NOTIONAL_USDT > 0:
             dyn_cap = min(dyn_cap, MAX_NOTIONAL_USDT)
         if math.isfinite(preset_max):

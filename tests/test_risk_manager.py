@@ -85,10 +85,12 @@ def test_compute_qty_limits_position_to_ten_percent_equity():
     risk._adaptive_size_multiplier = lambda *args, **kwargs: 1.0  # type: ignore
     risk._ai_notional_tier = lambda *args, **kwargs: ("tier", 10000.0, 0.0, float("inf"))  # type: ignore
     risk.max_leverage_for = lambda symbol: 50.0  # type: ignore
+    state = {"symbol_leverage": {"BTCUSDT": 5.0}}
+    risk.attach_state(state)
 
     qty = risk.compute_qty("BTCUSDT", entry=100.0, sl=95.0, size_mult=3.0)
 
     notional = qty * 100.0
-    margin = notional / 50.0
+    margin = notional / 5.0
 
     assert margin == pytest.approx(100.0)
