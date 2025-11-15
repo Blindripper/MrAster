@@ -712,6 +712,27 @@ DEFAULT_NOTIONAL = _env_float(
     _default_notional_fallback,
     allow_zero=False,
 )
+_short_depth_min = max(4000.0, DEFAULT_NOTIONAL * 4.0)
+SHORT_BOOK_NOTIONAL_MIN = _env_float(
+    "ASTER_SHORT_BOOK_NOTIONAL_MIN",
+    _short_depth_min,
+    allow_zero=False,
+)
+LATE_TREND_SPREAD_BPS = _env_float("ASTER_LATE_TREND_SPREAD_BPS", 0.00005, allow_zero=False)
+LATE_TREND_ATR_PCT = _env_float("ASTER_LATE_TREND_ATR_PCT", 0.004, allow_zero=False)
+WICKINESS_COMPRESSION_MAX = _env_float("ASTER_WICKINESS_COMPRESSION_MAX", 0.06, allow_zero=False)
+LOW_ATR_SL_MULT = _env_float("ASTER_LOW_ATR_SL_MULT", 1.2, allow_zero=False)
+LOW_ATR_TP_MULT = _env_float("ASTER_LOW_ATR_TP_MULT", 2.0, allow_zero=False)
+LOW_ATR_PCT_THRESHOLD = _env_float("ASTER_LOW_ATR_PCT_THRESHOLD", 0.005, allow_zero=False)
+LOB_CONFIRMATION_MIN = _env_float("ASTER_LOB_CONFIRMATION_MIN", 0.2, allow_zero=False)
+LOB_STRONG_WALL = _env_float("ASTER_LOB_STRONG_WALL", 0.9, allow_zero=False)
+SHORT_CLUSTER_LIMIT = max(1, int(os.getenv("ASTER_SHORT_CLUSTER_LIMIT", "2") or 2))
+SHORT_CLUSTER_CORR_THRESHOLD = _env_float("ASTER_SHORT_CLUSTER_CORR", 0.7, allow_zero=False)
+SENTINEL_LOCK_SNAPSHOTS = max(1, int(os.getenv("ASTER_SENTINEL_LOCK_SNAPSHOTS", "3") or 3))
+SENTINEL_SIZE_LOCK_CAP = _env_float("ASTER_SENTINEL_SIZE_LOCK_CAP", 0.6, allow_zero=False)
+SENTINEL_LEVERAGE_LOCK_CAP = _env_float("ASTER_SENTINEL_LEVERAGE_CAP", 2.0, allow_zero=False)
+EXECUTION_GAP_THRESHOLD = _env_float("ASTER_EXECUTION_GAP_THRESHOLD", 0.30, allow_zero=False)
+EXECUTION_FEEDBACK_TTL = max(600.0, _env_float("ASTER_EXECUTION_FEEDBACK_TTL", 7200.0, allow_zero=False))
 _DEFAULT_RISK_PER_TRADE = 0.005
 if PRESET_MODE in {"high", "att"} and AI_MODE_ENABLED:
     _DEFAULT_RISK_PER_TRADE = 0.10
@@ -9240,6 +9261,63 @@ class TradeManager:
 
         return 0.0
 
+    def _track_execution_gap(
+        self,
+        symbol: str,
+        entry_price: Any,
+        stop_loss: Any,
+        qty: Any,
+        ctx: Optional[Dict[str, Any]],
+        record: Dict[str, Any],
+        rec: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if not isinstance(ctx, dict):
+            return
+        expected_r = _coerce_float(ctx.get("expected_r"))
+        if expected_r is None or expected_r <= 0:
+            return
+        try:
+            qty_abs = abs(float(qty))
+        except (TypeError, ValueError):
+            return
+        if qty_abs <= 0:
+            return
+        try:
+            entry_val = float(entry_price)
+            stop_val = float(stop_loss)
+        except (TypeError, ValueError):
+            return
+        if not math.isfinite(stop_val) or not math.isfinite(entry_val):
+            return
+        risk_unit = abs(entry_val - stop_val) * qty_abs
+        if risk_unit <= 0:
+            return
+        expected_profit = abs(expected_r) * risk_unit
+        if expected_profit <= 0:
+            return
+        fees_val = abs(float(record.get("fees", 0.0) or 0.0))
+        expected_entry = None
+        if isinstance(rec, dict):
+            expected_entry = _coerce_float(rec.get("expected_entry"))
+        slippage_cost = 0.0
+        if expected_entry is not None and expected_entry > 0:
+            slippage_cost = abs(expected_entry - entry_val) * qty_abs
+        impact = fees_val + slippage_cost
+        if impact <= 0:
+            return
+        ratio = impact / max(expected_profit, 1e-9)
+        if ratio < EXECUTION_GAP_THRESHOLD:
+            return
+        record["execution_flag"] = "high_cost_gap"
+        record["execution_cost_ratio"] = round(ratio, 4)
+        feedback = self.state.setdefault("execution_feedback", {})
+        if isinstance(feedback, dict):
+            feedback[symbol] = {
+                "ratio": float(ratio),
+                "flagged_at": time.time(),
+                "expected_r": float(expected_r),
+            }
+
     def _rebuild_cumulative_metrics(self) -> Dict[str, Any]:
         metrics = {
             "total_trades": 0,
@@ -9728,6 +9806,11 @@ class TradeManager:
                     "bucket": bucket,
                     "context": ctx or {},
                 }
+                stop_hint = None
+                if isinstance(rec, dict):
+                    stop_hint = rec.get("sl") if rec.get("sl") is not None else rec.get("initial_sl")
+                if stop_hint is not None:
+                    self._track_execution_gap(sym, entry, stop_hint, qty, ctx, record, rec if isinstance(rec, dict) else None)
                 if ai_meta:
                     record["ai"] = ai_meta
                 reason = closed.get("reason")
@@ -9874,6 +9957,17 @@ class TradeManager:
                 "bucket": rec.get("bucket"),
                 "context": rec.get("ctx", {}),
             }
+            stop_hint = rec.get("sl") if rec.get("sl") is not None else rec.get("initial_sl")
+            if stop_hint is not None:
+                self._track_execution_gap(
+                    sym,
+                    entry,
+                    stop_hint,
+                    qty,
+                    rec.get("ctx", {}),
+                    record,
+                    rec,
+                )
             if abs(total_fees) > 0:
                 record["fees"] = float(total_fees)
             if "gross_pnl" in rec:
@@ -10703,6 +10797,14 @@ class Bot:
                 cap = LEVERAGE
             else:
                 cap = 20.0
+        sentinel_caps = self.state.get("sentinel_leverage_caps") if isinstance(self.state, dict) else {}
+        if isinstance(sentinel_caps, dict):
+            try:
+                sentinel_cap = float(sentinel_caps.get(symbol, 0.0) or 0.0)
+            except (TypeError, ValueError):
+                sentinel_cap = 0.0
+            if sentinel_cap > 0:
+                cap = min(cap, sentinel_cap)
         return max(1.0, float(cap))
 
     def _clamp_leverage(self, symbol: str, leverage: Any) -> float:
@@ -10850,6 +10952,56 @@ class Bot:
             return None
         return max(-1.0, min(1.0, corr))
 
+    def _rolling_return_correlation(
+        self, symbol: str, other: str, lookback: int = 60
+    ) -> Optional[float]:
+        if not symbol or not other or symbol == other:
+            return None
+        strategy = getattr(self, "strategy", None)
+        if not strategy:
+            return None
+        try:
+            kl_a = strategy._klines_cached(symbol, INTERVAL, max(lookback + 5, 60))
+            kl_b = strategy._klines_cached(other, INTERVAL, max(lookback + 5, 60))
+        except Exception:
+            return None
+        if not kl_a or not kl_b:
+            return None
+        closes_a = [float(bar[4]) for bar in kl_a[-(lookback + 1) :]]
+        closes_b = [float(bar[4]) for bar in kl_b[-(lookback + 1) :]]
+        n = min(len(closes_a), len(closes_b))
+        if n <= 2:
+            return None
+        returns_a = [
+            (closes_a[i + 1] - closes_a[i]) / max(abs(closes_a[i]), 1e-9)
+            for i in range(n - 1)
+            if closes_a[i] > 0
+        ]
+        returns_b = [
+            (closes_b[i + 1] - closes_b[i]) / max(abs(closes_b[i]), 1e-9)
+            for i in range(n - 1)
+            if closes_b[i] > 0
+        ]
+        m = min(len(returns_a), len(returns_b))
+        if m <= 3:
+            return None
+        tail_a = returns_a[-m:]
+        tail_b = returns_b[-m:]
+        mean_a = sum(tail_a) / m
+        mean_b = sum(tail_b) / m
+        var_a = sum((x - mean_a) ** 2 for x in tail_a)
+        var_b = sum((y - mean_b) ** 2 for y in tail_b)
+        if var_a <= 1e-12 or var_b <= 1e-12:
+            return None
+        cov = sum((x - mean_a) * (y - mean_b) for x, y in zip(tail_a, tail_b))
+        denom = math.sqrt(var_a * var_b)
+        if denom <= 0:
+            return None
+        corr = cov / denom
+        if not math.isfinite(corr):
+            return None
+        return max(-1.0, min(1.0, corr))
+
     @staticmethod
     def _resolve_breadth_score(ctx: Dict[str, Any]) -> Optional[float]:
         if not isinstance(ctx, dict):
@@ -10908,6 +11060,126 @@ class Bot:
             return result
         result["penalty"] = 0.5
         return result
+
+    def _short_cluster_guard(
+        self,
+        symbol: str,
+        bucket: str,
+        pos_map: Dict[str, float],
+    ) -> Dict[str, Any]:
+        guard = {"blocked": False, "reason": None, "conflicts": []}
+        if SHORT_CLUSTER_LIMIT <= 0:
+            return guard
+        live = self.state.get("live_trades", {}) if isinstance(self.state, dict) else {}
+        if not isinstance(live, dict):
+            live = {}
+        active: List[Dict[str, Any]] = []
+        target_bucket = str(bucket or "S").upper()
+        for sym, amt in pos_map.items():
+            token = str(sym or "").upper()
+            if not token or token == symbol.upper():
+                continue
+            try:
+                qty = float(amt)
+            except (TypeError, ValueError):
+                continue
+            if qty >= -1e-12:
+                continue
+            rec = live.get(token, {}) if isinstance(live, dict) else {}
+            active.append(
+                {
+                    "symbol": token,
+                    "bucket": str(rec.get("bucket") or "?").upper(),
+                    "ctx": rec.get("ctx", {}),
+                }
+            )
+        if not active:
+            return guard
+        same_bucket = [item for item in active if item.get("bucket") == target_bucket]
+        if len(same_bucket) >= SHORT_CLUSTER_LIMIT:
+            guard.update(
+                {
+                    "blocked": True,
+                    "reason": f"bucket_limit:{target_bucket}",
+                    "conflicts": [(item["symbol"], item.get("bucket")) for item in same_bucket],
+                }
+            )
+            return guard
+        corr_hits: List[Tuple[str, float]] = []
+        for item in active:
+            corr = self._rolling_return_correlation(symbol, item["symbol"])  # type: ignore[arg-type]
+            if corr is None or corr < SHORT_CLUSTER_CORR_THRESHOLD:
+                continue
+            corr_hits.append((item["symbol"], float(corr)))
+        if len(corr_hits) >= SHORT_CLUSTER_LIMIT:
+            guard.update({"blocked": True, "reason": "correlation", "conflicts": corr_hits})
+        else:
+            guard["conflicts"] = corr_hits
+        return guard
+
+    def _update_sentinel_lock_state(
+        self, symbol: str, event_risk: float, hype_score: float, label: str
+    ) -> bool:
+        locks = self.state.setdefault("sentinel_risk_locks", {})
+        if not isinstance(locks, dict):
+            locks = {}
+            self.state["sentinel_risk_locks"] = locks
+        entry = locks.get(symbol)
+        if not isinstance(entry, dict):
+            entry = {"locked": False, "cool": 0}
+        hot = (
+            event_risk >= 0.5
+            or hype_score >= 0.85
+            or str(label).lower() in {"yellow", "red"}
+        )
+        if hot:
+            entry["locked"] = True
+            entry["cool"] = 0
+        else:
+            if entry.get("locked"):
+                entry["cool"] = int(entry.get("cool", 0)) + 1
+                if entry["cool"] >= SENTINEL_LOCK_SNAPSHOTS:
+                    entry["locked"] = False
+                    entry["cool"] = 0
+            else:
+                entry["cool"] = 0
+        entry["ts"] = time.time()
+        if entry.get("locked") or entry.get("cool"):
+            locks[symbol] = entry
+        elif symbol in locks:
+            locks.pop(symbol, None)
+        leverage_caps = self.state.setdefault("sentinel_leverage_caps", {})
+        if not isinstance(leverage_caps, dict):
+            leverage_caps = {}
+            self.state["sentinel_leverage_caps"] = leverage_caps
+        if entry.get("locked"):
+            leverage_caps[symbol] = float(SENTINEL_LEVERAGE_LOCK_CAP)
+        elif symbol in leverage_caps:
+            leverage_caps.pop(symbol, None)
+        return bool(entry.get("locked") or hot)
+
+    def _execution_feedback_penalty(
+        self, symbol: str, event_risk: float, sentinel_label: str
+    ) -> float:
+        feedback = self.state.get("execution_feedback") if isinstance(self.state, dict) else None
+        if not isinstance(feedback, dict):
+            return 1.0
+        entry = feedback.get(symbol)
+        now = time.time()
+        if not isinstance(entry, dict):
+            return 1.0
+        try:
+            flagged_at = float(entry.get("flagged_at", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            flagged_at = 0.0
+        if flagged_at and now - flagged_at > EXECUTION_FEEDBACK_TTL:
+            feedback.pop(symbol, None)
+            return 1.0
+        if flagged_at <= 0:
+            return 1.0
+        if event_risk < 0.4 and sentinel_label not in {"yellow", "red"}:
+            return 1.0
+        return 0.85
 
     def _price_filter_limits(self, symbol: str) -> Tuple[float, float]:
         limits = self.risk.symbol_filters.get(symbol, {}) if hasattr(self, "risk") else {}
@@ -11968,6 +12240,49 @@ class Bot:
         if not manual_override and sig == "NONE" and not self.ai_advisor:
             return
 
+        liquidity_penalty = 1.0
+        orderbook_penalty = 1.0
+        spread_val = _coerce_float(ctx.get("spread_bps"))
+        atr_pct_val = _coerce_float(ctx.get("atr_pct"))
+        if (
+            spread_val is not None
+            and atr_pct_val is not None
+            and spread_val <= LATE_TREND_SPREAD_BPS
+            and atr_pct_val <= LATE_TREND_ATR_PCT
+        ):
+            liquidity_penalty = 0.5
+            ctx["late_trend_liquidity_penalty"] = float(liquidity_penalty)
+
+        if sig == "SELL":
+            adx_delta_val = _coerce_float(ctx.get("adx_delta"))
+            wickiness_val = _coerce_float(ctx.get("wickiness"))
+            falling_adx = adx_delta_val is not None and adx_delta_val < 0
+            compressed = (
+                wickiness_val is not None and wickiness_val <= WICKINESS_COMPRESSION_MAX
+            )
+            if falling_adx or compressed:
+                depth_val = _coerce_float(ctx.get("lob_ask_notional_10"))
+                levels_val = _coerce_float(ctx.get("orderbook_levels"))
+                atr_ok = atr_pct_val is not None and atr_pct_val >= LATE_TREND_ATR_PCT
+                depth_ok = depth_val is not None and depth_val >= SHORT_BOOK_NOTIONAL_MIN
+                levels_ok = levels_val is not None and levels_val >= 5
+                if not (depth_ok and levels_ok and atr_ok):
+                    if self.decision_tracker:
+                        self.decision_tracker.record_rejection("late_trend_liquidity")
+                    log.info(
+                        "Skip %s — late-trend liquidity filter tripped (depth %.0f, atr%% %.4f).",
+                        symbol,
+                        depth_val or 0.0,
+                        atr_pct_val or 0.0,
+                    )
+                    if manual_override:
+                        self._complete_manual_request(
+                            manual_req,
+                            "failed",
+                            error="Late-trend liquidity filter rejected this short",
+                        )
+                    return
+
         min_qvol = float(ctx.get("min_quote_volume", self.strategy.min_quote_vol))
         quote_volume = float(ctx.get("quote_volume", 0.0) or 0.0)
         if min_qvol > 0 and quote_volume < min_qvol:
@@ -12001,6 +12316,7 @@ class Bot:
                     )
                 return
 
+        sentinel_size_cap_value: Optional[float] = None
         sentinel_info = {
             "label": "green",
             "event_risk": 0.0,
@@ -12020,6 +12336,18 @@ class Bot:
         ctx["sentinel_event_risk"] = event_risk
         ctx["sentinel_hype"] = hype_score
         self._record_hype_score(symbol, hype_score)
+        sentinel_lock_active = self._update_sentinel_lock_state(
+            symbol, event_risk, hype_score, sentinel_label
+        )
+        if sentinel_lock_active:
+            sentinel_size_cap_value = float(SENTINEL_SIZE_LOCK_CAP)
+            ctx["sentinel_risk_lock"] = True
+            ctx["sentinel_size_cap"] = sentinel_size_cap_value
+        else:
+            ctx.pop("sentinel_risk_lock", None)
+        execution_penalty = self._execution_feedback_penalty(symbol, event_risk, sentinel_label)
+        if execution_penalty < 1.0:
+            ctx["execution_feedback_penalty"] = float(execution_penalty)
 
         correlated_hype_penalty = 1.0
         guard_decision = self._check_correlated_hype(symbol, sig, pos_map, ctx)
@@ -12065,6 +12393,58 @@ class Bot:
                 conflicts[0][0],
                 float(conflicts[0][1]),
             )
+
+        orderbook_bias_val = _coerce_float(ctx.get("orderbook_bias"))
+        orderbook_levels = _coerce_float(ctx.get("orderbook_levels"))
+        orderbook_ready = (
+            orderbook_levels is not None and orderbook_levels >= 5 and orderbook_bias_val is not None
+        )
+        if orderbook_ready and sig in {"BUY", "SELL"}:
+            bias_threshold = LOB_CONFIRMATION_MIN
+            if sig == "SELL" and orderbook_bias_val > -bias_threshold:
+                if self.decision_tracker:
+                    self.decision_tracker.record_rejection("orderbook_bias")
+                log.info(
+                    "Skip %s — order-book bias %.2f contradicts short entry.",
+                    symbol,
+                    orderbook_bias_val,
+                )
+                if manual_override:
+                    self._complete_manual_request(
+                        manual_req,
+                        "failed",
+                        error="Order-book shows buyers defending this level",
+                    )
+                return
+            if sig == "BUY" and orderbook_bias_val < bias_threshold:
+                if self.decision_tracker:
+                    self.decision_tracker.record_rejection("orderbook_bias")
+                log.info(
+                    "Skip %s — order-book bias %.2f contradicts long entry.",
+                    symbol,
+                    orderbook_bias_val,
+                )
+                if manual_override:
+                    self._complete_manual_request(
+                        manual_req,
+                        "failed",
+                        error="Order-book shows sellers capping this level",
+                    )
+                return
+            if sig == "SELL" and orderbook_bias_val > 0:
+                bid_wall = _coerce_float(ctx.get("lob_wall_bid")) or _coerce_float(
+                    ctx.get("lob_wall_score")
+                )
+                if bid_wall is not None and bid_wall >= LOB_STRONG_WALL:
+                    orderbook_penalty = 0.5
+                    ctx["orderbook_pressure_penalty"] = float(orderbook_penalty)
+            if sig == "BUY" and orderbook_bias_val < 0:
+                ask_wall = _coerce_float(ctx.get("lob_wall_ask")) or _coerce_float(
+                    ctx.get("lob_wall_score")
+                )
+                if ask_wall is not None and ask_wall >= LOB_STRONG_WALL:
+                    orderbook_penalty = 0.5
+                    ctx["orderbook_pressure_penalty"] = float(orderbook_penalty)
 
         if self.ai_advisor:
             try:
@@ -12215,6 +12595,30 @@ class Bot:
         policy_size_mult = float(size_mult)
         ctx["policy_bucket"] = bucket
         ctx["policy_size_multiplier"] = policy_size_mult
+        if sig == "SELL":
+            cluster_guard = self._short_cluster_guard(symbol, bucket, pos_map)
+            if cluster_guard.get("blocked"):
+                if self.decision_tracker:
+                    self.decision_tracker.record_rejection("short_cluster_limit")
+                reason = cluster_guard.get("reason") or "cluster_limit"
+                log.info(
+                    "Skip %s — short cluster guard (%s) active with %s.",
+                    symbol,
+                    reason,
+                    cluster_guard.get("conflicts"),
+                )
+                if manual_override:
+                    self._complete_manual_request(
+                        manual_req,
+                        "failed",
+                        error="Short exposure cluster already saturated",
+                    )
+                return
+            conflicts = cluster_guard.get("conflicts")
+            if conflicts:
+                ctx["short_cluster_correlations"] = [
+                    {"symbol": sym, "corr": float(corr)} for sym, corr in conflicts
+                ]
         sentinel_factor = float(actions.get("size_factor", 1.0) or 1.0)
         sentinel_factor *= max(0.35, 1.0 - event_risk * 0.65)
         if event_risk < 0.30:
@@ -12516,6 +12920,12 @@ class Bot:
             * confidence_factor
             * structured_size_mult
         )
+        if liquidity_penalty < 1.0:
+            size_mult *= liquidity_penalty
+        if orderbook_penalty < 1.0:
+            size_mult *= orderbook_penalty
+        if execution_penalty < 1.0:
+            size_mult *= execution_penalty
         if not manual_override:
             size_mult *= performance_factor
             size_mult *= tuning_bucket_factor
@@ -12568,6 +12978,8 @@ class Bot:
             size_mult = max(0.0, size_mult)
         if sentinel_multiplier_cap is not None:
             size_mult = min(size_mult, sentinel_multiplier_cap)
+        if sentinel_size_cap_value is not None:
+            size_mult = min(size_mult, sentinel_size_cap_value)
         ctx["tuning_size_bucket_multiplier"] = float(tuning_bucket_factor)
         ctx["playbook_size_multiplier"] = float(playbook_size_factor)
         ctx["playbook_structured_size_multiplier_applied"] = float(structured_size_mult)
@@ -12616,6 +13028,15 @@ class Bot:
                 self._complete_manual_request(manual_req, "failed", error="ATR unavailable")
             return
 
+        atr_pct_value = _coerce_float(ctx.get("atr_pct"))
+        low_atr_regime = (
+            atr_pct_value is not None
+            and atr_pct_value > 0
+            and atr_pct_value < LOW_ATR_PCT_THRESHOLD
+        )
+        if low_atr_regime:
+            ctx["low_atr_regime"] = float(atr_pct_value)
+
         dynamic_sl_mult = SL_ATR_MULT
         dynamic_tp_mult = TP_ATR_MULT
         structured_sl_mult = 1.0
@@ -12639,6 +13060,11 @@ class Bot:
             dynamic_tp_mult *= max(0.6, min(3.0, playbook_tp_factor))
             dynamic_sl_mult *= max(0.3, min(3.5, structured_sl_mult))
             dynamic_tp_mult *= max(0.3, min(3.5, structured_tp_mult))
+        if low_atr_regime:
+            dynamic_sl_mult = min(dynamic_sl_mult, LOW_ATR_SL_MULT)
+            dynamic_tp_mult = min(dynamic_tp_mult, LOW_ATR_TP_MULT)
+            ctx["low_atr_sl_multiplier"] = float(dynamic_sl_mult)
+            ctx["low_atr_tp_multiplier"] = float(dynamic_tp_mult)
         sl_dist = max(1e-9, dynamic_sl_mult * atr_abs)
         tp_dist = max(1e-9, dynamic_tp_mult * atr_abs)
         ctx["sl_atr_multiplier_dynamic"] = float(dynamic_sl_mult)
