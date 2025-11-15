@@ -2292,6 +2292,7 @@ const i18nRegistry = Array.from(i18nElements).map((element) => {
 
 let currentConfig = {};
 let reconnectTimer = null;
+let activePositionsStreamReconnectTimer = null;
 let pnlChart = null;
 let pnlChartExpanded = null;
 let proMode = false;
@@ -6057,6 +6058,18 @@ function updateActivePositionsView(options = {}) {
   activePositionsRows.replaceChildren(rowsFragment);
 }
 
+function applyActivePositionsPayload(openPayload, options = {}) {
+  const { syncSnapshot = true } = options || {};
+  if (syncSnapshot) {
+    if (latestTradesSnapshot && typeof latestTradesSnapshot === 'object') {
+      latestTradesSnapshot.open = openPayload;
+    } else if (openPayload !== undefined) {
+      latestTradesSnapshot = { open: openPayload };
+    }
+  }
+  renderActivePositions(openPayload);
+}
+
 function renderActivePositions(openPositions) {
   const previousPositions = Array.isArray(activePositions) ? activePositions.slice() : [];
   const nextPositions = normaliseActivePositions(openPositions);
@@ -6797,6 +6810,34 @@ function connectLogs() {
   });
   socket.addEventListener('close', () => {
     reconnectTimer = setTimeout(connectLogs, 2000);
+  });
+  socket.addEventListener('error', () => {
+    socket.close();
+  });
+}
+
+function connectActivePositionsStream() {
+  if (activePositionsStreamReconnectTimer) {
+    clearTimeout(activePositionsStreamReconnectTimer);
+    activePositionsStreamReconnectTimer = null;
+  }
+  const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+  const socket = new WebSocket(`${protocol}://${location.host}/ws/positions`);
+  socket.addEventListener('message', (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data && data.type === 'positions') {
+        const payload = data.open ?? data.payload ?? data.positions;
+        if (payload !== undefined) {
+          applyActivePositionsPayload(payload);
+        }
+      }
+    } catch (err) {
+      console.error('Position stream parse error', err);
+    }
+  });
+  socket.addEventListener('close', () => {
+    activePositionsStreamReconnectTimer = setTimeout(connectActivePositionsStream, 2000);
   });
   socket.addEventListener('error', () => {
     socket.close();
@@ -12648,7 +12689,7 @@ async function loadTrades() {
         snapshot.playbook_process,
         snapshot.playbook_market_overview,
       );
-      renderActivePositions(snapshot.open);
+      applyActivePositionsPayload(snapshot.open, { syncSnapshot: false });
       const proposals = Array.isArray(snapshot.ai_trade_proposals)
         ? snapshot.ai_trade_proposals
         : [];
@@ -13191,6 +13232,7 @@ async function init() {
   await loadTrades();
   await loadMostTradedCoins();
   connectLogs();
+  connectActivePositionsStream();
   setInterval(updateStatus, 5000);
   setInterval(loadTrades, 5000);
   if (tickerContainer) {
