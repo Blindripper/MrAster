@@ -421,6 +421,7 @@ const TRANSLATIONS = {
     'trades.metric.totalPnl': 'Совокупный PNL',
     'trades.metric.winRate': 'Винрейт',
     'trades.metric.avgR': 'Средний R',
+    'trades.postmortem.label': 'Постмортем-наставник',
     'trades.modal.noMetadata': 'Дополнительные данные отсутствуют.',
     'trades.synthetic.badge': 'Реализованный PNL',
     'trades.synthetic.note': 'Синхронизировано с биржевым реализованным PnL — данные входа/выхода недоступны.',
@@ -705,6 +706,7 @@ const TRANSLATIONS = {
     'trades.metric.totalPnl': 'Gesamt-PNL',
     'trades.metric.winRate': 'Trefferquote',
     'trades.metric.avgR': 'Ø R',
+    'trades.postmortem.label': 'Post-Mortem-Coach',
     'trades.modal.noMetadata': 'Keine zusätzlichen Daten vorhanden.',
     'trades.synthetic.badge': 'Realisierter PnL',
     'trades.synthetic.note': 'Aus dem Börsen-PnL übernommen – Ein-/Ausstiegskurse fehlen.',
@@ -992,6 +994,7 @@ const TRANSLATIONS = {
     'trades.metric.totalPnl': '누적 PNL',
     'trades.metric.winRate': '승률',
     'trades.metric.avgR': '평균 R',
+    'trades.postmortem.label': '포스트모템 코치',
     'trades.modal.noMetadata': '추가 메타데이터가 없습니다.',
     'trades.synthetic.badge': '실현 PnL',
     'trades.synthetic.note': '거래소 실현 PnL에서 동기화되어 진입/청산 가격이 없습니다.',
@@ -1279,6 +1282,7 @@ const TRANSLATIONS = {
     'trades.metric.totalPnl': 'PNL total',
     'trades.metric.winRate': 'Taux de réussite',
     'trades.metric.avgR': 'R moyen',
+    'trades.postmortem.label': 'Coach post-mortem',
     'trades.modal.noMetadata': 'Aucune donnée supplémentaire.',
     'trades.synthetic.badge': 'PnL réalisé',
     'trades.synthetic.note': 'Synchronisé depuis le PnL réalisé de l’exchange – entrées/sorties indisponibles.',
@@ -1566,6 +1570,7 @@ const TRANSLATIONS = {
     'trades.metric.totalPnl': 'PNL total',
     'trades.metric.winRate': 'Ratio de aciertos',
     'trades.metric.avgR': 'R medio',
+    'trades.postmortem.label': 'Coach post-mortem',
     'trades.modal.noMetadata': 'No hay datos adicionales.',
     'trades.synthetic.badge': 'PnL realizado',
     'trades.synthetic.note': 'Sincronizado desde el PnL realizado del exchange; no hay datos de entrada/salida.',
@@ -1852,6 +1857,7 @@ const TRANSLATIONS = {
     'trades.metric.totalPnl': 'Toplam PNL',
     'trades.metric.winRate': 'Kazanma oranı',
     'trades.metric.avgR': 'Ortalama R',
+    'trades.postmortem.label': 'Post-mortem koçu',
     'trades.modal.noMetadata': 'Ek veri yok.',
     'trades.synthetic.badge': 'Gerçekleşen PnL',
     'trades.synthetic.note': 'Borsa gerçekleşen PnL akışından eşitlendi; giriş/çıkış fiyatları yok.',
@@ -2132,6 +2138,7 @@ const TRANSLATIONS = {
     'trades.metric.totalPnl': '总盈亏',
     'trades.metric.winRate': '胜率',
     'trades.metric.avgR': '平均 R 值',
+    'trades.postmortem.label': '复盘教练',
     'trades.modal.noMetadata': '没有更多补充数据。',
     'trades.synthetic.badge': '已实现 PnL',
     'trades.synthetic.note': '来自交易所已实现 PnL 数据，缺少进出场价格。',
@@ -7343,7 +7350,7 @@ function buildTradeDetailContent(trade) {
     const postSection = document.createElement('div');
     postSection.className = 'trade-postmortem';
     const heading = document.createElement('h4');
-    heading.textContent = 'Post-mortem coach';
+    heading.textContent = translate('trades.postmortem.label', 'Post-mortem coach');
     const summary = document.createElement('p');
     summary.textContent = postmortem.analysis;
     postSection.append(heading, summary);
@@ -7366,6 +7373,7 @@ function buildTradeSummaryCard(trade) {
   const syntheticLabel = isSyntheticIncome
     ? translate('trades.synthetic.badge', 'Realized PnL')
     : null;
+  const postmortemSummary = extractPostmortemSummary(trade);
 
   const card = document.createElement('button');
   card.type = 'button';
@@ -7466,6 +7474,22 @@ function buildTradeSummaryCard(trade) {
 
   bottom.append(info, actions);
 
+  if (postmortemSummary) {
+    const snippet = document.createElement('div');
+    snippet.className = 'trade-card-postmortem';
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'trade-card-postmortem-label';
+    labelEl.textContent = translate('trades.postmortem.label', 'Post-mortem coach');
+
+    const textEl = document.createElement('p');
+    textEl.className = 'trade-card-postmortem-text';
+    textEl.textContent = postmortemSummary;
+
+    snippet.append(labelEl, textEl);
+    bottom.insertBefore(snippet, actions);
+  }
+
   card.append(top, bottom);
 
   const symbolLabel = trade.symbol || 'trade';
@@ -7476,6 +7500,36 @@ function buildTradeSummaryCard(trade) {
   card.addEventListener('click', () => openTradeModal(trade, card));
 
   return card;
+}
+
+function extractPostmortemSummary(trade) {
+  if (!trade || typeof trade !== 'object') return null;
+  const postmortem = trade.postmortem && typeof trade.postmortem === 'object' ? trade.postmortem : null;
+  if (!postmortem) return null;
+  const candidates = [
+    postmortem.card_summary,
+    postmortem.summary,
+    postmortem.note,
+    postmortem.analysis,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    const trimmed = candidate.trim();
+    if (!trimmed) continue;
+    const normalized = trimmed.replace(/\s+/g, ' ');
+    if (!normalized) continue;
+    return truncatePostmortemSummary(normalized);
+  }
+  return null;
+}
+
+function truncatePostmortemSummary(text, limit = 220) {
+  if (typeof text !== 'string') return '';
+  if (text.length <= limit) return text;
+  const slice = text.slice(0, limit - 1);
+  const lastSpace = slice.lastIndexOf(' ');
+  const safe = lastSpace > limit * 0.5 ? slice.slice(0, lastSpace) : slice;
+  return `${safe.trimEnd()}…`;
 }
 
 function formatContextValue(key, raw) {

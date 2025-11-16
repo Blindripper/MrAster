@@ -5563,6 +5563,33 @@ body.pro-mode .log-stream {
   display: none;
 }
 
+.trade-card-postmortem {
+  flex: 1 1 100%;
+  padding: 0.65rem 0.85rem;
+  border-radius: 0.85rem;
+  background: rgba(13, 16, 28, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-top: 0.15rem;
+}
+
+.trade-card-postmortem-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.trade-card-postmortem-text {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--text);
+}
+
 .trade-card-window {
   font-family: var(--font-mono);
   font-size: 0.72rem;
