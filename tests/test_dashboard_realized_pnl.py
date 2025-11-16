@@ -1,6 +1,6 @@
 import pytest
 
-from dashboard_server import _merge_realized_pnl
+from dashboard_server import _merge_realized_pnl, _strip_realized_income_trades
 
 
 def _make_trade(pnl: float = 5.0, pnl_r: float = 0.5) -> dict:
@@ -64,3 +64,39 @@ def test_merge_realized_pnl_synthesizes_records_for_untracked_income() -> None:
     assert record["synthetic_source"] == "realized_income"
     assert record["closed_at"] == pytest.approx(1_500.0)
     assert record["side"] == "SELL"
+
+
+def test_strip_realized_income_trades_removes_synthetic_records() -> None:
+    history = [
+        _make_trade(),
+        {
+            "symbol": "STOPUSDT",
+            "pnl": -0.25,
+            "synthetic": True,
+            "synthetic_source": "realized_income",
+        },
+    ]
+
+    filtered = _strip_realized_income_trades(history)
+
+    assert len(filtered) == 1
+    assert filtered[0]["symbol"] == "STABLEUSDT"
+
+
+def test_strip_realized_income_trades_preserves_real_records() -> None:
+    history = [
+        {
+            "symbol": "BTCUSDT",
+            "pnl": 1.0,
+            "context": {"source": "manual_import"},
+        },
+        {
+            "symbol": "ETHUSDT",
+            "pnl": -1.0,
+        },
+    ]
+
+    filtered = _strip_realized_income_trades(history)
+
+    symbols = {entry["symbol"] for entry in filtered}
+    assert symbols == {"BTCUSDT", "ETHUSDT"}
