@@ -6074,13 +6074,7 @@ function updateActivePositionsView(options = {}) {
 
   closedPositions.forEach((position) => clearCachedManagementEvent(position));
 
-  const closedNotifications = Array.isArray(closedPositions)
-    ? closedPositions
-        .map((position) => buildClosedPositionNotification(position, { includeSymbol: true }))
-        .filter(Boolean)
-    : [];
-
-  const notifications = [...closedNotifications, ...managementNotifications];
+  const notifications = managementNotifications.slice();
   const sortedNotifications = notifications
     .map((element) => {
       const raw = element?.dataset?.timestamp;
@@ -6095,12 +6089,8 @@ function updateActivePositionsView(options = {}) {
 
   const limitedNotifications = sortedNotifications.slice(0, 5);
   rememberPositionNotifications(limitedNotifications);
-  const historyNotifications =
-    limitedNotifications.length > 0 ? [] : buildHistoricalNotifications(5);
-  const notificationsToRender =
-    limitedNotifications.length > 0 ? limitedNotifications : historyNotifications;
+  const notificationsToRender = limitedNotifications;
   const hasNotifications = notificationsToRender.length > 0;
-  const shouldShowEmptyState = !hasNotifications;
 
   if (activePositionsNotifications) {
     if (hasNotifications) {
@@ -6120,19 +6110,11 @@ function updateActivePositionsView(options = {}) {
   }
 
   if (activePositionsNotificationsEmpty) {
-    if (shouldShowEmptyState) {
-      activePositionsNotificationsEmpty.removeAttribute('hidden');
-      activePositionsNotificationsEmpty.textContent = translate(
-        'active.notifications.empty',
-        'No recent management activity yet.',
-      );
-    } else {
-      activePositionsNotificationsEmpty.setAttribute('hidden', '');
-    }
+    activePositionsNotificationsEmpty.setAttribute('hidden', '');
   }
 
   if (activePositionsNotificationsPanel) {
-    if (hasNotifications || shouldShowEmptyState) {
+    if (hasNotifications) {
       activePositionsNotificationsPanel.removeAttribute('hidden');
     } else {
       activePositionsNotificationsPanel.setAttribute('hidden', '');
