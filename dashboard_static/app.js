@@ -10567,11 +10567,22 @@ function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null)
 
   const totals = cumulativeStats && typeof cumulativeStats === 'object' ? cumulativeStats : {};
   const fallback = sessionStats && typeof sessionStats === 'object' ? sessionStats : {};
+  const historyList = Array.isArray(historyEntries) ? historyEntries : [];
 
-  const totalTradesRaw = Number(
-    totals.total_trades ?? totals.count ?? fallback.count ?? 0,
-  );
-  const totalTrades = Number.isFinite(totalTradesRaw) && totalTradesRaw > 0 ? totalTradesRaw : 0;
+  const parsePositiveInteger = (value) => {
+    if (value == null) return null;
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return null;
+    if (numeric <= 0) return null;
+    return Math.round(Math.abs(numeric));
+  };
+
+  const tradeCountCandidates = [
+    parsePositiveInteger(fallback.count),
+    historyList.length > 0 ? historyList.length : null,
+    parsePositiveInteger(totals.total_trades ?? totals.count),
+  ];
+  const totalTrades = tradeCountCandidates.find((value) => value != null) ?? 0;
   heroTotalTrades.textContent = totalTrades.toLocaleString();
 
   const netPnlCandidate = totals.total_pnl ?? fallback.total_pnl ?? 0;
@@ -10671,21 +10682,39 @@ function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null)
     if (numeric > 1) return 1;
     return numeric;
   };
+
+  const historyWinRate = (() => {
+    if (historyList.length === 0) return null;
+    let wins = 0;
+    for (const trade of historyList) {
+      const pnlValue = lookupTradeNumber(trade, 'pnl') ?? lookupTradeNumber(trade, 'realized_pnl');
+      if (!Number.isFinite(pnlValue)) continue;
+      if (pnlValue > 0) {
+        wins += 1;
+      }
+    }
+    if (wins <= 0) return 0;
+    return Math.min(1, wins / historyList.length);
+  })();
+
   const fallbackWinRate = normalizeWinRate(fallback.win_rate ?? fallback.winRate);
   const totalsWinRate = normalizeWinRate(totals.win_rate ?? totals.winRate);
-  const winsRaw = Number(totals.wins ?? 0);
-  const lossesRaw = Number(totals.losses ?? 0);
-  const drawsRaw = Number(totals.draws ?? 0);
+  const winsRaw = Number(totals.wins ?? fallback.wins ?? 0);
+  const lossesRaw = Number(totals.losses ?? fallback.losses ?? 0);
+  const drawsRaw = Number(totals.draws ?? fallback.draws ?? 0);
   const denominator = totalTrades > 0 ? totalTrades : winsRaw + lossesRaw + drawsRaw;
-  let winRate = 0;
-  if (fallbackWinRate != null) {
-    winRate = fallbackWinRate;
-  } else if (totalsWinRate != null) {
-    winRate = totalsWinRate;
-  } else if (denominator > 0 && Number.isFinite(winsRaw)) {
-    winRate = winsRaw / denominator;
-  }
-  heroTotalWinRate.textContent = `${(winRate * 100).toFixed(1)}%`;
+  const computedWinRate =
+    historyWinRate != null
+      ? historyWinRate
+      : fallbackWinRate != null
+      ? fallbackWinRate
+      : totalsWinRate != null
+      ? totalsWinRate
+      : denominator > 0 && Number.isFinite(winsRaw)
+      ? Math.max(0, Math.min(1, winsRaw / denominator))
+      : 0;
+
+  heroTotalWinRate.textContent = `${(computedWinRate * 100).toFixed(1)}%`;
 
   const parseTradeCount = (...candidates) => {
     for (const candidate of candidates) {
@@ -10726,21 +10755,20 @@ function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null)
     pnlTradesLostValue.textContent = lossesCount != null ? lossesCount.toLocaleString() : '—';
   }
 
-  const volumeCandidate =
-    totals.total_volume ?? totals.volume ?? fallback.total_volume ?? fallback.totalVolume ?? 0;
+  const volumeCandidate = totals.total_volume ?? totals.volume ?? fallback.total_volume ?? fallback.totalVolume;
   const totalVolumeRaw = Number(volumeCandidate);
-  let totalVolumeValue = Number.isFinite(totalVolumeRaw)
-    ? Math.max(Math.abs(totalVolumeRaw), 0)
-    : 0;
+  let totalVolumeValue = Number.isFinite(totalVolumeRaw) && totalVolumeRaw > 0 ? Math.abs(totalVolumeRaw) : null;
 
-  if (totalVolumeValue <= 0) {
-    const derivedVolume = deriveHistoryVolume(historyEntries);
+  if (totalVolumeValue == null) {
+    const derivedVolume = deriveHistoryVolume(historyList);
     if (derivedVolume > 0) {
       totalVolumeValue = derivedVolume;
     }
   }
 
-  heroTotalVolume.textContent = `${totalVolumeValue.toLocaleString(undefined, {
+  const resolvedVolume = totalVolumeValue != null ? totalVolumeValue : 0;
+
+  heroTotalVolume.textContent = `${resolvedVolume.toLocaleString(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })} USDT`;
@@ -10751,9 +10779,9 @@ function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null)
     totalPnlDisplay: heroTotalPnl.textContent,
     realizedPnl: Number.isFinite(realizedPnl) ? realizedPnl : Number.isFinite(netPnl) ? netPnl : 0,
     aiBudgetSpent: Number.isFinite(aiBudgetSpent) ? aiBudgetSpent : 0,
-    winRate,
+    winRate: computedWinRate,
     winRateDisplay: heroTotalWinRate.textContent,
-    totalVolume: totalVolumeValue,
+    totalVolume: resolvedVolume,
     totalVolumeDisplay: heroTotalVolume.textContent,
   };
 }
