@@ -11028,6 +11028,7 @@ class Bot:
         self.state.setdefault("ai_trade_proposals", [])
         self.state.setdefault("manual_trade_requests", [])
         self.state.setdefault("manual_trade_history", [])
+        self._initialize_run_metadata()
         hype_history = self.state.get(self.HYPE_HISTORY_KEY)
         if not isinstance(hype_history, dict):
             hype_history = {}
@@ -11183,6 +11184,30 @@ class Bot:
         else:
             self._strategy.playbook_manager = None
         self._maybe_emit_ai_debug_state("startup")
+        self._persist_run_metadata()
+
+    def _initialize_run_metadata(self) -> None:
+        now = time.time()
+        prev_run_id = self.state.get("run_id")
+        if prev_run_id:
+            self.state["previous_run_id"] = prev_run_id
+        prev_started = self.state.get("run_started_at")
+        if prev_started:
+            self.state["previous_run_started_at"] = prev_started
+        self.state["run_id"] = uuid.uuid4().hex
+        self.state["run_started_at"] = now
+        self.state["run_started_at_iso"] = datetime.fromtimestamp(now, timezone.utc).isoformat()
+        try:
+            generation = int(self.state.get("run_generation", 0) or 0)
+        except (TypeError, ValueError):
+            generation = 0
+        self.state["run_generation"] = generation + 1
+
+    def _persist_run_metadata(self) -> None:
+        try:
+            self.save()
+        except Exception as exc:
+            log.debug(f"run metadata persist failed: {exc}")
 
     def _apply_policy_tunables(self) -> None:
         policy = getattr(self, "policy", None)
