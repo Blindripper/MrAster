@@ -120,7 +120,6 @@ const heroTotalTrades = document.getElementById('hero-total-trades');
 const heroTotalPnl = document.getElementById('hero-total-pnl');
 const heroTotalPnlNote = document.getElementById('hero-total-pnl-note');
 const heroTotalWinRate = document.getElementById('hero-total-win-rate');
-const heroTotalVolume = document.getElementById('hero-total-volume');
 const pnlTradesWonValue = document.getElementById('pnl-trades-won');
 const pnlTradesLostValue = document.getElementById('pnl-trades-lost');
 const shareFeedback = document.getElementById('share-feedback');
@@ -10629,7 +10628,7 @@ function deriveHistoryVolume(historyEntries) {
 }
 
 function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null) {
-  if (!heroTotalTrades || !heroTotalPnl || !heroTotalWinRate || !heroTotalVolume) return;
+  if (!heroTotalTrades || !heroTotalPnl || !heroTotalWinRate) return;
 
   const totals = cumulativeStats && typeof cumulativeStats === 'object' ? cumulativeStats : {};
   const fallback = sessionStats && typeof sessionStats === 'object' ? sessionStats : {};
@@ -10821,24 +10820,6 @@ function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null)
     pnlTradesLostValue.textContent = lossesCount != null ? lossesCount.toLocaleString() : '—';
   }
 
-  const volumeCandidate = totals.total_volume ?? totals.volume ?? fallback.total_volume ?? fallback.totalVolume;
-  const totalVolumeRaw = Number(volumeCandidate);
-  let totalVolumeValue = Number.isFinite(totalVolumeRaw) && totalVolumeRaw > 0 ? Math.abs(totalVolumeRaw) : null;
-
-  if (totalVolumeValue == null) {
-    const derivedVolume = deriveHistoryVolume(historyList);
-    if (derivedVolume > 0) {
-      totalVolumeValue = derivedVolume;
-    }
-  }
-
-  const resolvedVolume = totalVolumeValue != null ? totalVolumeValue : 0;
-
-  heroTotalVolume.textContent = `${resolvedVolume.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })} USDT`;
-
   heroMetricsSnapshot = {
     totalTrades,
     totalPnl: Number.isFinite(netPnl) ? netPnl : 0,
@@ -10847,8 +10828,6 @@ function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null)
     aiBudgetSpent: Number.isFinite(aiBudgetSpent) ? aiBudgetSpent : 0,
     winRate: computedWinRate,
     winRateDisplay: heroTotalWinRate.textContent,
-    totalVolume: resolvedVolume,
-    totalVolumeDisplay: heroTotalVolume.textContent,
   };
 }
 
