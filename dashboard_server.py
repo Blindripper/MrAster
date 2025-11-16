@@ -2118,12 +2118,35 @@ def _merge_realized_pnl(history: List[Dict[str, Any]], realized: List[Dict[str, 
 
                 if matched:
                     realized_sum = sum(_safe_float(e.get("income")) or 0.0 for e in matched)
-                    if record.get("pnl") is not None and "estimated_pnl" not in record:
+                    prev_pnl = _safe_float(record.get("pnl"))
+                    prev_r = _safe_float(record.get("pnl_r"))
+                    if prev_pnl is not None and "estimated_pnl" not in record:
                         try:
-                            record["estimated_pnl"] = float(record.get("pnl") or 0.0)
+                            record["estimated_pnl"] = float(prev_pnl)
                         except (TypeError, ValueError):
-                            record["estimated_pnl"] = record.get("pnl")
+                            record["estimated_pnl"] = prev_pnl
                     record["realized_pnl"] = realized_sum
+                    record["pnl"] = realized_sum
+                    if (
+                        prev_r is not None
+                        and abs(prev_r) > 1e-9
+                    ):
+                        risk_reference = _safe_float(record.get("estimated_pnl"))
+                        if risk_reference is None:
+                            risk_reference = prev_pnl
+                        if (
+                            risk_reference is not None
+                            and abs(risk_reference) > 1e-9
+                        ):
+                            risk_unit = risk_reference / prev_r
+                            if (
+                                risk_unit is not None
+                                and math.isfinite(risk_unit)
+                                and abs(risk_unit) > 1e-9
+                            ):
+                                new_r = realized_sum / risk_unit
+                                if math.isfinite(new_r):
+                                    record["pnl_r"] = new_r
                     timeline[symbol] = remaining
         merged.append(record)
 
