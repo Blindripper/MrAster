@@ -1,0 +1,1441 @@
+{
+  "generated_at": "2025-11-16T16:52:10.714Z",
+  "history": [],
+  "stats": {
+    "count": 0,
+    "total_pnl": 0,
+    "total_r": 0,
+    "win_rate": 0,
+    "best_trade": null,
+    "worst_trade": null,
+    "ai_hint": ""
+  },
+  "decision_stats": {
+    "taken": 2,
+    "taken_by_bucket": {
+      "S": 2
+    },
+    "rejected": {
+      "oracle_gap": 1,
+      "non_arb_bias_short": 2,
+      "playbook_structured_block": 12,
+      "spread_tight": 28,
+      "no_cross": 14,
+      "stoch_rsi_trend_short": 41,
+      "edge_r": 17,
+      "long_overextended": 5,
+      "late_trend_liquidity": 5,
+      "short_cluster_limit": 1,
+      "min_qvol": 24,
+      "wicky": 1
+    },
+    "rejected_total": 151,
+    "last_updated": 1763311919.4028525
+  },
+  "cumulative_stats": {
+    "total_trades": 0,
+    "total_pnl": -0.028173000000000004,
+    "wins": 0,
+    "losses": 0,
+    "draws": 0,
+    "total_volume": 0,
+    "realized_pnl": 0,
+    "ai_budget_spent": 0.028173000000000004,
+    "alpha_confidence": 0.0130431574383916
+  },
+  "ai_budget": {
+    "date": "2025-11-16",
+    "spent": 0.028173000000000004,
+    "history": [
+      {
+        "ts": 1763311766.2032156,
+        "cost": 0.014862,
+        "meta": {
+          "kind": "playbook",
+          "model": "gpt-4.1",
+          "usage": {
+            "prompt_tokens": 1363,
+            "completion_tokens": 1197,
+            "total_tokens": 2560,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          }
+        }
+      },
+      {
+        "ts": 1763311794.9778726,
+        "cost": 0.004458,
+        "meta": {
+          "kind": "plan",
+          "model": "gpt-4.1",
+          "usage": {
+            "prompt_tokens": 649,
+            "completion_tokens": 279,
+            "total_tokens": 928,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          }
+        }
+      },
+      {
+        "ts": 1763311816.1330886,
+        "cost": 0.004710000000000001,
+        "meta": {
+          "kind": "plan",
+          "model": "gpt-4.1",
+          "usage": {
+            "prompt_tokens": 661,
+            "completion_tokens": 303,
+            "total_tokens": 964,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          }
+        }
+      },
+      {
+        "ts": 1763311828.266897,
+        "cost": 0.004143,
+        "meta": {
+          "kind": "plan",
+          "model": "gpt-4.1",
+          "usage": {
+            "prompt_tokens": 670,
+            "completion_tokens": 237,
+            "total_tokens": 907,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          }
+        }
+      }
+    ],
+    "stats": {
+      "gpt-4.1::playbook": {
+        "avg": 0.014862,
+        "n": 1,
+        "last": 0.014862,
+        "updated": 1763311766.203241
+      },
+      "gpt-4.1::*": {
+        "avg": 0.007043250000000001,
+        "n": 4,
+        "last": 0.004143,
+        "updated": 1763311828.2669244
+      },
+      "*::playbook": {
+        "avg": 0.014862,
+        "n": 1,
+        "last": 0.014862,
+        "updated": 1763311766.2032578
+      },
+      "*::*": {
+        "avg": 0.007043250000000001,
+        "n": 4,
+        "last": 0.004143,
+        "updated": 1763311828.266932
+      },
+      "gpt-4.1::plan": {
+        "avg": 0.004437,
+        "n": 3,
+        "last": 0.004143,
+        "updated": 1763311828.2669165
+      },
+      "*::plan": {
+        "avg": 0.004437,
+        "n": 3,
+        "last": 0.004143,
+        "updated": 1763311828.2669287
+      }
+    },
+    "count": 4
+  },
+  "open": {
+    "DEXEUSDT": {
+      "entry": 5.466355859289914,
+      "expected_entry": 5.4655,
+      "sl": 5.574,
+      "tp": 5.289,
+      "side": "SELL",
+      "qty": 367.28000000000003,
+      "ctx": {
+        "last_price": 5.46,
+        "universe_score": 2.5,
+        "universe_qv_score": 2.5,
+        "universe_perf_bias": 1,
+        "universe_budget_bias": 1,
+        "mid_price": 5.4595,
+        "spread_bps": 0.0001831669566810759,
+        "atr_abs": 0.040000000000000036,
+        "atr_pct": 0.007326007326007333,
+        "orderbook_levels": null,
+        "wickiness": 0.372093023255813,
+        "ema_fast": 5.52040999218516,
+        "ema_slow": 5.581177011802842,
+        "ema_fast_delta": -0.06076701961768194,
+        "ema_htf": 5.688125732943796,
+        "cross_up": 0,
+        "cross_down": 0,
+        "rsi": 31.627654883659503,
+        "bb_upper": 5.636141452165173,
+        "bb_lower": 5.4182585478348315,
+        "bb_middle": 5.527200000000002,
+        "bb_width": 0.21788290433034163,
+        "bb_position": 0.19157745438293974,
+        "stoch_rsi_k": 54.73828082489704,
+        "stoch_rsi_d": 55.49778495093423,
+        "supertrend": 5.562351355072183,
+        "supertrend_dir": -1,
+        "adx": 71.33789155438107,
+        "adx_delta": 57.43357563230645,
+        "slope_fast": -0.0036753486755481415,
+        "htf_trend_up": 0,
+        "htf_trend_down": 1,
+        "setup_trend_follow": 1,
+        "setup_range_reversion": 0,
+        "setup_breakout_retest": 0,
+        "range_quality": 0,
+        "breakout_quality": 0,
+        "range_direction": 0,
+        "breakout_direction": 0,
+        "adx_filter": 71.33789155438107,
+        "adx_delta_filter": 57.43357563230645,
+        "slope_htf": -0.0051183281223311965,
+        "min_edge_r_dynamic": 0.04,
+        "rsi_buy_min": 51,
+        "rsi_sell_max": 49,
+        "trend_short_stoch_min": 34,
+        "expected_r": 0.1562889508569031,
+        "quality_gate_pass": 1,
+        "filter_penalty_score": 0,
+        "filter_bonus_score": 0,
+        "qv_score": 2.5,
+        "quote_volume": 63580852.94,
+        "min_quote_volume": 325000,
+        "mark_price": 5.459,
+        "oracle_price": 5.46621786,
+        "oracle_gap": -0.001320448651126539,
+        "oracle_gap_clamped": -0.00065,
+        "funding_edge": 0.0006207399999999999,
+        "non_arb_region": -1,
+        "funding": -0.00002926,
+        "arb_gate_source": "funding_edge",
+        "arb_gate_pass": 1,
+        "trend": -1,
+        "regime_adx": 0.5743357563230646,
+        "regime_slope": -0.0036753486755481415,
+        "symbol": "DEXEUSDT",
+        "ai_priority_side_hint": "SELL",
+        "daily_long_ratio": 1,
+        "daily_long_count": 0,
+        "daily_short_count": 0,
+        "sentinel_event_risk": 0.23439321723189738,
+        "sentinel_hype": 0.9151699435926451,
+        "sentinel_label": "green",
+        "sentinel_risk_lock": true,
+        "sentinel_size_cap": 0.6,
+        "side": "SELL",
+        "pm_trend_break": 0,
+        "pm_news_driver": 0,
+        "pm_liquidity_gap": 0,
+        "pm_execution_delay": 0,
+        "pm_sentiment_conflict": 0,
+        "pm_macro_event": 0,
+        "pm_trend_bias": 0,
+        "pm_adx_bias": 0,
+        "pm_ema_slope": 0,
+        "pm_volatility_bias": 0,
+        "pm_event_risk": 0,
+        "pm_hype_bias": 0,
+        "pm_spread_bias": 0,
+        "pm_liquidity_profile": 0,
+        "pm_execution_quality": 0,
+        "pm_volatility_compression_flag": 0,
+        "tuning_confidence": 0,
+        "tuning_risk_bias": 1,
+        "tuning_size_bias": 1,
+        "tuning_size_bias_global": 1,
+        "tuning_active": 0,
+        "advisor_persona": "event_risk",
+        "advisor_persona_label": "Event-Risk",
+        "advisor_persona_source": "playbook",
+        "advisor_persona_focus_terms": [
+          "event_risk",
+          "hedge",
+          "reduce",
+          "news",
+          "hype",
+          "breadth",
+          "volatility",
+          "trend_strength",
+          "size",
+          "risk",
+          "85%",
+          "position"
+        ],
+        "advisor_persona_confidence_bias": -0.08,
+        "playbook_persona": "event_risk",
+        "playbook_persona_focus": [
+          "event_risk",
+          "hedge",
+          "reduce",
+          "news",
+          "hype",
+          "breadth",
+          "volatility",
+          "trend_strength",
+          "size",
+          "risk",
+          "85%",
+          "position"
+        ],
+        "event_risk": -0.4,
+        "hype": 0.7,
+        "volatility": -0.3,
+        "breadth": 0.5,
+        "trend_strength": 0.2,
+        "playbook_features_raw": {
+          "event_risk": -0.4,
+          "hype": 0.7,
+          "volatility": -0.3,
+          "breadth": 0.5,
+          "trend_strength": 0.2
+        },
+        "playbook_features": {
+          "event_risk": -0.4,
+          "hype": 0.7,
+          "volatility": -0.3,
+          "breadth": 0.5,
+          "trend_strength": 0.2
+        },
+        "playbook_feature_event_risk": -0.4,
+        "playbook_feature_hype": 0.7,
+        "playbook_feature_volatility": -0.3,
+        "playbook_feature_breadth": 0.5,
+        "playbook_feature_trend_strength": 0.2,
+        "playbook_mode": "momentum_cautious",
+        "playbook_bias": "neutral",
+        "playbook_size_bias_buy": 0.97,
+        "playbook_size_bias_sell": 0.9279999999999999,
+        "playbook_size_bias_map": {
+          "BUY": 0.97,
+          "SELL": 0.9279999999999999
+        },
+        "playbook_size_bias": 0.9279999999999999,
+        "playbook_sl_bias": 1.25,
+        "playbook_tp_bias": 1.4,
+        "playbook_risk_bias": 1.0470000000000002,
+        "playbook_confidence": 0.68,
+        "playbook_request_id": "playbook::playbook:547c9e2860e6",
+        "playbook_strategy_name": "Cautious Momentum with Hype Filtering",
+        "playbook_strategy_objective": "Capture upside from strong hype and positive momentum while controlling for elevated event risk and volatility spikes.",
+        "playbook_strategy_reason": "Market breadth is positive (7/10 green), hype is elevated across the board, but event risk and volatility are rising in select assets. This regime favors selective momentum exposure with tighter risk controls.",
+        "playbook_signal_1": "Average hype score is extremely high (0.91), indicating strong speculative interest.",
+        "playbook_signal_2": "Event risk is moderate overall but with outliers (DASHUSDT, ZECUSDT, ASTERUSDT) showing high event risk and volatility.",
+        "playbook_signal_3": "Major assets (BTC, ETH, BNB, SOL) remain green with low event risk and high hype.",
+        "playbook_strategy_signals": [
+          "Average hype score is extremely high (0.91), indicating strong speculative interest.",
+          "Event risk is moderate overall but with outliers (DASHUSDT, ZECUSDT, ASTERUSDT) showing high event risk and volatility.",
+          "Major assets (BTC, ETH, BNB, SOL) remain green with low event risk and high hype.",
+          "Recent rallies in DASHUSDT and ZECUSDT signal pockets of explosive momentum, but also increased risk.",
+          "Breadth remains constructive, but yellow warnings on 3/10 assets suggest caution."
+        ],
+        "playbook_strategy_actions": [
+          {
+            "title": "Reduce position sizing across all trades",
+            "detail": "Lower base size to 85% of normal to reflect increased event risk and volatility.",
+            "trigger": "Triggered by yellow warnings and high event risk in 3/10 assets.",
+            "focus_terms": [
+              "reduce",
+              "size",
+              "risk",
+              "volatility",
+              "85%",
+              "position"
+            ]
+          },
+          {
+            "title": "Tighten stop-losses moderately",
+            "detail": "Increase stop-loss tightness by 25% to limit downside in case of reversals.",
+            "trigger": "Triggered by high volatility and event risk spikes.",
+            "focus_terms": [
+              "tighten",
+              "increase",
+              "limit",
+              "volatility",
+              "risk",
+              "25%"
+            ]
+          },
+          {
+            "title": "Expand take-profit targets",
+            "detail": "Increase take-profit targets by 40% to capture potential outsized moves driven by hype.",
+            "trigger": "Triggered by high average hype and recent strong rallies.",
+            "focus_terms": [
+              "expand",
+              "increase",
+              "capture",
+              "40%",
+              "take",
+              "profit"
+            ]
+          },
+          {
+            "title": "Avoid new trades on hard yellow assets",
+            "detail": "Do not open new positions in assets with yellow label and high event risk.",
+            "trigger": "Triggered by yellow label and event risk > 0.4.",
+            "focus_terms": [
+              "avoid",
+              "risk",
+              "new",
+              "trades",
+              "hard",
+              "yellow"
+            ]
+          }
+        ],
+        "playbook_action_1_title": "Reduce position sizing across all trades",
+        "playbook_action_1_detail": "Lower base size to 85% of normal to reflect increased event risk and volatility.",
+        "playbook_action_1_trigger": "Triggered by yellow warnings and high event risk in 3/10 assets.",
+        "playbook_action_1_focus_terms": [
+          "reduce",
+          "size",
+          "risk",
+          "volatility",
+          "85%",
+          "position"
+        ],
+        "playbook_action_2_title": "Tighten stop-losses moderately",
+        "playbook_action_2_detail": "Increase stop-loss tightness by 25% to limit downside in case of reversals.",
+        "playbook_action_2_trigger": "Triggered by high volatility and event risk spikes.",
+        "playbook_action_2_focus_terms": [
+          "tighten",
+          "increase",
+          "limit",
+          "volatility",
+          "risk",
+          "25%"
+        ],
+        "playbook_action_3_title": "Expand take-profit targets",
+        "playbook_action_3_detail": "Increase take-profit targets by 40% to capture potential outsized moves driven by hype.",
+        "playbook_action_3_trigger": "Triggered by high average hype and recent strong rallies.",
+        "playbook_action_3_focus_terms": [
+          "expand",
+          "increase",
+          "capture",
+          "40%",
+          "take",
+          "profit"
+        ],
+        "playbook_action_focus_terms": [
+          "reduce",
+          "size",
+          "risk",
+          "volatility",
+          "85%",
+          "position",
+          "tighten",
+          "increase",
+          "limit",
+          "25%",
+          "expand",
+          "capture",
+          "40%",
+          "take",
+          "profit",
+          "avoid",
+          "new",
+          "trades",
+          "hard",
+          "yellow"
+        ],
+        "playbook_strategy_risk_controls": [
+          "Apply size cap to assets with event risk > 0.4 (max 70% of normal size).",
+          "Block new trades if event risk exceeds 0.8.",
+          "Do not increase exposure if hype score is above 0.95 and event risk is above 0.4.",
+          "Maintain neutral bias; do not overweight buy or sell unless breadth deteriorates."
+        ],
+        "playbook_focus_side_bias": 0.2714285714285714,
+        "playbook_focus_risk_bias": 0.37894736842105264,
+        "playbook_focus_features": {
+          "25": 1,
+          "40": 1,
+          "70": 1,
+          "85": 1,
+          "risk": 0.55,
+          "volatility": 1,
+          "event": 1,
+          "hype": 1,
+          "breadth": 1
+        },
+        "playbook_focus_feature_risk": 0.55,
+        "playbook_focus_feature_volatility": 1,
+        "playbook_focus_feature_85": 1,
+        "playbook_focus_feature_25": 1,
+        "playbook_focus_feature_40": 1,
+        "playbook_focus_feature_event": 1,
+        "playbook_focus_feature_70": 1,
+        "playbook_focus_feature_hype": 1,
+        "playbook_focus_feature_breadth": 1,
+        "playbook_structured_size_multiplier": 0.85,
+        "playbook_structured_tp_multiplier": 1.4,
+        "playbook_structured_notes": [
+          "size×0.85: Reduce all position sizes to 85% to reflect regime risk.",
+          "TP×1.40: Expand take-profit targets by 40% when hype is high."
+        ],
+        "budget_bias": 1,
+        "persona_focus_trend": 0.5,
+        "persona_focus_event": 1,
+        "persona_focus_risk": 1,
+        "playbook_guardrail_reason_event": 0.4,
+        "playbook_guardrail_reason_volatility": 0.007326007326007333,
+        "playbook_guardrail_reason_spread": 0.15000000000000002,
+        "playbook_guardrail_reason_sl": 0.4,
+        "playbook_guardrail_reason_tp": 0.4,
+        "max_leverage": 2,
+        "alpha_conf_multiplier": 1,
+        "policy_bucket": "S",
+        "policy_size_multiplier": 1.2,
+        "sentinel_low_risk_penalty": 1,
+        "performance_multiplier": 1,
+        "playbook_focus_side_multiplier": 0.905,
+        "playbook_focus_risk_multiplier": 0.8673684210526316,
+        "playbook_focus_sl_multiplier": 1.1326315789473684,
+        "playbook_focus_tp_multiplier": 0.848421052631579,
+        "budget_bias_applied": 1,
+        "universe_perf_multiplier": 1,
+        "short_bias_multiplier": 1.12,
+        "size_multiplier_floor": 0.75,
+        "tuning_size_bucket_multiplier": 1,
+        "playbook_size_multiplier": 0.728450694736842,
+        "playbook_structured_size_multiplier_applied": 0.85,
+        "sentinel_factor": 0.63573330659945,
+        "risk_allocation_multiplier": 0.2526941015332387,
+        "book_ask": 5.468,
+        "book_bid": 5.467,
+        "book": {
+          "ask": 5.468,
+          "bid": 5.467,
+          "mid": 5.467499999999999
+        },
+        "base_signal": "SELL",
+        "max_leverage_cap": 2,
+        "wickiness_stop_boost": 0.012151162790697166,
+        "sl_atr_multiplier_dynamic": 2.0104210526315787,
+        "tp_atr_multiplier_dynamic": 4.406698947368421,
+        "trend_quality_score": 1,
+        "trend_sl_bias": 1.35,
+        "max_active_positions": "unbounded",
+        "ai_plan_origin": "signal",
+        "ai_leverage": 2,
+        "ai_confidence": 0.87,
+        "ai_entry_price": 5.4655,
+        "ai_stop_loss": 5.574062736842106,
+        "ai_take_profit": 5.289232042105264,
+        "hype_risk_multiplier": 0.2526941015332387
+      },
+      "bucket": "S",
+      "atr_abs": 0.040000000000000036,
+      "opened_at": 1763311800.5795622,
+      "filled_qty": 367.28000000000003,
+      "initial_sl": 5.574,
+      "risk_allocation": 10.0698296228074,
+      "ai": {
+        "plan": {
+          "symbol": "DEXEUSDT",
+          "size_multiplier": 2.5138,
+          "sl_multiplier": 1,
+          "tp_multiplier": 1,
+          "leverage": 2,
+          "fasttp_overrides": {
+            "enabled": false,
+            "min_r": 0.13,
+            "ret1": 0.07,
+            "ret3": 0.13,
+            "snap_atr": 0.07
+          },
+          "risk_note": "Event risk is moderate (0.23), hype is high (0.91). Manage size and monitor for volatility spikes.",
+          "explanation": "ADX and trend indicators show strong bearish momentum. EMA and slope confirm direction. ATR is low, allowing tight stops. Sentinel green label and policy bucket S support entry.",
+          "event_risk": 0.23439321723189738,
+          "hype_score": 0.9151699435926451,
+          "max_leverage_cap": 2,
+          "take": true,
+          "decision": "take",
+          "decision_reason": "Strong downtrend confirmed by high ADX (71.34), negative price slopes, and regime/trend alignment. RSI is low (31.63) but not oversold. Sentinel label is green with moderate event risk. Expected R is solid (0.156).",
+          "decision_note": "All key trend and momentum indicators support a short. Sentinel risk is manageable. Policy allows for full size multiplier.",
+          "entry_price": 5.4655,
+          "stop_loss": 5.574062736842106,
+          "take_profit": 5.289232042105264,
+          "atr_abs": 0.040000000000000036,
+          "advisor_persona": "event_risk",
+          "advisor_persona_label": "Event-Risk",
+          "advisor_persona_confidence_bias": -0.08,
+          "advisor_persona_focus": [
+            "event_risk",
+            "hedge",
+            "reduce",
+            "news",
+            "hype",
+            "breadth",
+            "volatility",
+            "trend_strength",
+            "size",
+            "risk",
+            "85%",
+            "position"
+          ],
+          "confidence": 0.87
+        },
+        "origin": "signal",
+        "sentinel": {
+          "event_risk": 0.23439321723189738,
+          "hype_score": 0.9151699435926451,
+          "label": "green",
+          "actions": {
+            "size_factor": 1,
+            "hard_block": false
+          },
+          "events": [],
+          "meta": {
+            "price_change_pct": -5.508,
+            "quote_volume": 63580852.94,
+            "buy_ratio": 0,
+            "volatility": 0.06782768102658114
+          }
+        },
+        "budget": {
+          "date": "2025-11-16",
+          "spent": 0.01932,
+          "limit": 0,
+          "remaining": null,
+          "history": [
+            {
+              "ts": 1763311766.2032156,
+              "cost": 0.014862,
+              "meta": {
+                "kind": "playbook",
+                "model": "gpt-4.1",
+                "usage": {
+                  "prompt_tokens": 1363,
+                  "completion_tokens": 1197,
+                  "total_tokens": 2560,
+                  "prompt_tokens_details": {
+                    "cached_tokens": 0,
+                    "audio_tokens": 0
+                  },
+                  "completion_tokens_details": {
+                    "reasoning_tokens": 0,
+                    "audio_tokens": 0,
+                    "accepted_prediction_tokens": 0,
+                    "rejected_prediction_tokens": 0
+                  }
+                }
+              }
+            },
+            {
+              "ts": 1763311794.9778726,
+              "cost": 0.004458,
+              "meta": {
+                "kind": "plan",
+                "model": "gpt-4.1",
+                "usage": {
+                  "prompt_tokens": 649,
+                  "completion_tokens": 279,
+                  "total_tokens": 928,
+                  "prompt_tokens_details": {
+                    "cached_tokens": 0,
+                    "audio_tokens": 0
+                  },
+                  "completion_tokens_details": {
+                    "reasoning_tokens": 0,
+                    "audio_tokens": 0,
+                    "accepted_prediction_tokens": 0,
+                    "rejected_prediction_tokens": 0
+                  }
+                }
+              }
+            }
+          ],
+          "strict": true,
+          "stats": {
+            "gpt-4.1::playbook": {
+              "avg": 0.014862,
+              "n": 1,
+              "last": 0.014862,
+              "updated": 1763311766.203241
+            },
+            "gpt-4.1::*": {
+              "avg": 0.00966,
+              "n": 2,
+              "last": 0.004458,
+              "updated": 1763311794.977904
+            },
+            "*::playbook": {
+              "avg": 0.014862,
+              "n": 1,
+              "last": 0.014862,
+              "updated": 1763311766.2032578
+            },
+            "*::*": {
+              "avg": 0.00966,
+              "n": 2,
+              "last": 0.004458,
+              "updated": 1763311794.9779146
+            },
+            "gpt-4.1::plan": {
+              "avg": 0.004458,
+              "n": 1,
+              "last": 0.004458,
+              "updated": 1763311794.9778957
+            },
+            "*::plan": {
+              "avg": 0.004458,
+              "n": 1,
+              "last": 0.004458,
+              "updated": 1763311794.9779105
+            }
+          },
+          "count": 2
+        },
+        "generated_at": "2025-11-16T16:49:57.328512+00:00",
+        "explanation": "ADX and trend indicators show strong bearish momentum. EMA and slope confirm direction. ATR is low, allowing tight stops. Sentinel green label and policy bucket S support entry.",
+        "decision_reason": "Strong downtrend confirmed by high ADX (71.34), negative price slopes, and regime/trend alignment. RSI is low (31.63) but not oversold. Sentinel label is green with moderate event risk. Expected R is solid (0.156).",
+        "decision_note": "All key trend and momentum indicators support a short. Sentinel risk is manageable. Policy allows for full size multiplier.",
+        "risk_note": "Event risk is moderate (0.23), hype is high (0.91). Manage size and monitor for volatility spikes.",
+        "confidence": 0.87,
+        "fasttp_overrides": {
+          "enabled": false,
+          "min_r": 0.13,
+          "ret1": 0.07,
+          "ret3": 0.13,
+          "snap_atr": 0.07
+        }
+      },
+      "fasttp_overrides": {
+        "enabled": false,
+        "min_r": 0.13,
+        "ret1": 0.07,
+        "ret3": 0.13,
+        "snap_atr": 0.07
+      },
+      "last_trade_id": 764972,
+      "entry_commission": 0.64004812,
+      "entry_order_id": 96621317,
+      "client_order_id": "IUb7cFTUC2Swex1McwGILO",
+      "order_status": "FILLED",
+      "last_update": 1763311798.024,
+      "fills": [
+        {
+          "avg": 5.466355859289914,
+          "qty": 367.28000000000003,
+          "order_id": 96621317,
+          "client_order_id": "IUb7cFTUC2Swex1McwGILO",
+          "status": "FILLED",
+          "ts": 1763311801.4539802
+        }
+      ],
+      "management": {
+        "max_favourable_move": 0.0008558592899134965,
+        "expected_r_stop": true,
+        "events": [
+          {
+            "ts": 1763311873.4539633,
+            "action": "expected_r_stop",
+            "r": -0.19642630402925046,
+            "expected_r": 0.1562889508569031
+          }
+        ]
+      },
+      "management_events": [
+        {
+          "ts": 1763311873.4539633,
+          "action": "expected_r_stop",
+          "r": -0.19642630402925046,
+          "expected_r": 0.1562889508569031
+        }
+      ]
+    },
+    "XRPUSDT": {
+      "entry": 2.1688999999999994,
+      "expected_entry": 2.16835,
+      "sl": 2.1853000000000002,
+      "tp": 2.1474,
+      "side": "SELL",
+      "qty": 10434.1,
+      "ctx": {
+        "last_price": 2.1688,
+        "universe_score": 2.5,
+        "universe_qv_score": 2.5,
+        "universe_perf_bias": 1,
+        "universe_budget_bias": 1,
+        "mid_price": 2.16825,
+        "spread_bps": 0.000046120142972335724,
+        "atr_abs": 0.010471428571428496,
+        "atr_pct": 0.004828213100068469,
+        "orderbook_levels": null,
+        "wickiness": 0.3333333333332237,
+        "ema_fast": 2.186913305002225,
+        "ema_slow": 2.2071741651525283,
+        "ema_fast_delta": -0.020260860150303373,
+        "ema_htf": 2.240524594326026,
+        "cross_up": 0,
+        "cross_down": 0,
+        "rsi": 25.754346648688852,
+        "bb_upper": 2.218257747828832,
+        "bb_lower": 2.158362252171165,
+        "bb_middle": 2.1883099999999986,
+        "bb_width": 0.05989549565766694,
+        "bb_position": 0.17426598969130994,
+        "stoch_rsi_k": 36.39124875504425,
+        "stoch_rsi_d": 36.4181616301966,
+        "supertrend": 2.194513904507605,
+        "supertrend_dir": -1,
+        "adx": 79.59761552873273,
+        "adx_delta": 65.00834204075409,
+        "slope_fast": -0.003259104968952708,
+        "htf_trend_up": 0,
+        "htf_trend_down": 1,
+        "setup_trend_follow": 1,
+        "setup_range_reversion": 0,
+        "setup_breakout_retest": 0,
+        "range_quality": 0,
+        "breakout_quality": 0,
+        "range_direction": 0,
+        "breakout_direction": 0,
+        "adx_filter": 79.59761552873273,
+        "adx_delta_filter": 65.00834204075409,
+        "stoch_rsi_gate": 36.4181616301966,
+        "penalty_stoch_rsi": 0.271636767396068,
+        "slope_htf": -0.003884111059044575,
+        "min_edge_r_dynamic": 0.04,
+        "rsi_buy_min": 51,
+        "rsi_sell_max": 49,
+        "trend_short_stoch_min": 34,
+        "expected_r": 0.11893874786911995,
+        "quality_gate_pass": 1,
+        "filter_penalty_score": 0.271636767396068,
+        "filter_bonus_score": 0,
+        "qv_score": 2.5,
+        "quote_volume": 33018563.76,
+        "min_quote_volume": 325000,
+        "mark_price": 2.1684,
+        "oracle_price": 2.16981579,
+        "oracle_gap": -0.0006524931777733104,
+        "oracle_gap_clamped": -0.00065,
+        "funding_edge": 0.00053721,
+        "non_arb_region": -1,
+        "funding": -0.00011279,
+        "arb_gate_source": "funding_edge",
+        "arb_gate_pass": 1,
+        "trend": -1,
+        "regime_adx": 0.6500834204075409,
+        "regime_slope": -0.003259104968952708,
+        "symbol": "XRPUSDT",
+        "ai_priority_side_hint": "SELL",
+        "daily_long_ratio": 0,
+        "daily_long_count": 0,
+        "daily_short_count": 1,
+        "sentinel_event_risk": 0.16313301565342153,
+        "sentinel_hype": 0.8374375248241059,
+        "sentinel_label": "green",
+        "side": "SELL",
+        "pm_trend_break": 0,
+        "pm_news_driver": 0,
+        "pm_liquidity_gap": 0,
+        "pm_execution_delay": 0,
+        "pm_sentiment_conflict": 0,
+        "pm_macro_event": 0,
+        "pm_trend_bias": 0,
+        "pm_adx_bias": 0,
+        "pm_ema_slope": 0,
+        "pm_volatility_bias": 0,
+        "pm_event_risk": 0,
+        "pm_hype_bias": 0,
+        "pm_spread_bias": 0,
+        "pm_liquidity_profile": 0,
+        "pm_execution_quality": 0,
+        "pm_volatility_compression_flag": 0,
+        "tuning_confidence": 0,
+        "tuning_risk_bias": 1,
+        "tuning_size_bias": 1,
+        "tuning_size_bias_global": 1,
+        "tuning_active": 0,
+        "advisor_persona": "event_risk",
+        "advisor_persona_label": "Event-Risk",
+        "advisor_persona_source": "playbook",
+        "advisor_persona_focus_terms": [
+          "event_risk",
+          "hedge",
+          "reduce",
+          "news",
+          "hype",
+          "breadth",
+          "volatility",
+          "trend_strength",
+          "size",
+          "risk",
+          "85%",
+          "position"
+        ],
+        "advisor_persona_confidence_bias": -0.08,
+        "playbook_persona": "event_risk",
+        "playbook_persona_focus": [
+          "event_risk",
+          "hedge",
+          "reduce",
+          "news",
+          "hype",
+          "breadth",
+          "volatility",
+          "trend_strength",
+          "size",
+          "risk",
+          "85%",
+          "position"
+        ],
+        "event_risk": -0.4,
+        "hype": 0.7,
+        "volatility": -0.3,
+        "breadth": 0.5,
+        "trend_strength": 0.2,
+        "playbook_features_raw": {
+          "event_risk": -0.4,
+          "hype": 0.7,
+          "volatility": -0.3,
+          "breadth": 0.5,
+          "trend_strength": 0.2
+        },
+        "playbook_features": {
+          "event_risk": -0.4,
+          "hype": 0.7,
+          "volatility": -0.3,
+          "breadth": 0.5,
+          "trend_strength": 0.2
+        },
+        "playbook_feature_event_risk": -0.4,
+        "playbook_feature_hype": 0.7,
+        "playbook_feature_volatility": -0.3,
+        "playbook_feature_breadth": 0.5,
+        "playbook_feature_trend_strength": 0.2,
+        "playbook_mode": "momentum_cautious",
+        "playbook_bias": "neutral",
+        "playbook_size_bias_buy": 0.97,
+        "playbook_size_bias_sell": 0.9279999999999999,
+        "playbook_size_bias_map": {
+          "BUY": 0.97,
+          "SELL": 0.9279999999999999
+        },
+        "playbook_size_bias": 0.9279999999999999,
+        "playbook_sl_bias": 1.25,
+        "playbook_tp_bias": 1.4,
+        "playbook_risk_bias": 1.0470000000000002,
+        "playbook_confidence": 0.68,
+        "playbook_request_id": "playbook::playbook:547c9e2860e6",
+        "playbook_strategy_name": "Cautious Momentum with Hype Filtering",
+        "playbook_strategy_objective": "Capture upside from strong hype and positive momentum while controlling for elevated event risk and volatility spikes.",
+        "playbook_strategy_reason": "Market breadth is positive (7/10 green), hype is elevated across the board, but event risk and volatility are rising in select assets. This regime favors selective momentum exposure with tighter risk controls.",
+        "playbook_signal_1": "Average hype score is extremely high (0.91), indicating strong speculative interest.",
+        "playbook_signal_2": "Event risk is moderate overall but with outliers (DASHUSDT, ZECUSDT, ASTERUSDT) showing high event risk and volatility.",
+        "playbook_signal_3": "Major assets (BTC, ETH, BNB, SOL) remain green with low event risk and high hype.",
+        "playbook_strategy_signals": [
+          "Average hype score is extremely high (0.91), indicating strong speculative interest.",
+          "Event risk is moderate overall but with outliers (DASHUSDT, ZECUSDT, ASTERUSDT) showing high event risk and volatility.",
+          "Major assets (BTC, ETH, BNB, SOL) remain green with low event risk and high hype.",
+          "Recent rallies in DASHUSDT and ZECUSDT signal pockets of explosive momentum, but also increased risk.",
+          "Breadth remains constructive, but yellow warnings on 3/10 assets suggest caution."
+        ],
+        "playbook_strategy_actions": [
+          {
+            "title": "Reduce position sizing across all trades",
+            "detail": "Lower base size to 85% of normal to reflect increased event risk and volatility.",
+            "trigger": "Triggered by yellow warnings and high event risk in 3/10 assets.",
+            "focus_terms": [
+              "reduce",
+              "size",
+              "risk",
+              "volatility",
+              "85%",
+              "position"
+            ]
+          },
+          {
+            "title": "Tighten stop-losses moderately",
+            "detail": "Increase stop-loss tightness by 25% to limit downside in case of reversals.",
+            "trigger": "Triggered by high volatility and event risk spikes.",
+            "focus_terms": [
+              "tighten",
+              "increase",
+              "limit",
+              "volatility",
+              "risk",
+              "25%"
+            ]
+          },
+          {
+            "title": "Expand take-profit targets",
+            "detail": "Increase take-profit targets by 40% to capture potential outsized moves driven by hype.",
+            "trigger": "Triggered by high average hype and recent strong rallies.",
+            "focus_terms": [
+              "expand",
+              "increase",
+              "capture",
+              "40%",
+              "take",
+              "profit"
+            ]
+          },
+          {
+            "title": "Avoid new trades on hard yellow assets",
+            "detail": "Do not open new positions in assets with yellow label and high event risk.",
+            "trigger": "Triggered by yellow label and event risk > 0.4.",
+            "focus_terms": [
+              "avoid",
+              "risk",
+              "new",
+              "trades",
+              "hard",
+              "yellow"
+            ]
+          }
+        ],
+        "playbook_action_1_title": "Reduce position sizing across all trades",
+        "playbook_action_1_detail": "Lower base size to 85% of normal to reflect increased event risk and volatility.",
+        "playbook_action_1_trigger": "Triggered by yellow warnings and high event risk in 3/10 assets.",
+        "playbook_action_1_focus_terms": [
+          "reduce",
+          "size",
+          "risk",
+          "volatility",
+          "85%",
+          "position"
+        ],
+        "playbook_action_2_title": "Tighten stop-losses moderately",
+        "playbook_action_2_detail": "Increase stop-loss tightness by 25% to limit downside in case of reversals.",
+        "playbook_action_2_trigger": "Triggered by high volatility and event risk spikes.",
+        "playbook_action_2_focus_terms": [
+          "tighten",
+          "increase",
+          "limit",
+          "volatility",
+          "risk",
+          "25%"
+        ],
+        "playbook_action_3_title": "Expand take-profit targets",
+        "playbook_action_3_detail": "Increase take-profit targets by 40% to capture potential outsized moves driven by hype.",
+        "playbook_action_3_trigger": "Triggered by high average hype and recent strong rallies.",
+        "playbook_action_3_focus_terms": [
+          "expand",
+          "increase",
+          "capture",
+          "40%",
+          "take",
+          "profit"
+        ],
+        "playbook_action_focus_terms": [
+          "reduce",
+          "size",
+          "risk",
+          "volatility",
+          "85%",
+          "position",
+          "tighten",
+          "increase",
+          "limit",
+          "25%",
+          "expand",
+          "capture",
+          "40%",
+          "take",
+          "profit",
+          "avoid",
+          "new",
+          "trades",
+          "hard",
+          "yellow"
+        ],
+        "playbook_strategy_risk_controls": [
+          "Apply size cap to assets with event risk > 0.4 (max 70% of normal size).",
+          "Block new trades if event risk exceeds 0.8.",
+          "Do not increase exposure if hype score is above 0.95 and event risk is above 0.4.",
+          "Maintain neutral bias; do not overweight buy or sell unless breadth deteriorates."
+        ],
+        "playbook_focus_side_bias": 0.2714285714285714,
+        "playbook_focus_risk_bias": 0.37894736842105264,
+        "playbook_focus_features": {
+          "25": 1,
+          "40": 1,
+          "70": 1,
+          "85": 1,
+          "risk": 0.55,
+          "volatility": 1,
+          "event": 1,
+          "hype": 1,
+          "breadth": 1
+        },
+        "playbook_focus_feature_risk": 0.55,
+        "playbook_focus_feature_volatility": 1,
+        "playbook_focus_feature_85": 1,
+        "playbook_focus_feature_25": 1,
+        "playbook_focus_feature_40": 1,
+        "playbook_focus_feature_event": 1,
+        "playbook_focus_feature_70": 1,
+        "playbook_focus_feature_hype": 1,
+        "playbook_focus_feature_breadth": 1,
+        "playbook_structured_size_multiplier": 0.85,
+        "playbook_structured_notes": [
+          "size×0.85: Reduce all position sizes to 85% to reflect regime risk."
+        ],
+        "budget_bias": 1,
+        "persona_focus_trend": 0.5,
+        "persona_focus_event": 1,
+        "persona_focus_risk": 1,
+        "playbook_guardrail_reason_event": 0.4,
+        "playbook_guardrail_reason_volatility": 0.004828213100068469,
+        "playbook_guardrail_reason_spread": 0.15000000000000002,
+        "playbook_guardrail_reason_sl": 0.4,
+        "max_leverage": 25,
+        "alpha_conf_multiplier": 1,
+        "policy_bucket": "S",
+        "policy_size_multiplier": 1.2,
+        "sentinel_low_risk_penalty": 1,
+        "performance_multiplier": 1,
+        "playbook_focus_side_multiplier": 0.905,
+        "playbook_focus_risk_multiplier": 0.8673684210526316,
+        "playbook_focus_sl_multiplier": 1.1326315789473684,
+        "playbook_focus_tp_multiplier": 0.848421052631579,
+        "budget_bias_applied": 1,
+        "universe_perf_multiplier": 1,
+        "short_bias_multiplier": 1.12,
+        "size_multiplier_floor": 0.75,
+        "tuning_size_bucket_multiplier": 1,
+        "playbook_size_multiplier": 0.728450694736842,
+        "playbook_structured_size_multiplier_applied": 0.85,
+        "sentinel_factor": 0.670472654868957,
+        "risk_allocation_multiplier": 0.39261245531660927,
+        "book_ask": 2.169,
+        "book_bid": 2.1689,
+        "book": {
+          "ask": 2.169,
+          "bid": 2.1689,
+          "mid": 2.1689499999999997
+        },
+        "base_signal": "SELL",
+        "max_leverage_cap": 25,
+        "low_atr_regime": 0.004828213100068469,
+        "low_atr_sl_multiplier": 1.2,
+        "low_atr_tp_multiplier": 2,
+        "sl_atr_multiplier_dynamic": 1.2,
+        "tp_atr_multiplier_dynamic": 2,
+        "trend_quality_score": 1,
+        "trend_sl_bias": 1.35,
+        "max_active_positions": "unbounded",
+        "open_positions": {
+          "DEXEUSDT": -367.28
+        },
+        "active_positions": 1,
+        "ai_plan_origin": "signal",
+        "ai_leverage": 25,
+        "ai_confidence": 0.93,
+        "ai_entry_price": 2.16835,
+        "ai_stop_loss": 2.185313714285714,
+        "ai_take_profit": 2.147407142857143,
+        "hype_risk_multiplier": 0.39261245531660927
+      },
+      "bucket": "S",
+      "atr_abs": 0.010471428571428496,
+      "opened_at": 1763311833.2839873,
+      "filled_qty": 10434.1,
+      "initial_sl": 2.1853000000000002,
+      "risk_allocation": 69.43665165932269,
+      "ai": {
+        "plan": {
+          "symbol": "XRPUSDT",
+          "size_multiplier": 2.7298,
+          "sl_multiplier": 1,
+          "tp_multiplier": 1,
+          "leverage": 25,
+          "fasttp_overrides": {
+            "enabled": false,
+            "min_r": 0.13,
+            "ret1": 0.06,
+            "ret3": 0.11,
+            "snap_atr": 0.9
+          },
+          "risk_note": "Event risk is low; high leverage allowed by policy. Only one active position, so risk is diversified.",
+          "explanation": "",
+          "event_risk": 0.16313301565342153,
+          "hype_score": 0.8374375248241059,
+          "max_leverage_cap": 25,
+          "take": true,
+          "decision": "take",
+          "decision_reason": "Strong downtrend confirmed by high ADX (79.6), negative EMA slopes, low RSI (25.75), and negative trend. Sentinel risk is low (0.16), hype is high but not a blocker. Expected R is favorable (0.119).",
+          "decision_note": "All technicals align for a sell; policy and risk constraints satisfied.",
+          "entry_price": 2.16835,
+          "stop_loss": 2.185313714285714,
+          "take_profit": 2.147407142857143,
+          "atr_abs": 0.010471428571428496,
+          "advisor_persona": "event_risk",
+          "advisor_persona_label": "Event-Risk",
+          "advisor_persona_confidence_bias": -0.08,
+          "advisor_persona_focus": [
+            "event_risk",
+            "hedge",
+            "reduce",
+            "news",
+            "hype",
+            "breadth",
+            "volatility",
+            "trend_strength",
+            "size",
+            "risk",
+            "85%",
+            "position"
+          ],
+          "confidence": 0.93
+        },
+        "origin": "signal",
+        "sentinel": {
+          "event_risk": 0.16313301565342153,
+          "hype_score": 0.8374375248241059,
+          "label": "green",
+          "actions": {
+            "size_factor": 1,
+            "hard_block": false
+          },
+          "events": [],
+          "meta": {
+            "price_change_pct": -3.532,
+            "quote_volume": 33062928.3,
+            "buy_ratio": 0,
+            "volatility": 0.05418492045192537
+          }
+        },
+        "budget": {
+          "date": "2025-11-16",
+          "spent": 0.028173000000000004,
+          "limit": 0,
+          "remaining": null,
+          "history": [
+            {
+              "ts": 1763311766.2032156,
+              "cost": 0.014862,
+              "meta": {
+                "kind": "playbook",
+                "model": "gpt-4.1",
+                "usage": {
+                  "prompt_tokens": 1363,
+                  "completion_tokens": 1197,
+                  "total_tokens": 2560,
+                  "prompt_tokens_details": {
+                    "cached_tokens": 0,
+                    "audio_tokens": 0
+                  },
+                  "completion_tokens_details": {
+                    "reasoning_tokens": 0,
+                    "audio_tokens": 0,
+                    "accepted_prediction_tokens": 0,
+                    "rejected_prediction_tokens": 0
+                  }
+                }
+              }
+            },
+            {
+              "ts": 1763311794.9778726,
+              "cost": 0.004458,
+              "meta": {
+                "kind": "plan",
+                "model": "gpt-4.1",
+                "usage": {
+                  "prompt_tokens": 649,
+                  "completion_tokens": 279,
+                  "total_tokens": 928,
+                  "prompt_tokens_details": {
+                    "cached_tokens": 0,
+                    "audio_tokens": 0
+                  },
+                  "completion_tokens_details": {
+                    "reasoning_tokens": 0,
+                    "audio_tokens": 0,
+                    "accepted_prediction_tokens": 0,
+                    "rejected_prediction_tokens": 0
+                  }
+                }
+              }
+            },
+            {
+              "ts": 1763311816.1330886,
+              "cost": 0.004710000000000001,
+              "meta": {
+                "kind": "plan",
+                "model": "gpt-4.1",
+                "usage": {
+                  "prompt_tokens": 661,
+                  "completion_tokens": 303,
+                  "total_tokens": 964,
+                  "prompt_tokens_details": {
+                    "cached_tokens": 0,
+                    "audio_tokens": 0
+                  },
+                  "completion_tokens_details": {
+                    "reasoning_tokens": 0,
+                    "audio_tokens": 0,
+                    "accepted_prediction_tokens": 0,
+                    "rejected_prediction_tokens": 0
+                  }
+                }
+              }
+            },
+            {
+              "ts": 1763311828.266897,
+              "cost": 0.004143,
+              "meta": {
+                "kind": "plan",
+                "model": "gpt-4.1",
+                "usage": {
+                  "prompt_tokens": 670,
+                  "completion_tokens": 237,
+                  "total_tokens": 907,
+                  "prompt_tokens_details": {
+                    "cached_tokens": 0,
+                    "audio_tokens": 0
+                  },
+                  "completion_tokens_details": {
+                    "reasoning_tokens": 0,
+                    "audio_tokens": 0,
+                    "accepted_prediction_tokens": 0,
+                    "rejected_prediction_tokens": 0
+                  }
+                }
+              }
+            }
+          ],
+          "strict": true,
+          "stats": {
+            "gpt-4.1::playbook": {
+              "avg": 0.014862,
+              "n": 1,
+              "last": 0.014862,
+              "updated": 1763311766.203241
+            },
+            "gpt-4.1::*": {
+              "avg": 0.007043250000000001,
+              "n": 4,
+              "last": 0.004143,
+              "updated": 1763311828.2669244
+            },
+            "*::playbook": {
+              "avg": 0.014862,
+              "n": 1,
+              "last": 0.014862,
+              "updated": 1763311766.2032578
+            },
+            "*::*": {
+              "avg": 0.007043250000000001,
+              "n": 4,
+              "last": 0.004143,
+              "updated": 1763311828.266932
+            },
+            "gpt-4.1::plan": {
+              "avg": 0.004437,
+              "n": 3,
+              "last": 0.004143,
+              "updated": 1763311828.2669165
+            },
+            "*::plan": {
+              "avg": 0.004437,
+              "n": 3,
+              "last": 0.004143,
+              "updated": 1763311828.2669287
+            }
+          },
+          "count": 4
+        },
+        "generated_at": "2025-11-16T16:50:30.065777+00:00",
+        "decision_reason": "Strong downtrend confirmed by high ADX (79.6), negative EMA slopes, low RSI (25.75), and negative trend. Sentinel risk is low (0.16), hype is high but not a blocker. Expected R is favorable (0.119).",
+        "decision_note": "All technicals align for a sell; policy and risk constraints satisfied.",
+        "risk_note": "Event risk is low; high leverage allowed by policy. Only one active position, so risk is diversified.",
+        "confidence": 0.93,
+        "fasttp_overrides": {
+          "enabled": false,
+          "min_r": 0.13,
+          "ret1": 0.06,
+          "ret3": 0.11,
+          "snap_atr": 0.9
+        }
+      },
+      "fasttp_overrides": {
+        "enabled": false,
+        "min_r": 0.13,
+        "ret1": 0.06,
+        "ret3": 0.11,
+        "snap_atr": 0.9
+      },
+      "management": {
+        "max_favourable_move": 0.0008499999999993513,
+        "expected_r_stop": true,
+        "events": [
+          {
+            "ts": 1763311865.9818482,
+            "action": "expected_r_stop",
+            "r": -0.14329268292683983,
+            "expected_r": 0.11893874786911995
+          }
+        ]
+      },
+      "last_trade_id": 9685012,
+      "entry_commission": 7.20787254,
+      "entry_order_id": 2177136944,
+      "client_order_id": "8sgWZENzuPKSv9iSbj1ZOj",
+      "order_status": "FILLED",
+      "last_update": 1763311830.758,
+      "fills": [
+        {
+          "avg": 2.1688999999999994,
+          "qty": 10434.1,
+          "order_id": 2177136944,
+          "client_order_id": "8sgWZENzuPKSv9iSbj1ZOj",
+          "status": "FILLED",
+          "ts": 1763311834.124212
+        }
+      ],
+      "management_events": [
+        {
+          "ts": 1763311865.9818482,
+          "action": "expected_r_stop",
+          "r": -0.14329268292683983,
+          "expected_r": 0.11893874786911995
+        }
+      ]
+    }
+  }
+}
