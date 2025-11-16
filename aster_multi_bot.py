@@ -391,6 +391,23 @@ def _compute_r_multiple(
     return pnl_val / risk
 
 
+def _atr_adverse_distance(risk: float, atr_context: float) -> Optional[float]:
+    """Return the adverse-move distance for ATR management exits."""
+
+    if ATR_ADVERSE_EXIT_MULT <= 0:
+        return None
+    threshold = 0.0
+    if isinstance(risk, (int, float)) and math.isfinite(risk) and risk > 0:
+        threshold = float(risk) * ATR_ADVERSE_EXIT_MULT
+    elif isinstance(atr_context, (int, float)) and math.isfinite(atr_context) and atr_context > 0:
+        threshold = float(atr_context) * ATR_ADVERSE_EXIT_MULT
+    else:
+        return None
+    if threshold <= 0:
+        return None
+    return threshold
+
+
 def _compute_trade_performance_summary(
     trades: Sequence[Dict[str, Any]],
     *,
@@ -11087,17 +11104,6 @@ class Bot:
                     mgmt["breakeven_guard"] = time.time()
                     self._management_dirty = True
                     self._log_management_event(rec, "breakeven_guard", {"elapsed": elapsed})
-        if (
-            MAX_HOLD_SECONDS > 0
-            and elapsed >= MAX_HOLD_SECONDS
-            and r_now <= TIME_STOP_R_THRESHOLD
-            and not mgmt.get("time_stop")
-        ):
-            if self._submit_reduce_only(symbol, side, qty_abs, "time_stop"):
-                mgmt["time_stop"] = time.time()
-                self._management_dirty = True
-                self._log_management_event(rec, "time_stop", {"elapsed": elapsed})
-                return
         compression_bias = 0.0
         if isinstance(ctx, dict):
             raw_bias = ctx.get("pm_volatility_compression_flag")
@@ -11118,21 +11124,23 @@ class Bot:
             ctx_atr = ctx.get("atr_abs")
             if isinstance(ctx_atr, (int, float)):
                 atr_context = float(ctx_atr)
-        if (
-            ATR_ADVERSE_EXIT_MULT > 0
-            and atr_context > 0
-            and not mgmt.get("atr_adverse_stop")
-        ):
+        adverse_distance = _atr_adverse_distance(risk, atr_context)
+        if adverse_distance is not None and not mgmt.get("atr_adverse_stop"):
             adverse_move = (entry - mid) if amount > 0 else (mid - entry)
             adverse_move = max(0.0, adverse_move)
-            if adverse_move >= ATR_ADVERSE_EXIT_MULT * atr_context:
+            if adverse_move >= adverse_distance:
                 if self._submit_reduce_only(symbol, side, qty_abs, "atr_adverse_stop"):
                     mgmt["atr_adverse_stop"] = True
                     self._management_dirty = True
                     self._log_management_event(
                         rec,
                         "atr_adverse_stop",
-                        {"move": float(adverse_move), "atr": float(atr_context)},
+                        {
+                            "move": float(adverse_move),
+                            "threshold": float(adverse_distance),
+                            "atr": float(atr_context),
+                            "risk": float(risk),
+                        },
                     )
                     return
         compression_active = compression_bias >= 0.05 and atr_context > 0 and opened_ts > 0
@@ -11162,6 +11170,17 @@ class Bot:
                         },
                     )
                     return
+        if (
+            MAX_HOLD_SECONDS > 0
+            and elapsed >= MAX_HOLD_SECONDS
+            and r_now <= TIME_STOP_R_THRESHOLD
+            and not mgmt.get("time_stop")
+        ):
+            if self._submit_reduce_only(symbol, side, qty_abs, "time_stop"):
+                mgmt["time_stop"] = time.time()
+                self._management_dirty = True
+                self._log_management_event(rec, "time_stop", {"elapsed": elapsed})
+                return
         if (
             entry > 0
             and qty_abs > 0
