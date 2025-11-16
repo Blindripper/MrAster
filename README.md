@@ -169,7 +169,7 @@ Curious about the engines, guardrails, and configuration surface? Expand the sec
 | `ASTER_MAX_OPEN_GLOBAL` | `0` | Global cap on concurrent positions (0 = unlimited, rely on equity guard). |
 | `ASTER_MAX_OPEN_PER_SYMBOL` | `1` | Per-symbol position limit (0 = unlimited, netting on exchange). |
 | `ASTER_SL_ATR_MULT` / `ASTER_TP_ATR_MULT` | `1.0` / `1.6` | ATR multiples for stop and take-profit. |
-| `ASTER_MIN_HOLD_SECONDS` | `90` | Minimum holding period before loss-management exits (ATR / expected-R trims) can trigger. |
+| `ASTER_TREND_SL_BIAS_RANGE` | `0.35` | Extends/tightens the initial stop based on recorded trend quality (0 = disabled). |
 | `ASTER_MAX_HOLD_SECONDS` | `600` | Time-based stop: when the trade is still red after this many seconds, the bot flattens it. |
 | `FAST_TP_ENABLED` | `true` | Enables FastTP partial-profit protection. |
 | `FASTTP_MIN_R` | `0.30` | Minimum R gain before FastTP triggers. |

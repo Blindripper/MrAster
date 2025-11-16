@@ -34,7 +34,7 @@ import random
 from pathlib import Path
 from datetime import datetime, timezone, date
 from urllib.parse import urlencode
-from typing import Dict, List, Tuple, Optional, Any, Callable, Sequence, Set, Iterable
+from typing import Dict, List, Tuple, Optional, Any, Callable, Sequence, Set, Iterable, Mapping
 
 from collections import Counter, OrderedDict, deque
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
@@ -406,6 +406,67 @@ def _atr_adverse_distance(risk: float, atr_context: float) -> Optional[float]:
     if threshold <= 0:
         return None
     return threshold
+
+
+def _trend_quality_score(
+    ctx: Optional[Mapping[str, Any]], *, side: Optional[str] = None
+) -> float:
+    """Derive a bounded 0-1 trend quality score from the stored trade context."""
+
+    if not isinstance(ctx, Mapping):
+        return 0.5
+
+    score = 0.5
+
+    trend_strength = _coerce_float(ctx.get("trend_strength"))
+    if trend_strength is not None:
+        score += clamp(trend_strength, -1.0, 1.0) * 0.25
+
+    expected_r = _coerce_float(ctx.get("expected_r"))
+    min_edge = _coerce_float(ctx.get("min_edge_r_dynamic"))
+    if expected_r is not None and min_edge is not None and min_edge > 0:
+        rel_edge = (expected_r - min_edge) / max(min_edge, 1e-9)
+        score += clamp(rel_edge, -1.0, 1.0) * 0.15
+
+    quality_gate = _coerce_float(ctx.get("quality_gate_pass"))
+    if quality_gate is not None and quality_gate > 0:
+        score += 0.05
+
+    penalty = _coerce_float(ctx.get("filter_penalty_score"))
+    if penalty is not None and FILTER_PENALTY_HARD > 0:
+        score -= clamp(penalty / (FILTER_PENALTY_HARD * 1.2), 0.0, 1.0) * 0.25
+
+    bonus = _coerce_float(ctx.get("filter_bonus_score"))
+    if bonus is not None and FILTER_BONUS_CAP > 0:
+        score += clamp(bonus / FILTER_BONUS_CAP, 0.0, 1.0) * 0.15
+
+    adx_val = _coerce_float(ctx.get("adx_filter"))
+    if adx_val is not None:
+        score += clamp((adx_val - 20.0) / 35.0, -1.0, 1.0) * 0.1
+
+    slope_htf = _coerce_float(ctx.get("slope_htf"))
+    if slope_htf is not None and side:
+        directional = slope_htf if side.upper() == "BUY" else -slope_htf
+        score += clamp(directional * 240.0, -0.2, 0.2)
+
+    return clamp(score, 0.0, 1.0)
+
+
+def _trend_sl_bias(
+    ctx: Optional[Mapping[str, Any]], *, side: Optional[str] = None
+) -> Tuple[float, float]:
+    """Return (stop-loss bias multiplier, quality score)."""
+
+    quality = _trend_quality_score(ctx, side=side)
+    if TREND_SL_BIAS_RANGE <= 0:
+        return 1.0, quality
+
+    bias_delta = (quality - 0.5) * 2.0
+    bias = 1.0 + clamp(bias_delta, -1.0, 1.0) * TREND_SL_BIAS_RANGE
+    min_bias = max(0.1, 1.0 - TREND_SL_BIAS_RANGE)
+    max_bias = 1.0 + TREND_SL_BIAS_RANGE
+    bias = clamp(bias, min_bias, max_bias)
+    return bias, quality
 
 
 def _compute_trade_performance_summary(
@@ -931,12 +992,12 @@ BUDGET_MOMENTUM_ADX_DELTA = float(os.getenv("ASTER_BUDGET_MOMENTUM_ADX_DELTA", "
 
 BREAKEVEN_REEVAL_SECONDS = max(0.0, float(os.getenv("ASTER_BREAKEVEN_REEVAL_SECONDS", "360") or 0.0))
 BREAKEVEN_R_THRESHOLD = float(os.getenv("ASTER_BREAKEVEN_R_THRESHOLD", "0.18"))
-MIN_HOLD_SECONDS = max(0.0, float(os.getenv("ASTER_MIN_HOLD_SECONDS", "90") or 0.0))
 MAX_HOLD_SECONDS = max(0.0, float(os.getenv("ASTER_MAX_HOLD_SECONDS", "600") or 0.0))
 TIME_STOP_R_THRESHOLD = float(os.getenv("ASTER_TIME_STOP_R_THRESHOLD", "0.05"))
 
 SL_ATR_MULT = float(os.getenv("ASTER_SL_ATR_MULT", "1.50"))
 TP_ATR_MULT = float(os.getenv("ASTER_TP_ATR_MULT", "2.10"))
+TREND_SL_BIAS_RANGE = max(0.0, min(0.75, float(os.getenv("ASTER_TREND_SL_BIAS_RANGE", "0.35") or 0.0)))
 
 FAST_TP_ENABLED = os.getenv("FAST_TP_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 FASTTP_MIN_R = float(os.getenv("FASTTP_MIN_R", "0.10"))
@@ -11204,10 +11265,8 @@ class Bot:
         expected_r_val = _coerce_float((ctx or {}).get("expected_r"))
         if expected_r_val is None:
             expected_r_val = _coerce_float(rec.get("expected_r"))
-        allow_loss_management = MIN_HOLD_SECONDS <= 0 or elapsed >= MIN_HOLD_SECONDS
         if (
-            allow_loss_management
-            and EXPECTED_R_LOSS_MULT > 0
+            EXPECTED_R_LOSS_MULT > 0
             and expected_r_val is not None
             and expected_r_val > 0
             and not mgmt.get("expected_r_stop")
@@ -11256,8 +11315,7 @@ class Bot:
                 atr_context = float(ctx_atr)
         adverse_distance = _atr_adverse_distance(risk, atr_context)
         if (
-            allow_loss_management
-            and adverse_distance is not None
+            adverse_distance is not None
             and not mgmt.get("atr_adverse_stop")
         ):
             adverse_move = (entry - mid) if amount > 0 else (mid - entry)
@@ -14056,6 +14114,15 @@ class Bot:
         tp_dist = max(1e-9, dynamic_tp_mult * atr_abs)
         ctx["sl_atr_multiplier_dynamic"] = float(dynamic_sl_mult)
         ctx["tp_atr_multiplier_dynamic"] = float(dynamic_tp_mult)
+
+        trend_sl_bias, trend_quality = _trend_sl_bias(
+            ctx,
+            side=sig if sig in {"BUY", "SELL"} else None,
+        )
+        ctx["trend_quality_score"] = float(trend_quality)
+        if abs(trend_sl_bias - 1.0) >= 1e-3:
+            sl_dist *= trend_sl_bias
+            ctx["trend_sl_bias"] = float(trend_sl_bias)
 
         ai_meta: Optional[Dict[str, Any]] = None
         plan: Optional[Dict[str, Any]] = None
