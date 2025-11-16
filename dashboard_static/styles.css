@@ -5486,6 +5486,18 @@ body.pro-mode .log-stream {
   background: rgba(99, 102, 241, 0.14);
 }
 
+.trade-card-badge {
+  padding: 0.2rem 0.45rem;
+  border-radius: 0.65rem;
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--accent);
+  border: 1px solid rgba(245, 196, 107, 0.38);
+  background: rgba(245, 196, 107, 0.08);
+}
+
 .trade-card-pnl {
   font-size: 0.96rem;
   font-weight: 600;
@@ -5536,6 +5548,19 @@ body.pro-mode .log-stream {
 .trade-card-info span:first-of-type::before {
   content: '';
   margin: 0;
+}
+
+.trade-card-note {
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.trade-card-note::before {
+  content: '';
+  display: none;
 }
 
 .trade-card-window {
@@ -5641,6 +5666,27 @@ body.pro-mode .log-stream {
 
 .trade-detail.loss .trade-detail-value {
   color: var(--danger);
+}
+
+.trade-synthetic-note {
+  margin: 0.4rem 0 0;
+  padding: 0.85rem 1rem;
+  border-radius: 0.9rem;
+  background: rgba(245, 196, 107, 0.08);
+  border: 1px solid rgba(245, 196, 107, 0.25);
+  color: var(--text);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.trade-synthetic-meta {
+  margin: 0.35rem 0 0;
+  padding: 0.65rem 0.85rem;
+  border-radius: 0.75rem;
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--text-subtle);
+  font-size: 0.78rem;
+  line-height: 1.35;
 }
 .trade-ai-section,
 .trade-postmortem {

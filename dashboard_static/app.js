@@ -422,6 +422,10 @@ const TRANSLATIONS = {
     'trades.metric.winRate': 'Винрейт',
     'trades.metric.avgR': 'Средний R',
     'trades.modal.noMetadata': 'Дополнительные данные отсутствуют.',
+    'trades.synthetic.badge': 'Реализованный PNL',
+    'trades.synthetic.note': 'Синхронизировано с биржевым реализованным PnL — данные входа/выхода недоступны.',
+    'trades.synthetic.incomeType': 'Тип дохода',
+    'trades.synthetic.info': 'Биржевой источник',
     'pnl.title': 'Обзор эффективности',
     'pnl.subtitle': 'Совокупный реализованный PNL по вашим сделкам.',
     'pnl.tradesWon': 'Победные сделки',
@@ -702,6 +706,10 @@ const TRANSLATIONS = {
     'trades.metric.winRate': 'Trefferquote',
     'trades.metric.avgR': 'Ø R',
     'trades.modal.noMetadata': 'Keine zusätzlichen Daten vorhanden.',
+    'trades.synthetic.badge': 'Realisierter PnL',
+    'trades.synthetic.note': 'Aus dem Börsen-PnL übernommen – Ein-/Ausstiegskurse fehlen.',
+    'trades.synthetic.incomeType': 'Ertragsart',
+    'trades.synthetic.info': 'Börsenhinweis',
     'pnl.title': 'Performance-Überblick',
     'pnl.subtitle': 'Kumulierte realisierte PNL aus deinen Trades.',
     'pnl.tradesWon': 'Gewonnene Trades',
@@ -985,6 +993,10 @@ const TRANSLATIONS = {
     'trades.metric.winRate': '승률',
     'trades.metric.avgR': '평균 R',
     'trades.modal.noMetadata': '추가 메타데이터가 없습니다.',
+    'trades.synthetic.badge': '실현 PnL',
+    'trades.synthetic.note': '거래소 실현 PnL에서 동기화되어 진입/청산 가격이 없습니다.',
+    'trades.synthetic.incomeType': '수익 유형',
+    'trades.synthetic.info': '거래소 정보',
     'pnl.title': '성과 개요',
     'pnl.subtitle': '거래 기반 누적 실현 PNL입니다.',
     'pnl.tradesWon': '승리한 트레이드',
@@ -1268,6 +1280,10 @@ const TRANSLATIONS = {
     'trades.metric.winRate': 'Taux de réussite',
     'trades.metric.avgR': 'R moyen',
     'trades.modal.noMetadata': 'Aucune donnée supplémentaire.',
+    'trades.synthetic.badge': 'PnL réalisé',
+    'trades.synthetic.note': 'Synchronisé depuis le PnL réalisé de l’exchange – entrées/sorties indisponibles.',
+    'trades.synthetic.incomeType': 'Type de revenu',
+    'trades.synthetic.info': 'Info bourse',
     'pnl.title': 'Vue d’ensemble des performances',
     'pnl.subtitle': 'PNL réalisé cumulé sur vos trades.',
     'pnl.tradesWon': 'Trades gagnants',
@@ -1551,6 +1567,10 @@ const TRANSLATIONS = {
     'trades.metric.winRate': 'Ratio de aciertos',
     'trades.metric.avgR': 'R medio',
     'trades.modal.noMetadata': 'No hay datos adicionales.',
+    'trades.synthetic.badge': 'PnL realizado',
+    'trades.synthetic.note': 'Sincronizado desde el PnL realizado del exchange; no hay datos de entrada/salida.',
+    'trades.synthetic.incomeType': 'Tipo de ingreso',
+    'trades.synthetic.info': 'Nota del exchange',
     'pnl.title': 'Resumen de rendimiento',
     'pnl.subtitle': 'PNL realizado acumulado de tus operaciones.',
     'pnl.tradesWon': 'Operaciones ganadas',
@@ -1833,6 +1853,10 @@ const TRANSLATIONS = {
     'trades.metric.winRate': 'Kazanma oranı',
     'trades.metric.avgR': 'Ortalama R',
     'trades.modal.noMetadata': 'Ek veri yok.',
+    'trades.synthetic.badge': 'Gerçekleşen PnL',
+    'trades.synthetic.note': 'Borsa gerçekleşen PnL akışından eşitlendi; giriş/çıkış fiyatları yok.',
+    'trades.synthetic.incomeType': 'Gelir türü',
+    'trades.synthetic.info': 'Borsa bilgisi',
     'pnl.title': 'Performans özeti',
     'pnl.subtitle': 'İşlemlerinizin kümülatif gerçekleşen PNL’i.',
     'pnl.tradesWon': 'Kazanılan işlemler',
@@ -2109,6 +2133,10 @@ const TRANSLATIONS = {
     'trades.metric.winRate': '胜率',
     'trades.metric.avgR': '平均 R 值',
     'trades.modal.noMetadata': '没有更多补充数据。',
+    'trades.synthetic.badge': '已实现 PnL',
+    'trades.synthetic.note': '来自交易所已实现 PnL 数据，缺少进出场价格。',
+    'trades.synthetic.incomeType': '收益类型',
+    'trades.synthetic.info': '交易所信息',
     'pnl.title': '绩效概览',
     'pnl.subtitle': '基于您的交易计算的累计已实现盈亏。',
     'pnl.tradesWon': '盈利笔数',
@@ -6956,12 +6984,15 @@ function connectActivePositionsStream() {
 
 function createMetric(label, value, tone = 'neutral') {
   const metric = document.createElement('div');
-  metric.className = `trade-metric${tone && tone !== 'neutral' ? ` ${tone}` : ''}`;
+  metric.className = 'trade-metric';
   const labelEl = document.createElement('span');
   labelEl.className = 'metric-label';
   labelEl.textContent = label;
   const valueEl = document.createElement('span');
   valueEl.className = 'metric-value';
+  if (tone && tone !== 'neutral') {
+    valueEl.classList.add(tone);
+  }
   valueEl.textContent = value ?? '–';
   metric.append(labelEl, valueEl);
   return metric;
@@ -6992,6 +7023,58 @@ function createTradeDetail(label, value, options = {}) {
   return container;
 }
 
+const TRADE_ENTRY_KEYS = ['entry', 'entry_price', 'entryPrice', 'expected_entry', 'avg_entry'];
+const TRADE_EXIT_KEYS = ['exit', 'exit_price', 'exitPrice', 'exit_px', 'avg_exit'];
+const TRADE_SIZE_KEYS = [
+  'qty',
+  'quantity',
+  'size',
+  'size_usd',
+  'size_usdt',
+  'notional',
+  'notional_usd',
+  'notionalUsd',
+];
+
+function pickTradeNumber(trade, keys) {
+  if (!trade || typeof trade !== 'object' || !Array.isArray(keys)) return null;
+  for (const key of keys) {
+    if (!key) continue;
+    const value = trade[key];
+    if (value === undefined || value === null) continue;
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+  }
+  return null;
+}
+
+function getTradeEntryPrice(trade) {
+  return pickTradeNumber(trade, TRADE_ENTRY_KEYS);
+}
+
+function getTradeExitPrice(trade) {
+  return pickTradeNumber(trade, TRADE_EXIT_KEYS);
+}
+
+function getTradeSize(trade) {
+  return pickTradeNumber(trade, TRADE_SIZE_KEYS);
+}
+
+function getTradeBucketLabel(trade) {
+  if (!trade || typeof trade !== 'object') return null;
+  const candidates = [trade.bucket, trade.size_bucket, trade.bandit_bucket, trade.bucket_label];
+  for (const candidate of candidates) {
+    if (candidate === undefined || candidate === null) continue;
+    const value = candidate.toString().trim();
+    if (value) {
+      return value;
+    }
+  }
+  return null;
+}
+
 function buildTradeDetailContent(trade) {
   const pnl = extractRealizedPnl(trade);
   const pnlTone = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'neutral';
@@ -7000,6 +7083,14 @@ function buildTradeDetailContent(trade) {
   const rTone = rValue > 0 ? 'profit' : rValue < 0 ? 'loss' : 'neutral';
   const rDisplay = `${rValue > 0 ? '+' : ''}${formatNumber(rValue, 2)} R`;
   const durationSeconds = computeDurationSeconds(trade.opened_at_iso, trade.closed_at_iso);
+  const entryPrice = getTradeEntryPrice(trade);
+  const exitPrice = getTradeExitPrice(trade);
+  const sizeValue = getTradeSize(trade);
+  const bucketLabel = getTradeBucketLabel(trade);
+  const syntheticSource = (trade.synthetic_source || '').toString().toLowerCase();
+  const isSynthetic = Boolean(trade.synthetic) || Boolean(syntheticSource);
+  const isRealizedIncome = isSynthetic && syntheticSource === 'realized_income';
+  const context = trade.context && typeof trade.context === 'object' ? trade.context : null;
 
   const container = document.createElement('div');
   container.className = 'trade-modal-content';
@@ -7009,11 +7100,23 @@ function buildTradeDetailContent(trade) {
 
   const priceGroup = document.createElement('div');
   priceGroup.className = 'trade-detail-group';
-  priceGroup.append(
-    createTradeDetail('Entry', formatNumber(trade.entry, 4)),
-    createTradeDetail('Exit', formatNumber(trade.exit, 4))
-  );
-  highlight.append(priceGroup);
+  if (entryPrice !== null) {
+    priceGroup.append(
+      createTradeDetail('Entry', formatNumber(entryPrice, 4), {
+        monospace: true,
+      })
+    );
+  }
+  if (exitPrice !== null) {
+    priceGroup.append(
+      createTradeDetail('Exit', formatNumber(exitPrice, 4), {
+        monospace: true,
+      })
+    );
+  }
+  if (priceGroup.children.length > 0) {
+    highlight.append(priceGroup);
+  }
 
   const resultGroup = document.createElement('div');
   resultGroup.className = 'trade-detail-group';
@@ -7043,6 +7146,31 @@ function buildTradeDetailContent(trade) {
     highlight.append(timeGroup);
   }
 
+  if (isRealizedIncome) {
+    const syntheticNote = document.createElement('p');
+    syntheticNote.className = 'trade-synthetic-note';
+    syntheticNote.textContent = translate(
+      'trades.synthetic.note',
+      'Synced from exchange realized PnL; entry/exit data unavailable.'
+    );
+    highlight.append(syntheticNote);
+    const metaParts = [];
+    const incomeType = context?.income_type || trade.income_type;
+    if (incomeType) {
+      metaParts.push(incomeType.toString());
+    }
+    const incomeInfo = context?.income_info || context?.info || trade.income_info;
+    if (incomeInfo) {
+      metaParts.push(incomeInfo.toString());
+    }
+    if (metaParts.length > 0) {
+      const meta = document.createElement('p');
+      meta.className = 'trade-synthetic-meta';
+      meta.textContent = metaParts.join(' · ');
+      highlight.append(meta);
+    }
+  }
+
   container.append(highlight);
 
   const metricGrid = document.createElement('div');
@@ -7050,20 +7178,50 @@ function buildTradeDetailContent(trade) {
   const metrics = [
     createMetric('Realized PNL (USDT)', pnlDisplay, pnlTone),
     createMetric('R multiple', rDisplay, rTone),
-    createMetric('Size', formatNumber(trade.qty, 4)),
-    createMetric('Bandit bucket', trade.bucket ? trade.bucket.toString().toUpperCase() : '–'),
-    createMetric('Opened', formatTimestamp(trade.opened_at_iso)),
-    createMetric('Closed', formatTimestamp(trade.closed_at_iso)),
-    createMetric('Entry', formatNumber(trade.entry, 4)),
-    createMetric('Exit', formatNumber(trade.exit, 4)),
   ];
-  if (Number.isFinite(durationSeconds)) {
-    metrics.splice(6, 0, createMetric('Duration', formatDuration(durationSeconds)));
-  }
   metrics.forEach((metric) => metricGrid.append(metric));
+
+  const optionalMetrics = [];
+  if (sizeValue !== null) {
+    optionalMetrics.push(createMetric('Size', formatNumber(sizeValue, 4)));
+  }
+  if (bucketLabel) {
+    optionalMetrics.push(createMetric('Bandit bucket', bucketLabel.toString().toUpperCase()));
+  }
+  const openedText = formatTimestamp(trade.opened_at_iso);
+  if (openedText && openedText !== '–') {
+    optionalMetrics.push(createMetric('Opened', openedText));
+  }
+  const closedText = formatTimestamp(trade.closed_at_iso);
+  if (closedText && closedText !== '–') {
+    optionalMetrics.push(createMetric('Closed', closedText));
+  }
+  if (Number.isFinite(durationSeconds)) {
+    optionalMetrics.push(createMetric('Duration', formatDuration(durationSeconds)));
+  }
+  if (entryPrice !== null) {
+    optionalMetrics.push(createMetric('Entry', formatNumber(entryPrice, 4)));
+  }
+  if (exitPrice !== null) {
+    optionalMetrics.push(createMetric('Exit', formatNumber(exitPrice, 4)));
+  }
+  if (isRealizedIncome) {
+    const incomeType = context?.income_type || trade.income_type;
+    if (incomeType) {
+      optionalMetrics.push(
+        createMetric(translate('trades.synthetic.incomeType', 'Income type'), incomeType.toString())
+      );
+    }
+    const incomeInfo = context?.income_info || context?.info || trade.income_info;
+    if (incomeInfo) {
+      optionalMetrics.push(
+        createMetric(translate('trades.synthetic.info', 'Exchange info'), incomeInfo.toString())
+      );
+    }
+  }
+  optionalMetrics.forEach((metric) => metricGrid.append(metric));
   container.append(metricGrid);
 
-  const context = trade.context && typeof trade.context === 'object' ? trade.context : null;
   if (context) {
     const keys = CONTEXT_KEYS.filter((key) => context[key] !== undefined && context[key] !== null);
     if (keys.length > 0) {
@@ -7214,6 +7372,11 @@ function buildTradeSummaryCard(trade) {
   const rTone = rValue > 0 ? 'profit' : rValue < 0 ? 'loss' : 'neutral';
   const rDisplay = `${rValue > 0 ? '+' : ''}${formatNumber(rValue, 2)} R`;
   const durationSeconds = computeDurationSeconds(trade.opened_at_iso, trade.closed_at_iso);
+  const syntheticSource = (trade.synthetic_source || '').toString().toLowerCase();
+  const isSyntheticIncome = Boolean(trade.synthetic) || syntheticSource === 'realized_income';
+  const syntheticLabel = isSyntheticIncome
+    ? translate('trades.synthetic.badge', 'Realized PnL')
+    : null;
 
   const card = document.createElement('button');
   card.type = 'button';
@@ -7223,6 +7386,9 @@ function buildTradeSummaryCard(trade) {
   }
   if (pnlTone && pnlTone !== 'neutral') {
     card.dataset.pnl = pnlTone;
+  }
+  if (isSyntheticIncome) {
+    card.dataset.synthetic = 'true';
   }
 
   const top = document.createElement('div');
@@ -7241,6 +7407,13 @@ function buildTradeSummaryCard(trade) {
     sideBadge.className = 'trade-card-side';
     sideBadge.textContent = formatSideLabel(trade.side);
     main.append(sideBadge);
+  }
+
+  if (syntheticLabel) {
+    const badge = document.createElement('span');
+    badge.className = 'trade-card-badge';
+    badge.textContent = syntheticLabel;
+    main.append(badge);
   }
 
   const pnlEl = document.createElement('span');
@@ -7280,6 +7453,13 @@ function buildTradeSummaryCard(trade) {
     const placeholder = document.createElement('span');
     placeholder.textContent = 'Timing data unavailable';
     info.append(placeholder);
+  }
+
+  if (syntheticLabel) {
+    const note = document.createElement('span');
+    note.className = 'trade-card-note';
+    note.textContent = syntheticLabel;
+    info.append(note);
   }
 
   const actions = document.createElement('div');
