@@ -4344,6 +4344,48 @@ const ACTIVE_POSITION_ALIASES = {
   side: ['side', 'positionSide', 'direction'],
 };
 
+const POSITION_MEANINGFUL_FIELD_KEYS = Array.from(
+  new Set(
+    [
+      ...ACTIVE_POSITION_SIGNED_SIZE_KEYS,
+      ...ACTIVE_POSITION_NOTIONAL_KEYS,
+      ...(ACTIVE_POSITION_ALIASES.entry || []),
+      ...(ACTIVE_POSITION_ALIASES.mark || []),
+      ...(ACTIVE_POSITION_ALIASES.pnl || []),
+      ...(ACTIVE_POSITION_ALIASES.margin || []),
+      ...(ACTIVE_POSITION_ALIASES.roe || []),
+      ...TAKE_PROFIT_FIELD_KEYS,
+      ...STOP_LOSS_FIELD_KEYS,
+    ].filter(Boolean),
+  ),
+);
+
+function hasMeaningfulPositionFields(position) {
+  if (!position || typeof position !== 'object') {
+    return false;
+  }
+  for (const key of POSITION_MEANINGFUL_FIELD_KEYS) {
+    if (!(key in position)) continue;
+    const raw = unwrapPositionValue(position[key]);
+    const numeric = toNumeric(raw);
+    if (Number.isFinite(numeric) && Math.abs(numeric) > 1e-9) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function shouldDisplayActivePosition(position) {
+  if (!position || typeof position !== 'object') {
+    return false;
+  }
+  const symbol = getNormalizedActivePositionSymbol(position);
+  if (!symbol) {
+    return false;
+  }
+  return hasMeaningfulPositionFields(position);
+}
+
 const ACTIVE_POSITION_FIELD_LABELS = {
   symbol: 'Symbol',
   size: 'Size',
@@ -4568,7 +4610,9 @@ function normaliseActivePositions(raw) {
   const collected = [];
 
   const appendCollection = (collection) => {
-    const mapped = mapPositionCollection(collection).filter((item) => !isPositionLikelyClosed(item));
+    const mapped = mapPositionCollection(collection).filter(
+      (item) => shouldDisplayActivePosition(item) && !isPositionLikelyClosed(item),
+    );
     if (mapped.length) {
       collected.push(...mapped);
     }
