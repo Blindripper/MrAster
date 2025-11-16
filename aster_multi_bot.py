@@ -842,6 +842,26 @@ MAX_NOTIONAL_USDT = float(os.getenv("ASTER_MAX_NOTIONAL_USDT", "0"))  # 0 = kein
 # Maximaler Anteil des Kapitals, der pro Trade eingesetzt werden darf
 MAX_EQUITY_PER_TRADE = 0.10
 
+SYMBOL_RISK_CAP_PCT = max(0.0, float(os.getenv("ASTER_SYMBOL_RISK_CAP_PCT", "0.025") or 0.0))
+SYMBOL_DRAWDOWN_PCT = max(0.0, float(os.getenv("ASTER_SYMBOL_DRAWDOWN_PCT", "0.04") or 0.0))
+
+SHORT_SIZE_BIAS = max(0.5, float(os.getenv("ASTER_SHORT_SIZE_BIAS", "1.12") or 1.0))
+
+LONG_OVEREXTENDED_RSI = float(os.getenv("ASTER_LONG_OVEREXTENDED_RSI", "55.0"))
+LONG_ATR_PCT_CAP = max(0.0, float(os.getenv("ASTER_LONG_ATR_PCT_CAP", "0.007") or 0.0))
+LONG_ATR_WINNER_MULT = float(os.getenv("ASTER_LONG_ATR_WINNER_MULT", "0.98"))
+WINNER_ATR_LOOKBACK = max(10, int(os.getenv("ASTER_WINNER_ATR_LOOKBACK", "160") or 160))
+
+BUDGET_MOMENTUM_THRESHOLD = float(os.getenv("ASTER_BUDGET_MOMENTUM_THRESHOLD", "0.99"))
+PERF_MOMENTUM_THRESHOLD = float(os.getenv("ASTER_PERF_MOMENTUM_THRESHOLD", "0.92"))
+BUDGET_MOMENTUM_ATR_MAX = max(0.0, float(os.getenv("ASTER_BUDGET_MOMENTUM_ATR_MAX", "0.012") or 0.0))
+BUDGET_MOMENTUM_ADX_DELTA = float(os.getenv("ASTER_BUDGET_MOMENTUM_ADX_DELTA", "1.5"))
+
+BREAKEVEN_REEVAL_SECONDS = max(0.0, float(os.getenv("ASTER_BREAKEVEN_REEVAL_SECONDS", "360") or 0.0))
+BREAKEVEN_R_THRESHOLD = float(os.getenv("ASTER_BREAKEVEN_R_THRESHOLD", "0.18"))
+MAX_HOLD_SECONDS = max(0.0, float(os.getenv("ASTER_MAX_HOLD_SECONDS", "600") or 0.0))
+TIME_STOP_R_THRESHOLD = float(os.getenv("ASTER_TIME_STOP_R_THRESHOLD", "0.05"))
+
 SL_ATR_MULT = float(os.getenv("ASTER_SL_ATR_MULT", "1.50"))
 TP_ATR_MULT = float(os.getenv("ASTER_TP_ATR_MULT", "2.10"))
 
@@ -6741,6 +6761,8 @@ class RiskManager:
         self._equity_ts: float = 0.0
         self._equity_ttl = 10  # s
         self.state = state if isinstance(state, dict) else None
+        self.symbol_risk_cap_pct = SYMBOL_RISK_CAP_PCT
+        self.symbol_drawdown_pct = SYMBOL_DRAWDOWN_PCT
         bounds = PRESET_NOTIONAL_BOUNDS.get(
             PRESET_MODE,
             (
@@ -6896,6 +6918,77 @@ class RiskManager:
 
     def attach_state(self, state: Optional[Dict[str, Any]]) -> None:
         self.state = state if isinstance(state, dict) else None
+
+    def _symbol_key(self, symbol: str) -> str:
+        return str(symbol or "").upper()
+
+    def _symbol_risk_bucket(self) -> Optional[Dict[str, Any]]:
+        if not isinstance(self.state, dict):
+            return None
+        bucket = self.state.setdefault("symbol_risk_state", {})
+        today = date.today().isoformat()
+        if bucket.get("date") != today:
+            bucket["date"] = today
+            bucket["allocations"] = {}
+            bucket["losses"] = {}
+        bucket.setdefault("allocations", {})
+        bucket.setdefault("losses", {})
+        return bucket
+
+    def _symbol_risk_available(self, symbol: str, equity: float) -> Optional[float]:
+        if self.symbol_risk_cap_pct <= 0:
+            return None
+        bucket = self._symbol_risk_bucket()
+        if not bucket:
+            return None
+        cap = max(0.0, equity * self.symbol_risk_cap_pct)
+        allocations = bucket.get("allocations") or {}
+        used = float(allocations.get(self._symbol_key(symbol), 0.0) or 0.0)
+        bucket["equity_snapshot"] = max(float(bucket.get("equity_snapshot", 0.0) or 0.0), float(equity))
+        remaining = max(0.0, cap - used)
+        return remaining
+
+    @staticmethod
+    def estimate_risk_value(entry: float, sl: float, qty: float) -> float:
+        try:
+            return max(0.0, abs(entry - sl) * abs(qty))
+        except Exception:
+            return 0.0
+
+    def register_allocation(self, symbol: str, risk_value: float) -> None:
+        if risk_value <= 0:
+            return
+        bucket = self._symbol_risk_bucket()
+        if not bucket:
+            return
+        allocations = bucket.setdefault("allocations", {})
+        key = self._symbol_key(symbol)
+        allocations[key] = float(allocations.get(key, 0.0) or 0.0) + float(risk_value)
+
+    def release_allocation(self, symbol: str, risk_value: float) -> None:
+        if risk_value <= 0:
+            return
+        bucket = self._symbol_risk_bucket()
+        if not bucket:
+            return
+        allocations = bucket.setdefault("allocations", {})
+        key = self._symbol_key(symbol)
+        current = float(allocations.get(key, 0.0) or 0.0)
+        updated = max(0.0, current - float(risk_value))
+        if updated <= 0:
+            allocations.pop(key, None)
+        else:
+            allocations[key] = updated
+
+    def record_symbol_loss(self, symbol: str, loss_value: float) -> None:
+        if loss_value <= 0 or self.symbol_drawdown_pct <= 0:
+            return
+        bucket = self._symbol_risk_bucket()
+        if not bucket:
+            return
+        losses = bucket.setdefault("losses", {})
+        key = self._symbol_key(symbol)
+        losses[key] = float(losses.get(key, 0.0) or 0.0) + float(loss_value)
 
     @staticmethod
     def _try_float(value: Any) -> Optional[float]:
@@ -7221,11 +7314,16 @@ class RiskManager:
         preset_max = self._preset_max_notional
         if not math.isfinite(preset_max) or preset_max <= 0:
             preset_max = float("inf")
+        equity = self._equity_cached()
         try:
             stop_dist = abs(entry - sl)
             if stop_dist > 0:
-                equity = self._equity_cached()
                 target_loss = RISK_PER_TRADE * max(1.0, equity)
+                symbol_cap = self._symbol_risk_available(symbol, equity)
+                if symbol_cap is not None:
+                    if symbol_cap <= 0:
+                        return 0.0
+                    target_loss = min(target_loss, symbol_cap)
                 risk_notional = target_loss / max(stop_dist / max(entry, 1e-9), 1e-9)
         except Exception:
             risk_notional = 0.0
@@ -7261,7 +7359,6 @@ class RiskManager:
         if math.isfinite(tier_max):
             notional = min(notional, tier_max)
         # c) Cap via Leverage & Equity-Fraction
-        equity = self._equity_cached()
         leverage_cap = self.max_leverage_for(symbol)
         dyn_cap = float("inf")
         if equity > 0:
@@ -7386,6 +7483,8 @@ class Strategy:
                         continue
                 if hydrated:
                     self._symbol_score_cache = hydrated
+        self._winner_long_atr_cache_ts = 0.0
+        self._winner_long_atr_cache_value: Optional[float] = None
 
     @property
     def tech_snapshot_dirty(self) -> bool:
@@ -7393,6 +7492,55 @@ class Strategy:
 
     def clear_tech_snapshot_dirty(self) -> None:
         self._tech_snapshot_dirty = False
+
+    def _winner_long_atr_threshold(self) -> Optional[float]:
+        if not isinstance(self.state, dict):
+            return None
+        now = time.time()
+        if (now - self._winner_long_atr_cache_ts) < 60.0:
+            return self._winner_long_atr_cache_value
+        history = self.state.get("trade_history")
+        winners: List[float] = []
+        if isinstance(history, list) and history:
+            window = history[-WINNER_ATR_LOOKBACK:]
+            for trade in reversed(window):
+                if not isinstance(trade, dict):
+                    continue
+                if str(trade.get("side") or "").upper() != "BUY":
+                    continue
+                pnl = _coerce_float(trade.get("pnl"), 0.0) or 0.0
+                if pnl <= 0:
+                    continue
+                ctx = trade.get("context")
+                if isinstance(ctx, dict):
+                    atr_val = _coerce_float(ctx.get("atr_pct"))
+                    if atr_val and atr_val > 0:
+                        winners.append(float(atr_val))
+        value = sum(winners) / len(winners) if winners else None
+        self._winner_long_atr_cache_ts = now
+        self._winner_long_atr_cache_value = value
+        return value
+
+    def _symbol_drawdown_guard(self, symbol: str) -> Optional[Dict[str, float]]:
+        if SYMBOL_DRAWDOWN_PCT <= 0 or not isinstance(self.state, dict):
+            return None
+        bucket = self.state.get("symbol_risk_state")
+        if not isinstance(bucket, dict):
+            return None
+        today = date.today().isoformat()
+        if bucket.get("date") != today:
+            return None
+        losses = bucket.get("losses") or {}
+        loss_val = _coerce_float(losses.get(str(symbol).upper()))
+        if not loss_val or loss_val <= 0:
+            return None
+        equity_snapshot = _coerce_float(bucket.get("equity_snapshot"))
+        if not equity_snapshot or equity_snapshot <= 0:
+            return None
+        limit = equity_snapshot * SYMBOL_DRAWDOWN_PCT
+        if loss_val >= limit and limit > 0:
+            return {"loss": float(loss_val), "limit": float(limit)}
+        return None
 
     @staticmethod
     def _playbook_timestamp(value: Any) -> float:
@@ -8786,6 +8934,61 @@ class Strategy:
         slope_htf = (ema_htf[-1] - ema_htf[-5]) / max(1e-9, ema_htf[-5])
         ctx_base["slope_htf"] = float(slope_htf)
 
+        if sig == "BUY":
+            atr_gate = LONG_ATR_PCT_CAP if LONG_ATR_PCT_CAP > 0 else None
+            winner_atr = self._winner_long_atr_threshold()
+            if winner_atr and winner_atr > 0:
+                dyn_gate = winner_atr * max(0.1, LONG_ATR_WINNER_MULT)
+                atr_gate = dyn_gate if atr_gate is None else min(atr_gate, dyn_gate)
+            if atr_gate is None or atr_gate <= 0:
+                atr_gate = LONG_ATR_PCT_CAP or 0.007
+            ctx_base["long_atr_gate"] = float(atr_gate)
+            ctx_base["long_rsi_cap"] = float(LONG_OVEREXTENDED_RSI)
+            current_rsi = float(rsi14[-1])
+            if current_rsi > LONG_OVEREXTENDED_RSI or atrp > atr_gate:
+                return self._skip(
+                    "long_overextended",
+                    symbol,
+                    {
+                        "rsi": f"{current_rsi:.2f}",
+                        "rsi_cap": f"{LONG_OVEREXTENDED_RSI:.2f}",
+                        "atr_pct": f"{atrp:.4f}",
+                        "atr_cap": f"{atr_gate:.4f}",
+                    },
+                    ctx=ctx_base,
+                    price=mid,
+                    atr=atr,
+                )
+
+            budget_bias_val = _coerce_float(ctx_base.get("universe_budget_bias"))
+            perf_bias_val = _coerce_float(ctx_base.get("universe_perf_bias"))
+            weak_bias = False
+            if budget_bias_val is not None and budget_bias_val < BUDGET_MOMENTUM_THRESHOLD:
+                weak_bias = True
+            if perf_bias_val is not None and perf_bias_val < PERF_MOMENTUM_THRESHOLD:
+                weak_bias = True
+            slow_momentum = (
+                slope_htf <= 0
+                and atrp <= BUDGET_MOMENTUM_ATR_MAX
+                and adx_delta < BUDGET_MOMENTUM_ADX_DELTA
+                and stoch_k_last < 60.0
+            )
+            if weak_bias and slow_momentum:
+                ctx_base["budget_bias_gate"] = float(budget_bias_val or 0.0)
+                ctx_base["perf_bias_gate"] = float(perf_bias_val or 0.0)
+                return self._skip(
+                    "budget_momentum",
+                    symbol,
+                    {
+                        "budget": f"{(budget_bias_val or 0.0):.2f}",
+                        "perf": f"{(perf_bias_val or 0.0):.2f}",
+                        "slope": f"{slope_htf:.4f}",
+                    },
+                    ctx=ctx_base,
+                    price=mid,
+                    atr=atr,
+                )
+
         if chosen_flag == "setup_range_reversion":
             width_pct = bb_width_last / max(last, 1e-9)
             range_quality = float(ctx_base.get("range_quality", 0.0) or 0.0)
@@ -9098,6 +9301,17 @@ class Strategy:
                     atr=atr,
                 )
 
+        drawdown_guard = self._symbol_drawdown_guard(symbol)
+        if drawdown_guard:
+            return self._skip(
+                "symbol_drawdown",
+                symbol,
+                {"loss": f"{drawdown_guard['loss']:.2f}", "limit": f"{drawdown_guard['limit']:.2f}"},
+                ctx=ctx_base,
+                price=mid,
+                atr=atr,
+            )
+
         arb_gate_pass = False
         if non_arb_region >= 1.0:
             arb_gate_pass = True
@@ -9141,10 +9355,17 @@ class Strategy:
 
 # ========= Trade Manager =========
 class TradeManager:
-    def __init__(self, exchange: Exchange, policy: Optional[BanditPolicy], state: Dict[str, Any]):
+    def __init__(
+        self,
+        exchange: Exchange,
+        policy: Optional[BanditPolicy],
+        state: Dict[str, Any],
+        risk: Optional[RiskManager] = None,
+    ):
         self.exchange = exchange
         self.policy = policy
         self.state = state
+        self.risk = risk
         self.state.setdefault("live_trades", {})
         self.state.setdefault("fast_tp_cooldown", {})
         self.state.setdefault("fail_skip_until", {})
@@ -9217,6 +9438,19 @@ class TradeManager:
             return json.loads(json.dumps(meta, default=lambda o: str(o)))
         except Exception:
             return {}
+
+    def _release_symbol_risk(self, symbol: str, record: Dict[str, Any]) -> None:
+        if not self.risk:
+            return
+        if not isinstance(record, dict):
+            return
+        risk_alloc = record.get("risk_allocation")
+        if isinstance(risk_alloc, (int, float)) and risk_alloc > 0:
+            try:
+                self.risk.release_allocation(symbol, float(risk_alloc))
+            except Exception:
+                pass
+            record["risk_allocation"] = 0.0
 
     def _estimate_trade_volume_usdt(self, trade: Dict[str, Any]) -> float:
         volume_keys = (
@@ -9615,6 +9849,7 @@ class TradeManager:
             "opened_at": time.time(),
             "filled_qty": 0.0,
             "initial_sl": float(sl),
+            "risk_allocation": 0.0,
         }
         if meta:
             sanitized = self._sanitize_meta(meta)
@@ -9622,6 +9857,17 @@ class TradeManager:
                 record["ai"] = sanitized
                 if "fasttp_overrides" in sanitized:
                     record["fasttp_overrides"] = sanitized["fasttp_overrides"]
+        if self.risk:
+            try:
+                risk_value = self.risk.estimate_risk_value(entry, sl, float(qty))
+            except Exception:
+                risk_value = 0.0
+            if risk_value > 0:
+                record["risk_allocation"] = float(risk_value)
+                try:
+                    self.risk.register_allocation(symbol, risk_value)
+                except Exception:
+                    pass
         self.state["live_trades"][symbol] = record
         self.save()
         if self.policy and BANDIT_ENABLED:
@@ -9806,6 +10052,14 @@ class TradeManager:
                     "bucket": bucket,
                     "context": ctx or {},
                 }
+                risk_snapshot = 0.0
+                if isinstance(rec, dict):
+                    try:
+                        risk_snapshot = float(rec.get("risk_allocation", 0.0) or 0.0)
+                    except Exception:
+                        risk_snapshot = 0.0
+                if risk_snapshot > 0:
+                    record["risk_allocation"] = risk_snapshot
                 stop_hint = None
                 if isinstance(rec, dict):
                     stop_hint = rec.get("sl") if rec.get("sl") is not None else rec.get("initial_sl")
@@ -9831,6 +10085,13 @@ class TradeManager:
                 if postmortem:
                     record["postmortem"] = postmortem
                 hist.append(record)
+                if self.risk and pnl < 0:
+                    try:
+                        self.risk.record_symbol_loss(sym, abs(pnl))
+                    except Exception:
+                        pass
+                if isinstance(rec, dict):
+                    self._release_symbol_risk(sym, rec)
                 self._record_cumulative_metrics(record)
                 if len(hist) > max(10, self.history_max):
                     del hist[: len(hist) - self.history_max]
@@ -9840,7 +10101,9 @@ class TradeManager:
                 history_added = True
                 processed_syms.add(sym)
             for sym in processed_syms:
-                live.pop(sym, None)
+                rec_state = live.pop(sym, None)
+                if isinstance(rec_state, dict):
+                    self._release_symbol_risk(sym, rec_state)
 
         try:
             pos = self.exchange.get_position_risk()
@@ -9957,6 +10220,13 @@ class TradeManager:
                 "bucket": rec.get("bucket"),
                 "context": rec.get("ctx", {}),
             }
+            risk_snapshot = 0.0
+            try:
+                risk_snapshot = float(rec.get("risk_allocation", 0.0) or 0.0)
+            except Exception:
+                risk_snapshot = 0.0
+            if risk_snapshot > 0:
+                record["risk_allocation"] = risk_snapshot
             stop_hint = rec.get("sl") if rec.get("sl") is not None else rec.get("initial_sl")
             if stop_hint is not None:
                 self._track_execution_gap(
@@ -9985,6 +10255,12 @@ class TradeManager:
             if postmortem:
                 record["postmortem"] = postmortem
             hist.append(record)
+            if self.risk and float(pnl_value) < 0:
+                try:
+                    self.risk.record_symbol_loss(sym, abs(float(pnl_value)))
+                except Exception:
+                    pass
+            self._release_symbol_risk(sym, rec)
             self._record_cumulative_metrics(record)
             if len(hist) > max(10, self.history_max):
                 del hist[: len(hist) - self.history_max]
@@ -10319,7 +10595,7 @@ class Bot:
             working_type=WORKING_TYPE,
             recv_window=RECV_WINDOW,
         )
-        self.trade_mgr = TradeManager(self.exchange, self.policy, self.state)
+        self.trade_mgr = TradeManager(self.exchange, self.policy, self.state, risk=self.risk)
         self.user_stream: Optional[UserDataStream] = None
         if USER_STREAM_ENABLED:
             try:
@@ -10527,6 +10803,29 @@ class Bot:
         if not isinstance(mgmt, dict):
             mgmt = {}
             rec["management"] = mgmt
+        if BREAKEVEN_REEVAL_SECONDS > 0 and elapsed >= BREAKEVEN_REEVAL_SECONDS:
+            if r_now < BREAKEVEN_R_THRESHOLD and not mgmt.get("breakeven_guard"):
+                stop_price = entry if amount > 0 else entry
+                success = False
+                if self._adjust_exit(symbol, side, qty_abs, stop_price, "breakeven"):
+                    success = True
+                elif self._submit_reduce_only(symbol, side, qty_abs, "breakeven_reduce"):
+                    success = True
+                if success:
+                    mgmt["breakeven_guard"] = time.time()
+                    self._management_dirty = True
+                    self._log_management_event(rec, "breakeven_guard", {"elapsed": elapsed})
+        if (
+            MAX_HOLD_SECONDS > 0
+            and elapsed >= MAX_HOLD_SECONDS
+            and r_now <= TIME_STOP_R_THRESHOLD
+            and not mgmt.get("time_stop")
+        ):
+            if self._submit_reduce_only(symbol, side, qty_abs, "time_stop"):
+                mgmt["time_stop"] = time.time()
+                self._management_dirty = True
+                self._log_management_event(rec, "time_stop", {"elapsed": elapsed})
+                return
         ctx = rec.get("ctx") if isinstance(rec.get("ctx"), dict) else {}
         compression_bias = 0.0
         if isinstance(ctx, dict):
@@ -12944,6 +13243,9 @@ class Bot:
                 perf_mult = max(0.6, min(1.6, float(perf_bias_val)))
                 size_mult *= perf_mult
                 ctx["universe_perf_multiplier"] = float(perf_mult)
+        if sig == "SELL" and SHORT_SIZE_BIAS != 1.0:
+            size_mult *= SHORT_SIZE_BIAS
+            ctx["short_bias_multiplier"] = float(SHORT_SIZE_BIAS)
         if structured_size_cap is not None:
             size_mult = min(size_mult, structured_size_cap)
             ctx["playbook_structured_cap_applied"] = float(structured_size_cap)
