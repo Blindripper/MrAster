@@ -10362,15 +10362,27 @@ function renderHeroMetrics(cumulativeStats, sessionStats) {
     );
   }
 
+  const normalizeWinRate = (value) => {
+    if (value == null) return null;
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return null;
+    if (numeric < 0) return 0;
+    if (numeric > 1) return 1;
+    return numeric;
+  };
+  const fallbackWinRate = normalizeWinRate(fallback.win_rate ?? fallback.winRate);
+  const totalsWinRate = normalizeWinRate(totals.win_rate ?? totals.winRate);
   const winsRaw = Number(totals.wins ?? 0);
   const lossesRaw = Number(totals.losses ?? 0);
   const drawsRaw = Number(totals.draws ?? 0);
   const denominator = totalTrades > 0 ? totalTrades : winsRaw + lossesRaw + drawsRaw;
   let winRate = 0;
-  if (denominator > 0 && Number.isFinite(winsRaw)) {
+  if (fallbackWinRate != null) {
+    winRate = fallbackWinRate;
+  } else if (totalsWinRate != null) {
+    winRate = totalsWinRate;
+  } else if (denominator > 0 && Number.isFinite(winsRaw)) {
     winRate = winsRaw / denominator;
-  } else if (fallback.win_rate != null) {
-    winRate = Number(fallback.win_rate) || 0;
   }
   heroTotalWinRate.textContent = `${(winRate * 100).toFixed(1)}%`;
 
