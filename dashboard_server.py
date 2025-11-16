@@ -2242,11 +2242,17 @@ def _is_realized_income_trade(record: Dict[str, Any]) -> bool:
     if source and source.lower() == "realized_income":
         return True
 
-    context = record.get("context")
-    if isinstance(context, dict):
-        ctx_source = _clean_string(context.get("source"))
-        if ctx_source and ctx_source.lower() == "realized_income":
-            return True
+    # Some older synthetic entries were only tagged via the context metadata.
+    # However, real trades may now include a context source label, so only
+    # treat the context as authoritative when the record is explicitly marked
+    # synthetic. This prevents legitimate trades from being filtered out of
+    # the dashboard history while still hiding synthetic realized-income rows.
+    if record.get("synthetic"):
+        context = record.get("context")
+        if isinstance(context, dict):
+            ctx_source = _clean_string(context.get("source"))
+            if ctx_source and ctx_source.lower() == "realized_income":
+                return True
 
     return False
 
