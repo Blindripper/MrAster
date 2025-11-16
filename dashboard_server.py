@@ -2639,6 +2639,9 @@ class TradeStats(BaseModel):
     best_trade: Optional[Dict[str, Any]]
     worst_trade: Optional[Dict[str, Any]]
     ai_hint: str
+    wins: int = 0
+    losses: int = 0
+    draws: int = 0
 
 
 class ChatMessagePayload(BaseModel):
@@ -3646,6 +3649,9 @@ def _compute_stats(history: List[Dict[str, Any]]) -> TradeStats:
             best_trade=None,
             worst_trade=None,
             ai_hint="",
+            wins=0,
+            losses=0,
+            draws=0,
         )
     total_pnl = sum(_extract_trade_pnl(h) for h in history)
     total_r = sum(float(h.get("pnl_r", 0.0) or 0.0) for h in history)
@@ -3653,6 +3659,7 @@ def _compute_stats(history: List[Dict[str, Any]]) -> TradeStats:
     losses = [h for h in history if _extract_trade_pnl(h) < 0]
     count = len(history)
     win_rate = (len(wins) / count) if count else 0.0
+    draws = max(count - len(wins) - len(losses), 0)
     best = max(history, key=_extract_trade_pnl)
     worst = min(history, key=_extract_trade_pnl)
 
@@ -3674,6 +3681,9 @@ def _compute_stats(history: List[Dict[str, Any]]) -> TradeStats:
         best_trade=best,
         worst_trade=worst,
         ai_hint=hint,
+        wins=len(wins),
+        losses=len(losses),
+        draws=draws,
     )
 
 
@@ -3846,6 +3856,9 @@ def _cumulative_summary(
     if stats is not None:
         realized_total = float(stats.total_pnl or 0.0)
         summary["total_trades"] = max(summary["total_trades"], int(stats.count or 0))
+        summary["wins"] = max(summary["wins"], int(getattr(stats, "wins", 0) or 0))
+        summary["losses"] = max(summary["losses"], int(getattr(stats, "losses", 0) or 0))
+        summary["draws"] = max(summary["draws"], int(getattr(stats, "draws", 0) or 0))
 
     if realized_total is None:
         candidate = metrics.get("realized_pnl")
