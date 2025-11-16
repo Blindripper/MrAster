@@ -2232,6 +2232,35 @@ def _merge_realized_pnl(history: List[Dict[str, Any]], realized: List[Dict[str, 
     return merged
 
 
+def _is_realized_income_trade(record: Dict[str, Any]) -> bool:
+    """Return True when a trade record represents a synthetic realized-income entry."""
+
+    if not isinstance(record, dict):
+        return False
+
+    source = _clean_string(record.get("synthetic_source"))
+    if source and source.lower() == "realized_income":
+        return True
+
+    context = record.get("context")
+    if isinstance(context, dict):
+        ctx_source = _clean_string(context.get("source"))
+        if ctx_source and ctx_source.lower() == "realized_income":
+            return True
+
+    return False
+
+
+def _strip_realized_income_trades(history: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Drop realized-income synthetic trades from a history list."""
+
+    filtered: List[Dict[str, Any]] = []
+    for entry in history:
+        if not _is_realized_income_trade(entry):
+            filtered.append(entry)
+    return filtered
+
+
 def _looks_like_position_record(candidate: Dict[str, Any]) -> bool:
     if not isinstance(candidate, dict):
         return False
@@ -7158,9 +7187,13 @@ async def trades() -> Dict[str, Any]:
         history = _filter_history_for_run(history, run_started_at)
         history = history[-200:]
 
-    for entry in history:
-        entry["opened_at_iso"] = _format_ts(entry.get("opened_at"))
-        entry["closed_at_iso"] = _format_ts(entry.get("closed_at"))
+    stats_history: List[Dict[str, Any]] = history
+    display_history: List[Dict[str, Any]] = []
+    for entry in _strip_realized_income_trades(stats_history):
+        normalized = dict(entry)
+        normalized["opened_at_iso"] = _format_ts(entry.get("opened_at"))
+        normalized["closed_at_iso"] = _format_ts(entry.get("closed_at"))
+        display_history.append(normalized)
 
     open_trades = state.get("live_trades", {})
     try:
@@ -7168,7 +7201,7 @@ async def trades() -> Dict[str, Any]:
     except Exception as exc:
         logger.debug("active position enrichment failed: %s", exc)
         enriched_open = open_trades
-    stats = _compute_stats(history)
+    stats = _compute_stats(stats_history)
     decision_stats = _decision_summary(state)
     ai_budget = _normalize_ai_budget(state.get("ai_budget", {}))
     ai_activity_raw = state.get("ai_activity", [])
@@ -7202,7 +7235,7 @@ async def trades() -> Dict[str, Any]:
             proposals.append(record)
     return {
         "open": enriched_open,
-        "history": history[::-1],
+        "history": display_history[::-1],
         "stats": stats.dict(),
         "decision_stats": decision_stats,
         "cumulative_stats": _cumulative_summary(state, stats=stats, ai_budget=ai_budget),
