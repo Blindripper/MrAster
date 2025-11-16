@@ -121,10 +121,8 @@ const heroTotalPnl = document.getElementById('hero-total-pnl');
 const heroTotalPnlNote = document.getElementById('hero-total-pnl-note');
 const heroTotalWinRate = document.getElementById('hero-total-win-rate');
 const heroTotalVolume = document.getElementById('hero-total-volume');
-const alphaConfidenceContainer = document.getElementById('alpha-confidence');
-const alphaConfidenceValue = document.getElementById('alpha-confidence-value');
-const alphaConfidenceFill = document.getElementById('alpha-confidence-fill');
-const alphaConfidenceBar = document.getElementById('alpha-confidence-bar');
+const pnlTradesWonValue = document.getElementById('pnl-trades-won');
+const pnlTradesLostValue = document.getElementById('pnl-trades-lost');
 const shareFeedback = document.getElementById('share-feedback');
 const MEME_COMPOSER_WINDOW_NAME = 'mraster-meme-composer';
 const MEME_COMPOSER_WINDOW_FEATURES =
@@ -426,8 +424,8 @@ const TRANSLATIONS = {
     'trades.modal.noMetadata': 'Дополнительные данные отсутствуют.',
     'pnl.title': 'Обзор эффективности',
     'pnl.subtitle': 'Совокупный реализованный PNL по вашим сделкам.',
-    'pnl.confidenceLabel': 'Уверенность модели',
-    'pnl.confidenceAria': 'Прогресс уверенности модели',
+    'pnl.tradesWon': 'Победные сделки',
+    'pnl.tradesLost': 'Убыточные сделки',
     'pnl.empty': 'Данных PNL пока нет. Выполните сделки, чтобы заполнить график.',
     'pnl.expandAria': 'Открыть расширенный график эффективности',
     'ai.feed.label': 'Автопоток',
@@ -706,8 +704,8 @@ const TRANSLATIONS = {
     'trades.modal.noMetadata': 'Keine zusätzlichen Daten vorhanden.',
     'pnl.title': 'Performance-Überblick',
     'pnl.subtitle': 'Kumulierte realisierte PNL aus deinen Trades.',
-    'pnl.confidenceLabel': 'Modellvertrauen',
-    'pnl.confidenceAria': 'Fortschritt des Modellvertrauens',
+    'pnl.tradesWon': 'Gewonnene Trades',
+    'pnl.tradesLost': 'Verlorene Trades',
     'pnl.empty': 'Noch keine PNL-Daten. Führe Trades aus, um das Diagramm zu füllen.',
     'pnl.expandAria': 'Erweiterten Performance-Chart öffnen',
     'ai.feed.label': 'Autopilot',
@@ -989,8 +987,8 @@ const TRANSLATIONS = {
     'trades.modal.noMetadata': '추가 메타데이터가 없습니다.',
     'pnl.title': '성과 개요',
     'pnl.subtitle': '거래 기반 누적 실현 PNL입니다.',
-    'pnl.confidenceLabel': '모델 신뢰도',
-    'pnl.confidenceAria': '모델 신뢰도 진행률',
+    'pnl.tradesWon': '승리한 트레이드',
+    'pnl.tradesLost': '패배한 트레이드',
     'pnl.empty': '아직 PNL 데이터가 없습니다. 거래를 실행하면 차트가 채워집니다.',
     'pnl.expandAria': '성과 차트 확장 보기 열기',
     'ai.feed.label': '오토파일럿',
@@ -1272,8 +1270,8 @@ const TRANSLATIONS = {
     'trades.modal.noMetadata': 'Aucune donnée supplémentaire.',
     'pnl.title': 'Vue d’ensemble des performances',
     'pnl.subtitle': 'PNL réalisé cumulé sur vos trades.',
-    'pnl.confidenceLabel': 'Confiance du modèle',
-    'pnl.confidenceAria': 'Progression de la confiance du modèle',
+    'pnl.tradesWon': 'Trades gagnants',
+    'pnl.tradesLost': 'Trades perdants',
     'pnl.empty': 'Pas encore de données de PNL. Exécutez des trades pour alimenter le graphique.',
     'pnl.expandAria': 'Ouvrir le graphique de performance étendu',
     'ai.feed.label': 'Autopilote',
@@ -1555,8 +1553,8 @@ const TRANSLATIONS = {
     'trades.modal.noMetadata': 'No hay datos adicionales.',
     'pnl.title': 'Resumen de rendimiento',
     'pnl.subtitle': 'PNL realizado acumulado de tus operaciones.',
-    'pnl.confidenceLabel': 'Confianza del modelo',
-    'pnl.confidenceAria': 'Progreso de la confianza del modelo',
+    'pnl.tradesWon': 'Operaciones ganadas',
+    'pnl.tradesLost': 'Operaciones perdidas',
     'pnl.empty': 'Sin datos de PNL por ahora. Ejecuta operaciones para poblar el gráfico.',
     'pnl.expandAria': 'Abrir gráfico de rendimiento ampliado',
     'ai.feed.label': 'Autopiloto',
@@ -1837,8 +1835,8 @@ const TRANSLATIONS = {
     'trades.modal.noMetadata': 'Ek veri yok.',
     'pnl.title': 'Performans özeti',
     'pnl.subtitle': 'İşlemlerinizin kümülatif gerçekleşen PNL’i.',
-    'pnl.confidenceLabel': 'Model güveni',
-    'pnl.confidenceAria': 'Model güveni ilerlemesi',
+    'pnl.tradesWon': 'Kazanılan işlemler',
+    'pnl.tradesLost': 'Kaybedilen işlemler',
     'pnl.empty': 'Henüz PNL verisi yok. Grafiği doldurmak için işlem yapın.',
     'pnl.expandAria': 'Genişletilmiş performans grafiğini aç',
     'ai.feed.label': 'Otopilot',
@@ -2113,8 +2111,8 @@ const TRANSLATIONS = {
     'trades.modal.noMetadata': '没有更多补充数据。',
     'pnl.title': '绩效概览',
     'pnl.subtitle': '基于您的交易计算的累计已实现盈亏。',
-    'pnl.confidenceLabel': '模型置信度',
-    'pnl.confidenceAria': '模型置信度进度',
+    'pnl.tradesWon': '盈利笔数',
+    'pnl.tradesLost': '亏损笔数',
     'pnl.empty': '尚无盈亏数据。完成交易后即可生成图表。',
     'pnl.expandAria': '打开绩效图表的扩展视图',
     'ai.feed.label': '自动播报',
@@ -10216,57 +10214,6 @@ function renderHeroMetrics(cumulativeStats, sessionStats) {
   const totals = cumulativeStats && typeof cumulativeStats === 'object' ? cumulativeStats : {};
   const fallback = sessionStats && typeof sessionStats === 'object' ? sessionStats : {};
 
-  if (alphaConfidenceContainer) {
-    const rawConfidence =
-      totals.alpha_confidence ??
-      totals.confidence ??
-      fallback.alpha_confidence ??
-      fallback.confidence ??
-      null;
-
-    let numericConfidence = Number(rawConfidence);
-    if (!Number.isFinite(numericConfidence) && typeof rawConfidence === 'string') {
-      const parsed = Number.parseFloat(rawConfidence);
-      numericConfidence = Number.isFinite(parsed) ? parsed : Number.NaN;
-    }
-
-    if (Number.isFinite(numericConfidence) && numericConfidence >= 0) {
-      const clamped = Math.max(0, Math.min(1, numericConfidence));
-      const percent = Math.round(clamped * 100);
-      if (alphaConfidenceValue) {
-        alphaConfidenceValue.textContent = `${percent} / 100`;
-      }
-      if (alphaConfidenceFill) {
-        alphaConfidenceFill.style.width = `${percent}%`;
-      }
-      if (alphaConfidenceBar) {
-        alphaConfidenceBar.setAttribute('aria-valuenow', String(percent));
-        alphaConfidenceBar.setAttribute('aria-valuetext', `${percent} / 100`);
-        alphaConfidenceBar.setAttribute(
-          'aria-label',
-          translate('pnl.confidenceAria', 'Model confidence progress'),
-        );
-      }
-      alphaConfidenceContainer.removeAttribute('hidden');
-    } else {
-      if (alphaConfidenceValue) {
-        alphaConfidenceValue.textContent = '—';
-      }
-      if (alphaConfidenceFill) {
-        alphaConfidenceFill.style.width = '0%';
-      }
-      if (alphaConfidenceBar) {
-        alphaConfidenceBar.setAttribute('aria-valuenow', '0');
-        alphaConfidenceBar.setAttribute('aria-valuetext', '0 / 100');
-        alphaConfidenceBar.setAttribute(
-          'aria-label',
-          translate('pnl.confidenceAria', 'Model confidence progress'),
-        );
-      }
-      alphaConfidenceContainer.setAttribute('hidden', '');
-    }
-  }
-
   const totalTradesRaw = Number(
     totals.total_trades ?? totals.count ?? fallback.count ?? 0,
   );
@@ -10385,6 +10332,45 @@ function renderHeroMetrics(cumulativeStats, sessionStats) {
     winRate = winsRaw / denominator;
   }
   heroTotalWinRate.textContent = `${(winRate * 100).toFixed(1)}%`;
+
+  const parseTradeCount = (...candidates) => {
+    for (const candidate of candidates) {
+      if (candidate == null) continue;
+      const numeric = Number(candidate);
+      if (Number.isFinite(numeric)) {
+        return Math.max(0, Math.round(numeric));
+      }
+    }
+    return null;
+  };
+
+  const winsCount = parseTradeCount(
+    totals.wins,
+    totals.profitable_trades,
+    totals.positive_trades,
+    totals.green_trades,
+    fallback.wins,
+    fallback.profitable_trades,
+    fallback.positive_trades,
+    fallback.green_trades,
+  );
+  const lossesCount = parseTradeCount(
+    totals.losses,
+    totals.unprofitable_trades,
+    totals.negative_trades,
+    totals.red_trades,
+    fallback.losses,
+    fallback.unprofitable_trades,
+    fallback.negative_trades,
+    fallback.red_trades,
+  );
+
+  if (pnlTradesWonValue) {
+    pnlTradesWonValue.textContent = winsCount != null ? winsCount.toLocaleString() : '—';
+  }
+  if (pnlTradesLostValue) {
+    pnlTradesLostValue.textContent = lossesCount != null ? lossesCount.toLocaleString() : '—';
+  }
 
   const volumeCandidate =
     totals.total_volume ?? totals.volume ?? fallback.total_volume ?? fallback.totalVolume ?? 0;

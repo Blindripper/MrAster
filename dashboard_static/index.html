@@ -423,21 +423,14 @@
               </div>
             </div>
             <div class="card-section-body" data-mobile-collapsible-body>
-              <div class="confidence-meter" id="alpha-confidence" hidden>
-                <div class="confidence-meter__label">
-                  <span data-i18n="pnl.confidenceLabel">Model confidence</span>
-                  <span class="confidence-meter__value" id="alpha-confidence-value">—</span>
+              <div class="performance-stats" id="pnl-performance-stats">
+                <div class="performance-stat">
+                  <span class="performance-stat__label" data-i18n="pnl.tradesWon">Trades won</span>
+                  <span class="performance-stat__value" id="pnl-trades-won">—</span>
                 </div>
-                <div
-                  class="confidence-meter__bar"
-                  id="alpha-confidence-bar"
-                  role="progressbar"
-                  aria-valuemin="0"
-                  aria-valuemax="100"
-                  aria-valuenow="0"
-                  aria-valuetext="0 / 100"
-                >
-                  <div class="confidence-meter__fill" id="alpha-confidence-fill" style="width: 0%"></div>
+                <div class="performance-stat">
+                  <span class="performance-stat__label" data-i18n="pnl.tradesLost">Trades lost</span>
+                  <span class="performance-stat__value" id="pnl-trades-lost">—</span>
                 </div>
               </div>
               <div class="pnl-chart-wrapper">
