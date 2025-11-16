@@ -100,3 +100,24 @@ def test_strip_realized_income_trades_preserves_real_records() -> None:
 
     symbols = {entry["symbol"] for entry in filtered}
     assert symbols == {"BTCUSDT", "ETHUSDT"}
+
+
+def test_strip_realized_income_trades_keeps_real_records_with_income_context() -> None:
+    history = [
+        {
+            "symbol": "BTCUSDT",
+            "pnl": 2.0,
+            "context": {"source": "realized_income"},
+        },
+        {
+            "symbol": "SYNTHUSDT",
+            "pnl": -0.4,
+            "synthetic": True,
+            "context": {"source": "realized_income"},
+        },
+    ]
+
+    filtered = _strip_realized_income_trades(history)
+
+    symbols = {entry["symbol"] for entry in filtered}
+    assert symbols == {"BTCUSDT"}
