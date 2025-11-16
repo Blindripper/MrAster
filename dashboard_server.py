@@ -2114,6 +2114,8 @@ def _build_synthetic_trade_from_income(entry: Dict[str, Any]) -> Optional[Dict[s
         "pnl_r": 0.0,
         "opened_at": float(timestamp),
         "closed_at": float(timestamp),
+        "opened_at_iso": _format_ts(timestamp),
+        "closed_at_iso": _format_ts(timestamp),
         "synthetic": True,
         "synthetic_source": "realized_income",
         "context": {"source": "realized_income"},

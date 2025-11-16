@@ -64,3 +64,5 @@ def test_merge_realized_pnl_synthesizes_records_for_untracked_income() -> None:
     assert record["synthetic_source"] == "realized_income"
     assert record["closed_at"] == pytest.approx(1_500.0)
     assert record["side"] == "SELL"
+    assert record["opened_at_iso"] == "1970-01-01T00:25:00+00:00"
+    assert record["closed_at_iso"] == "1970-01-01T00:25:00+00:00"
