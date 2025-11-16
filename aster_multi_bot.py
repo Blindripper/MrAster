@@ -10676,6 +10676,11 @@ class TradeManager:
                 closing_commission += fee_tr
             if latest_trade_id is not None:
                 rec["last_trade_id"] = latest_trade_id
+            # Position exists no longer on the exchange. Make sure any leftover
+            # safety orders (SL/TP) are cleared so the UI does not keep showing
+            # invalid reduce-only orders from prior trades.
+            self._cancel_stale_exit_orders(sym)
+
             if closing_qty <= 0:
                 filled_qty = _coerce_float(rec.get("filled_qty")) or 0.0
                 if fetch_failed:
@@ -10693,8 +10698,6 @@ class TradeManager:
                         sym,
                     )
                 continue
-
-            self._cancel_stale_exit_orders(sym)
             exit_px = closing_cost / max(closing_qty, 1e-9)
             entry_commission = rec.get("entry_commission", 0.0) or 0.0
             total_commission = entry_commission + closing_commission
