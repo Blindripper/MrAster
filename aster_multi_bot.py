@@ -601,6 +601,7 @@ def _compute_trade_performance_summary(
 
 MIN_QUOTE_VOL = float(os.getenv("ASTER_MIN_QUOTE_VOL_USDT", "850000"))
 SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.00090"))  # 0.09 %
+SPREAD_BPS_SOFT_CAP = float(os.getenv("ASTER_SPREAD_BPS_SOFT_CAP", "0.00065"))
 WICKINESS_MAX = float(os.getenv("ASTER_WICKINESS_MAX", "0.985"))
 MIN_EDGE_R = float(os.getenv("ASTER_MIN_EDGE_R", "0.22"))
 PLAYBOOK_BULL_SHORT_BLOCK_ENABLED = (
@@ -749,6 +750,29 @@ SENTINEL_SIZE_LOCK_CAP = _env_float("ASTER_SENTINEL_SIZE_LOCK_CAP", 0.6, allow_z
 SENTINEL_LEVERAGE_LOCK_CAP = _env_float("ASTER_SENTINEL_LEVERAGE_CAP", 2.0, allow_zero=False)
 EXECUTION_GAP_THRESHOLD = _env_float("ASTER_EXECUTION_GAP_THRESHOLD", 0.30, allow_zero=False)
 EXECUTION_FEEDBACK_TTL = max(600.0, _env_float("ASTER_EXECUTION_FEEDBACK_TTL", 7200.0, allow_zero=False))
+EXECUTION_COST_REJECT_RATIO = max(0.1, float(os.getenv("ASTER_EXECUTION_COST_REJECT_RATIO", "1.2") or 1.2))
+EXECUTION_COST_FORCE_LIMIT_RATIO = max(0.1, float(os.getenv("ASTER_EXECUTION_COST_FORCE_LIMIT_RATIO", "1.05") or 1.05))
+EXECUTION_FORCE_POST_ONLY = os.getenv("ASTER_EXECUTION_FORCE_POST_ONLY", "true").lower() in {"1", "true", "yes", "on"}
+
+EXPECTED_R_SIGNAL_MIN_RATIO = float(os.getenv("ASTER_EXPECTED_R_SIGNAL_MIN_RATIO", "0.05") or 0.05)
+EXPECTED_R_NEGATIVE_BLOCK = float(os.getenv("ASTER_EXPECTED_R_NEGATIVE_BLOCK", "0.0") or 0.0)
+EXPECTED_R_DRIFT_SOFT = max(0.5, float(os.getenv("ASTER_EXPECTED_R_DRIFT_SOFT", "2.5") or 2.5))
+EXPECTED_R_DRIFT_HALT = max(EXPECTED_R_DRIFT_SOFT, float(os.getenv("ASTER_EXPECTED_R_DRIFT_HALT", "5.0") or 5.0))
+EXPECTED_R_DRIFT_MIN_MULT = max(0.05, float(os.getenv("ASTER_EXPECTED_R_DRIFT_MIN_MULT", "0.2") or 0.2))
+EXPECTED_R_DRIFT_SIZE_WEIGHT = max(0.1, float(os.getenv("ASTER_EXPECTED_R_DRIFT_SIZE_WEIGHT", "0.65") or 0.65))
+
+MIN_STOP_ATR_MULT = max(1.0, float(os.getenv("ASTER_MIN_STOP_ATR_MULT", "1.2") or 1.2))
+WICKINESS_NOISE_THRESHOLD = max(0.0, float(os.getenv("ASTER_WICKINESS_NOISE_THRESHOLD", "0.35") or 0.35))
+WICKINESS_STOP_BOOST = max(0.0, float(os.getenv("ASTER_WICKINESS_STOP_BOOST", "0.55") or 0.55))
+MIN_TP_SL_RATIO = max(1.05, float(os.getenv("ASTER_MIN_TP_SL_RATIO", "1.3") or 1.3))
+
+SENTINEL_HYPE_BLOCK_THRESHOLD = max(0.0, float(os.getenv("ASTER_SENTINEL_HYPE_BLOCK_THRESHOLD", "0.65") or 0.65))
+SENTINEL_HYPE_MIN_MULT = max(0.05, float(os.getenv("ASTER_SENTINEL_HYPE_MIN_MULT", "0.25") or 0.25))
+SENTINEL_HYPE_WEIGHT = max(0.1, float(os.getenv("ASTER_SENTINEL_HYPE_WEIGHT", "1.8") or 1.8))
+EVENT_RISK_SIZE_SOFT_THRESHOLD = max(0.0, float(os.getenv("ASTER_EVENT_RISK_SIZE_SOFT_THRESHOLD", "0.45") or 0.45))
+EVENT_RISK_SIZE_HARD_THRESHOLD = max(EVENT_RISK_SIZE_SOFT_THRESHOLD, float(os.getenv("ASTER_EVENT_RISK_SIZE_HARD_THRESHOLD", "0.8") or 0.8))
+EVENT_RISK_MIN_MULT = max(0.05, float(os.getenv("ASTER_EVENT_RISK_MIN_MULT", "0.35") or 0.35))
+HYPE_FOCUS_PENALTY = max(0.05, float(os.getenv("ASTER_HYPE_FOCUS_PENALTY", "0.15") or 0.15))
 _DEFAULT_RISK_PER_TRADE = 0.005
 if PRESET_MODE in {"high", "att"} and AI_MODE_ENABLED:
     _DEFAULT_RISK_PER_TRADE = 0.10
@@ -8559,6 +8583,12 @@ class Strategy:
             window_val = _coerce_float(tracker.get("window"))
             if window_val is not None:
                 ctx_base["expected_r_ratio_window"] = float(window_val)
+            drift_val = _coerce_float(tracker.get("drift"))
+            if drift_val is not None:
+                ctx_base["expected_r_signal_drift"] = float(drift_val)
+            avg_gap_val = _coerce_float(tracker.get("avg_gap"))
+            if avg_gap_val is not None:
+                ctx_base["expected_r_signal_avg_gap"] = float(avg_gap_val)
 
         score_info = self._symbol_score_cache.get(symbol, {})
         if score_info:
@@ -9665,10 +9695,16 @@ class TradeManager:
         total_expected = sum(max(0.0, float(sample.get("expected", 0.0))) for sample in samples)
         total_realized = sum(float(sample.get("realized", 0.0) or 0.0) for sample in samples)
         ratio = total_realized / max(total_expected, 1e-9)
+        drift_signed = total_expected - total_realized
+        drift_abs = abs(drift_signed)
+        avg_gap = drift_abs / max(len(samples), 1)
         tracker["total_expected"] = float(total_expected)
         tracker["total_realized"] = float(total_realized)
         tracker["ratio"] = float(ratio)
         tracker["window"] = window
+        tracker["drift"] = float(drift_abs)
+        tracker["drift_signed"] = float(drift_signed)
+        tracker["avg_gap"] = float(avg_gap)
         tracker["updated"] = time.time()
         alert_needed = (
             ratio < EXPECTED_R_ALERT_THRESHOLD
@@ -9685,6 +9721,63 @@ class TradeManager:
                     ratio,
                     len(samples),
                 )
+
+    @staticmethod
+    def _advisor_focus_tokens(ctx: Dict[str, Any]) -> Set[str]:
+        focus_raw = ctx.get("advisor_memory_focus")
+        tokens: Set[str] = set()
+        if isinstance(focus_raw, (list, tuple, set)):
+            for item in focus_raw:
+                if isinstance(item, str) and item.strip():
+                    tokens.add(item.strip().lower())
+        return tokens
+
+    def _contextual_size_multiplier(self, ctx: Dict[str, Any]) -> Tuple[float, bool]:
+        hype = _coerce_float(ctx.get("sentinel_hype"))
+        event_risk = _coerce_float(ctx.get("sentinel_event_risk"))
+        focus_tokens = self._advisor_focus_tokens(ctx)
+        hype_focus = any("hype" in token for token in focus_tokens)
+        event_focus = any("event" in token or "news" in token for token in focus_tokens)
+        multiplier = 1.0
+        blocked = False
+        if hype is not None and hype > 0:
+            if hype >= SENTINEL_HYPE_BLOCK_THRESHOLD and hype_focus:
+                blocked = True
+            else:
+                hype_over = max(0.0, hype - 0.5)
+                hype_penalty = 1.0 - hype_over * SENTINEL_HYPE_WEIGHT
+                multiplier = min(multiplier, max(SENTINEL_HYPE_MIN_MULT, hype_penalty))
+        if event_risk is not None and event_risk >= EVENT_RISK_SIZE_SOFT_THRESHOLD:
+            span = max(EVENT_RISK_SIZE_HARD_THRESHOLD - EVENT_RISK_SIZE_SOFT_THRESHOLD, 1e-9)
+            severity = min(1.0, max(0.0, event_risk - EVENT_RISK_SIZE_SOFT_THRESHOLD) / span)
+            event_penalty = max(
+                EVENT_RISK_MIN_MULT,
+                1.0 - severity * (1.0 - EVENT_RISK_MIN_MULT),
+            )
+            multiplier = min(multiplier, event_penalty)
+            if event_risk >= EVENT_RISK_SIZE_HARD_THRESHOLD and event_focus:
+                blocked = True
+        if hype_focus and not blocked:
+            multiplier *= max(0.05, 1.0 - HYPE_FOCUS_PENALTY)
+        if multiplier < 0:
+            multiplier = 0.0
+        return float(multiplier), blocked
+
+    def _expected_r_drift_multiplier(self, ctx: Dict[str, Any]) -> Tuple[float, bool]:
+        drift_val = _coerce_float(ctx.get("expected_r_signal_drift"))
+        if drift_val is None or drift_val <= 0:
+            return 1.0, False
+        if drift_val >= EXPECTED_R_DRIFT_HALT:
+            return 0.0, True
+        if drift_val <= EXPECTED_R_DRIFT_SOFT:
+            return 1.0, False
+        span = max(EXPECTED_R_DRIFT_HALT - EXPECTED_R_DRIFT_SOFT, 1e-9)
+        severity = min(1.0, max(0.0, drift_val - EXPECTED_R_DRIFT_SOFT) / span)
+        penalty = max(
+            EXPECTED_R_DRIFT_MIN_MULT,
+            1.0 - severity * EXPECTED_R_DRIFT_SIZE_WEIGHT,
+        )
+        return float(penalty), False
 
     def _rebuild_cumulative_metrics(self) -> Dict[str, Any]:
         metrics = {
@@ -9991,12 +10084,14 @@ class TradeManager:
                 record["ai"] = sanitized
                 if "fasttp_overrides" in sanitized:
                     record["fasttp_overrides"] = sanitized["fasttp_overrides"]
+        risk_multiplier = _coerce_float(ctx.get("risk_allocation_multiplier")) or 1.0
         if self.risk:
             try:
                 risk_value = self.risk.estimate_risk_value(entry, sl, float(qty))
             except Exception:
                 risk_value = 0.0
             if risk_value > 0:
+                risk_value *= max(0.0, risk_multiplier)
                 record["risk_allocation"] = float(risk_value)
                 try:
                     self.risk.register_allocation(symbol, risk_value)
@@ -12712,7 +12807,73 @@ class Bot:
                 except (TypeError, ValueError):
                     manual_notional = None
 
+        expected_r_drift_mult = 1.0
+        hype_size_mult = 1.0
         recovered_plan: Optional[Dict[str, Any]] = None
+        if sig in {"BUY", "SELL"}:
+            quality_gate = float(ctx.get("quality_gate_pass", 0.0) or 0.0) >= 0.5
+            if not quality_gate:
+                if self.decision_tracker:
+                    self.decision_tracker.record_rejection("quality_gate")
+                log.info("Skip %s — quality gate failed for signal %s.", symbol, sig)
+                if manual_override:
+                    self._complete_manual_request(
+                        manual_req,
+                        "failed",
+                        error="Quality filters blocked the trade",
+                    )
+                return
+            ratio_val = _coerce_float(ctx.get("expected_r_signal_ratio"))
+            if ratio_val is not None:
+                ctx["expected_r_signal_ratio"] = float(ratio_val)
+                if ratio_val < EXPECTED_R_NEGATIVE_BLOCK:
+                    if self.decision_tracker:
+                        self.decision_tracker.record_rejection("expected_r_negative")
+                    log.info(
+                        "Skip %s — expected-R ratio %.2f below negative guard.",
+                        symbol,
+                        ratio_val,
+                    )
+                    if manual_override:
+                        self._complete_manual_request(
+                            manual_req,
+                            "failed",
+                            error="Expected-R ratio negative",
+                        )
+                    return
+                if ratio_val < EXPECTED_R_SIGNAL_MIN_RATIO:
+                    if self.decision_tracker:
+                        self.decision_tracker.record_rejection("expected_r_ratio")
+                    log.info(
+                        "Skip %s — expected-R ratio %.2f below %.2f threshold.",
+                        symbol,
+                        ratio_val,
+                        EXPECTED_R_SIGNAL_MIN_RATIO,
+                    )
+                    if manual_override:
+                        self._complete_manual_request(
+                            manual_req,
+                            "failed",
+                            error="Expected-R telemetry too weak",
+                        )
+                    return
+            expected_r_drift_mult, drift_blocked = self._expected_r_drift_multiplier(ctx)
+            if drift_blocked:
+                if self.decision_tracker:
+                    self.decision_tracker.record_rejection("expected_r_drift")
+                log.info(
+                    "Skip %s — expected-R drift %.2f exceeds halt threshold.",
+                    symbol,
+                    float(ctx.get("expected_r_signal_drift") or 0.0),
+                )
+                if manual_override:
+                    self._complete_manual_request(
+                        manual_req,
+                        "failed",
+                        error="Expected-R drift guard active",
+                    )
+                return
+
         if self.ai_advisor and not manual_override and base_signal == "NONE":
             resumed = self.ai_advisor.consume_signal_plan(symbol)
             if resumed:
@@ -12726,11 +12887,47 @@ class Bot:
                 else:
                     recovered_plan = None
 
+        execution_force_limit = False
+        execution_cost_ratio: Optional[float] = None
+        if sig in {"BUY", "SELL"}:
+            feedback_bucket = self.state.get("execution_feedback") if isinstance(self.state, dict) else None
+            if isinstance(feedback_bucket, dict):
+                entry = feedback_bucket.get(symbol)
+                if isinstance(entry, dict):
+                    flagged_at = _coerce_float(entry.get("flagged_at")) or 0.0
+                    if flagged_at and time.time() - flagged_at <= EXECUTION_FEEDBACK_TTL:
+                        ratio_val = _coerce_float(entry.get("ratio"))
+                        if ratio_val is not None:
+                            execution_cost_ratio = float(ratio_val)
+                            ctx["execution_cost_ratio"] = float(ratio_val)
+                            if ratio_val >= EXECUTION_COST_REJECT_RATIO:
+                                if self.decision_tracker:
+                                    self.decision_tracker.record_rejection("execution_cost")
+                                log.info(
+                                    "Skip %s — execution cost ratio %.2f flagged as too high.",
+                                    symbol,
+                                    ratio_val,
+                                )
+                                if manual_override:
+                                    self._complete_manual_request(
+                                        manual_req,
+                                        "failed",
+                                        error="Execution cost telemetry blocks trade",
+                                    )
+                                return
+                            if ratio_val >= EXECUTION_COST_FORCE_LIMIT_RATIO:
+                                execution_force_limit = True
+                                ctx["execution_force_limit"] = True
+                                ctx["execution_force_limit_reason"] = entry.get("execution_flag") or "high_cost_gap"
+                    else:
+                        feedback_bucket.pop(symbol, None)
+
         if not manual_override and sig == "NONE" and not self.ai_advisor:
             return
 
         liquidity_penalty = 1.0
         orderbook_penalty = 1.0
+        spread_soft_penalty = 1.0
         spread_val = _coerce_float(ctx.get("spread_bps"))
         atr_pct_val = _coerce_float(ctx.get("atr_pct"))
         if (
@@ -12741,6 +12938,12 @@ class Bot:
         ):
             liquidity_penalty = 0.5
             ctx["late_trend_liquidity_penalty"] = float(liquidity_penalty)
+        if spread_val is not None and spread_val > SPREAD_BPS_SOFT_CAP:
+            excess = max(0.0, spread_val - SPREAD_BPS_SOFT_CAP)
+            base = max(SPREAD_BPS_SOFT_CAP, 1e-9)
+            severity = min(1.0, excess / base)
+            spread_soft_penalty = max(0.3, 1.0 - severity * 0.85)
+            ctx["spread_soft_penalty"] = float(spread_soft_penalty)
 
         mix_state = self._daily_side_mix()
         long_count = int(mix_state.get("long", 0) or 0)
@@ -13488,6 +13691,8 @@ class Bot:
             size_mult *= orderbook_penalty
         if execution_penalty < 1.0:
             size_mult *= execution_penalty
+        if spread_soft_penalty < 1.0:
+            size_mult *= spread_soft_penalty
         if not manual_override:
             size_mult *= performance_factor
             size_mult *= tuning_bucket_factor
@@ -13545,6 +13750,28 @@ class Bot:
             size_mult = min(size_mult, sentinel_multiplier_cap)
         if sentinel_size_cap_value is not None:
             size_mult = min(size_mult, sentinel_size_cap_value)
+
+        if sig in {"BUY", "SELL"}:
+            hype_size_mult, hype_blocked = self._contextual_size_multiplier(ctx)
+            if hype_blocked:
+                if self.decision_tracker:
+                    self.decision_tracker.record_rejection("hype_risk_block")
+                log.info(
+                    "Skip %s — hype/event guard active (hype %.2f, event %.2f).",
+                    symbol,
+                    float(ctx.get("sentinel_hype") or 0.0),
+                    float(ctx.get("sentinel_event_risk") or 0.0),
+                )
+                if manual_override:
+                    self._complete_manual_request(
+                        manual_req,
+                        "failed",
+                        error="Hype guard forbids fresh exposure",
+                    )
+                return
+        else:
+            hype_size_mult = 1.0
+
         ctx["tuning_size_bucket_multiplier"] = float(tuning_bucket_factor)
         ctx["playbook_size_multiplier"] = float(playbook_size_factor)
         ctx["playbook_structured_size_multiplier_applied"] = float(structured_size_mult)
@@ -13557,6 +13784,10 @@ class Bot:
                 ctx["budget_bias_applied"] = float(ctx.get("budget_bias", 1.0) or 1.0)
             except Exception:
                 ctx["budget_bias_applied"] = 1.0
+
+        risk_allocation_multiplier = hype_size_mult * expected_r_drift_mult
+        if sig in {"BUY", "SELL"}:
+            ctx["risk_allocation_multiplier"] = float(risk_allocation_multiplier)
 
         # Entry/SL/TP foundation
         try:
@@ -13630,6 +13861,19 @@ class Bot:
             dynamic_tp_mult = min(dynamic_tp_mult, LOW_ATR_TP_MULT)
             ctx["low_atr_sl_multiplier"] = float(dynamic_sl_mult)
             ctx["low_atr_tp_multiplier"] = float(dynamic_tp_mult)
+        noise_floor = MIN_STOP_ATR_MULT
+        wickiness_val = _coerce_float(ctx.get("wickiness"))
+        if wickiness_val is not None and wickiness_val > WICKINESS_NOISE_THRESHOLD:
+            noise_boost = (wickiness_val - WICKINESS_NOISE_THRESHOLD) * WICKINESS_STOP_BOOST
+            noise_floor = max(noise_floor, MIN_STOP_ATR_MULT + noise_boost)
+            ctx["wickiness_stop_boost"] = float(noise_boost)
+        if dynamic_sl_mult < noise_floor:
+            dynamic_sl_mult = noise_floor
+            ctx["sl_minimum_enforced"] = float(dynamic_sl_mult)
+        min_tp_mult = dynamic_sl_mult * MIN_TP_SL_RATIO
+        if dynamic_tp_mult < min_tp_mult:
+            dynamic_tp_mult = min_tp_mult
+            ctx["tp_sl_ratio_enforced"] = float(dynamic_tp_mult)
         sl_dist = max(1e-9, dynamic_sl_mult * atr_abs)
         tp_dist = max(1e-9, dynamic_tp_mult * atr_abs)
         ctx["sl_atr_multiplier_dynamic"] = float(dynamic_sl_mult)
@@ -14117,10 +14361,17 @@ class Bot:
 
         is_buy = sig == "BUY"
         px = ask_px if is_buy else bid_px
+        maker_hint = bid_px if is_buy else ask_px
+        if execution_force_limit and maker_hint > 0:
+            px = maker_hint
         if isinstance(plan_entry, (int, float)) and plan_entry > 0:
             px = float(plan_entry)
+            if execution_force_limit and maker_hint > 0:
+                px = min(px, maker_hint) if is_buy else max(px, maker_hint)
         elif px <= 0:
             px = mid_px if mid_px > 0 else price
+        if execution_force_limit:
+            ctx["execution_force_limit_price"] = float(px)
 
         sl = px - sl_dist if is_buy else px + sl_dist
         if isinstance(plan_stop, (int, float)) and plan_stop > 0:
@@ -14175,6 +14426,14 @@ class Bot:
 
         if not manual_override:
             size_mult = max(SIZE_MULT_FLOOR, size_mult)
+
+        if hype_size_mult < 1.0:
+            size_mult *= hype_size_mult
+            ctx["hype_risk_multiplier"] = float(hype_size_mult)
+        if expected_r_drift_mult < 1.0:
+            size_mult *= expected_r_drift_mult
+            ctx["expected_r_drift_multiplier"] = float(expected_r_drift_mult)
+
         mult_cap = SIZE_MULT_CAP if SIZE_MULT_CAP > 0 else 5.0
         size_mult = clamp(size_mult, 0.0, mult_cap)
         if size_mult <= 0:
@@ -14192,6 +14451,10 @@ class Bot:
             return
 
         tick = float(self.risk.symbol_filters.get(symbol, {}).get("tickSize", 0.0001) or 0.0001)
+        limit_price_value: Optional[float] = None
+        if execution_force_limit:
+            limit_price_value = round_price(symbol, px, tick)
+            ctx["execution_force_limit_price"] = float(limit_price_value)
         sl = round_price(symbol, sl, tick)
         tp = round_price(symbol, tp, tick)
 
@@ -14220,8 +14483,26 @@ class Bot:
         q_str = format_qty(qty, step)
 
         # Entry
+        if execution_force_limit:
+            forced_price = limit_price_value if limit_price_value is not None else px
+            log.info(
+                "Force limit entry for %s at %.6f (cost ratio %.2f).",
+                symbol,
+                float(forced_price or px),
+                float(execution_cost_ratio or 0.0),
+            )
         try:
-            order_params = {"symbol": symbol, "side": sig, "type": "MARKET", "quantity": q_str}
+            order_params: Dict[str, Any] = {"symbol": symbol, "side": sig, "quantity": q_str}
+            if execution_force_limit and (limit_price_value or px):
+                limit_price = limit_price_value if limit_price_value is not None else px
+                price_str = f"{limit_price:.10f}".rstrip("0").rstrip(".")
+                if not price_str:
+                    price_str = f"{limit_price:.6f}"
+                order_params["type"] = "LIMIT"
+                order_params["price"] = price_str
+                order_params["timeInForce"] = "GTX" if EXECUTION_FORCE_POST_ONLY else "GTC"
+            else:
+                order_params["type"] = "MARKET"
             order_params["stopLoss"] = build_bracket_payload("SL", sig, sl)
             order_params["takeProfit"] = build_bracket_payload("TP", sig, tp)
             try:
