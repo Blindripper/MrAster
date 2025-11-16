@@ -42,3 +42,25 @@ def test_merge_realized_pnl_handles_missing_risk_context() -> None:
     assert record["realized_pnl"] == pytest.approx(-7.2)
     # pnl_r remains unchanged when we cannot infer risk
     assert record["pnl_r"] == 0.0
+
+
+def test_merge_realized_pnl_synthesizes_records_for_untracked_income() -> None:
+    realized = [
+        {
+            "symbol": "STOPUSDT",
+            "income": -0.25,
+            "time": 1_500.0,
+            "info": "ORDER:42 type=STOP_MARKET side:SELL",
+        }
+    ]
+
+    merged = _merge_realized_pnl([], realized)
+
+    assert len(merged) == 1
+    record = merged[0]
+    assert record["symbol"] == "STOPUSDT"
+    assert record["pnl"] == pytest.approx(-0.25)
+    assert record["synthetic"] is True
+    assert record["synthetic_source"] == "realized_income"
+    assert record["closed_at"] == pytest.approx(1_500.0)
+    assert record["side"] == "SELL"
