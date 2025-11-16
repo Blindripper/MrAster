@@ -603,6 +603,22 @@ MIN_QUOTE_VOL = float(os.getenv("ASTER_MIN_QUOTE_VOL_USDT", "850000"))
 SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.00090"))  # 0.09 %
 WICKINESS_MAX = float(os.getenv("ASTER_WICKINESS_MAX", "0.985"))
 MIN_EDGE_R = float(os.getenv("ASTER_MIN_EDGE_R", "0.22"))
+PLAYBOOK_BULL_SHORT_BLOCK_ENABLED = (
+    os.getenv("ASTER_PLAYBOOK_BULL_SHORT_BLOCK", "true").lower()
+    in ("1", "true", "yes", "on")
+)
+PLAYBOOK_LONG_FLOOR = float(os.getenv("ASTER_PLAYBOOK_LONG_SHARE_FLOOR", "0.4") or 0.4)
+PLAYBOOK_SIDE_MIN_SAMPLE = int(os.getenv("ASTER_PLAYBOOK_SIDE_MIN_SAMPLE", "4") or 4)
+TREND_SHORT_STOCHRSI_MIN = float(os.getenv("ASTER_TREND_SHORT_STOCHRSI_MIN", "40.0") or 40.0)
+STOCH_SHORT_PENALTY_BLOCK = float(os.getenv("ASTER_STOCH_SHORT_PENALTY_BLOCK", "0.55") or 0.55)
+EXPECTED_R_LOSS_MULT = float(os.getenv("ASTER_EXPECTED_R_LOSS_MULT", "1.2") or 1.2)
+ATR_ADVERSE_EXIT_MULT = float(os.getenv("ASTER_ATR_ADVERSE_EXIT_MULT", "0.5") or 0.5)
+EXPECTED_R_RATIO_WINDOW = int(os.getenv("ASTER_EXPECTED_R_ALERT_WINDOW", "16") or 16)
+EXPECTED_R_ALERT_THRESHOLD = float(os.getenv("ASTER_EXPECTED_R_ALERT_THRESHOLD", "0.5") or 0.5)
+EXPECTED_R_ALERT_MIN_EXPECTED = float(
+    os.getenv("ASTER_EXPECTED_R_ALERT_MIN_EXPECTED", "0.5") or 0.5
+)
+EXPECTED_R_ALERT_COOLDOWN = float(os.getenv("ASTER_EXPECTED_R_ALERT_COOLDOWN", "900") or 900.0)
 
 BANDIT_FLAG = os.getenv("ASTER_BANDIT_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 BANDIT_ENABLED = BANDIT_FLAG and not AI_MODE_ENABLED
@@ -8532,6 +8548,18 @@ class Strategy:
             "last_price": float(last),
         }
 
+        if isinstance(self.state, dict):
+            tracker = self.state.get("expected_r_tracker")
+        else:
+            tracker = None
+        if isinstance(tracker, dict):
+            ratio_val = _coerce_float(tracker.get("ratio"))
+            if ratio_val is not None:
+                ctx_base["expected_r_signal_ratio"] = float(ratio_val)
+            window_val = _coerce_float(tracker.get("window"))
+            if window_val is not None:
+                ctx_base["expected_r_ratio_window"] = float(window_val)
+
         score_info = self._symbol_score_cache.get(symbol, {})
         if score_info:
             try:
@@ -9027,6 +9055,43 @@ class Strategy:
         ctx_base["filter_penalty_score"] = float(min(filter_penalty, FILTER_PENALTY_HARD * 1.2))
         ctx_base["filter_bonus_score"] = float(min(filter_bonus, FILTER_BONUS_CAP))
 
+        if sig == "SELL" and chosen_flag == "setup_trend_follow":
+            stoch_k_val = _coerce_float(ctx_base.get("stoch_rsi_k"))
+            stoch_penalty_val = _coerce_float(ctx_base.get("penalty_stoch_rsi"))
+            if (
+                stoch_k_val is not None
+                and TREND_SHORT_STOCHRSI_MIN > 0
+                and stoch_k_val < TREND_SHORT_STOCHRSI_MIN
+            ):
+                ctx_base["stoch_rsi_trend_short_block"] = float(stoch_k_val)
+                return self._skip(
+                    "stoch_rsi_trend_short",
+                    symbol,
+                    {
+                        "stoch_rsi_k": f"{stoch_k_val:.1f}",
+                        "min": f"{TREND_SHORT_STOCHRSI_MIN:.1f}",
+                    },
+                    ctx=ctx_base,
+                    price=mid,
+                    atr=atr,
+                )
+            if (
+                stoch_penalty_val is not None
+                and stoch_penalty_val >= STOCH_SHORT_PENALTY_BLOCK
+            ):
+                ctx_base["stoch_rsi_penalty_block"] = float(stoch_penalty_val)
+                return self._skip(
+                    "stoch_rsi_penalty",
+                    symbol,
+                    {
+                        "penalty": f"{stoch_penalty_val:.2f}",
+                        "threshold": f"{STOCH_SHORT_PENALTY_BLOCK:.2f}",
+                    },
+                    ctx=ctx_base,
+                    price=mid,
+                    atr=atr,
+                )
+
         if filter_penalty >= FILTER_PENALTY_HARD:
             detail = {f"filtered_{k}": v for k, v in filter_reasons.items()}
             detail["filter_penalty"] = f"{filter_penalty:.2f}"
@@ -9377,6 +9442,25 @@ class TradeManager:
         self._ensure_cumulative_metrics()
         self._update_performance_profile()
 
+    def _bump_side_mix(self, side: str) -> None:
+        if not isinstance(self.state, dict):
+            return
+        bucket = self.state.setdefault("daily_side_mix", {})
+        if not isinstance(bucket, dict):
+            bucket = {}
+            self.state["daily_side_mix"] = bucket
+        today = date.today().isoformat()
+        if bucket.get("date") != today:
+            bucket.clear()
+            bucket["date"] = today
+            bucket["long"] = 0
+            bucket["short"] = 0
+            bucket["total"] = 0
+        key = "long" if str(side).upper() == "BUY" else "short"
+        bucket[key] = int(bucket.get(key, 0) or 0) + 1
+        bucket["total"] = int(bucket.get("total", 0) or 0) + 1
+        bucket["updated"] = time.time()
+
     @staticmethod
     def _boolish(value: Any) -> bool:
         if isinstance(value, bool):
@@ -9551,6 +9635,56 @@ class TradeManager:
                 "flagged_at": time.time(),
                 "expected_r": float(expected_r),
             }
+
+    def _update_expected_vs_realized(self, record: Dict[str, Any]) -> None:
+        if not isinstance(self.state, dict):
+            return
+        ctx = record.get("context") if isinstance(record.get("context"), dict) else {}
+        expected_r = _coerce_float((ctx or {}).get("expected_r"))
+        if expected_r is None or expected_r <= 0:
+            return
+        realized_r = _coerce_float(record.get("pnl_r"))
+        if realized_r is None:
+            realized_r = 0.0
+        tracker = self.state.setdefault("expected_r_tracker", {})
+        if not isinstance(tracker, dict):
+            tracker = {}
+            self.state["expected_r_tracker"] = tracker
+        samples: List[Dict[str, Any]] = tracker.setdefault("samples", [])  # type: ignore[assignment]
+        samples.append(
+            {
+                "expected": float(expected_r),
+                "realized": float(realized_r),
+                "ts": time.time(),
+                "symbol": record.get("symbol"),
+            }
+        )
+        window = max(5, EXPECTED_R_RATIO_WINDOW)
+        if len(samples) > window:
+            del samples[:-window]
+        total_expected = sum(max(0.0, float(sample.get("expected", 0.0))) for sample in samples)
+        total_realized = sum(float(sample.get("realized", 0.0) or 0.0) for sample in samples)
+        ratio = total_realized / max(total_expected, 1e-9)
+        tracker["total_expected"] = float(total_expected)
+        tracker["total_realized"] = float(total_realized)
+        tracker["ratio"] = float(ratio)
+        tracker["window"] = window
+        tracker["updated"] = time.time()
+        alert_needed = (
+            ratio < EXPECTED_R_ALERT_THRESHOLD
+            and total_expected >= EXPECTED_R_ALERT_MIN_EXPECTED
+        )
+        if alert_needed:
+            last_alert = _coerce_float(tracker.get("last_alert_ts")) or 0.0
+            if time.time() - last_alert >= max(30.0, EXPECTED_R_ALERT_COOLDOWN):
+                tracker["last_alert_ts"] = time.time()
+                log.warning(
+                    "Expected-R telemetry alert: realized %.3f vs expected %.3f (ratio %.2f) over %d trades.",
+                    total_realized,
+                    total_expected,
+                    ratio,
+                    len(samples),
+                )
 
     def _rebuild_cumulative_metrics(self) -> Dict[str, Any]:
         metrics = {
@@ -9868,6 +10002,7 @@ class TradeManager:
                     self.risk.register_allocation(symbol, risk_value)
                 except Exception:
                     pass
+        self._bump_side_mix(side)
         self.state["live_trades"][symbol] = record
         self.save()
         if self.policy and BANDIT_ENABLED:
@@ -10085,6 +10220,7 @@ class TradeManager:
                 if postmortem:
                     record["postmortem"] = postmortem
                 hist.append(record)
+                self._update_expected_vs_realized(record)
                 if self.risk and pnl < 0:
                     try:
                         self.risk.record_symbol_loss(sym, abs(pnl))
@@ -10255,6 +10391,7 @@ class TradeManager:
             if postmortem:
                 record["postmortem"] = postmortem
             hist.append(record)
+            self._update_expected_vs_realized(record)
             if self.risk and float(pnl_value) < 0:
                 try:
                     self.risk.record_symbol_loss(sym, abs(float(pnl_value)))
@@ -10803,6 +10940,26 @@ class Bot:
         if not isinstance(mgmt, dict):
             mgmt = {}
             rec["management"] = mgmt
+        ctx = rec.get("ctx") if isinstance(rec.get("ctx"), dict) else {}
+        expected_r_val = _coerce_float((ctx or {}).get("expected_r"))
+        if expected_r_val is None:
+            expected_r_val = _coerce_float(rec.get("expected_r"))
+        if (
+            EXPECTED_R_LOSS_MULT > 0
+            and expected_r_val is not None
+            and expected_r_val > 0
+            and not mgmt.get("expected_r_stop")
+            and r_now <= -expected_r_val * EXPECTED_R_LOSS_MULT
+        ):
+            if self._submit_reduce_only(symbol, side, qty_abs, "expected_r_stop"):
+                mgmt["expected_r_stop"] = True
+                self._management_dirty = True
+                self._log_management_event(
+                    rec,
+                    "expected_r_stop",
+                    {"r": float(r_now), "expected_r": float(expected_r_val)},
+                )
+                return
         if BREAKEVEN_REEVAL_SECONDS > 0 and elapsed >= BREAKEVEN_REEVAL_SECONDS:
             if r_now < BREAKEVEN_R_THRESHOLD and not mgmt.get("breakeven_guard"):
                 stop_price = entry if amount > 0 else entry
@@ -10826,7 +10983,6 @@ class Bot:
                 self._management_dirty = True
                 self._log_management_event(rec, "time_stop", {"elapsed": elapsed})
                 return
-        ctx = rec.get("ctx") if isinstance(rec.get("ctx"), dict) else {}
         compression_bias = 0.0
         if isinstance(ctx, dict):
             raw_bias = ctx.get("pm_volatility_compression_flag")
@@ -10847,6 +11003,23 @@ class Bot:
             ctx_atr = ctx.get("atr_abs")
             if isinstance(ctx_atr, (int, float)):
                 atr_context = float(ctx_atr)
+        if (
+            ATR_ADVERSE_EXIT_MULT > 0
+            and atr_context > 0
+            and not mgmt.get("atr_adverse_stop")
+        ):
+            adverse_move = (entry - mid) if amount > 0 else (mid - entry)
+            adverse_move = max(0.0, adverse_move)
+            if adverse_move >= ATR_ADVERSE_EXIT_MULT * atr_context:
+                if self._submit_reduce_only(symbol, side, qty_abs, "atr_adverse_stop"):
+                    mgmt["atr_adverse_stop"] = True
+                    self._management_dirty = True
+                    self._log_management_event(
+                        rec,
+                        "atr_adverse_stop",
+                        {"move": float(adverse_move), "atr": float(atr_context)},
+                    )
+                    return
         compression_active = compression_bias >= 0.05 and atr_context > 0 and opened_ts > 0
         if compression_active:
             deadline = mgmt.get("compression_exit_deadline")
@@ -12357,6 +12530,23 @@ class Bot:
             except Exception as exc:
                 log.debug(f"decision stats reset persist failed: {exc}")
 
+    def _daily_side_mix(self) -> Dict[str, Any]:
+        bucket = self.state.setdefault("daily_side_mix", {})
+        if not isinstance(bucket, dict):
+            bucket = {}
+            self.state["daily_side_mix"] = bucket
+        today = date.today().isoformat()
+        if bucket.get("date") != today:
+            bucket.clear()
+            bucket["date"] = today
+            bucket["long"] = 0
+            bucket["short"] = 0
+            bucket["total"] = 0
+        bucket.setdefault("long", 0)
+        bucket.setdefault("short", 0)
+        bucket.setdefault("total", bucket.get("long", 0) + bucket.get("short", 0))
+        return bucket
+
     def _size_mult_from_bucket(self, bucket: str) -> float:
         return {"S": SIZE_MULT_S, "M": SIZE_MULT_M, "L": SIZE_MULT_L}.get(bucket, SIZE_MULT_S)
 
@@ -12551,6 +12741,79 @@ class Bot:
         ):
             liquidity_penalty = 0.5
             ctx["late_trend_liquidity_penalty"] = float(liquidity_penalty)
+
+        mix_state = self._daily_side_mix()
+        long_count = int(mix_state.get("long", 0) or 0)
+        short_count = int(mix_state.get("short", 0) or 0)
+        total_samples = int(mix_state.get("total", long_count + short_count) or 0)
+        if total_samples <= 0:
+            total_samples = long_count + short_count
+        if total_samples <= 0:
+            long_ratio = 1.0
+        else:
+            long_ratio = long_count / max(total_samples, 1)
+        ctx["daily_long_ratio"] = float(long_ratio)
+        ctx["daily_long_count"] = float(long_count)
+        ctx["daily_short_count"] = float(short_count)
+
+        playbook_buy_bias = _coerce_float(ctx.get("playbook_size_bias_buy"))
+        playbook_sell_bias = _coerce_float(ctx.get("playbook_size_bias_sell"))
+        playbook_bias_token = str(ctx.get("playbook_bias") or "").lower()
+        breakout_override = _coerce_float(ctx.get("setup_breakout_retest"))
+        breakout_override_flag = bool(breakout_override is not None and breakout_override >= 0.5)
+        playbook_long_tilt = (
+            playbook_buy_bias is not None
+            and playbook_sell_bias is not None
+            and playbook_buy_bias > playbook_sell_bias
+        )
+        bullish_bias = playbook_long_tilt or "bull" in playbook_bias_token or "long" in playbook_bias_token
+        if (
+            PLAYBOOK_BULL_SHORT_BLOCK_ENABLED
+            and not manual_override
+            and sig == "SELL"
+            and bullish_bias
+            and not breakout_override_flag
+        ):
+            ctx["playbook_bullish_short_block"] = True
+            if self.decision_tracker:
+                self.decision_tracker.record_rejection("playbook_bullish_block")
+            log.info(
+                "Skip %s — playbook bias (%s) blocks fresh shorts while bullish.",
+                symbol,
+                ctx.get("playbook_bias") or "bullish",
+            )
+            if manual_override:
+                self._complete_manual_request(
+                    manual_req,
+                    "failed",
+                    error="Playbook bias forbids new shorts",
+                )
+            return
+
+        if (
+            not manual_override
+            and sig == "SELL"
+            and playbook_long_tilt
+            and PLAYBOOK_LONG_FLOOR > 0
+            and not breakout_override_flag
+        ):
+            if total_samples >= max(PLAYBOOK_SIDE_MIN_SAMPLE, 1) and long_ratio < PLAYBOOK_LONG_FLOOR:
+                ctx["playbook_side_diversification_block"] = True
+                if self.decision_tracker:
+                    self.decision_tracker.record_rejection("playbook_side_diversification")
+                log.info(
+                    "Skip %s — long share %.2f below %.2f while playbook prefers BUY bias.",
+                    symbol,
+                    long_ratio,
+                    PLAYBOOK_LONG_FLOOR,
+                )
+                if manual_override:
+                    self._complete_manual_request(
+                        manual_req,
+                        "failed",
+                        error="Long exposure below required floor",
+                    )
+                return
 
         if sig == "SELL":
             adx_delta_val = _coerce_float(ctx.get("adx_delta"))
