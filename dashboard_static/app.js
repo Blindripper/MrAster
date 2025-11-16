@@ -2465,7 +2465,11 @@ function applyTranslations(lang) {
   renderDecisionStats(lastDecisionStats);
   renderAiBudget(lastAiBudget);
   if (latestTradesSnapshot) {
-    renderHeroMetrics(latestTradesSnapshot.cumulative_stats, latestTradesSnapshot.stats);
+    renderHeroMetrics(
+      latestTradesSnapshot.cumulative_stats,
+      latestTradesSnapshot.stats,
+      latestTradesSnapshot.history,
+    );
   }
   if (btnSaveConfig) {
     const state = btnSaveConfig.dataset.state || 'idle';
@@ -10399,7 +10403,166 @@ function syncAiChatAvailability() {
   setChatKeyIndicator('ready', translate('chat.key.ready', 'Dedicated chat key active'));
 }
 
-function renderHeroMetrics(cumulativeStats, sessionStats) {
+const TRADE_VOLUME_PRIMARY_KEYS = [
+  'size_usdt',
+  'sizeUsd',
+  'sizeUSD',
+  'size_usd',
+  'notional',
+  'notional_usdt',
+  'notionalUsd',
+  'notionalUSD',
+  'positionNotional',
+  'usd_value',
+  'usdValue',
+  'usd_size',
+  'usdSize',
+];
+
+const TRADE_VOLUME_QTY_KEYS = [
+  'qty',
+  'quantity',
+  'size',
+  'signed_qty',
+  'signedQty',
+  'signedQuantity',
+  'filled_qty',
+  'filledQty',
+  'amount',
+];
+
+const TRADE_VOLUME_PRICE_KEYS = [
+  'notional_price',
+  'entry',
+  'entry_price',
+  'entryPrice',
+  'expected_entry',
+  'avg_entry',
+  'price',
+  'avg_price',
+  'avgPrice',
+  'mark',
+  'mark_price',
+  'markPrice',
+  'exit',
+  'exit_price',
+  'exitPrice',
+];
+
+function coerceTradeNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  const text = value.toString().trim();
+  if (!text) return null;
+  const direct = Number(text.replace(/,/g, ''));
+  if (Number.isFinite(direct)) return direct;
+  const match = text.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+  if (!match) return null;
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function lookupTradeNumber(source, key) {
+  if (!source || typeof source !== 'object' || !key) return null;
+  const direct = coerceTradeNumber(source[key]);
+  if (direct !== null && direct !== undefined) {
+    return direct;
+  }
+  const extra = source.extra;
+  if (extra && typeof extra === 'object') {
+    const nested = coerceTradeNumber(extra[key]);
+    if (nested !== null && nested !== undefined) {
+      return nested;
+    }
+  }
+  const context = source.context;
+  if (context && typeof context === 'object') {
+    const nested = coerceTradeNumber(context[key]);
+    if (nested !== null && nested !== undefined) {
+      return nested;
+    }
+  }
+  return null;
+}
+
+function estimateTradeVolume(entry) {
+  if (!entry || typeof entry !== 'object') {
+    return 0;
+  }
+
+  for (const key of TRADE_VOLUME_PRIMARY_KEYS) {
+    const volume = lookupTradeNumber(entry, key);
+    if (volume !== null && volume !== undefined && Math.abs(volume) > 0) {
+      return Math.abs(volume);
+    }
+  }
+
+  let qtyValue = null;
+  for (const key of TRADE_VOLUME_QTY_KEYS) {
+    const qty = lookupTradeNumber(entry, key);
+    if (qty !== null && qty !== undefined && Math.abs(qty) > 0) {
+      qtyValue = Math.abs(qty);
+      break;
+    }
+  }
+
+  let priceValue = null;
+  for (const key of TRADE_VOLUME_PRICE_KEYS) {
+    const price = lookupTradeNumber(entry, key);
+    if (price !== null && price !== undefined && price > 0) {
+      priceValue = price;
+      break;
+    }
+  }
+
+  if (qtyValue !== null && priceValue !== null) {
+    return qtyValue * priceValue;
+  }
+
+  if (Array.isArray(entry.fills)) {
+    let fillsVolume = 0;
+    for (const fill of entry.fills) {
+      if (!fill || typeof fill !== 'object') continue;
+      const fillQty = lookupTradeNumber(fill, 'qty') ?? lookupTradeNumber(fill, 'size');
+      const fillPrice = lookupTradeNumber(fill, 'price');
+      if (
+        fillQty === null ||
+        fillQty === undefined ||
+        fillPrice === null ||
+        fillPrice === undefined ||
+        fillPrice <= 0
+      ) {
+        continue;
+      }
+      const qtyAbs = Math.abs(fillQty);
+      if (qtyAbs <= 0) continue;
+      fillsVolume += qtyAbs * fillPrice;
+    }
+    if (fillsVolume > 0) {
+      return fillsVolume;
+    }
+  }
+
+  return 0;
+}
+
+function deriveHistoryVolume(historyEntries) {
+  if (!Array.isArray(historyEntries) || historyEntries.length === 0) {
+    return 0;
+  }
+  let total = 0;
+  for (const trade of historyEntries) {
+    const volume = estimateTradeVolume(trade);
+    if (Number.isFinite(volume) && volume > 0) {
+      total += volume;
+    }
+  }
+  return total;
+}
+
+function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null) {
   if (!heroTotalTrades || !heroTotalPnl || !heroTotalWinRate || !heroTotalVolume) return;
 
   const totals = cumulativeStats && typeof cumulativeStats === 'object' ? cumulativeStats : {};
@@ -10566,9 +10729,17 @@ function renderHeroMetrics(cumulativeStats, sessionStats) {
   const volumeCandidate =
     totals.total_volume ?? totals.volume ?? fallback.total_volume ?? fallback.totalVolume ?? 0;
   const totalVolumeRaw = Number(volumeCandidate);
-  const totalVolumeValue = Number.isFinite(totalVolumeRaw)
+  let totalVolumeValue = Number.isFinite(totalVolumeRaw)
     ? Math.max(Math.abs(totalVolumeRaw), 0)
     : 0;
+
+  if (totalVolumeValue <= 0) {
+    const derivedVolume = deriveHistoryVolume(historyEntries);
+    if (derivedVolume > 0) {
+      totalVolumeValue = derivedVolume;
+    }
+  }
+
   heroTotalVolume.textContent = `${totalVolumeValue.toLocaleString(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -12953,7 +13124,7 @@ async function loadTrades() {
       setTradeDataStale(false);
       renderTradeHistory(snapshot.history);
       renderTradeSummary(snapshot.stats);
-      renderHeroMetrics(snapshot.cumulative_stats, snapshot.stats);
+      renderHeroMetrics(snapshot.cumulative_stats, snapshot.stats, snapshot.history);
       renderDecisionStats(snapshot.decision_stats);
       renderPnlChart(snapshot.history);
       renderAiBudget(snapshot.ai_budget);
