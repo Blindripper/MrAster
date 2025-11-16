@@ -2072,9 +2072,77 @@ def _parse_trade_timestamp(trade: Dict[str, Any], numeric_key: str, iso_key: str
     return None
 
 
+def _infer_income_trade_side(entry: Dict[str, Any]) -> Optional[str]:
+    """Best-effort inference of the executed side for a realized PnL entry."""
+
+    side_candidates = [entry.get("side"), entry.get("positionSide")]
+    for candidate in side_candidates:
+        text = _clean_string(candidate)
+        if not text:
+            continue
+        token = text.upper()
+        if token in {"BUY", "SELL"}:
+            return token
+        if token in {"LONG", "SHORT"}:
+            return "BUY" if token == "LONG" else "SELL"
+
+    info = _clean_string(entry.get("info"))
+    if info:
+        match = re.search(r"side[:=]\s*(buy|sell)", info, flags=re.IGNORECASE)
+        if match:
+            return match.group(1).upper()
+        info_upper = info.upper()
+        if "SELL" in info_upper and "BUY" not in info_upper:
+            return "SELL"
+        if "BUY" in info_upper and "SELL" not in info_upper:
+            return "BUY"
+
+    return None
+
+
+def _build_synthetic_trade_from_income(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    symbol = _clean_string(entry.get("symbol") or entry.get("asset"))
+    income_val = _safe_float(entry.get("income"))
+    timestamp = _safe_float(entry.get("time"))
+
+    if not symbol or income_val is None or timestamp is None:
+        return None
+
+    record: Dict[str, Any] = {
+        "symbol": symbol,
+        "pnl": float(income_val),
+        "pnl_r": 0.0,
+        "opened_at": float(timestamp),
+        "closed_at": float(timestamp),
+        "synthetic": True,
+        "synthetic_source": "realized_income",
+        "context": {"source": "realized_income"},
+        "notes": ["Synthesized from exchange realized PnL feed."],
+    }
+
+    side = _infer_income_trade_side(entry)
+    if side:
+        record["side"] = side
+
+    income_type = _clean_string(entry.get("incomeType"))
+    if income_type:
+        record["context"]["income_type"] = income_type
+
+    info = _clean_string(entry.get("info"))
+    if info:
+        record["context"]["income_info"] = info
+
+    for key in ("orderId", "matchOrderId", "tradeId"):
+        if entry.get(key) is not None:
+            record["context"][key.lower()] = entry.get(key)
+
+    return record
+
+
 def _merge_realized_pnl(history: List[Dict[str, Any]], realized: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    if not history or not realized:
-        return history
+    history_list = list(history or [])
+    if not realized:
+        return history_list
 
     timeline: Dict[str, List[Dict[str, Any]]] = {}
     for entry in realized:
@@ -2089,7 +2157,7 @@ def _merge_realized_pnl(history: List[Dict[str, Any]], realized: List[Dict[str, 
         entries.sort(key=lambda item: item.get("time", 0))
 
     merged: List[Dict[str, Any]] = []
-    for trade in history:
+    for trade in history_list:
         record = dict(trade)
         symbol_raw = record.get("symbol")
         symbol = str(symbol_raw).upper().strip() if symbol_raw else ""
@@ -2127,6 +2195,7 @@ def _merge_realized_pnl(history: List[Dict[str, Any]], realized: List[Dict[str, 
                             record["estimated_pnl"] = prev_pnl
                     record["realized_pnl"] = realized_sum
                     record["pnl"] = realized_sum
+                    new_r: Optional[float] = None
                     if (
                         prev_r is not None
                         and abs(prev_r) > 1e-9
@@ -2145,10 +2214,20 @@ def _merge_realized_pnl(history: List[Dict[str, Any]], realized: List[Dict[str, 
                                 and abs(risk_unit) > 1e-9
                             ):
                                 new_r = realized_sum / risk_unit
-                                if math.isfinite(new_r):
-                                    record["pnl_r"] = new_r
+                    if new_r is not None and math.isfinite(new_r):
+                        record["pnl_r"] = new_r
                     timeline[symbol] = remaining
         merged.append(record)
+
+    synthetic_trades: List[Dict[str, Any]] = []
+    for entries in timeline.values():
+        for entry in entries:
+            synthetic = _build_synthetic_trade_from_income(entry)
+            if synthetic:
+                synthetic_trades.append(synthetic)
+
+    synthetic_trades.sort(key=lambda item: item.get("closed_at", item.get("opened_at", 0)))
+    merged.extend(synthetic_trades)
 
     return merged
 
@@ -6924,15 +7003,14 @@ async def trades() -> Dict[str, Any]:
     env_cfg = CONFIG.get("env", {})
 
     realized_entries: List[Dict[str, Any]] = []
-    if history:
-        try:
-            fetch_limit = max(len(history) * 3, 200)
-            realized_entries = await asyncio.to_thread(
-                _fetch_realized_pnl_entries, env_cfg, fetch_limit
-            )
-        except Exception as exc:
-            logger.debug("realized pnl enrichment failed: %s", exc)
-            realized_entries = []
+    try:
+        fetch_limit = max(len(history) * 3, 200)
+        realized_entries = await asyncio.to_thread(
+            _fetch_realized_pnl_entries, env_cfg, fetch_limit
+        )
+    except Exception as exc:
+        logger.debug("realized pnl enrichment failed: %s", exc)
+        realized_entries = []
 
     if realized_entries:
         history = _merge_realized_pnl(history, realized_entries)
