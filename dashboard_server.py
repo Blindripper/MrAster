@@ -3080,6 +3080,40 @@ def _read_state() -> Dict[str, Any]:
     return {}
 
 
+def _resolve_run_started_at(state: Dict[str, Any]) -> Optional[float]:
+    run_started = _safe_float((state or {}).get("run_started_at"))
+    if run_started is not None and run_started > 0:
+        return run_started
+    runner_started = getattr(runner, "started_at", None)
+    fallback = _safe_float(runner_started)
+    if fallback is not None and fallback > 0:
+        return fallback
+    return None
+
+
+def _filter_history_for_run(
+    history_entries: Iterable[Any], run_started_at: Optional[float]
+) -> List[Dict[str, Any]]:
+    filtered: List[Dict[str, Any]] = []
+    if run_started_at is None:
+        for entry in history_entries:
+            if isinstance(entry, dict):
+                filtered.append(entry)
+        return filtered
+    cutoff = float(run_started_at)
+    for entry in history_entries:
+        if not isinstance(entry, dict):
+            continue
+        closed_ts = _safe_float(entry.get("closed_at"))
+        opened_ts = _safe_float(entry.get("opened_at"))
+        if closed_ts is not None and closed_ts >= cutoff:
+            filtered.append(entry)
+            continue
+        if closed_ts is None and opened_ts is not None and opened_ts >= cutoff:
+            filtered.append(entry)
+    return filtered
+
+
 def _append_manual_trade_request(request: Dict[str, Any]) -> Dict[str, Any]:
     request = dict(request)
     attempts = 0
@@ -7087,13 +7121,15 @@ async def ai_execute_proposal(request: ProposalExecutionRequest) -> Dict[str, An
 @app.get("/api/trades")
 async def trades() -> Dict[str, Any]:
     state = _read_state()
-    raw_history: List[Any] = state.get("trade_history", [])[-200:]
+    history_source = state.get("trade_history", [])
+    if not isinstance(history_source, list):
+        history_source = []
+    run_started_at = _resolve_run_started_at(state)
+    filtered_history = _filter_history_for_run(history_source, run_started_at)
+    raw_history = filtered_history[-200:]
     history: List[Dict[str, Any]] = []
     for entry in raw_history:
-        if isinstance(entry, dict):
-            record = dict(entry)
-        else:
-            continue
+        record = dict(entry)
         record["opened_at_iso"] = _format_ts(record.get("opened_at"))
         record["closed_at_iso"] = _format_ts(record.get("closed_at"))
         history.append(record)
