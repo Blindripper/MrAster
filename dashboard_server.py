@@ -7126,13 +7126,7 @@ async def trades() -> Dict[str, Any]:
         history_source = []
     run_started_at = _resolve_run_started_at(state)
     filtered_history = _filter_history_for_run(history_source, run_started_at)
-    raw_history = filtered_history[-200:]
-    history: List[Dict[str, Any]] = []
-    for entry in raw_history:
-        record = dict(entry)
-        record["opened_at_iso"] = _format_ts(record.get("opened_at"))
-        record["closed_at_iso"] = _format_ts(record.get("closed_at"))
-        history.append(record)
+    history: List[Dict[str, Any]] = [dict(entry) for entry in filtered_history[-200:]]
 
     env_cfg = CONFIG.get("env", {})
 
@@ -7148,6 +7142,12 @@ async def trades() -> Dict[str, Any]:
 
     if realized_entries:
         history = _merge_realized_pnl(history, realized_entries)
+        history = _filter_history_for_run(history, run_started_at)
+        history = history[-200:]
+
+    for entry in history:
+        entry["opened_at_iso"] = _format_ts(entry.get("opened_at"))
+        entry["closed_at_iso"] = _format_ts(entry.get("closed_at"))
 
     open_trades = state.get("live_trades", {})
     try:
