@@ -46,7 +46,7 @@ try:  # optional dependency, used for real-time user-data streams
 except Exception:  # pragma: no cover - optional, handled at runtime
     websocket = None
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from requests.exceptions import RequestException
 
 try:
@@ -1408,9 +1408,29 @@ def _floor_to_step(qty: float, step: float) -> float:
     return max(0.0, math.floor(float(qty) / step) * step)
 
 
+def _step_decimal_places(step: float) -> int:
+    if step <= 0:
+        return 12
+    try:
+        normalized = Decimal(str(step)).normalize()
+    except (ArithmeticError, ValueError, InvalidOperation):
+        return 12
+    exponent = normalized.as_tuple().exponent
+    if exponent >= 0:
+        return 0
+    return min(12, max(0, -exponent))
+
+
 def format_qty(qty: float, step: float) -> str:
     q = _floor_to_step(qty, step)
-    return _format_decimal(q)
+    precision = _step_decimal_places(step)
+    if precision <= 0:
+        formatted = f"{q:.0f}"
+    else:
+        formatted = f"{q:.{precision}f}"
+    if "." in formatted:
+        formatted = formatted.rstrip("0").rstrip(".")
+    return formatted or "0"
 
 
 def build_bracket_payload(kind: str, side: str, price: float, position_side: Optional[str] = None) -> str:
