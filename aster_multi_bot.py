@@ -7562,6 +7562,11 @@ class Strategy:
         self.trend_short_stochrsi_min = TREND_SHORT_STOCHRSI_MIN
         self._skip_relief_snapshot: Dict[str, Any] = {}
         self._apply_skip_relief()
+        if self.decision_tracker and hasattr(self.decision_tracker, "register_stats_listener"):
+            try:
+                self.decision_tracker.register_stats_listener(self._on_decision_stats_updated)
+            except Exception:
+                pass
         if self.state:
             scores = self.state.get("universe_scores")
             if isinstance(scores, dict):
@@ -7679,6 +7684,12 @@ class Strategy:
             )
         else:
             self._skip_relief_snapshot = {"total": total}
+
+    def _on_decision_stats_updated(self, _: Optional[Dict[str, Any]] = None) -> None:
+        try:
+            self._apply_skip_relief()
+        except Exception:
+            log.debug("failed to refresh skip relief after stats update", exc_info=True)
 
     @property
     def tech_snapshot_dirty(self) -> bool:
@@ -10674,6 +10685,7 @@ class DecisionTracker:
         self._save_cb = save_cb
         self._last_persist = 0.0
         self._persist_interval = 15.0
+        self._stats_listeners: List[Callable[[Dict[str, Any]], None]] = []
 
     def _ensure(self) -> Dict[str, Any]:
         stats = self.state.setdefault("decision_stats", {})
@@ -10707,6 +10719,7 @@ class DecisionTracker:
             bucket_map[bucket_key] = int(bucket_map.get(bucket_key, 0) or 0) + 1
         stats["last_updated"] = time.time()
         self.state["decision_stats"] = stats
+        self._notify_stats_listeners(stats)
         if persist:
             self._persist(force=force)
 
@@ -10722,8 +10735,23 @@ class DecisionTracker:
             del history[: len(history) - SKIP_HISTORY_LIMIT]
         stats["last_updated"] = time.time()
         self.state["decision_stats"] = stats
+        self._notify_stats_listeners(stats)
         if persist:
             self._persist(force=force)
+
+    def register_stats_listener(self, callback: Callable[[Dict[str, Any]], None]) -> None:
+        if not callable(callback):
+            return
+        self._stats_listeners.append(callback)
+
+    def _notify_stats_listeners(self, stats: Dict[str, Any]) -> None:
+        if not self._stats_listeners:
+            return
+        for callback in list(self._stats_listeners):
+            try:
+                callback(stats)
+            except Exception as exc:
+                log.debug(f"decision stats listener failed: {exc}")
 
 # ========= FastTP =========
 class FastTP:
