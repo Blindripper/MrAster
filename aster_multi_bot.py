@@ -706,6 +706,9 @@ PLAYBOOK_SIDE_MIN_SAMPLE = int(os.getenv("ASTER_PLAYBOOK_SIDE_MIN_SAMPLE", "4") 
 TREND_SHORT_STOCHRSI_MIN = float(os.getenv("ASTER_TREND_SHORT_STOCHRSI_MIN", "34.0") or 34.0)
 STOCH_SHORT_PENALTY_BLOCK = float(os.getenv("ASTER_STOCH_SHORT_PENALTY_BLOCK", "0.55") or 0.55)
 EXPECTED_R_LOSS_MULT = float(os.getenv("ASTER_EXPECTED_R_LOSS_MULT", "1.2") or 1.2)
+EXPECTED_R_STOP_MIN_AGE = max(
+    0.0, float(os.getenv("ASTER_EXPECTED_R_STOP_MIN_AGE", "120") or 0.0)
+)
 ATR_ADVERSE_EXIT_MULT = float(os.getenv("ASTER_ATR_ADVERSE_EXIT_MULT", "0.5") or 0.5)
 EXPECTED_R_RATIO_WINDOW = int(os.getenv("ASTER_EXPECTED_R_ALERT_WINDOW", "16") or 16)
 EXPECTED_R_ALERT_THRESHOLD = float(os.getenv("ASTER_EXPECTED_R_ALERT_THRESHOLD", "0.5") or 0.5)
@@ -11269,8 +11272,13 @@ class Bot:
         expected_r_val = _coerce_float((ctx or {}).get("expected_r"))
         if expected_r_val is None:
             expected_r_val = _coerce_float(rec.get("expected_r"))
+        expected_r_guard_ready = (
+            EXPECTED_R_STOP_MIN_AGE <= 0
+            or (opened_ts > 0 and elapsed >= EXPECTED_R_STOP_MIN_AGE)
+        )
         if (
             EXPECTED_R_LOSS_MULT > 0
+            and expected_r_guard_ready
             and expected_r_val is not None
             and expected_r_val > 0
             and not mgmt.get("expected_r_stop")
@@ -11282,7 +11290,11 @@ class Bot:
                 self._log_management_event(
                     rec,
                     "expected_r_stop",
-                    {"r": float(r_now), "expected_r": float(expected_r_val)},
+                    {
+                        "r": float(r_now),
+                        "expected_r": float(expected_r_val),
+                        "elapsed": elapsed,
+                    },
                 )
                 return
         if BREAKEVEN_REEVAL_SECONDS > 0 and elapsed >= BREAKEVEN_REEVAL_SECONDS:
