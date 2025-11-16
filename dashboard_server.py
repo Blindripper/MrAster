@@ -3133,15 +3133,19 @@ def _filter_history_for_run(
     history_entries: Iterable[Any], run_started_at: Optional[float]
 ) -> List[Dict[str, Any]]:
     filtered: List[Dict[str, Any]] = []
+    collected: List[Dict[str, Any]] = []
+
     if run_started_at is None:
         for entry in history_entries:
             if isinstance(entry, dict):
-                filtered.append(entry)
-        return filtered
+                collected.append(entry)
+        return collected
+
     cutoff = float(run_started_at)
     for entry in history_entries:
         if not isinstance(entry, dict):
             continue
+        collected.append(entry)
         closed_ts = _safe_float(entry.get("closed_at"))
         opened_ts = _safe_float(entry.get("opened_at"))
         if closed_ts is not None and closed_ts >= cutoff:
@@ -3149,7 +3153,13 @@ def _filter_history_for_run(
             continue
         if closed_ts is None and opened_ts is not None and opened_ts >= cutoff:
             filtered.append(entry)
-    return filtered
+
+    if filtered:
+        return filtered
+
+    # When the active run hasn't produced any trades yet, fall back to the
+    # most recent historical entries so the trade history still renders.
+    return collected
 
 
 def _append_manual_trade_request(request: Dict[str, Any]) -> Dict[str, Any]:
