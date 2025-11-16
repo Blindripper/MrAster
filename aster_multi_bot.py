@@ -36,7 +36,7 @@ from datetime import datetime, timezone, date
 from urllib.parse import urlencode
 from typing import Dict, List, Tuple, Optional, Any, Callable, Sequence, Set, Iterable
 
-from collections import OrderedDict, deque
+from collections import Counter, OrderedDict, deque
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 
 import requests
@@ -621,6 +621,21 @@ SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.00090"))  # 0.09 %
 SPREAD_BPS_SOFT_CAP = float(os.getenv("ASTER_SPREAD_BPS_SOFT_CAP", "0.00065"))
 WICKINESS_MAX = float(os.getenv("ASTER_WICKINESS_MAX", "0.985"))
 MIN_EDGE_R = float(os.getenv("ASTER_MIN_EDGE_R", "0.18"))
+SKIP_HISTORY_LIMIT = max(20, int(os.getenv("ASTER_SKIP_HISTORY_LIMIT", "200") or 200))
+SKIP_RELIEF_WINDOW = max(10, min(SKIP_HISTORY_LIMIT, int(os.getenv("ASTER_SKIP_RELIEF_WINDOW", "80") or 80)))
+EDGE_RELIEF_THRESHOLD = float(os.getenv("ASTER_SKIP_EDGE_THRESHOLD", "0.45"))
+EDGE_RELIEF_STRENGTH = float(os.getenv("ASTER_SKIP_EDGE_STRENGTH", "0.60"))
+EDGE_RELIEF_MAX = float(os.getenv("ASTER_SKIP_EDGE_MAX", "0.25"))
+EDGE_RELIEF_MIN_ABS = float(os.getenv("ASTER_SKIP_EDGE_MIN_ABS", "0.024"))
+SPREAD_RELIEF_THRESHOLD = float(os.getenv("ASTER_SKIP_SPREAD_THRESHOLD", "0.20"))
+SPREAD_RELIEF_STRENGTH = float(os.getenv("ASTER_SKIP_SPREAD_STRENGTH", "0.40"))
+SPREAD_RELIEF_CAP = float(os.getenv("ASTER_SKIP_SPREAD_CAP", "1.30"))
+NO_CROSS_RELIEF_THRESHOLD = float(os.getenv("ASTER_SKIP_NO_CROSS_THRESHOLD", "0.30"))
+NO_CROSS_RELIEF_STRENGTH = float(os.getenv("ASTER_SKIP_NO_CROSS_STRENGTH", "5.00"))
+NO_CROSS_RELIEF_MAX = float(os.getenv("ASTER_SKIP_NO_CROSS_MAX", "1.6"))
+STOCH_RELIEF_THRESHOLD = float(os.getenv("ASTER_SKIP_STOCH_THRESHOLD", "0.15"))
+STOCH_RELIEF_STRENGTH = float(os.getenv("ASTER_SKIP_STOCH_STRENGTH", "18.0"))
+STOCH_RELIEF_MAX = float(os.getenv("ASTER_SKIP_STOCH_MAX", "3.0"))
 PLAYBOOK_BULL_SHORT_BLOCK_ENABLED = (
     os.getenv("ASTER_PLAYBOOK_BULL_SHORT_BLOCK", "true").lower()
     in ("1", "true", "yes", "on")
@@ -7541,6 +7556,12 @@ class Strategy:
         self._orderbook_budget_max = ORDERBOOK_ON_DEMAND
         self._orderbook_budget = 0
         self._orderbook_ttl = ORDERBOOK_TTL
+        self.min_edge_r = MIN_EDGE_R
+        self.rsi_buy_min = RSI_BUY_MIN
+        self.rsi_sell_max = RSI_SELL_MAX
+        self.trend_short_stochrsi_min = TREND_SHORT_STOCHRSI_MIN
+        self._skip_relief_snapshot: Dict[str, Any] = {}
+        self._apply_skip_relief()
         if self.state:
             scores = self.state.get("universe_scores")
             if isinstance(scores, dict):
@@ -7563,6 +7584,101 @@ class Strategy:
                     self._symbol_score_cache = hydrated
         self._winner_long_atr_cache_ts = 0.0
         self._winner_long_atr_cache_value: Optional[float] = None
+
+    def _recent_skip_counts(self, window: int) -> Tuple[Counter, int]:
+        if not isinstance(self.state, dict) or window <= 0:
+            return Counter(), 0
+        stats = self.state.get("decision_stats")
+        if not isinstance(stats, dict):
+            return Counter(), 0
+        history = stats.get("rejected_history")
+        if not isinstance(history, list) or not history:
+            return Counter(), 0
+        recent = history[-window:]
+        counter: Counter = Counter()
+        for entry in recent:
+            reason = None
+            if isinstance(entry, (list, tuple)) and entry:
+                reason = entry[-1]
+            elif isinstance(entry, dict):
+                reason = entry.get("reason") or entry.get("skip")
+            if not reason:
+                continue
+            key = str(reason).strip().lower()
+            if not key:
+                continue
+            counter[key] += 1
+        total = sum(counter.values())
+        return counter, total
+
+    def _apply_skip_relief(self) -> None:
+        counts, total = self._recent_skip_counts(SKIP_RELIEF_WINDOW)
+        if total <= 0:
+            return
+        shares = {reason: counts.get(reason, 0) / total for reason in counts}
+        adjustments: Dict[str, float] = {}
+
+        edge_share = shares.get("edge_r", 0.0)
+        if EDGE_RELIEF_MAX > 0 and edge_share > EDGE_RELIEF_THRESHOLD:
+            reduction = min(
+                EDGE_RELIEF_MAX,
+                max(0.0, edge_share - EDGE_RELIEF_THRESHOLD) * EDGE_RELIEF_STRENGTH,
+            )
+            if reduction > 0:
+                self.min_edge_r = max(EDGE_RELIEF_MIN_ABS, self.min_edge_r * (1.0 - reduction))
+                adjustments["min_edge_r"] = round(self.min_edge_r, 4)
+
+        spread_share = shares.get("spread_tight", 0.0)
+        if spread_share > SPREAD_RELIEF_THRESHOLD:
+            bonus = min(
+                max(0.0, SPREAD_RELIEF_CAP - 1.0),
+                max(0.0, spread_share - SPREAD_RELIEF_THRESHOLD) * SPREAD_RELIEF_STRENGTH,
+            )
+            if bonus > 0:
+                self.spread_bps_max *= 1.0 + bonus
+                adjustments["spread_bps_max"] = round(self.spread_bps_max, 6)
+
+        no_cross_share = shares.get("no_cross", 0.0)
+        if no_cross_share > NO_CROSS_RELIEF_THRESHOLD:
+            pad = min(
+                NO_CROSS_RELIEF_MAX,
+                max(0.0, no_cross_share - NO_CROSS_RELIEF_THRESHOLD) * NO_CROSS_RELIEF_STRENGTH,
+            )
+            if pad > 0:
+                self.rsi_buy_min = max(35.0, self.rsi_buy_min - pad)
+                self.rsi_sell_max = min(65.0, self.rsi_sell_max + pad)
+                adjustments["rsi_window"] = round(pad, 3)
+
+        stoch_share = shares.get("stoch_rsi_trend_short", 0.0)
+        if stoch_share > STOCH_RELIEF_THRESHOLD:
+            pad = min(
+                STOCH_RELIEF_MAX,
+                max(0.0, stoch_share - STOCH_RELIEF_THRESHOLD) * STOCH_RELIEF_STRENGTH,
+            )
+            if pad > 0:
+                self.trend_short_stochrsi_min = max(10.0, self.trend_short_stochrsi_min - pad)
+                adjustments["trend_stoch_min"] = round(self.trend_short_stochrsi_min, 2)
+
+        if adjustments:
+            self._skip_relief_snapshot = {
+                "total": total,
+                "edge_r_pct": round(edge_share * 100.0, 2),
+                "spread_tight_pct": round(spread_share * 100.0, 2),
+                "no_cross_pct": round(no_cross_share * 100.0, 2),
+                "stoch_rsi_trend_short_pct": round(stoch_share * 100.0, 2),
+                "adjustments": adjustments,
+            }
+            log.info(
+                "Adaptive skip relief from %d recent skips — edge_r=%.1f%% no_cross=%.1f%% spread_tight=%.1f%% stoch_rsi_trend_short=%.1f%% → %s",
+                total,
+                edge_share * 100.0,
+                no_cross_share * 100.0,
+                spread_share * 100.0,
+                stoch_share * 100.0,
+                json.dumps(adjustments, sort_keys=True),
+            )
+        else:
+            self._skip_relief_snapshot = {"total": total}
 
     @property
     def tech_snapshot_dirty(self) -> bool:
@@ -8833,21 +8949,21 @@ class Strategy:
         continuation_long = False
         chosen_flag: Optional[str] = None
 
-        if cross_up and rsi14[-1] > RSI_BUY_MIN and htf_trend_up:
+        if cross_up and rsi14[-1] > self.rsi_buy_min and htf_trend_up:
             sig = "BUY"
             chosen_flag = "setup_trend_follow"
-        elif cross_dn and rsi14[-1] < RSI_SELL_MAX and htf_trend_down:
+        elif cross_dn and rsi14[-1] < self.rsi_sell_max and htf_trend_down:
             sig = "SELL"
             chosen_flag = "setup_trend_follow"
         else:
             align_checked = False
             if ALLOW_ALIGN:
                 align_checked = True
-                if ema_fast[-1] > ema_slow[-1] and htf_trend_up and rsi14[-1] > (RSI_BUY_MIN - ALIGN_RSI_PAD):
+                if ema_fast[-1] > ema_slow[-1] and htf_trend_up and rsi14[-1] > (self.rsi_buy_min - ALIGN_RSI_PAD):
                     sig = "BUY"
                     continuation_long = True
                     chosen_flag = "setup_trend_follow"
-                elif ema_fast[-1] < ema_slow[-1] and htf_trend_down and rsi14[-1] < (RSI_SELL_MAX + ALIGN_RSI_PAD):
+                elif ema_fast[-1] < ema_slow[-1] and htf_trend_down and rsi14[-1] < (self.rsi_sell_max + ALIGN_RSI_PAD):
                     sig = "SELL"
                     chosen_flag = "setup_trend_follow"
             if sig == "NONE":
@@ -9085,22 +9201,28 @@ class Strategy:
                     atr=atr,
                 )
 
+        base_min_edge = self.min_edge_r
+        ctx_base["min_edge_r_dynamic"] = float(base_min_edge)
+        ctx_base["rsi_buy_min"] = float(self.rsi_buy_min)
+        ctx_base["rsi_sell_max"] = float(self.rsi_sell_max)
+        ctx_base["trend_short_stoch_min"] = float(self.trend_short_stochrsi_min)
+
         if chosen_flag == "setup_range_reversion":
             width_pct = bb_width_last / max(last, 1e-9)
             range_quality = float(ctx_base.get("range_quality", 0.0) or 0.0)
             base_r = max(atrp * 0.45, width_pct * RANGE_EXPECTED_R_MULT)
             expected_R = base_r * (0.7 + min(1.6, max(0.0, range_quality)) * 0.18)
-            min_edge = MIN_EDGE_R * 0.7
+            min_edge = base_min_edge * 0.7
         elif chosen_flag == "setup_breakout_retest":
             breakout_quality = float(ctx_base.get("breakout_quality", 0.0) or 0.0)
             trend_strength = 0.5 + max(adx_val - 18.0, 0.0) / 45.0
             base_r = abs(slope_htf) * 18.0 * BREAKOUT_EXPECTED_R_MULT * trend_strength
             expected_R = base_r * (0.75 + min(2.0, max(0.0, breakout_quality)) * 0.12)
-            min_edge = MIN_EDGE_R * 0.9
+            min_edge = base_min_edge * 0.9
         else:
             trend_strength = 0.5 + max(adx_val - 20.0, 0.0) / 50.0
             expected_R = abs(slope_htf) * 20.0 * trend_strength
-            min_edge = MIN_EDGE_R
+            min_edge = base_min_edge
 
         penalty_scale = max(0.3, 1.0 - filter_penalty * 0.35)
         bonus_scale = 1.0 + min(FILTER_BONUS_CAP, filter_bonus) * 0.2
@@ -9128,8 +9250,8 @@ class Strategy:
             stoch_penalty_val = _coerce_float(ctx_base.get("penalty_stoch_rsi"))
             if (
                 stoch_k_val is not None
-                and TREND_SHORT_STOCHRSI_MIN > 0
-                and stoch_k_val < TREND_SHORT_STOCHRSI_MIN
+                and self.trend_short_stochrsi_min > 0
+                and stoch_k_val < self.trend_short_stochrsi_min
             ):
                 ctx_base["stoch_rsi_trend_short_block"] = float(stoch_k_val)
                 return self._skip(
@@ -9137,7 +9259,7 @@ class Strategy:
                     symbol,
                     {
                         "stoch_rsi_k": f"{stoch_k_val:.1f}",
-                        "min": f"{TREND_SHORT_STOCHRSI_MIN:.1f}",
+                        "min": f"{self.trend_short_stochrsi_min:.1f}",
                     },
                     ctx=ctx_base,
                     price=mid,
@@ -10559,6 +10681,7 @@ class DecisionTracker:
         stats.setdefault("rejected_total", 0)
         stats.setdefault("taken_by_bucket", {})
         stats.setdefault("rejected", {})
+        stats.setdefault("rejected_history", [])
         return stats
 
     def _persist(self, force: bool = False) -> None:
@@ -10593,6 +10716,10 @@ class DecisionTracker:
         rejected = stats.setdefault("rejected", {})
         rejected[reason_key] = int(rejected.get(reason_key, 0) or 0) + 1
         stats["rejected_total"] = int(stats.get("rejected_total", 0) or 0) + 1
+        history = stats.setdefault("rejected_history", [])
+        history.append([time.time(), reason_key])
+        if len(history) > SKIP_HISTORY_LIMIT:
+            del history[: len(history) - SKIP_HISTORY_LIMIT]
         stats["last_updated"] = time.time()
         self.state["decision_stats"] = stats
         if persist:
