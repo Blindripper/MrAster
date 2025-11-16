@@ -3509,6 +3509,99 @@ def _extract_trade_pnl(trade: Dict[str, Any]) -> float:
     return 0.0
 
 
+def _extract_trade_volume(trade: Dict[str, Any]) -> float:
+    if not isinstance(trade, dict):
+        return 0.0
+
+    def _lookup(candidate_key: str) -> Optional[float]:
+        direct = _safe_float(trade.get(candidate_key))
+        if direct is not None:
+            return direct
+        extra = trade.get("extra")
+        if isinstance(extra, dict):
+            nested = _safe_float(extra.get(candidate_key))
+            if nested is not None:
+                return nested
+        context = trade.get("context")
+        if isinstance(context, dict):
+            nested = _safe_float(context.get(candidate_key))
+            if nested is not None:
+                return nested
+        return None
+
+    volume_keys = (
+        "size_usdt",
+        "notional",
+        "notional_usdt",
+        "notionalUsd",
+        "positionNotional",
+    )
+    for key in volume_keys:
+        volume_val = _lookup(key)
+        if volume_val is not None and volume_val > 0:
+            return float(abs(volume_val))
+
+    qty_keys = ("qty", "size", "filled_qty", "amount")
+    qty_val: Optional[float] = None
+    for key in qty_keys:
+        candidate = _lookup(key)
+        if candidate is not None and abs(candidate) > 0:
+            qty_val = abs(candidate)
+            break
+
+    price_keys = (
+        "notional_price",
+        "entry",
+        "entry_price",
+        "entryPrice",
+        "price",
+        "avg_price",
+        "avgPrice",
+        "mark",
+        "mark_price",
+        "exit",
+        "exit_price",
+        "exitPrice",
+    )
+    price_val: Optional[float] = None
+    for key in price_keys:
+        candidate = _lookup(key)
+        if candidate is not None and candidate > 0:
+            price_val = candidate
+            break
+
+    if qty_val and price_val:
+        return float(abs(qty_val) * price_val)
+
+    fills = trade.get("fills")
+    if isinstance(fills, list):
+        fill_volume = 0.0
+        for fill in fills:
+            if not isinstance(fill, dict):
+                continue
+            fill_qty = _safe_float(fill.get("qty") or fill.get("size"))
+            fill_price = _safe_float(fill.get("price"))
+            if fill_qty is None or fill_price is None:
+                continue
+            if fill_qty == 0 or fill_price <= 0:
+                continue
+            fill_volume += abs(fill_qty) * fill_price
+        if fill_volume > 0:
+            return float(fill_volume)
+
+    return 0.0
+
+
+def _estimate_history_volume(history: Iterable[Dict[str, Any]]) -> float:
+    total = 0.0
+    for trade in history or []:
+        volume = _extract_trade_volume(trade)
+        if volume <= 0:
+            continue
+        total += volume
+    return total
+
+
 def _compute_stats(history: List[Dict[str, Any]]) -> TradeStats:
     if not history:
         return TradeStats(
@@ -3709,6 +3802,11 @@ def _cumulative_summary(
         summary["total_volume"] = float(total_volume or 0.0)
     except (TypeError, ValueError):
         summary["total_volume"] = 0.0
+
+    if summary["total_volume"] <= 0:
+        history_volume = _estimate_history_volume(state.get("trade_history", []))
+        if history_volume > 0:
+            summary["total_volume"] = max(summary["total_volume"], history_volume)
 
     realized_total: Optional[float] = None
     if stats is not None:
