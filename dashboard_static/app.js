@@ -6017,6 +6017,7 @@ function updateActivePositionsView(options = {}) {
   const limitedNotifications = sortedNotifications.slice(0, 5);
   const hasNotifications = limitedNotifications.length > 0;
   const hasActivePositions = Array.isArray(activePositions) && activePositions.length > 0;
+  const shouldShowEmptyState = !hasNotifications;
 
   if (activePositionsNotifications) {
     if (hasNotifications) {
@@ -6036,7 +6037,7 @@ function updateActivePositionsView(options = {}) {
   }
 
   if (activePositionsNotificationsEmpty) {
-    if (!hasNotifications && hasActivePositions) {
+    if (shouldShowEmptyState) {
       activePositionsNotificationsEmpty.removeAttribute('hidden');
       activePositionsNotificationsEmpty.textContent = translate(
         'active.notifications.empty',
@@ -6048,7 +6049,7 @@ function updateActivePositionsView(options = {}) {
   }
 
   if (activePositionsNotificationsPanel) {
-    if (hasNotifications || hasActivePositions) {
+    if (hasNotifications || shouldShowEmptyState) {
       activePositionsNotificationsPanel.removeAttribute('hidden');
     } else {
       activePositionsNotificationsPanel.setAttribute('hidden', '');
