@@ -3675,7 +3675,15 @@ def _estimate_history_volume(history: Iterable[Dict[str, Any]]) -> float:
 
 
 def _compute_stats(history: List[Dict[str, Any]]) -> TradeStats:
-    if not history:
+    filtered_history: List[Dict[str, Any]] = []
+    for entry in history or []:
+        if not isinstance(entry, dict):
+            continue
+        if _is_realized_income_trade(entry):
+            continue
+        filtered_history.append(entry)
+
+    if not filtered_history:
         return TradeStats(
             count=0,
             total_pnl=0.0,
@@ -3688,15 +3696,15 @@ def _compute_stats(history: List[Dict[str, Any]]) -> TradeStats:
             losses=0,
             draws=0,
         )
-    total_pnl = sum(_extract_trade_pnl(h) for h in history)
-    total_r = sum(float(h.get("pnl_r", 0.0) or 0.0) for h in history)
-    wins = [h for h in history if _extract_trade_pnl(h) > 0]
-    losses = [h for h in history if _extract_trade_pnl(h) < 0]
-    count = len(history)
+    total_pnl = sum(_extract_trade_pnl(h) for h in filtered_history)
+    total_r = sum(float(h.get("pnl_r", 0.0) or 0.0) for h in filtered_history)
+    wins = [h for h in filtered_history if _extract_trade_pnl(h) > 0]
+    losses = [h for h in filtered_history if _extract_trade_pnl(h) < 0]
+    count = len(filtered_history)
     win_rate = (len(wins) / count) if count else 0.0
     draws = max(count - len(wins) - len(losses), 0)
-    best = max(history, key=_extract_trade_pnl)
-    worst = min(history, key=_extract_trade_pnl)
+    best = max(filtered_history, key=_extract_trade_pnl)
+    worst = min(filtered_history, key=_extract_trade_pnl)
 
     hint: str
     if count < 10:
