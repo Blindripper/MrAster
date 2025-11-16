@@ -2319,6 +2319,8 @@ let activePositions = [];
 let tradeHistoryEmptyStreak = 0;
 let aiRequestsEmptyStreak = 0;
 let activePositionsEmptyStreak = 0;
+const POSITION_NOTIFICATION_HISTORY_LIMIT = 15;
+let positionNotificationHistory = [];
 let tradesRefreshTimer = null;
 let tradeViewportSyncHandle = null;
 let lastDecisionStats = null;
@@ -5593,6 +5595,85 @@ function formatManagementRelativeTime(ts) {
   return translate('active.management.daysAgo', '{{value}}d ago', { value: days });
 }
 
+function updateNotificationRelativeTime(element, timestamp) {
+  if (!(element instanceof HTMLElement)) return;
+  if (!Number.isFinite(timestamp)) return;
+  const timeLabel = element.querySelector('.active-position-management-time');
+  if (!timeLabel) return;
+  const relative = formatManagementRelativeTime(timestamp);
+  if (relative) {
+    timeLabel.textContent = relative;
+  }
+}
+
+function rememberPositionNotifications(notifications) {
+  if (!Array.isArray(notifications) || notifications.length === 0) {
+    return;
+  }
+  const entries = notifications
+    .map((element) => {
+      if (!(element instanceof HTMLElement)) return null;
+      const rawTs = element.dataset?.timestamp;
+      const parsedTs = rawTs ? Number(rawTs) : Number.NaN;
+      const ts = Number.isFinite(parsedTs) ? parsedTs : Date.now() / 1000;
+      const symbolText = element
+        .querySelector('.active-position-management-symbol')
+        ?.textContent?.trim();
+      const labelText = element
+        .querySelector('.active-position-management-label')
+        ?.textContent?.trim();
+      const action = element.dataset?.action || '';
+      const signature = `${symbolText || ''}|${action}|${ts}|${labelText || ''}`;
+      const template = element.cloneNode(true);
+      if (template && Number.isFinite(ts)) {
+        template.dataset.timestamp = ts.toString();
+      }
+      return { ts, signature, template };
+    })
+    .filter((entry) => entry && entry.template);
+
+  if (!entries.length) {
+    return;
+  }
+
+  const merged = [...entries, ...positionNotificationHistory];
+  const seen = new Set();
+  positionNotificationHistory = merged.filter((entry) => {
+    const key = entry.signature || `${entry.ts}|${entry.template.textContent || ''}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return Boolean(entry.template);
+  });
+  positionNotificationHistory.sort((a, b) => b.ts - a.ts);
+  if (positionNotificationHistory.length > POSITION_NOTIFICATION_HISTORY_LIMIT) {
+    positionNotificationHistory.length = POSITION_NOTIFICATION_HISTORY_LIMIT;
+  }
+}
+
+function buildHistoricalNotifications(limit = 5) {
+  if (!positionNotificationHistory.length) {
+    return [];
+  }
+  const nodes = [];
+  positionNotificationHistory.slice(0, limit).forEach((entry) => {
+    const template = entry?.template;
+    if (!template) return;
+    const clone = template.cloneNode(true);
+    if (!clone) return;
+    if (Number.isFinite(entry.ts)) {
+      clone.dataset.timestamp = entry.ts.toString();
+      updateNotificationRelativeTime(clone, entry.ts);
+    }
+    if (!clone.hasAttribute('role')) {
+      clone.setAttribute('role', 'listitem');
+    }
+    nodes.push(clone);
+  });
+  return nodes;
+}
+
 function buildPositionManagementSummary(position, options = {}) {
   const latest = resolveLatestManagementEvent(position);
   if (!latest) return null;
@@ -6015,14 +6096,18 @@ function updateActivePositionsView(options = {}) {
     .map((entry) => entry.element);
 
   const limitedNotifications = sortedNotifications.slice(0, 5);
-  const hasNotifications = limitedNotifications.length > 0;
-  const hasActivePositions = Array.isArray(activePositions) && activePositions.length > 0;
+  rememberPositionNotifications(limitedNotifications);
+  const historyNotifications =
+    limitedNotifications.length > 0 ? [] : buildHistoricalNotifications(5);
+  const notificationsToRender =
+    limitedNotifications.length > 0 ? limitedNotifications : historyNotifications;
+  const hasNotifications = notificationsToRender.length > 0;
   const shouldShowEmptyState = !hasNotifications;
 
   if (activePositionsNotifications) {
     if (hasNotifications) {
       const notificationFragment = document.createDocumentFragment();
-      limitedNotifications.forEach((notification) => {
+      notificationsToRender.forEach((notification) => {
         if (notification && !notification.hasAttribute('role')) {
           notification.setAttribute('role', 'listitem');
         }
