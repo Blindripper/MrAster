@@ -10572,7 +10572,6 @@ class TradeManager:
             if abs(amt) > 1e-12:
                 continue  # noch offen
 
-            self._cancel_stale_exit_orders(sym)
             entry = float(rec.get("entry"))
             sl = float(rec.get("sl"))
             side = rec.get("side")
@@ -10582,6 +10581,7 @@ class TradeManager:
             opened_at = rec.get("opened_at")
             if isinstance(opened_at, (int, float)) and opened_at > 0:
                 start_time = int(max(0, opened_at - 5) * 1000)
+            fetch_failed = False
             try:
                 trades = self.exchange.get_user_trades(
                     sym,
@@ -10590,6 +10590,7 @@ class TradeManager:
                 )
             except Exception as exc:
                 log.debug(f"userTrades closing fetch failed for {sym}: {exc}")
+                fetch_failed = True
                 trades = []
             closing_qty = 0.0
             closing_cost = 0.0
@@ -10615,39 +10616,42 @@ class TradeManager:
             if latest_trade_id is not None:
                 rec["last_trade_id"] = latest_trade_id
             if closing_qty <= 0:
-                # fallback: Mid-price estimate
-                try:
-                    bt = self.exchange.get_book_ticker(sym)
-                    ask = float(bt.get("askPrice", 0.0) or 0.0)
-                    bid = float(bt.get("bidPrice", 0.0) or 0.0)
-                    exit_px = (ask + bid) / 2.0 if ask > 0 and bid > 0 else entry
-                except Exception:
-                    exit_px = entry
-                prof = (exit_px - entry) * qty if side == "BUY" else (entry - exit_px) * qty
-                r_mult = _compute_r_multiple(entry, sl, qty, prof)
-                gross_pnl = prof
-                exit_commission = 0.0
-                rec["exit_price"] = float(exit_px)
-                rec["pnl"] = float(prof)
-            else:
-                exit_px = closing_cost / max(closing_qty, 1e-9)
-                entry_commission = rec.get("entry_commission", 0.0) or 0.0
-                total_commission = entry_commission + closing_commission
-                gross_pnl = float(realized_pnl)
-                net_pnl = gross_pnl - total_commission
-                if abs(total_commission) <= 1e-9:
-                    prof = gross_pnl
+                filled_qty = _coerce_float(rec.get("filled_qty")) or 0.0
+                if fetch_failed:
+                    log.debug(f"deferring exit reconciliation for {sym}: trade fetch failed")
+                elif filled_qty <= 0:
+                    log.info(
+                        "Discarding %s live trade: no fills recorded and no open position",
+                        sym,
+                    )
+                    self._release_symbol_risk(sym, rec)
+                    to_del.append(sym)
                 else:
-                    prof = net_pnl
-                r_mult = _compute_r_multiple(entry, sl, qty, prof)
-                rec["exit_commission"] = float(closing_commission)
-                rec["entry_commission"] = float(entry_commission)
-                rec["fees_total"] = float(total_commission)
-                rec["gross_pnl"] = float(gross_pnl)
-                rec["exit_price"] = float(exit_px)
-                rec["exit_qty"] = float(closing_qty)
-                rec["pnl"] = float(prof)
-                exit_commission = closing_commission
+                    log.debug(
+                        "Deferring exit reconciliation for %s: waiting for closing trades",
+                        sym,
+                    )
+                continue
+
+            self._cancel_stale_exit_orders(sym)
+            exit_px = closing_cost / max(closing_qty, 1e-9)
+            entry_commission = rec.get("entry_commission", 0.0) or 0.0
+            total_commission = entry_commission + closing_commission
+            gross_pnl = float(realized_pnl)
+            net_pnl = gross_pnl - total_commission
+            if abs(total_commission) <= 1e-9:
+                prof = gross_pnl
+            else:
+                prof = net_pnl
+            r_mult = _compute_r_multiple(entry, sl, qty, prof)
+            rec["exit_commission"] = float(closing_commission)
+            rec["entry_commission"] = float(entry_commission)
+            rec["fees_total"] = float(total_commission)
+            rec["gross_pnl"] = float(gross_pnl)
+            rec["exit_price"] = float(exit_px)
+            rec["exit_qty"] = float(closing_qty)
+            rec["pnl"] = float(prof)
+            exit_commission = closing_commission
             if self.policy and BANDIT_ENABLED:
                 try:
                     self.policy.note_exit(symbol, pnl_r=r_mult, ctx=rec.get("ctx"), size_bucket=rec.get("bucket"))
