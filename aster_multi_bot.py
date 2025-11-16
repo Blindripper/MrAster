@@ -916,6 +916,7 @@ BUDGET_MOMENTUM_ADX_DELTA = float(os.getenv("ASTER_BUDGET_MOMENTUM_ADX_DELTA", "
 
 BREAKEVEN_REEVAL_SECONDS = max(0.0, float(os.getenv("ASTER_BREAKEVEN_REEVAL_SECONDS", "360") or 0.0))
 BREAKEVEN_R_THRESHOLD = float(os.getenv("ASTER_BREAKEVEN_R_THRESHOLD", "0.18"))
+MIN_HOLD_SECONDS = max(0.0, float(os.getenv("ASTER_MIN_HOLD_SECONDS", "90") or 0.0))
 MAX_HOLD_SECONDS = max(0.0, float(os.getenv("ASTER_MAX_HOLD_SECONDS", "600") or 0.0))
 TIME_STOP_R_THRESHOLD = float(os.getenv("ASTER_TIME_STOP_R_THRESHOLD", "0.05"))
 
@@ -11076,8 +11077,10 @@ class Bot:
         expected_r_val = _coerce_float((ctx or {}).get("expected_r"))
         if expected_r_val is None:
             expected_r_val = _coerce_float(rec.get("expected_r"))
+        allow_loss_management = MIN_HOLD_SECONDS <= 0 or elapsed >= MIN_HOLD_SECONDS
         if (
-            EXPECTED_R_LOSS_MULT > 0
+            allow_loss_management
+            and EXPECTED_R_LOSS_MULT > 0
             and expected_r_val is not None
             and expected_r_val > 0
             and not mgmt.get("expected_r_stop")
@@ -11125,7 +11128,11 @@ class Bot:
             if isinstance(ctx_atr, (int, float)):
                 atr_context = float(ctx_atr)
         adverse_distance = _atr_adverse_distance(risk, atr_context)
-        if adverse_distance is not None and not mgmt.get("atr_adverse_stop"):
+        if (
+            allow_loss_management
+            and adverse_distance is not None
+            and not mgmt.get("atr_adverse_stop")
+        ):
             adverse_move = (entry - mid) if amount > 0 else (mid - entry)
             adverse_move = max(0.0, adverse_move)
             if adverse_move >= adverse_distance:
