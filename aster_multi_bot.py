@@ -12857,7 +12857,12 @@ class Bot:
                             error="Expected-R telemetry too weak",
                         )
                     return
-            expected_r_drift_mult, drift_blocked = self._expected_r_drift_multiplier(ctx)
+            if self.trade_mgr:
+                expected_r_drift_mult, drift_blocked = self.trade_mgr._expected_r_drift_multiplier(
+                    ctx
+                )
+            else:
+                expected_r_drift_mult, drift_blocked = 1.0, False
             if drift_blocked:
                 if self.decision_tracker:
                     self.decision_tracker.record_rejection("expected_r_drift")
@@ -13752,7 +13757,10 @@ class Bot:
             size_mult = min(size_mult, sentinel_size_cap_value)
 
         if sig in {"BUY", "SELL"}:
-            hype_size_mult, hype_blocked = self._contextual_size_multiplier(ctx)
+            if self.trade_mgr:
+                hype_size_mult, hype_blocked = self.trade_mgr._contextual_size_multiplier(ctx)
+            else:
+                hype_size_mult, hype_blocked = 1.0, False
             if hype_blocked:
                 if self.decision_tracker:
                     self.decision_tracker.record_rejection("hype_risk_block")
