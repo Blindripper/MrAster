@@ -52,6 +52,18 @@ def test_filter_history_for_run_falls_back_to_history_when_no_recent_trades():
     assert filtered == history
 
 
+def test_filter_history_for_run_can_skip_fallback_for_stats():
+    run_started_at = time.time()
+    history = [
+        {"symbol": "BNBUSDT", "closed_at": run_started_at - 500},
+        {"symbol": "XRPUSDT", "closed_at": run_started_at - 400},
+    ]
+
+    filtered = _filter_history_for_run(history, run_started_at, allow_fallback=False)
+
+    assert filtered == []
+
+
 def test_filter_history_drops_synthetic_realized_entries_before_run():
     run_started_at = time.time()
     history = [

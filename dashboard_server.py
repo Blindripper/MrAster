@@ -3130,7 +3130,10 @@ def _resolve_run_started_at(state: Dict[str, Any]) -> Optional[float]:
 
 
 def _filter_history_for_run(
-    history_entries: Iterable[Any], run_started_at: Optional[float]
+    history_entries: Iterable[Any],
+    run_started_at: Optional[float],
+    *,
+    allow_fallback: bool = True,
 ) -> List[Dict[str, Any]]:
     filtered: List[Dict[str, Any]] = []
     collected: List[Dict[str, Any]] = []
@@ -3157,9 +3160,12 @@ def _filter_history_for_run(
     if filtered:
         return filtered
 
-    # When the active run hasn't produced any trades yet, fall back to the
-    # most recent historical entries so the trade history still renders.
-    return collected
+    if allow_fallback:
+        # When the active run hasn't produced any trades yet, fall back to the
+        # most recent historical entries so the trade history still renders.
+        return collected
+
+    return []
 
 
 def _append_manual_trade_request(request: Dict[str, Any]) -> Dict[str, Any]:
@@ -7185,6 +7191,12 @@ async def trades() -> Dict[str, Any]:
     run_started_at = _resolve_run_started_at(state)
     filtered_history = _filter_history_for_run(history_source, run_started_at)
     history: List[Dict[str, Any]] = [dict(entry) for entry in filtered_history[-200:]]
+    stats_history: List[Dict[str, Any]] = [
+        dict(entry)
+        for entry in _filter_history_for_run(
+            history_source, run_started_at, allow_fallback=False
+        )[-200:]
+    ]
 
     env_cfg = CONFIG.get("env", {})
 
@@ -7203,9 +7215,13 @@ async def trades() -> Dict[str, Any]:
         history = _filter_history_for_run(history, run_started_at)
         history = history[-200:]
 
-    stats_history: List[Dict[str, Any]] = history
+        stats_history = _merge_realized_pnl(stats_history, realized_entries)
+        stats_history = _filter_history_for_run(
+            stats_history, run_started_at, allow_fallback=False
+        )
+        stats_history = stats_history[-200:]
     display_history: List[Dict[str, Any]] = []
-    for entry in _strip_realized_income_trades(stats_history):
+    for entry in _strip_realized_income_trades(history):
         normalized = dict(entry)
         normalized["opened_at_iso"] = _format_ts(entry.get("opened_at"))
         normalized["closed_at_iso"] = _format_ts(entry.get("closed_at"))
