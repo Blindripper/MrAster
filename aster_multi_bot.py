@@ -9773,6 +9773,23 @@ class TradeManager:
         except Exception:
             return {}
 
+    @staticmethod
+    def _inherit_management_history(record: Dict[str, Any], rec: Optional[Dict[str, Any]]) -> None:
+        if not isinstance(rec, dict):
+            return
+        events = rec.get("management_events")
+        if isinstance(events, list) and events:
+            serialized: List[Dict[str, Any]] = []
+            for event in events:
+                if isinstance(event, dict):
+                    serialized.append(dict(event))
+                else:
+                    serialized.append({"value": event})
+            record["management_events"] = serialized
+        mgmt_block = rec.get("management")
+        if isinstance(mgmt_block, dict) and mgmt_block:
+            record["management"] = dict(mgmt_block)
+
     def _release_symbol_risk(self, symbol: str, record: Dict[str, Any]) -> None:
         if not self.risk:
             return
@@ -9785,6 +9802,43 @@ class TradeManager:
             except Exception:
                 pass
             record["risk_allocation"] = 0.0
+
+    @staticmethod
+    def _derive_management_exit_reason(rec: Dict[str, Any]) -> Optional[str]:
+        mgmt = rec.get("management")
+        if not isinstance(mgmt, dict):
+            return None
+        precedence = (
+            "atr_adverse_stop",
+            "time_stop",
+            "time_cut",
+            "compression_time_cut",
+            "compression_scale_down",
+            "breakeven_reduce",
+            "scale_half",
+        )
+        for key in precedence:
+            if mgmt.get(key):
+                return key
+        return None
+
+    def note_management_exit(self, symbol: str, reason: str, quantity: Optional[float] = None) -> None:
+        live = self.state.get("live_trades", {})
+        if not isinstance(live, dict):
+            return
+        rec = live.get(symbol)
+        if not isinstance(rec, dict):
+            return
+        rec["management_exit_reason"] = str(reason)
+        rec["management_exit_noted_at"] = time.time()
+        mgmt = rec.setdefault("management", {}) if isinstance(rec, dict) else {}
+        if isinstance(mgmt, dict):
+            mgmt["last_exit_reason"] = str(reason)
+            if quantity is not None:
+                try:
+                    mgmt["last_exit_qty"] = float(quantity)
+                except (TypeError, ValueError):
+                    pass
 
     def _estimate_trade_volume_usdt(self, trade: Dict[str, Any]) -> float:
         volume_keys = (
@@ -10502,6 +10556,13 @@ class TradeManager:
                     "bucket": bucket,
                     "context": ctx or {},
                 }
+                management_reason = None
+                if isinstance(rec, dict):
+                    management_reason = rec.get("management_exit_reason")
+                    if not management_reason:
+                        management_reason = self._derive_management_exit_reason(rec)
+                if management_reason:
+                    record["management_exit_reason"] = management_reason
                 self._inherit_management_history(record, rec if isinstance(rec, dict) else None)
                 risk_snapshot = 0.0
                 if isinstance(rec, dict):
@@ -10676,6 +10737,11 @@ class TradeManager:
                 "bucket": rec.get("bucket"),
                 "context": rec.get("ctx", {}),
             }
+            management_reason = rec.get("management_exit_reason")
+            if not management_reason:
+                management_reason = self._derive_management_exit_reason(rec)
+            if management_reason:
+                record["management_exit_reason"] = management_reason
             self._inherit_management_history(record, rec)
             risk_snapshot = 0.0
             try:
@@ -11193,30 +11259,41 @@ class Bot:
         if len(mgmt_events) > 50:
             del mgmt_events[:-50]
 
-    @staticmethod
-    def _inherit_management_history(record: Dict[str, Any], rec: Optional[Dict[str, Any]]) -> None:
-        if not isinstance(rec, dict):
+    def _mark_management_exit(self, symbol: str, reason: str, quantity: Optional[float] = None) -> None:
+        trade_mgr = getattr(self, "trade_mgr", None)
+        if not trade_mgr:
             return
-        events = rec.get("management_events")
-        if isinstance(events, list) and events:
-            serialized: List[Dict[str, Any]] = []
-            for event in events:
-                if isinstance(event, dict):
-                    serialized.append(dict(event))
-                else:
-                    serialized.append({"value": event})
-            record["management_events"] = serialized
-        mgmt_block = rec.get("management")
-        if isinstance(mgmt_block, dict) and mgmt_block:
-            record["management"] = dict(mgmt_block)
+        try:
+            trade_mgr.note_management_exit(symbol, reason, quantity=quantity)
+        except Exception as exc:
+            log.debug(f"management exit note failed for {symbol}: {exc}")
 
-    def _submit_reduce_only(self, symbol: str, side: str, quantity: float, reason: str) -> bool:
+    def _trigger_trade_reconciliation(self) -> None:
+        trade_mgr = getattr(self, "trade_mgr", None)
+        if not trade_mgr:
+            return
+        try:
+            trade_mgr.remove_closed_trades()
+        except Exception as exc:
+            log.debug(f"management reconciliation failed: {exc}")
+
+    def _submit_reduce_only(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        reason: str,
+        *,
+        fraction: float = 1.0,
+    ) -> bool:
         if hasattr(self, "risk") and hasattr(self.risk, "step_size"):
             step = self.risk.step_size(symbol)
         else:
             step = 0.0001
         qty_abs = max(0.0, abs(quantity))
-        floored = _floor_to_step(qty_abs, step)
+        frac = max(1e-12, min(float(fraction), 1.0))
+        target_qty = qty_abs * frac
+        floored = _floor_to_step(target_qty, step)
         if floored <= 0:
             return False
         qty_text = format_qty(floored, step)
@@ -11324,7 +11401,16 @@ class Bot:
             adverse_move = (entry - mid) if amount > 0 else (mid - entry)
             adverse_move = max(0.0, adverse_move)
             if adverse_move >= adverse_distance:
-                if self._submit_reduce_only(symbol, side, qty_abs, "atr_adverse_stop"):
+                reduce_fraction = 0.5
+                if self._submit_reduce_only(
+                    symbol,
+                    side,
+                    qty_abs,
+                    "atr_adverse_stop",
+                    fraction=reduce_fraction,
+                ):
+                    self._mark_management_exit(symbol, "atr_adverse_stop", quantity=qty_abs * reduce_fraction)
+                    self._trigger_trade_reconciliation()
                     mgmt["atr_adverse_stop"] = True
                     self._management_dirty = True
                     self._log_management_event(

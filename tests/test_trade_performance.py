@@ -1,7 +1,7 @@
 import os
 import sys
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pytest
 
@@ -143,3 +143,67 @@ def test_compute_r_multiple_with_valid_stop() -> None:
     pnl = -8.0
     expected = pnl / ((entry - stop) * qty)
     assert _compute_r_multiple(entry, stop, qty, pnl) == pytest.approx(expected, rel=1e-9)
+
+
+def test_note_management_exit_marks_trade() -> None:
+    symbol = "ALLOUSDT"
+    state: Dict[str, Any] = {"trade_history": [], "live_trades": {symbol: {"management": {}}}}
+    manager = TradeManager(exchange=object(), policy=None, state=state)
+
+    manager.note_management_exit(symbol, "atr_adverse_stop", quantity=5.0)
+
+    rec = state["live_trades"][symbol]
+    assert rec.get("management_exit_reason") == "atr_adverse_stop"
+    mgmt = rec.get("management")
+    assert isinstance(mgmt, dict)
+    assert mgmt.get("last_exit_reason") == "atr_adverse_stop"
+    assert mgmt.get("last_exit_qty") == pytest.approx(5.0)
+
+
+def test_management_exit_reason_propagates_to_history() -> None:
+    symbol = "ALLOUSDT"
+    entry = 100.0
+    qty = 10.0
+
+    class DummyExchange:
+        def paper_consume_closed(self) -> List[Dict[str, Any]]:
+            return []
+
+        def get_position_risk(self) -> List[Dict[str, Any]]:
+            return []
+
+        def get_user_trades(self, _symbol: str, *, from_id: Optional[int] = None, start_time: Optional[int] = None) -> List[Dict[str, Any]]:
+            return [
+                {
+                    "buyer": False,
+                    "qty": str(qty),
+                    "price": "99.5",
+                    "id": 12345,
+                    "realizedPnl": "-5.0",
+                    "commission": "0.02",
+                }
+            ]
+
+    state: Dict[str, Any] = {
+        "trade_history": [],
+        "live_trades": {
+            symbol: {
+                "entry": entry,
+                "initial_sl": 99.0,
+                "sl": 99.0,
+                "qty": qty,
+                "side": "BUY",
+                "opened_at": time.time() - 60.0,
+                "management": {"atr_adverse_stop": True},
+            }
+        },
+    }
+
+    manager = TradeManager(exchange=DummyExchange(), policy=None, state=state)
+    manager.note_management_exit(symbol, "atr_adverse_stop", quantity=qty)
+    manager.remove_closed_trades()
+
+    history = state.get("trade_history", [])
+    assert history, "trade history should contain the management stop exit"
+    record = history[-1]
+    assert record.get("management_exit_reason") == "atr_adverse_stop"

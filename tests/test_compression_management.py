@@ -30,7 +30,14 @@ def test_compression_time_cut_triggers(monkeypatch: pytest.MonkeyPatch) -> None:
 
     calls: List[Tuple[str, str, float, str]] = []
 
-    def fake_submit(symbol_arg: str, side: str, quantity: float, reason: str) -> bool:
+    def fake_submit(
+        symbol_arg: str,
+        side: str,
+        quantity: float,
+        reason: str,
+        *,
+        fraction: float = 1.0,
+    ) -> bool:
         calls.append((symbol_arg, side, quantity, reason))
         return True
 
