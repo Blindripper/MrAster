@@ -12858,8 +12858,12 @@ class Bot:
                         )
                     return
             drift_blocked = False
-            if self.trade_mgr and hasattr(self.trade_mgr, "_expected_r_drift_multiplier"):
-                expected_r_drift_mult, drift_blocked = self.trade_mgr._expected_r_drift_multiplier(ctx)
+            drift_helper = (
+                self.trade_mgr
+                if self.trade_mgr and hasattr(self.trade_mgr, "_expected_r_drift_multiplier")
+                else self
+            )
+            expected_r_drift_mult, drift_blocked = drift_helper._expected_r_drift_multiplier(ctx)
             if drift_blocked:
                 if self.decision_tracker:
                     self.decision_tracker.record_rejection("expected_r_drift")
@@ -13756,8 +13760,12 @@ class Bot:
         if sig in {"BUY", "SELL"}:
             hype_size_mult = 1.0
             hype_blocked = False
-            if self.trade_mgr and hasattr(self.trade_mgr, "_contextual_size_multiplier"):
-                hype_size_mult, hype_blocked = self.trade_mgr._contextual_size_multiplier(ctx)
+            context_helper = (
+                self.trade_mgr
+                if self.trade_mgr and hasattr(self.trade_mgr, "_contextual_size_multiplier")
+                else self
+            )
+            hype_size_mult, hype_blocked = context_helper._contextual_size_multiplier(ctx)
             if hype_blocked:
                 if self.decision_tracker:
                     self.decision_tracker.record_rejection("hype_risk_block")
