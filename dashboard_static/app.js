@@ -89,6 +89,7 @@ const aiChatStatus = document.getElementById('ai-chat-status');
 const chatKeyIndicator = document.getElementById('chat-key-indicator');
 const btnAnalyzeMarket = document.getElementById('btn-analyze-market');
 const btnTakeTradeProposals = document.getElementById('btn-take-proposals');
+const positionUpdatesCard = document.getElementById('position-updates-card');
 const activePositionsCard = document.getElementById('active-positions-card');
 const activePositionsModeLabel = document.getElementById('active-positions-mode');
 const activePositionsWrapper = document.getElementById('active-positions-wrapper');
@@ -104,7 +105,14 @@ const pnlCard = pnlChartWrapper ? pnlChartWrapper.closest('.card') : null;
 const playbookCard = playbookSummaryContainer
   ? playbookSummaryContainer.closest('.card')
   : document.getElementById('playbook');
-const tradeDataCards = [tradesCard, aiRequestsCard, pnlCard, playbookCard, activePositionsCard].filter(
+const tradeDataCards = [
+  tradesCard,
+  aiRequestsCard,
+  pnlCard,
+  playbookCard,
+  activePositionsCard,
+  positionUpdatesCard,
+].filter(
   Boolean,
 );
 const automationToggle = document.getElementById('automation-toggle');
@@ -6202,7 +6210,11 @@ function updateActivePositionsView(options = {}) {
   }
 
   if (activePositionsNotificationsEmpty) {
-    activePositionsNotificationsEmpty.setAttribute('hidden', '');
+    if (hasNotifications) {
+      activePositionsNotificationsEmpty.setAttribute('hidden', '');
+    } else {
+      activePositionsNotificationsEmpty.removeAttribute('hidden');
+    }
   }
 
   if (activePositionsNotificationsPanel) {
