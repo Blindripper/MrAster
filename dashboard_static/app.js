@@ -2344,7 +2344,6 @@ let aiAnalyzePending = false;
 let activePositions = [];
 let tradeHistoryEmptyStreak = 0;
 let aiRequestsEmptyStreak = 0;
-let activePositionsEmptyStreak = 0;
 const POSITION_NOTIFICATION_HISTORY_LIMIT = 15;
 let positionNotificationHistory = [];
 let tradesRefreshTimer = null;
@@ -6211,20 +6210,6 @@ function applyActivePositionsPayload(openPayload, options = {}) {
 function renderActivePositions(openPositions) {
   const previousPositions = Array.isArray(activePositions) ? activePositions.slice() : [];
   const nextPositions = normaliseActivePositions(openPositions);
-
-  const hadRowsPreviously = previousPositions.length > 0;
-  const hasNextRows = nextPositions.length > 0;
-
-  if (!hasNextRows && hadRowsPreviously) {
-    activePositionsEmptyStreak += 1;
-    if (activePositionsEmptyStreak === 1) {
-      updateActivePositionsView();
-      return;
-    }
-    activePositionsEmptyStreak = Math.min(activePositionsEmptyStreak, 2);
-  } else {
-    activePositionsEmptyStreak = 0;
-  }
 
   const nextSymbols = new Set();
   nextPositions.forEach((position) => {
