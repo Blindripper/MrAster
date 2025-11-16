@@ -10506,6 +10506,7 @@ class TradeManager:
                     "bucket": bucket,
                     "context": ctx or {},
                 }
+                self._inherit_management_history(record, rec if isinstance(rec, dict) else None)
                 risk_snapshot = 0.0
                 if isinstance(rec, dict):
                     try:
@@ -10679,6 +10680,7 @@ class TradeManager:
                 "bucket": rec.get("bucket"),
                 "context": rec.get("ctx", {}),
             }
+            self._inherit_management_history(record, rec)
             risk_snapshot = 0.0
             try:
                 risk_snapshot = float(rec.get("risk_allocation", 0.0) or 0.0)
@@ -11194,6 +11196,23 @@ class Bot:
         mgmt_events.append(dict(entry))
         if len(mgmt_events) > 50:
             del mgmt_events[:-50]
+
+    @staticmethod
+    def _inherit_management_history(record: Dict[str, Any], rec: Optional[Dict[str, Any]]) -> None:
+        if not isinstance(rec, dict):
+            return
+        events = rec.get("management_events")
+        if isinstance(events, list) and events:
+            serialized: List[Dict[str, Any]] = []
+            for event in events:
+                if isinstance(event, dict):
+                    serialized.append(dict(event))
+                else:
+                    serialized.append({"value": event})
+            record["management_events"] = serialized
+        mgmt_block = rec.get("management")
+        if isinstance(mgmt_block, dict) and mgmt_block:
+            record["management"] = dict(mgmt_block)
 
     def _submit_reduce_only(self, symbol: str, side: str, quantity: float, reason: str) -> bool:
         if hasattr(self, "risk") and hasattr(self.risk, "step_size"):
