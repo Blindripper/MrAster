@@ -7561,6 +7561,13 @@ class Strategy:
         self.rsi_sell_max = RSI_SELL_MAX
         self.trend_short_stochrsi_min = TREND_SHORT_STOCHRSI_MIN
         self._skip_relief_snapshot: Dict[str, Any] = {}
+        self._skip_relief_baseline: Dict[str, float] = {
+            "min_edge_r": float(self.min_edge_r),
+            "spread_bps_max": float(self.spread_bps_max),
+            "rsi_buy_min": float(self.rsi_buy_min),
+            "rsi_sell_max": float(self.rsi_sell_max),
+            "trend_short_stochrsi_min": float(self.trend_short_stochrsi_min),
+        }
         self._apply_skip_relief()
         if self.decision_tracker and hasattr(self.decision_tracker, "register_stats_listener"):
             try:
@@ -7617,6 +7624,25 @@ class Strategy:
         return counter, total
 
     def _apply_skip_relief(self) -> None:
+        baseline = getattr(self, "_skip_relief_baseline", None)
+        if not isinstance(baseline, dict):
+            baseline = {
+                "min_edge_r": float(self.min_edge_r),
+                "spread_bps_max": float(self.spread_bps_max),
+                "rsi_buy_min": float(self.rsi_buy_min),
+                "rsi_sell_max": float(self.rsi_sell_max),
+                "trend_short_stochrsi_min": float(self.trend_short_stochrsi_min),
+            }
+            self._skip_relief_baseline = baseline
+        else:
+            self.min_edge_r = baseline.get("min_edge_r", self.min_edge_r)
+            self.spread_bps_max = baseline.get("spread_bps_max", self.spread_bps_max)
+            self.rsi_buy_min = baseline.get("rsi_buy_min", self.rsi_buy_min)
+            self.rsi_sell_max = baseline.get("rsi_sell_max", self.rsi_sell_max)
+            self.trend_short_stochrsi_min = baseline.get(
+                "trend_short_stochrsi_min", self.trend_short_stochrsi_min
+            )
+
         counts, total = self._recent_skip_counts(SKIP_RELIEF_WINDOW)
         if total <= 0:
             return
