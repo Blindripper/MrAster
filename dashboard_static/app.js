@@ -3830,6 +3830,16 @@ function setTradeDataStale(stale) {
   tradeDataCards.forEach((card) => markStale(card, stale));
 }
 
+function isValidOpenPositionsPayload(payload) {
+  if (payload === undefined || payload === null) {
+    return false;
+  }
+  if (Array.isArray(payload)) {
+    return true;
+  }
+  return typeof payload === 'object';
+}
+
 function mergeTradeSnapshot(previous, next) {
   const snapshot = next && typeof next === 'object' ? { ...next } : {};
 
@@ -3877,8 +3887,8 @@ function mergeTradeSnapshot(previous, next) {
     snapshot.playbook_market_overview = previous?.playbook_market_overview ?? null;
   }
 
-  if (!snapshot.open || typeof snapshot.open !== 'object') {
-    snapshot.open = previous?.open ?? {};
+  if (!isValidOpenPositionsPayload(snapshot.open)) {
+    snapshot.open = {};
   }
 
   if (!Array.isArray(snapshot.ai_trade_proposals)) {
@@ -6200,15 +6210,17 @@ function updateActivePositionsView(options = {}) {
 }
 
 function applyActivePositionsPayload(openPayload, options = {}) {
+  const normalizedPayload =
+    openPayload === undefined || openPayload === null ? [] : openPayload;
   const { syncSnapshot = true } = options || {};
   if (syncSnapshot) {
     if (latestTradesSnapshot && typeof latestTradesSnapshot === 'object') {
-      latestTradesSnapshot.open = openPayload;
-    } else if (openPayload !== undefined) {
-      latestTradesSnapshot = { open: openPayload };
+      latestTradesSnapshot.open = normalizedPayload;
+    } else if (normalizedPayload !== undefined) {
+      latestTradesSnapshot = { open: normalizedPayload };
     }
   }
-  renderActivePositions(openPayload);
+  renderActivePositions(normalizedPayload);
 }
 
 function renderActivePositions(openPositions) {
