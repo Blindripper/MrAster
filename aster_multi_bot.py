@@ -603,14 +603,14 @@ MIN_QUOTE_VOL = float(os.getenv("ASTER_MIN_QUOTE_VOL_USDT", "850000"))
 SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.00090"))  # 0.09 %
 SPREAD_BPS_SOFT_CAP = float(os.getenv("ASTER_SPREAD_BPS_SOFT_CAP", "0.00065"))
 WICKINESS_MAX = float(os.getenv("ASTER_WICKINESS_MAX", "0.985"))
-MIN_EDGE_R = float(os.getenv("ASTER_MIN_EDGE_R", "0.22"))
+MIN_EDGE_R = float(os.getenv("ASTER_MIN_EDGE_R", "0.18"))
 PLAYBOOK_BULL_SHORT_BLOCK_ENABLED = (
     os.getenv("ASTER_PLAYBOOK_BULL_SHORT_BLOCK", "true").lower()
     in ("1", "true", "yes", "on")
 )
 PLAYBOOK_LONG_FLOOR = float(os.getenv("ASTER_PLAYBOOK_LONG_SHARE_FLOOR", "0.4") or 0.4)
 PLAYBOOK_SIDE_MIN_SAMPLE = int(os.getenv("ASTER_PLAYBOOK_SIDE_MIN_SAMPLE", "4") or 4)
-TREND_SHORT_STOCHRSI_MIN = float(os.getenv("ASTER_TREND_SHORT_STOCHRSI_MIN", "40.0") or 40.0)
+TREND_SHORT_STOCHRSI_MIN = float(os.getenv("ASTER_TREND_SHORT_STOCHRSI_MIN", "34.0") or 34.0)
 STOCH_SHORT_PENALTY_BLOCK = float(os.getenv("ASTER_STOCH_SHORT_PENALTY_BLOCK", "0.55") or 0.55)
 EXPECTED_R_LOSS_MULT = float(os.getenv("ASTER_EXPECTED_R_LOSS_MULT", "1.2") or 1.2)
 ATR_ADVERSE_EXIT_MULT = float(os.getenv("ASTER_ATR_ADVERSE_EXIT_MULT", "0.5") or 0.5)
@@ -924,9 +924,9 @@ FUNDING_MAX_LONG = float(os.getenv("ASTER_FUNDING_MAX_LONG", "0.0010"))  # 0.10 
 FUNDING_MAX_SHORT = float(os.getenv("ASTER_FUNDING_MAX_SHORT", "0.0010"))  # 0.10 %
 
 NON_ARB_FILTER_ENABLED = os.getenv("ASTER_NON_ARB_FILTER_ENABLED", "true").lower() in ("1", "true", "yes", "on")
-NON_ARB_CLAMP_BPS = abs(float(os.getenv("ASTER_NON_ARB_CLAMP_BPS", "0.0005"))) or 0.0005
+NON_ARB_CLAMP_BPS = abs(float(os.getenv("ASTER_NON_ARB_CLAMP_BPS", "0.00065"))) or 0.00065
 NON_ARB_EDGE_THRESHOLD = abs(float(os.getenv("ASTER_NON_ARB_EDGE_THRESHOLD", "0.00005")))
-NON_ARB_SKIP_GAP = abs(float(os.getenv("ASTER_NON_ARB_SKIP_GAP", str(NON_ARB_CLAMP_BPS * 3.0))))
+NON_ARB_SKIP_GAP = abs(float(os.getenv("ASTER_NON_ARB_SKIP_GAP", str(NON_ARB_CLAMP_BPS * 3.5))))
 
 HTTP_RETRIES = max(0, int(os.getenv("ASTER_HTTP_RETRIES", "2")))
 HTTP_BACKOFF = max(0.0, float(os.getenv("ASTER_HTTP_BACKOFF", "0.6")))
@@ -948,10 +948,10 @@ QUOTE_VOLUME_COOLDOWN_CYCLES = max(
 )
 
 # Signalkontrolle (neu, per ENV einstellbar)
-RSI_BUY_MIN = float(os.getenv("ASTER_RSI_BUY_MIN", "52"))
-RSI_SELL_MAX = float(os.getenv("ASTER_RSI_SELL_MAX", "48"))
+RSI_BUY_MIN = float(os.getenv("ASTER_RSI_BUY_MIN", "50"))
+RSI_SELL_MAX = float(os.getenv("ASTER_RSI_SELL_MAX", "50"))
 ALLOW_ALIGN = os.getenv("ASTER_ALLOW_TREND_ALIGN", "false").lower() in ("1", "true", "yes", "on")
-ALIGN_RSI_PAD = float(os.getenv("ASTER_ALIGN_RSI_PAD", "1.0"))
+ALIGN_RSI_PAD = float(os.getenv("ASTER_ALIGN_RSI_PAD", "2.5"))
 EARLY_ENTRY_MODE = os.getenv("ASTER_EARLY_ENTRY_MODE", "enabled").strip().lower()
 EARLY_ENTRY_ENABLED = EARLY_ENTRY_MODE not in {"off", "false", "disabled", "none"}
 TREND_BIAS = os.getenv("ASTER_TREND_BIAS", "with").strip().lower()
@@ -999,7 +999,7 @@ _PRESET_SIGNAL_TUNING: Dict[str, Dict[str, Any]] = {
         "MIN_QUOTE_VOL": 1_150_000.0,
         "SPREAD_BPS_MAX": 0.00085,
         "WICKINESS_MAX": 0.96,
-        "MIN_EDGE_R": 0.24,
+        "MIN_EDGE_R": 0.20,
         "ADX_MIN_THRESHOLD": 25.0,
         "ADX_DELTA_MIN": -10.0,
         "STOCHRSI_LONG_MAX": 28.0,
@@ -1023,7 +1023,7 @@ _PRESET_SIGNAL_TUNING: Dict[str, Dict[str, Any]] = {
         "MIN_QUOTE_VOL": 550_000.0,
         "SPREAD_BPS_MAX": 0.00145,
         "WICKINESS_MAX": 0.995,
-        "MIN_EDGE_R": 0.10,
+        "MIN_EDGE_R": 0.08,
         "ADX_MIN_THRESHOLD": 18.0,
         "ADX_DELTA_MIN": -24.0,
         "STOCHRSI_LONG_MAX": 38.0,
@@ -1047,7 +1047,7 @@ _PRESET_SIGNAL_TUNING: Dict[str, Dict[str, Any]] = {
         "MIN_QUOTE_VOL": 325_000.0,
         "SPREAD_BPS_MAX": 0.00170,
         "WICKINESS_MAX": 0.998,
-        "MIN_EDGE_R": 0.08,
+        "MIN_EDGE_R": 0.06,
         "ADX_MIN_THRESHOLD": 16.0,
         "ADX_DELTA_MIN": -32.0,
         "STOCHRSI_LONG_MAX": 44.0,
@@ -1071,7 +1071,7 @@ _PRESET_SIGNAL_TUNING: Dict[str, Dict[str, Any]] = {
         "MIN_QUOTE_VOL": 300_000.0,
         "SPREAD_BPS_MAX": 0.00195,
         "WICKINESS_MAX": 0.9985,
-        "MIN_EDGE_R": 0.07,
+        "MIN_EDGE_R": 0.055,
         "ADX_MIN_THRESHOLD": 14.0,
         "ADX_DELTA_MIN": -34.0,
         "STOCHRSI_LONG_MAX": 46.0,
@@ -1762,22 +1762,22 @@ class NewsTrendSentinel:
 
         event_risk = clamp(volatility * 1.2 + trend_factor * 0.5, 0.0, 1.0)
         if price_change < -9.0:
-            event_risk = max(event_risk, 0.78)
+            event_risk = max(event_risk, 0.72)
         hype_score = clamp((volume_factor * 0.55) + (trend_factor * 0.55) + (bias_factor * 0.3), 0.0, 1.0)
 
         label = "green"
         hard_block = False
-        if event_risk >= 0.82:
+        if event_risk >= 0.9:
             label = "red"
             hard_block = True
-        elif event_risk >= 0.55:
+        elif event_risk >= 0.6:
             label = "yellow"
-        elif hype_score >= 0.7 and price_change >= 4.0:
+        elif hype_score >= 0.74 and price_change >= 4.0:
             label = "yellow"
 
         size_factor = 1.0
         if label == "yellow":
-            size_factor = 0.6
+            size_factor = 0.7
         if label == "red":
             size_factor = 0.0
         if label == "green" and hype_score > 0.7 and price_change > 0:
