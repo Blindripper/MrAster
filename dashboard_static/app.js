@@ -10972,30 +10972,36 @@ function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null,
     return null;
   };
 
-  const winsCount = parseTradeCount(
-    resolveNumericField(serverMetrics, ['wins']),
-    totals.wins,
-    totals.profitable_trades,
-    totals.positive_trades,
-    totals.green_trades,
-    fallback.wins,
-    fallback.profitable_trades,
-    fallback.positive_trades,
-    fallback.green_trades,
-    historyWinLossSummary ? historyWinLossSummary.wins : null,
-  );
-  const lossesCount = parseTradeCount(
-    resolveNumericField(serverMetrics, ['losses']),
-    totals.losses,
-    totals.unprofitable_trades,
-    totals.negative_trades,
-    totals.red_trades,
-    fallback.losses,
-    fallback.unprofitable_trades,
-    fallback.negative_trades,
-    fallback.red_trades,
-    historyWinLossSummary ? historyWinLossSummary.losses : null,
-  );
+  let winsCount = null;
+  let lossesCount = null;
+
+  if (historyWinLossSummary) {
+    winsCount = historyWinLossSummary.wins;
+    lossesCount = historyWinLossSummary.losses;
+  } else {
+    winsCount = parseTradeCount(
+      resolveNumericField(serverMetrics, ['wins']),
+      totals.wins,
+      totals.profitable_trades,
+      totals.positive_trades,
+      totals.green_trades,
+      fallback.wins,
+      fallback.profitable_trades,
+      fallback.positive_trades,
+      fallback.green_trades,
+    );
+    lossesCount = parseTradeCount(
+      resolveNumericField(serverMetrics, ['losses']),
+      totals.losses,
+      totals.unprofitable_trades,
+      totals.negative_trades,
+      totals.red_trades,
+      fallback.losses,
+      fallback.unprofitable_trades,
+      fallback.negative_trades,
+      fallback.red_trades,
+    );
+  }
 
   if (pnlTradesWonValue) {
     pnlTradesWonValue.textContent = winsCount != null ? winsCount.toLocaleString() : '—';
