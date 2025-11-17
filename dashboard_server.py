@@ -2270,6 +2270,25 @@ def _strip_realized_income_trades(history: Sequence[Dict[str, Any]]) -> List[Dic
     return filtered
 
 
+def _prepare_display_history(history: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Normalize trade entries for dashboard consumers.
+
+    Synthetic realized-income rows remain intact so they can render as
+    "Realized PnL" cards in the UI, while timestamp helpers provide the
+    ISO-formatted strings expected by the frontend.
+    """
+
+    prepared: List[Dict[str, Any]] = []
+    for entry in history:
+        if not isinstance(entry, dict):
+            continue
+        normalized = dict(entry)
+        normalized["opened_at_iso"] = _format_ts(_safe_float(entry.get("opened_at")))
+        normalized["closed_at_iso"] = _format_ts(_safe_float(entry.get("closed_at")))
+        prepared.append(normalized)
+    return prepared
+
+
 def _build_history_summary(stats: TradeStats) -> Dict[str, Any]:
     avg_r = 0.0
     if stats.count:
@@ -7266,12 +7285,7 @@ async def trades() -> Dict[str, Any]:
     history_window: List[Dict[str, Any]] = [dict(entry) for entry in filtered_history[-200:]]
 
     stats_history: List[Dict[str, Any]] = history_window
-    display_history: List[Dict[str, Any]] = []
-    for entry in _strip_realized_income_trades(stats_history):
-        normalized = dict(entry)
-        normalized["opened_at_iso"] = _format_ts(entry.get("opened_at"))
-        normalized["closed_at_iso"] = _format_ts(entry.get("closed_at"))
-        display_history.append(normalized)
+    display_history = _prepare_display_history(stats_history)
 
     env_cfg = CONFIG.get("env", {}) if isinstance(CONFIG, dict) else {}
     open_trades = state.get("live_trades", {})
