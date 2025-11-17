@@ -11849,6 +11849,23 @@ function countHistoryPositions(historyEntries) {
   return identifiers.size + fallback;
 }
 
+function resolveTradePnlValue(trade) {
+  if (!trade || typeof trade !== 'object') {
+    return null;
+  }
+  for (const key of COMPLETED_POSITION_PNL_KEYS) {
+    const candidate = lookupTradeNumber(trade, key);
+    if (Number.isFinite(candidate)) {
+      return candidate;
+    }
+  }
+  const incomeValue = lookupTradeNumber(trade, 'income');
+  if (Number.isFinite(incomeValue)) {
+    return incomeValue;
+  }
+  return null;
+}
+
 function summarizeHistoryWinLoss(historyEntries) {
   if (!Array.isArray(historyEntries) || historyEntries.length === 0) {
     return null;
@@ -11856,7 +11873,7 @@ function summarizeHistoryWinLoss(historyEntries) {
   const bucketPnls = new Map();
   const fallbackPnls = [];
   historyEntries.forEach((trade) => {
-    const pnlValue = lookupTradeNumber(trade, 'pnl') ?? lookupTradeNumber(trade, 'realized_pnl');
+    const pnlValue = resolveTradePnlValue(trade);
     if (!Number.isFinite(pnlValue)) {
       return;
     }
