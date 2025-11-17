@@ -11710,6 +11710,66 @@ function deriveHistoryVolume(historyEntries) {
   return total;
 }
 
+function buildHistoryWinLossSummary(historyEntries) {
+  if (!Array.isArray(historyEntries) || historyEntries.length === 0) {
+    return null;
+  }
+
+  const aggregated = new Map();
+  let fallbackIndex = 0;
+
+  historyEntries.forEach((trade) => {
+    if (!trade || typeof trade !== 'object') {
+      return;
+    }
+    let key = getCompletedPositionKey(trade);
+    if (!key) {
+      key = `row:${fallbackIndex}`;
+      fallbackIndex += 1;
+    }
+    let entry = aggregated.get(key);
+    if (!entry) {
+      entry = { pnl: 0, hasPnl: false };
+      aggregated.set(key, entry);
+    }
+    const pnlValue =
+      lookupTradeNumber(trade, 'pnl') ?? lookupTradeNumber(trade, 'realized_pnl');
+    if (Number.isFinite(pnlValue)) {
+      entry.pnl += pnlValue;
+      entry.hasPnl = true;
+    }
+  });
+
+  if (aggregated.size === 0) {
+    return null;
+  }
+
+  let wins = 0;
+  let losses = 0;
+  let draws = 0;
+
+  aggregated.forEach((entry) => {
+    if (!entry.hasPnl) {
+      draws += 1;
+      return;
+    }
+    if (entry.pnl > 0) {
+      wins += 1;
+    } else if (entry.pnl < 0) {
+      losses += 1;
+    } else {
+      draws += 1;
+    }
+  });
+
+  return {
+    wins,
+    losses,
+    draws,
+    total: aggregated.size,
+  };
+}
+
 function renderHeroMetrics(
   cumulativeStats,
   sessionStats,
@@ -11898,25 +11958,7 @@ function renderHeroMetrics(
     return numeric;
   };
 
-  const historyWinLossSummary = (() => {
-    if (historyList.length === 0) return null;
-    let wins = 0;
-    let losses = 0;
-    for (const trade of historyList) {
-      const pnlValue = lookupTradeNumber(trade, 'pnl') ?? lookupTradeNumber(trade, 'realized_pnl');
-      if (!Number.isFinite(pnlValue)) continue;
-      if (pnlValue > 0) {
-        wins += 1;
-      } else if (pnlValue < 0) {
-        losses += 1;
-      }
-    }
-    return {
-      wins,
-      losses,
-      total: historyList.length,
-    };
-  })();
+  const historyWinLossSummary = buildHistoryWinLossSummary(historyList);
 
   const historyWinRate = (() => {
     if (!historyWinLossSummary) return null;
