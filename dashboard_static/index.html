@@ -194,37 +194,6 @@
         </div>
 
         <section
-          class="card hero-position-updates hero-overview-card"
-          id="position-updates-card"
-          aria-label="Position updates"
-          data-mobile-collapsible
-        >
-          <div class="card-header" data-mobile-collapsible-header>
-            <div>
-              <h2 class="active-positions-updates-title" data-i18n="active.notifications.title">Position updates</h2>
-              <p class="card-subtitle" data-i18n="active.notifications.subtitle">Latest management and closure events.</p>
-            </div>
-          </div>
-          <div class="card-section-body" data-mobile-collapsible-body>
-            <div class="active-positions-updates-panel" id="active-positions-notifications-panel" hidden>
-              <div
-                class="active-positions-notifications"
-                id="active-positions-notifications"
-                aria-live="polite"
-                role="list"
-              ></div>
-            </div>
-            <div
-              class="active-positions-notifications-empty"
-              id="active-positions-notifications-empty"
-              data-i18n="active.notifications.empty"
-            >
-              No recent management events yet.
-            </div>
-          </div>
-        </section>
-
-        <section
           class="card hero-active-positions hero-overview-card"
           id="active-positions-card"
           aria-label="Active positions overview"
@@ -259,6 +228,37 @@
                 </thead>
                 <tbody id="active-positions-rows"></tbody>
               </table>
+            </div>
+          </div>
+        </section>
+
+        <section
+          class="card hero-position-updates hero-overview-card"
+          id="position-updates-card"
+          aria-label="Position updates"
+          data-mobile-collapsible
+        >
+          <div class="card-header" data-mobile-collapsible-header>
+            <div>
+              <h2 class="active-positions-updates-title" data-i18n="active.notifications.title">Position updates</h2>
+              <p class="card-subtitle" data-i18n="active.notifications.subtitle">Live updates for open positions.</p>
+            </div>
+          </div>
+          <div class="card-section-body" data-mobile-collapsible-body>
+            <div class="active-positions-updates-panel" id="active-positions-notifications-panel" hidden>
+              <div
+                class="active-positions-notifications"
+                id="active-positions-notifications"
+                aria-live="polite"
+                role="list"
+              ></div>
+            </div>
+            <div
+              class="active-positions-notifications-empty"
+              id="active-positions-notifications-empty"
+              data-i18n="active.notifications.empty"
+            >
+              No recent management events yet.
             </div>
           </div>
         </section>
