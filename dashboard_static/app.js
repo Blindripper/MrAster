@@ -323,6 +323,14 @@ const COMPLETED_POSITION_IDENTIFIER_KEYS = [
 const TRADE_POSITION_IDENTIFIER_KEYS = [
   'position_id',
   'positionId',
+  'position_uuid',
+  'positionUuid',
+  'position_hash',
+  'positionHash',
+  'position_key',
+  'positionKey',
+  'strategy_position_id',
+  'strategyPositionId',
   'hash',
   'uuid',
   'trade_id',
@@ -330,6 +338,22 @@ const TRADE_POSITION_IDENTIFIER_KEYS = [
   'id',
   'order_id',
   'orderId',
+];
+
+const TRADE_POSITION_CONTAINER_KEYS = [
+  'extra',
+  'context',
+  'position',
+  'position_info',
+  'positionInfo',
+  'position_meta',
+  'positionMeta',
+  'position_context',
+  'positionContext',
+  'position_snapshot',
+  'positionSnapshot',
+  'position_details',
+  'positionDetails',
 ];
 
 const TRADE_TIMESTAMP_IDENTIFIER_KEYS = [
@@ -11707,6 +11731,36 @@ function lookupTradeValue(source, key) {
   return null;
 }
 
+function collectTradeIdentifierSources(trade) {
+  const sources = [];
+  if (!trade || typeof trade !== 'object') {
+    return sources;
+  }
+
+  const queue = [];
+  const visited = new Set();
+  const enqueue = (candidate) => {
+    if (!candidate || typeof candidate !== 'object') return;
+    if (visited.has(candidate)) return;
+    visited.add(candidate);
+    queue.push(candidate);
+  };
+
+  enqueue(trade);
+  while (queue.length) {
+    const current = queue.shift();
+    sources.push(current);
+    for (const key of TRADE_POSITION_CONTAINER_KEYS) {
+      const nested = current[key];
+      if (nested && typeof nested === 'object') {
+        enqueue(nested);
+      }
+    }
+  }
+
+  return sources;
+}
+
 function parseTradeTimestamp(value) {
   const numeric = Number(value);
   if (Number.isFinite(numeric)) {
@@ -11733,14 +11787,17 @@ function extractTradePositionKey(trade) {
   if (!trade || typeof trade !== 'object') {
     return '';
   }
-  for (const key of TRADE_POSITION_IDENTIFIER_KEYS) {
-    const value = lookupTradeValue(trade, key);
-    if (value === null || value === undefined) {
-      continue;
-    }
-    const text = value.toString().trim();
-    if (text) {
-      return `${key}:${text}`;
+  const identifierSources = collectTradeIdentifierSources(trade);
+  for (const source of identifierSources) {
+    for (const key of TRADE_POSITION_IDENTIFIER_KEYS) {
+      const value = lookupTradeValue(source, key);
+      if (value === null || value === undefined) {
+        continue;
+      }
+      const text = value.toString().trim();
+      if (text) {
+        return `${key}:${text}`;
+      }
     }
   }
   const symbolCandidates = [trade.symbol, trade.s, trade.pair, trade.instrument, trade.asset, trade.base];

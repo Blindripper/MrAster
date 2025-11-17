@@ -44,6 +44,25 @@ def test_summarize_history_totals_counts_real_trades() -> None:
     assert totals["realized_pnl"] == pytest.approx(6.0)
 
 
+def test_summarize_history_totals_groups_positions_by_nested_context() -> None:
+    shared = {
+        "symbol": "BTCUSDT",
+        "context": {"position": {"position_id": "abc-123"}},
+    }
+    history = [
+        {**shared, "pnl": 5.0, "order_id": "a"},
+        {**shared, "pnl": -1.0, "order_id": "b"},
+    ]
+
+    totals = _summarize_history_totals(history)
+
+    assert totals["total_trades"] == 1
+    assert totals["wins"] == 1
+    assert totals["losses"] == 0
+    assert totals["draws"] == 0
+    assert totals["realized_pnl"] == pytest.approx(4.0)
+
+
 def test_compute_stats_ignores_realized_income_rows() -> None:
     history = [
         _trade("BTCUSDT", 12.5, pnl_r=1.2),
