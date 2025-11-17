@@ -7323,12 +7323,41 @@ async def ai_execute_proposal(request: ProposalExecutionRequest) -> Dict[str, An
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+async def _resolve_history_with_realized(
+    state: Dict[str, Any], env_cfg: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    """Return the trade history augmented with realized-income rows when enabled."""
+
+    history_source = state.get("trade_history", [])
+    if isinstance(history_source, list):
+        base_history: List[Dict[str, Any]] = [dict(entry) for entry in history_source if isinstance(entry, dict)]
+    else:
+        base_history = []
+
+    if not env_cfg or not _is_truthy(env_cfg.get("ASTER_DASHBOARD_REALIZED_ENRICH")):
+        return base_history
+
+    try:
+        realized_entries = await asyncio.to_thread(_fetch_realized_pnl_entries, env_cfg)
+    except Exception as exc:  # pragma: no cover - network/runtime guard
+        logger.debug("realized pnl fetch failed: %s", exc)
+        realized_entries = []
+
+    if not realized_entries:
+        return base_history
+
+    try:
+        return _merge_realized_pnl(base_history, realized_entries)
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        logger.debug("realized pnl merge failed: %s", exc)
+        return base_history
+
+
 @app.get("/api/trades")
 async def trades() -> Dict[str, Any]:
     state = _read_state()
-    history_source = state.get("trade_history", [])
-    if not isinstance(history_source, list):
-        history_source = []
+    env_cfg = CONFIG.get("env", {}) if isinstance(CONFIG, dict) else {}
+    history_source = await _resolve_history_with_realized(state, env_cfg)
     history_totals = _summarize_history_totals(history_source)
     run_started_at = _resolve_run_started_at(state)
     filtered_history = _filter_history_for_run(history_source, run_started_at)
@@ -7337,7 +7366,6 @@ async def trades() -> Dict[str, Any]:
     stats_history: List[Dict[str, Any]] = history_window
     display_history = _prepare_display_history(stats_history)
 
-    env_cfg = CONFIG.get("env", {}) if isinstance(CONFIG, dict) else {}
     open_trades = state.get("live_trades", {})
     try:
         enriched_open = await asyncio.to_thread(enrich_open_positions, open_trades, env_cfg)

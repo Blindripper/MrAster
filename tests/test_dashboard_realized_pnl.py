@@ -1,6 +1,12 @@
+import asyncio
+
 import pytest
 
-from dashboard_server import _merge_realized_pnl, _strip_realized_income_trades
+from dashboard_server import (
+    _merge_realized_pnl,
+    _resolve_history_with_realized,
+    _strip_realized_income_trades,
+)
 
 
 def _make_trade(pnl: float = 5.0, pnl_r: float = 0.5) -> dict:
@@ -121,3 +127,50 @@ def test_strip_realized_income_trades_keeps_real_records_with_income_context() -
 
     symbols = {entry["symbol"] for entry in filtered}
     assert symbols == {"BTCUSDT"}
+
+
+def test_resolve_history_with_realized_enriches_when_enabled(monkeypatch):
+    history = [_make_trade(pnl=1.0, pnl_r=0.25)]
+    env_cfg = {"ASTER_DASHBOARD_REALIZED_ENRICH": "true"}
+    realized = [_make_income(4.0)]
+
+    def fake_fetch(env: dict, limit: int = 400):
+        assert env is env_cfg
+        assert limit == 400
+        return realized
+
+    async def fake_to_thread(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    import dashboard_server
+
+    monkeypatch.setattr(dashboard_server, "_fetch_realized_pnl_entries", fake_fetch)
+    monkeypatch.setattr(dashboard_server.asyncio, "to_thread", fake_to_thread)
+
+    async def run() -> None:
+        enriched = await _resolve_history_with_realized({"trade_history": history}, env_cfg)
+        assert len(enriched) == 1
+        record = enriched[0]
+        assert record["pnl"] == pytest.approx(4.0)
+        assert record["realized_pnl"] == pytest.approx(4.0)
+        assert record.get("estimated_pnl") == pytest.approx(1.0)
+
+    asyncio.run(run())
+
+
+def test_resolve_history_with_realized_skips_when_disabled(monkeypatch):
+    history = [_make_trade(pnl=2.5)]
+    env_cfg = {"ASTER_DASHBOARD_REALIZED_ENRICH": "false"}
+
+    def fake_fetch(_env: dict, limit: int = 400):
+        raise AssertionError("fetch should not run when enrich flag is disabled")
+
+    import dashboard_server
+
+    monkeypatch.setattr(dashboard_server, "_fetch_realized_pnl_entries", fake_fetch)
+
+    async def run() -> None:
+        enriched = await _resolve_history_with_realized({"trade_history": history}, env_cfg)
+        assert enriched == history
+
+    asyncio.run(run())
