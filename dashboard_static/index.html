@@ -363,30 +363,44 @@
 
           <section
             class="card pnl-card hero-overview-card"
-            aria-label="Performance overview"
+            aria-label="PNL development"
             data-mobile-collapsible
           >
             <div class="card-header" data-mobile-collapsible-header>
               <div>
-                <h2 data-i18n="pnl.title">Performance overview</h2>
-                <p class="card-subtitle" data-i18n="pnl.subtitle">Cumulative realized PNL across your recorded trades.</p>
+                <h2 data-i18n="pnl.title">PNL journey</h2>
               </div>
             </div>
-            <div class="card-section-body" data-mobile-collapsible-body>
-              <div class="performance-stats" id="pnl-performance-stats">
-                <div class="performance-stat">
-                  <span class="performance-stat__label" data-i18n="pnl.tradesWon">Trades won</span>
-                  <span class="performance-stat__value" id="pnl-trades-won">—</span>
+            <div class="card-section-body pnl-journey" data-mobile-collapsible-body>
+              <div class="pnl-trade-summary" aria-live="polite">
+                <div class="pnl-trade-summary__item">
+                  <span class="pnl-trade-summary__label" data-i18n="pnl.tradesWon">Trades won</span>
+                  <span class="pnl-trade-summary__value" id="pnl-trades-won">—</span>
                 </div>
-                <div class="performance-stat">
-                  <span class="performance-stat__label" data-i18n="pnl.tradesLost">Trades lost</span>
-                  <span class="performance-stat__value" id="pnl-trades-lost">—</span>
+                <div class="pnl-trade-summary__item">
+                  <span class="pnl-trade-summary__label" data-i18n="pnl.tradesLost">Trades lost</span>
+                  <span class="pnl-trade-summary__value" id="pnl-trades-lost">—</span>
                 </div>
               </div>
-              <div class="pnl-chart-wrapper">
-                <canvas id="pnl-chart" aria-label="Cumulative PNL chart" style="display: none;"></canvas>
-                <div id="pnl-empty" class="empty-state" data-i18n="pnl.empty">
-                  No PNL data yet. Execute trades to populate the performance graph.
+              <div class="pnl-journey__visual">
+                <div class="pnl-journey__meta">
+                  <div>
+                    <p class="pnl-journey__eyebrow" data-i18n="pnl.metaLabel">Realized PNL since bot launch</p>
+                    <h3 class="pnl-journey__title" data-i18n="pnl.title">PNL journey</h3>
+                    <p class="pnl-journey__subtitle" data-i18n="pnl.subtitle">
+                      Track realized PNL growth from the first recorded trade.
+                    </p>
+                  </div>
+                  <div class="pnl-journey__legend">
+                    <span class="pnl-journey__legend-dot" aria-hidden="true"></span>
+                    <span class="pnl-journey__legend-label" data-i18n="pnl.legendLabel">Cumulative realized PNL</span>
+                  </div>
+                </div>
+                <div class="pnl-chart-wrapper">
+                  <canvas id="pnl-chart" aria-label="Cumulative PNL chart" style="display: none;"></canvas>
+                  <div id="pnl-empty" class="empty-state" data-i18n="pnl.empty">
+                    No PNL data yet. Execute trades to populate the performance graph.
+                  </div>
                 </div>
               </div>
             </div>
@@ -930,8 +944,10 @@
       <div class="pnl-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="pnl-modal-title">
         <div class="pnl-modal-header">
           <div>
-            <h2 id="pnl-modal-title" data-i18n="modals.pnl.title">Performance overview</h2>
-            <p class="pnl-modal-subtitle" data-i18n="modals.pnl.subtitle">Cumulative realized PNL across your recorded trades.</p>
+            <h2 id="pnl-modal-title" data-i18n="modals.pnl.title">PNL journey</h2>
+            <p class="pnl-modal-subtitle" data-i18n="modals.pnl.subtitle">
+              Track realized PNL growth from the first recorded trade.
+            </p>
           </div>
           <button
             type="button"
