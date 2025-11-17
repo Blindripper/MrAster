@@ -392,6 +392,24 @@
               <div class="trade-history">
                 <div id="trade-list" class="trade-list"></div>
               </div>
+              <section class="completed-positions" id="completed-positions-panel">
+                <div class="completed-positions__header">
+                  <h3 data-i18n="trades.completed.title">Completed positions</h3>
+                  <p class="completed-positions__subtitle" data-i18n="trades.completed.subtitle">
+                    Documented exits from the position manager.
+                  </p>
+                </div>
+                <div class="completed-positions__body">
+                  <p
+                    class="completed-positions__empty"
+                    id="completed-positions-empty"
+                    data-i18n="trades.completed.empty"
+                  >
+                    Closed positions will appear once the bot exits a trade.
+                  </p>
+                  <div class="completed-positions__list" id="completed-positions-list" role="list"></div>
+                </div>
+              </section>
             </div>
           </section>
 
