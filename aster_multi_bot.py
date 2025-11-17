@@ -2173,6 +2173,13 @@ class AITradeAdvisor:
             "fade",
             "balance",
             "channel",
+            "bounce",
+            "revert",
+            "vwap",
+            "oversold",
+            "overbought",
+            "stddev",
+            "bollinger",
         },
         "persona_focus_event": {
             "event",
@@ -3855,13 +3862,20 @@ class AITradeAdvisor:
         for token in re.findall(r"[a-z0-9]+", term.lower()):
             if token:
                 tokens.add(token)
-        if {"mean", "reversion"}.issubset(tokens):
-            tokens.add("meanreversion")
-            tokens.add("mean_reversion")
-        if {"stop", "loss"}.issubset(tokens):
-            tokens.add("stoploss")
-        if {"take", "profit"}.issubset(tokens):
-            tokens.add("takeprofit")
+        if not tokens:
+            return tokens
+        compound_aliases = (
+            (("mean", "reversion"), ("meanreversion", "mean_reversion")),
+            (("stop", "loss"), ("stoploss",)),
+            (("take", "profit"), ("takeprofit",)),
+            (("std", "dev"), ("stddev",)),
+            (("standard", "deviation"), ("stddev",)),
+            (("bollinger", "band"), ("bollinger",)),
+            (("bollinger", "bands"), ("bollinger",)),
+        )
+        for terms, aliases in compound_aliases:
+            if set(terms).issubset(tokens):
+                tokens.update(aliases)
         return tokens
 
     @staticmethod

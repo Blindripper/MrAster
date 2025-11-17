@@ -102,3 +102,30 @@ def test_sentinel_clears_persona_when_risk_drops():
     sources = state.get("advisor_persona", {}).get("sources", {})
     assert "sentinel" not in sources or sources["sentinel"].get("key") != "event_risk"
     assert persona_after is None or persona_after.get("source") != "sentinel"
+
+
+def test_tokenize_focus_term_handles_compound_terms():
+    tokens = AITradeAdvisor._tokenize_focus_term(
+        "Mean Reversion bounce near VWAP and oversold Bollinger bands std dev break"
+    )
+    assert {"mean", "reversion", "bounce", "vwap", "oversold"}.issubset(tokens)
+    assert {"meanreversion", "mean_reversion", "stddev", "bollinger"}.issubset(tokens)
+
+
+def test_playbook_focus_terms_trigger_range_persona_feature():
+    state: dict = {}
+    budget = DailyBudgetTracker(state, limit=50.0, strict=False)
+    advisor = AITradeAdvisor(
+        api_key="dummy",
+        model="gpt-4o-mini",
+        budget=budget,
+        state=state,
+        enabled=False,
+    )
+    ctx = {
+        "playbook_action_focus_terms": [
+            "mean reversion bounce reverting to VWAP while oversold on std dev"
+        ]
+    }
+    advisor._inject_persona_focus_features(ctx)
+    assert ctx.get("persona_focus_range", 0.0) == pytest.approx(1.0)
