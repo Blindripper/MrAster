@@ -96,9 +96,6 @@ const positionUpdatesCard = document.getElementById('active-positions-notificati
 const activePositionsCard = document.getElementById('active-positions-card');
 const activePositionsModeLabel = document.getElementById('active-positions-mode');
 const activePositionsWrapper = document.getElementById('active-positions-wrapper');
-const activePositionsEmpty = document.getElementById('active-positions-empty');
-const activePositionsNotificationsEmpty = document.getElementById('active-positions-notifications-empty');
-const activePositionsNotificationsPanel = document.getElementById('active-positions-notifications-panel');
 const activePositionsRows = document.getElementById('active-positions-rows');
 const activePositionsNotifications = document.getElementById('active-positions-notifications');
 const statusCard = document.querySelector('.card.status');
@@ -6017,36 +6014,15 @@ function renderPositionNotifications(notifications) {
   const hasNotifications = relevantNotifications.length > 0;
 
   if (activePositionsNotifications) {
-    if (hasNotifications) {
-      const notificationFragment = document.createDocumentFragment();
-      relevantNotifications.forEach((notification) => {
-        if (notification && !notification.hasAttribute('role')) {
-          notification.setAttribute('role', 'listitem');
-        }
-        notificationFragment.append(notification);
-      });
-      activePositionsNotifications.replaceChildren(notificationFragment);
-      activePositionsNotifications.removeAttribute('hidden');
-    } else {
-      activePositionsNotifications.replaceChildren();
-      activePositionsNotifications.setAttribute('hidden', '');
-    }
-  }
-
-  if (activePositionsNotificationsEmpty) {
-    if (hasNotifications) {
-      activePositionsNotificationsEmpty.setAttribute('hidden', '');
-    } else {
-      activePositionsNotificationsEmpty.removeAttribute('hidden');
-    }
-  }
-
-  if (activePositionsNotificationsPanel) {
-    if (hasNotifications) {
-      activePositionsNotificationsPanel.removeAttribute('hidden');
-    } else {
-      activePositionsNotificationsPanel.setAttribute('hidden', '');
-    }
+    const notificationFragment = document.createDocumentFragment();
+    relevantNotifications.forEach((notification) => {
+      if (notification && !notification.hasAttribute('role')) {
+        notification.setAttribute('role', 'listitem');
+      }
+      notificationFragment.append(notification);
+    });
+    activePositionsNotifications.replaceChildren(notificationFragment);
+    activePositionsNotifications.removeAttribute('hidden');
   }
 
   if (hasNotifications) {
@@ -6968,22 +6944,8 @@ function updateActivePositionsView(options = {}) {
       activePositionsModeLabel.classList.add('tone-loss');
     }
   }
-  if (activePositionsEmpty) {
-    activePositionsEmpty.innerHTML = paperMode
-      ? translate('active.empty.paper', 'No paper trades yet.')
-      : translate('active.empty', 'No active positions.');
-    if (hasRows) {
-      activePositionsEmpty.setAttribute('hidden', '');
-    } else {
-      activePositionsEmpty.removeAttribute('hidden');
-    }
-  }
   if (activePositionsWrapper) {
-    if (hasRows) {
-      activePositionsWrapper.removeAttribute('hidden');
-    } else {
-      activePositionsWrapper.setAttribute('hidden', '');
-    }
+    activePositionsWrapper.removeAttribute('hidden');
   }
   if (activePositionsCard) {
     if (hasRows) {

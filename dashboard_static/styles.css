@@ -1520,16 +1520,6 @@ body.paper-mode .hero-paper-toggle span {
   background: rgba(148, 163, 184, 0.16);
 }
 
-.active-positions-empty {
-  padding: 0.95rem 1.1rem;
-  text-align: center;
-  color: var(--text-subtle);
-  font-size: 0.92rem;
-  border-radius: 0.95rem;
-  border: 1px dashed rgba(245, 196, 107, 0.2);
-  background: rgba(14, 15, 26, 0.55);
-}
-
 .tone-profit {
   color: var(--success);
 }
