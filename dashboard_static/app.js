@@ -17,6 +17,9 @@ const compactLogStream = document.getElementById('log-brief');
 const autoScrollToggles = document.querySelectorAll('input[data-autoscroll]');
 const tradeList = document.getElementById('trade-list');
 const tradeSummary = document.getElementById('trade-summary');
+const completedPositionsPanel = document.getElementById('completed-positions-panel');
+const completedPositionsList = document.getElementById('completed-positions-list');
+const completedPositionsEmpty = document.getElementById('completed-positions-empty');
 const aiRequestList = document.getElementById('ai-request-list');
 const aiRequestModal = document.getElementById('ai-request-modal');
 const aiRequestModalClose = document.getElementById('ai-request-modal-close');
@@ -305,6 +308,7 @@ const SUPPORTED_LANGUAGES = ['en', 'ru', 'zh', 'ko', 'de', 'fr', 'es', 'tr'];
 const COMPACT_SKIP_AGGREGATION_WINDOW = 600; // seconds
 const MAX_MANAGEMENT_EVENTS = 50;
 const POSITION_NOTIFICATIONS_REFRESH_INTERVAL_MS = 45_000;
+const COMPLETED_POSITIONS_HISTORY_LIMIT = 12;
 const activePositionManagementCache = new Map();
 
 const PLAYBOOK_CARD_TIMESTAMP_KEYS = {
@@ -435,6 +439,12 @@ const TRANSLATIONS = {
     'trades.synthetic.note': 'Синхронизировано с биржевым реализованным PnL — данные входа/выхода недоступны.',
     'trades.synthetic.incomeType': 'Тип дохода',
     'trades.synthetic.info': 'Биржевой источник',
+    'trades.completed.title': 'Закрытые позиции',
+    'trades.completed.subtitle': 'Документируемые выходы менеджера позиций.',
+    'trades.completed.empty': 'Закрытые позиции появятся после следующего выхода бота.',
+    'trades.completed.pnl': 'Реализованный PNL',
+    'trades.completed.reason': 'Причина выхода',
+    'trades.completed.noReason': 'Причина не указана.',
     'pnl.title': 'Обзор эффективности',
     'pnl.subtitle': 'Совокупный реализованный PNL по вашим сделкам.',
     'pnl.tradesWon': 'Победные сделки',
@@ -720,6 +730,12 @@ const TRANSLATIONS = {
     'trades.synthetic.note': 'Aus dem Börsen-PnL übernommen – Ein-/Ausstiegskurse fehlen.',
     'trades.synthetic.incomeType': 'Ertragsart',
     'trades.synthetic.info': 'Börsenhinweis',
+    'trades.completed.title': 'Abgeschlossene Positionen',
+    'trades.completed.subtitle': 'Dokumentierte Exits des Positionsmanagers.',
+    'trades.completed.empty': 'Geschlossene Positionen erscheinen nach dem nächsten Exit.',
+    'trades.completed.pnl': 'Realisierter PNL',
+    'trades.completed.reason': 'Exit-Grund',
+    'trades.completed.noReason': 'Kein Grund protokolliert.',
     'pnl.title': 'Performance-Überblick',
     'pnl.subtitle': 'Kumulierte realisierte PNL aus deinen Trades.',
     'pnl.tradesWon': 'Gewonnene Trades',
@@ -1008,6 +1024,12 @@ const TRANSLATIONS = {
     'trades.synthetic.note': '거래소 실현 PnL에서 동기화되어 진입/청산 가격이 없습니다.',
     'trades.synthetic.incomeType': '수익 유형',
     'trades.synthetic.info': '거래소 정보',
+    'trades.completed.title': '종료된 포지션',
+    'trades.completed.subtitle': '포지션 매니저가 기록한 청산 내역.',
+    'trades.completed.empty': '봇이 포지션을 청산하면 여기에 표시됩니다.',
+    'trades.completed.pnl': '실현 PNL',
+    'trades.completed.reason': '청산 사유',
+    'trades.completed.noReason': '사유가 기록되지 않았습니다.',
     'pnl.title': '성과 개요',
     'pnl.subtitle': '거래 기반 누적 실현 PNL입니다.',
     'pnl.tradesWon': '승리한 트레이드',
@@ -1296,6 +1318,12 @@ const TRANSLATIONS = {
     'trades.synthetic.note': 'Synchronisé depuis le PnL réalisé de l’exchange – entrées/sorties indisponibles.',
     'trades.synthetic.incomeType': 'Type de revenu',
     'trades.synthetic.info': 'Info bourse',
+    'trades.completed.title': 'Positions clôturées',
+    'trades.completed.subtitle': 'Sorties documentées par le gestionnaire de positions.',
+    'trades.completed.empty': 'Elles apparaîtront après la prochaine clôture du bot.',
+    'trades.completed.pnl': 'PNL réalisé',
+    'trades.completed.reason': 'Motif de sortie',
+    'trades.completed.noReason': 'Aucun motif consigné.',
     'pnl.title': 'Vue d’ensemble des performances',
     'pnl.subtitle': 'PNL réalisé cumulé sur vos trades.',
     'pnl.tradesWon': 'Trades gagnants',
@@ -1584,6 +1612,12 @@ const TRANSLATIONS = {
     'trades.synthetic.note': 'Sincronizado desde el PnL realizado del exchange; no hay datos de entrada/salida.',
     'trades.synthetic.incomeType': 'Tipo de ingreso',
     'trades.synthetic.info': 'Nota del exchange',
+    'trades.completed.title': 'Posiciones cerradas',
+    'trades.completed.subtitle': 'Salidas documentadas por el gestor de posiciones.',
+    'trades.completed.empty': 'Las posiciones cerradas aparecerán tras el próximo cierre del bot.',
+    'trades.completed.pnl': 'PNL realizado',
+    'trades.completed.reason': 'Motivo de salida',
+    'trades.completed.noReason': 'Sin motivo registrado.',
     'pnl.title': 'Resumen de rendimiento',
     'pnl.subtitle': 'PNL realizado acumulado de tus operaciones.',
     'pnl.tradesWon': 'Operaciones ganadas',
@@ -1871,6 +1905,12 @@ const TRANSLATIONS = {
     'trades.synthetic.note': 'Borsa gerçekleşen PnL akışından eşitlendi; giriş/çıkış fiyatları yok.',
     'trades.synthetic.incomeType': 'Gelir türü',
     'trades.synthetic.info': 'Borsa bilgisi',
+    'trades.completed.title': 'Kapanan pozisyonlar',
+    'trades.completed.subtitle': 'Pozisyon yöneticisinin kaydettiği çıkışlar.',
+    'trades.completed.empty': 'Bot bir işlemi kapattığında burada görünecek.',
+    'trades.completed.pnl': 'Gerçekleşen PNL',
+    'trades.completed.reason': 'Çıkış nedeni',
+    'trades.completed.noReason': 'Neden kaydedilmedi.',
     'pnl.title': 'Performans özeti',
     'pnl.subtitle': 'İşlemlerinizin kümülatif gerçekleşen PNL’i.',
     'pnl.tradesWon': 'Kazanılan işlemler',
@@ -2152,6 +2192,12 @@ const TRANSLATIONS = {
     'trades.synthetic.note': '来自交易所已实现 PnL 数据，缺少进出场价格。',
     'trades.synthetic.incomeType': '收益类型',
     'trades.synthetic.info': '交易所信息',
+    'trades.completed.title': '已完成仓位',
+    'trades.completed.subtitle': '来自仓位管理器的平仓记录。',
+    'trades.completed.empty': '机器人下一次平仓后会显示在这里。',
+    'trades.completed.pnl': '已实现PNL',
+    'trades.completed.reason': '离场原因',
+    'trades.completed.noReason': '未记录原因。',
     'pnl.title': '绩效概览',
     'pnl.subtitle': '基于您的交易计算的累计已实现盈亏。',
     'pnl.tradesWon': '盈利笔数',
@@ -2368,6 +2414,7 @@ const MANAGEMENT_EXIT_REASON_KEYS = [
 ];
 const MANAGEMENT_BLOCK_EXIT_REASON_KEYS = ['exit_reason', 'exitReason', 'last_reason', 'lastReason', 'reason'];
 let positionNotificationHistory = [];
+let completedPositionsHistory = [];
 let positionUpdatesRefreshTimer = null;
 let tradesRefreshTimer = null;
 let tradeViewportSyncHandle = null;
@@ -3127,6 +3174,7 @@ languageButtons.forEach((button) => {
 });
 
 applyTranslations(currentLanguage);
+renderCompletedPositionsHistory();
 
 function hasDashboardChatKey() {
   const env = currentConfig?.env || {};
@@ -5861,6 +5909,138 @@ function renderPositionNotifications(notifications) {
   }
 }
 
+function buildCompletedPositionEntry(position, options = {}) {
+  if (!position || typeof position !== 'object') {
+    return null;
+  }
+  const container = document.createElement('article');
+  container.className = 'completed-position';
+  container.setAttribute('role', 'listitem');
+
+  const meta = document.createElement('header');
+  meta.className = 'completed-position__meta';
+  const symbol = document.createElement('span');
+  symbol.className = 'completed-position__symbol';
+  symbol.textContent = getPositionSymbol(position) || '—';
+  meta.append(symbol);
+
+  const referenceTimestamp = Number.isFinite(options.timestamp)
+    ? Number(options.timestamp)
+    : getPositionTimestamp(position);
+  if (Number.isFinite(referenceTimestamp)) {
+    const time = document.createElement('time');
+    const iso = new Date(referenceTimestamp * 1000).toISOString();
+    time.className = 'completed-position__time';
+    time.textContent = formatRelativeTime(referenceTimestamp);
+    time.dateTime = iso;
+    meta.append(time);
+  }
+  container.append(meta);
+
+  const metrics = document.createElement('dl');
+  metrics.className = 'completed-position__metrics';
+
+  const pnlLabel = document.createElement('dt');
+  pnlLabel.className = 'completed-position__label';
+  pnlLabel.textContent = translate('trades.completed.pnl', 'Realized PNL');
+  const pnlValue = document.createElement('dd');
+  pnlValue.className = 'completed-position__value';
+  const pnlField = pickNumericField(position, ACTIVE_POSITION_ALIASES.pnl || []);
+  const pnlPercentField = pickNumericField(position, ACTIVE_POSITION_ALIASES.roe || []);
+  let pnlTone = null;
+  if (Number.isFinite(pnlField.numeric)) {
+    pnlTone = pnlField.numeric;
+    pnlValue.textContent = `${formatSignedNumber(pnlField.numeric, 2)} USDT`;
+    if (pnlPercentField && pnlPercentField.text) {
+      pnlValue.textContent += ` (${pnlPercentField.text})`;
+    }
+  } else if (pnlPercentField && pnlPercentField.text) {
+    pnlTone = pnlPercentField.numeric;
+    pnlValue.textContent = pnlPercentField.text;
+  } else if (pnlField && pnlField.text) {
+    pnlValue.textContent = pnlField.text;
+  } else {
+    pnlValue.textContent = '—';
+  }
+  if (Number.isFinite(pnlTone)) {
+    if (pnlTone > 0) {
+      pnlValue.classList.add('tone-profit');
+    } else if (pnlTone < 0) {
+      pnlValue.classList.add('tone-loss');
+    }
+  }
+  metrics.append(pnlLabel, pnlValue);
+
+  const reasonLabel = document.createElement('dt');
+  reasonLabel.className = 'completed-position__label';
+  reasonLabel.textContent = translate('trades.completed.reason', 'Exit reason');
+  const reasonValue = document.createElement('dd');
+  reasonValue.className = 'completed-position__value';
+  const reasonCode = extractPositionManagementExitReason(position);
+  reasonValue.textContent = reasonCode
+    ? friendlyReason(reasonCode)
+    : translate('trades.completed.noReason', 'No exit reason logged.');
+  metrics.append(reasonLabel, reasonValue);
+
+  container.append(metrics);
+  return container;
+}
+
+function renderCompletedPositionsHistory() {
+  if (!completedPositionsList || !completedPositionsEmpty) {
+    return;
+  }
+  const hasEntries = completedPositionsHistory.length > 0;
+  if (!hasEntries) {
+    completedPositionsList.replaceChildren();
+    completedPositionsEmpty.removeAttribute('hidden');
+    if (completedPositionsPanel) {
+      completedPositionsPanel.setAttribute('data-empty', 'true');
+    }
+    return;
+  }
+  completedPositionsEmpty.setAttribute('hidden', '');
+  if (completedPositionsPanel) {
+    completedPositionsPanel.removeAttribute('data-empty');
+  }
+  const fragment = document.createDocumentFragment();
+  completedPositionsHistory.forEach((entry) => {
+    if (!entry || !entry.position) return;
+    const card = buildCompletedPositionEntry(entry.position, { timestamp: entry.ts });
+    if (card) {
+      fragment.append(card);
+    }
+  });
+  completedPositionsList.replaceChildren(fragment);
+}
+
+function rememberCompletedPositions(positions = []) {
+  const entries = Array.isArray(positions) ? positions : [];
+  if (!entries.length) {
+    return;
+  }
+  let mutated = false;
+  entries.forEach((position) => {
+    if (!position || typeof position !== 'object') {
+      return;
+    }
+    const timestamp = getPositionTimestamp(position);
+    completedPositionsHistory.push({
+      position,
+      ts: Number.isFinite(timestamp) ? timestamp : Date.now() / 1000,
+    });
+    mutated = true;
+  });
+  if (!mutated) {
+    return;
+  }
+  completedPositionsHistory.sort((a, b) => b.ts - a.ts);
+  if (completedPositionsHistory.length > COMPLETED_POSITIONS_HISTORY_LIMIT) {
+    completedPositionsHistory.length = COMPLETED_POSITIONS_HISTORY_LIMIT;
+  }
+  renderCompletedPositionsHistory();
+}
+
 function refreshPositionUpdatesFromHistory() {
   refreshRenderedPositionNotifications();
   if (activePositionsNotifications && activePositionsNotifications.children.length > 0) {
@@ -6330,6 +6510,7 @@ function updateActivePositionsView(options = {}) {
   });
 
   closedPositions.forEach((position) => clearCachedManagementEvent(position));
+  rememberCompletedPositions(closedPositions);
 
   const notifications = managementNotifications.slice();
   const sortedNotifications = notifications
