@@ -3579,22 +3579,6 @@ function isTruthy(value) {
   return false;
 }
 
-function configureChartDefaults() {
-  if (typeof Chart === 'undefined') return;
-  const styles = getComputedStyle(document.documentElement);
-  const muted = styles.getPropertyValue('--text-muted').trim();
-  const border = styles.getPropertyValue('--border').trim();
-  const font = styles.getPropertyValue('--font-sans')?.trim() || '"Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-
-  Chart.defaults.color = muted || '#a09889';
-  Chart.defaults.font.family = font;
-  Chart.defaults.borderColor = border || 'rgba(255, 232, 168, 0.08)';
-  Chart.defaults.plugins.legend.labels.usePointStyle = true;
-  Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(10, 10, 14, 0.92)';
-  Chart.defaults.plugins.tooltip.borderColor = border || 'rgba(255, 232, 168, 0.12)';
-  Chart.defaults.plugins.tooltip.borderWidth = 1;
-}
-
 function renderConfig(env) {
   envContainer.innerHTML = '';
   const entries = Object.entries(env || {}).sort(([a], [b]) => a.localeCompare(b));
@@ -11692,91 +11676,179 @@ function getPnlChartPalette() {
     accentSoft: styles.getPropertyValue('--accent-soft').trim() || 'rgba(240, 169, 75, 0.18)',
     textMuted: styles.getPropertyValue('--text-muted').trim() || '#a09889',
     gridLine: styles.getPropertyValue('--grid-line').trim() || 'rgba(255, 232, 168, 0.08)',
+    canvasBg: styles.getPropertyValue('--surface-base').trim() || '#07070c',
   };
 }
 
-function buildPnlChartData(payload, { variant = 'default' } = {}) {
-  const { accent, accentSoft } = getPnlChartPalette();
-  const labels = Array.isArray(payload?.labels) ? payload.labels.slice() : [];
-  const values = Array.isArray(payload?.values) ? payload.values.slice() : [];
-  const pointRadius = variant === 'expanded' ? 3 : 2.5;
-  const pointHoverRadius = variant === 'expanded' ? 5 : 4;
-  return {
-    labels,
-    datasets: [
-      {
-        label: 'Cumulative PNL (USDT)',
-        data: values,
-        borderColor: accent,
-        backgroundColor: accentSoft,
-        tension: 0.35,
-        pointRadius,
-        pointHoverRadius,
-        pointBackgroundColor: '#0c0d12',
-        fill: true,
-      },
-    ],
-  };
-}
+class PnlCanvasChart {
+  constructor(canvas, { variant = 'default' } = {}) {
+    this.canvas = canvas;
+    this.variant = variant;
+    this.payload = null;
+    this.resizeObserver = null;
+    this.boundResize = this.handleResize.bind(this);
+    if (canvas && typeof ResizeObserver === 'function') {
+      this.resizeObserver = new ResizeObserver(() => this.redraw());
+      this.resizeObserver.observe(canvas);
+    } else {
+      window.addEventListener('resize', this.boundResize);
+    }
+  }
 
-function buildPnlChartOptions({ variant = 'default' } = {}) {
-  const { textMuted, gridLine } = getPnlChartPalette();
-  const xTicks = {
-    maxRotation: 0,
-    autoSkip: true,
-    color: textMuted,
-  };
-  const yTicks = {
-    callback: (value) => {
-      const numeric = Number(value);
-      return Number.isFinite(numeric) ? numeric.toFixed(2) : value;
-    },
-    color: textMuted,
-  };
-  if (variant === 'expanded') {
-    xTicks.font = { size: 13 };
-    yTicks.font = { size: 13 };
+  destroy() {
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    } else {
+      window.removeEventListener('resize', this.boundResize);
+    }
+    const ctx = this.canvas?.getContext?.('2d');
+    if (ctx) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+    this.payload = null;
   }
-  const tooltip = {
-    callbacks: {
-      label: (context) => {
-        const value = Number(context?.parsed?.y ?? 0);
-        if (!Number.isFinite(value)) {
-          return ' 0.00 USDT';
-        }
-        const sign = value >= 0 ? '+' : '';
-        return ` ${sign}${value.toFixed(2)} USDT`;
-      },
-    },
-  };
-  if (variant === 'expanded') {
-    tooltip.bodyFont = { size: 14 };
-    tooltip.titleFont = { size: 13 };
+
+  handleResize() {
+    this.redraw();
   }
-  return {
-    responsive: true,
-    maintainAspectRatio: false,
-    scales: {
-      x: {
-        ticks: xTicks,
-        grid: {
-          display: false,
-        },
-      },
-      y: {
-        ticks: yTicks,
-        grid: {
-          color: gridLine,
-        },
-      },
-    },
-    plugins: {
-      legend: {
-        display: false,
-      },
-      tooltip,
-    },
-  };
+
+  render(payload) {
+    this.payload = {
+      labels: Array.isArray(payload?.labels) ? payload.labels.slice() : [],
+      values: Array.isArray(payload?.values)
+        ? payload.values.map((value) => {
+            const numeric = Number(value);
+            return Number.isFinite(numeric) ? numeric : 0;
+          })
+        : [],
+    };
+    this.redraw();
+  }
+
+  redraw() {
+    if (!this.canvas || !this.payload || this.payload.values.length === 0) {
+      return;
+    }
+    const ctx = this.canvas.getContext('2d');
+    if (!ctx) return;
+    const cssWidth = this.canvas.clientWidth || this.canvas.offsetWidth || this.canvas.width;
+    const cssHeight = this.canvas.clientHeight || this.canvas.offsetHeight || this.canvas.height;
+    if (!cssWidth || !cssHeight) {
+      return;
+    }
+    const dpr = window.devicePixelRatio || 1;
+    const width = Math.max(1, Math.round(cssWidth * dpr));
+    const height = Math.max(1, Math.round(cssHeight * dpr));
+    if (this.canvas.width !== width || this.canvas.height !== height) {
+      this.canvas.width = width;
+      this.canvas.height = height;
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+    const palette = getPnlChartPalette();
+    ctx.fillStyle = palette.canvasBg;
+    ctx.fillRect(0, 0, cssWidth, cssHeight);
+
+    const padding = this.variant === 'expanded'
+      ? { top: 28, right: 28, bottom: 44, left: 72 }
+      : { top: 16, right: 18, bottom: 32, left: 58 };
+    const innerWidth = Math.max(1, cssWidth - padding.left - padding.right);
+    const innerHeight = Math.max(1, cssHeight - padding.top - padding.bottom);
+
+    let minValue = Math.min(0, ...this.payload.values);
+    let maxValue = Math.max(0, ...this.payload.values);
+    let range = maxValue - minValue;
+    if (!Number.isFinite(range) || range <= 0) {
+      const fallback = Math.max(Math.abs(maxValue), Math.abs(minValue), 1);
+      minValue = minValue === maxValue ? minValue - fallback / 2 : minValue;
+      maxValue = maxValue === minValue ? maxValue + fallback / 2 : maxValue;
+      range = maxValue - minValue || fallback || 1;
+    }
+
+    const ySteps = this.variant === 'expanded' ? 5 : 4;
+    ctx.strokeStyle = palette.gridLine;
+    ctx.lineWidth = 1;
+    ctx.font = `${this.variant === 'expanded' ? 13 : 11}px/1.2 var(--font-family, 'Inter', system-ui, sans-serif)`;
+    ctx.fillStyle = palette.textMuted;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    for (let step = 0; step <= ySteps; step += 1) {
+      const ratio = step / ySteps;
+      const y = padding.top + innerHeight - ratio * innerHeight;
+      ctx.beginPath();
+      ctx.moveTo(padding.left, y);
+      ctx.lineTo(padding.left + innerWidth, y);
+      ctx.stroke();
+      const value = minValue + range * ratio;
+      ctx.fillText(value.toFixed(2), padding.left - 8, y);
+    }
+
+    const points = this.payload.values.map((value, index) => {
+      const progress = this.payload.values.length === 1 ? 0 : index / (this.payload.values.length - 1);
+      const x = padding.left + progress * innerWidth;
+      const normalized = (value - minValue) / range;
+      const clamped = Number.isFinite(normalized) ? Math.min(Math.max(normalized, 0), 1) : 0.5;
+      const y = padding.top + (1 - clamped) * innerHeight;
+      return {
+        x,
+        y,
+        value,
+        label: this.payload.labels[index] || `Trade ${index + 1}`,
+      };
+    });
+
+    if (points.length === 0) return;
+
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i += 1) {
+      ctx.lineTo(points[i].x, points[i].y);
+    }
+    ctx.lineTo(points[points.length - 1].x, padding.top + innerHeight);
+    ctx.lineTo(points[0].x, padding.top + innerHeight);
+    ctx.closePath();
+    ctx.fillStyle = palette.accentSoft;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i += 1) {
+      ctx.lineTo(points[i].x, points[i].y);
+    }
+    ctx.strokeStyle = palette.accent;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = '#0c0d12';
+    ctx.strokeStyle = palette.accent;
+    const pointRadius = this.variant === 'expanded' ? 3 : 2.4;
+    points.forEach((point) => {
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, pointRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    });
+
+    ctx.fillStyle = palette.textMuted;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.font = `${this.variant === 'expanded' ? 13 : 11}px/1.2 var(--font-family, 'Inter', system-ui, sans-serif)`;
+    const labelIndexes = [];
+    if (points.length > 0) labelIndexes.push(0);
+    if (points.length > 2) labelIndexes.push(Math.floor((points.length - 1) / 2));
+    if (points.length > 1) labelIndexes.push(points.length - 1);
+    const seen = new Set();
+    labelIndexes.forEach((index) => {
+      if (seen.has(index)) return;
+      seen.add(index);
+      const point = points[index];
+      ctx.fillText(point.label, point.x, padding.top + innerHeight + 6);
+    });
+  }
 }
 
 function handlePnlModalKeydown(event) {
@@ -11816,16 +11888,8 @@ function openPnlModal() {
   });
   document.body.classList.add('modal-open');
 
-  const ctx = pnlChartModalCanvas.getContext('2d');
-  if (!ctx || typeof Chart === 'undefined') {
-    return;
-  }
-
-  pnlChartExpanded = new Chart(ctx, {
-    type: 'line',
-    data: buildPnlChartData(lastPnlChartPayload, { variant: 'expanded' }),
-    options: buildPnlChartOptions({ variant: 'expanded' }),
-  });
+  pnlChartExpanded = new PnlCanvasChart(pnlChartModalCanvas, { variant: 'expanded' });
+  pnlChartExpanded.render(lastPnlChartPayload);
 
   document.addEventListener('keydown', handlePnlModalKeydown);
   if (pnlChartModalClose) {
@@ -11892,7 +11956,7 @@ function closePnlModal() {
 }
 
 function renderPnlChart(history) {
-  if (!pnlChartCanvas || typeof Chart === 'undefined') return;
+  if (!pnlChartCanvas) return;
 
   const entries = Array.isArray(history) ? history.slice() : [];
   const prepared = entries
@@ -11983,21 +12047,10 @@ function renderPnlChart(history) {
     );
   }
 
-  const data = buildPnlChartData(lastPnlChartPayload);
-  const options = buildPnlChartOptions();
-
-  if (pnlChart) {
-    pnlChart.data = data;
-    pnlChart.options = options;
-    pnlChart.update();
-  } else {
-    const ctx = pnlChartCanvas.getContext('2d');
-    pnlChart = new Chart(ctx, {
-      type: 'line',
-      data,
-      options,
-    });
+  if (!pnlChart) {
+    pnlChart = new PnlCanvasChart(pnlChartCanvas);
   }
+  pnlChart.render(lastPnlChartPayload);
 }
 
 function appendCompactLog({ line, level, ts }) {
@@ -13806,7 +13859,6 @@ document.addEventListener('visibilitychange', () => {
 });
 
 async function init() {
-  configureChartDefaults();
   await loadConfig();
   await updateStatus();
   await loadTrades();
