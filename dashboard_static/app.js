@@ -8704,21 +8704,29 @@ function extractRealizedPnl(trade) {
   if (!trade || typeof trade !== 'object') {
     return 0;
   }
-  const candidates = [
-    trade.realized_pnl,
-    trade.realizedPnl,
-    trade.realizedPNL,
-    trade.pnl,
-  ];
-  for (const candidate of candidates) {
-    if (candidate === undefined || candidate === null) {
-      continue;
+
+  const field = pickNumericField(trade, COMPLETED_POSITION_PNL_KEYS);
+  if (Number.isFinite(field.numeric)) {
+    return field.numeric;
+  }
+
+  const incomeValue = toNumeric(trade.income);
+  if (Number.isFinite(incomeValue)) {
+    return incomeValue;
+  }
+
+  const context = trade.context && typeof trade.context === 'object' ? trade.context : null;
+  if (context) {
+    const contextField = pickNumericField(context, COMPLETED_POSITION_PNL_KEYS);
+    if (Number.isFinite(contextField.numeric)) {
+      return contextField.numeric;
     }
-    const value = Number(candidate);
-    if (!Number.isNaN(value)) {
-      return value;
+    const contextIncome = toNumeric(context.income);
+    if (Number.isFinite(contextIncome)) {
+      return contextIncome;
     }
   }
+
   return 0;
 }
 
