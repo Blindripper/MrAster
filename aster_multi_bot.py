@@ -6042,6 +6042,10 @@ class PaperBroker:
             "stop_loss": pos.get("stop_loss"),
             "take_profit": pos.get("take_profit"),
         }
+        reason_label = str(reason).strip() if reason is not None else ""
+        if reason_label:
+            record["management_exit_reason"] = reason_label
+            record["exit_reason"] = reason_label
         ai_meta = pos.get("ai")
         if ai_meta:
             record["ai"] = ai_meta
@@ -6213,6 +6217,10 @@ class PaperBroker:
             "stop_loss": pos.get("stop_loss"),
             "take_profit": pos.get("take_profit"),
         }
+        reason_label = str(reason).strip() if reason is not None else ""
+        if reason_label:
+            record["management_exit_reason"] = reason_label
+            record["exit_reason"] = reason_label
         ai_meta = pos.get("ai")
         if ai_meta:
             record["ai"] = ai_meta
@@ -9934,20 +9942,45 @@ class TradeManager:
     @staticmethod
     def _derive_management_exit_reason(rec: Dict[str, Any]) -> Optional[str]:
         mgmt = rec.get("management")
-        if not isinstance(mgmt, dict):
-            return None
-        precedence = (
-            "atr_adverse_stop",
-            "time_stop",
-            "time_cut",
-            "compression_time_cut",
-            "compression_scale_down",
-            "breakeven_reduce",
-            "scale_half",
+        if isinstance(mgmt, dict):
+            precedence = (
+                "atr_adverse_stop",
+                "time_stop",
+                "time_cut",
+                "compression_time_cut",
+                "compression_scale_down",
+                "breakeven_reduce",
+                "scale_half",
+            )
+            for key in precedence:
+                if mgmt.get(key):
+                    return key
+            fallback_mgmt = TradeManager._extract_exit_reason(mgmt)
+            if fallback_mgmt:
+                return fallback_mgmt
+        return TradeManager._extract_exit_reason(rec)
+
+    @staticmethod
+    def _extract_exit_reason(*sources: Optional[Dict[str, Any]]) -> Optional[str]:
+        reason_keys = (
+            "management_exit_reason",
+            "exit_reason",
+            "exitReason",
+            "reason",
+            "paper_reason",
+            "paperReason",
+            "last_exit_reason",
+            "lastExitReason",
         )
-        for key in precedence:
-            if mgmt.get(key):
-                return key
+        for source in sources:
+            if not isinstance(source, dict):
+                continue
+            for key in reason_keys:
+                value = source.get(key)
+                if isinstance(value, str):
+                    cleaned = value.strip()
+                    if cleaned:
+                        return cleaned
         return None
 
     def note_management_exit(self, symbol: str, reason: str, quantity: Optional[float] = None) -> None:
@@ -10689,8 +10722,11 @@ class TradeManager:
                     management_reason = rec.get("management_exit_reason")
                     if not management_reason:
                         management_reason = self._derive_management_exit_reason(rec)
+                if not management_reason:
+                    management_reason = self._extract_exit_reason(closed, rec)
                 if management_reason:
                     record["management_exit_reason"] = management_reason
+                    record.setdefault("exit_reason", management_reason)
                 self._inherit_management_history(record, rec if isinstance(rec, dict) else None)
                 risk_snapshot = 0.0
                 if isinstance(rec, dict):
@@ -10887,8 +10923,11 @@ class TradeManager:
             management_reason = rec.get("management_exit_reason")
             if not management_reason:
                 management_reason = self._derive_management_exit_reason(rec)
+            if not management_reason:
+                management_reason = self._extract_exit_reason(rec)
             if management_reason:
                 record["management_exit_reason"] = management_reason
+                record.setdefault("exit_reason", management_reason)
             self._inherit_management_history(record, rec)
             risk_snapshot = 0.0
             try:

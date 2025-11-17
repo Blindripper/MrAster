@@ -308,6 +308,19 @@ const COMPACT_SKIP_AGGREGATION_WINDOW = 600; // seconds
 const MAX_MANAGEMENT_EVENTS = 50;
 const POSITION_NOTIFICATIONS_REFRESH_INTERVAL_MS = 2_000;
 const COMPLETED_POSITIONS_HISTORY_LIMIT = 12;
+const COMPLETED_POSITION_IDENTIFIER_KEYS = [
+  'trade_id',
+  'tradeId',
+  'id',
+  'position_id',
+  'positionId',
+  'uuid',
+  'hash',
+  'opened_at',
+  'openedAt',
+  'closed_at',
+  'closedAt',
+];
 const COMPLETED_POSITIONS_STATS_DEFAULTS = Object.freeze({
   trades: 0,
   realizedPnl: 0,
@@ -2439,6 +2452,7 @@ const MANAGEMENT_EXIT_REASON_KEYS = [
 const MANAGEMENT_BLOCK_EXIT_REASON_KEYS = ['exit_reason', 'exitReason', 'last_reason', 'lastReason', 'reason'];
 let positionNotificationHistory = [];
 let completedPositionsHistory = [];
+const completedPositionsIndex = new Map();
 let positionUpdatesRefreshTimer = null;
 let tradesRefreshTimer = null;
 let tradeViewportSyncHandle = null;
@@ -6323,33 +6337,249 @@ function renderCompletedPositionsHistory() {
   completedPositionsList.replaceChildren(fragment);
 }
 
-function rememberCompletedPositions(positions = []) {
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function deepEqual(a, b) {
+  if (a === b) return true;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+    for (let index = 0; index < a.length; index += 1) {
+      if (!deepEqual(a[index], b[index])) {
+        return false;
+      }
+    }
+    return true;
+  }
+  if (isPlainObject(a) && isPlainObject(b)) {
+    const keysA = Object.keys(a);
+    const keysB = Object.keys(b);
+    if (keysA.length !== keysB.length) return false;
+    for (let index = 0; index < keysA.length; index += 1) {
+      const key = keysA[index];
+      if (!Object.prototype.hasOwnProperty.call(b, key)) {
+        return false;
+      }
+      if (!deepEqual(a[key], b[key])) {
+        return false;
+      }
+    }
+    return true;
+  }
+  return Object.is(a, b);
+}
+
+function cloneCompletedPositionValue(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => cloneCompletedPositionValue(item));
+  }
+  if (isPlainObject(value)) {
+    const clone = {};
+    Object.entries(value).forEach(([key, entryValue]) => {
+      const cloned = cloneCompletedPositionValue(entryValue);
+      if (cloned !== undefined) {
+        clone[key] = cloned;
+      }
+    });
+    return clone;
+  }
+  return value;
+}
+
+function mergeCompletedPositionPayload(target, source) {
+  let base = isPlainObject(target) ? target : {};
+  let changed = !isPlainObject(target);
+  if (!source || typeof source !== 'object') {
+    return { payload: base, changed };
+  }
+  Object.entries(source).forEach(([key, value]) => {
+    if (value === undefined || value === null) {
+      return;
+    }
+    if (Array.isArray(value)) {
+      if (!value.length) {
+        return;
+      }
+      const normalizedArray = cloneCompletedPositionValue(value);
+      const existingArray = Array.isArray(base[key]) ? base[key] : null;
+      if (!existingArray || !deepEqual(existingArray, normalizedArray)) {
+        base[key] = normalizedArray;
+        changed = true;
+      }
+      return;
+    }
+    if (isPlainObject(value)) {
+      const existingValue = isPlainObject(base[key]) ? base[key] : {};
+      if (!isPlainObject(base[key])) {
+        base[key] = existingValue;
+      }
+      const nested = mergeCompletedPositionPayload(existingValue, value);
+      if (nested.changed) {
+        changed = true;
+      }
+      return;
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return;
+      }
+      if (base[key] !== trimmed) {
+        base[key] = trimmed;
+        changed = true;
+      }
+      return;
+    }
+    if (!Object.is(base[key], value)) {
+      base[key] = value;
+      changed = true;
+    }
+  });
+  return { payload: base, changed };
+}
+
+function getCompletedPositionKey(position) {
+  if (!position || typeof position !== 'object') {
+    return '';
+  }
+  for (let index = 0; index < COMPLETED_POSITION_IDENTIFIER_KEYS.length; index += 1) {
+    const key = COMPLETED_POSITION_IDENTIFIER_KEYS[index];
+    if (!(key in position)) {
+      continue;
+    }
+    const raw = unwrapPositionValue(position[key]);
+    if (raw === undefined || raw === null) {
+      continue;
+    }
+    const text = raw.toString().trim();
+    if (text) {
+      return `${key}:${text}`;
+    }
+  }
+  const symbol = getPositionSymbol(position) || '';
+  const closedTs = getPositionClosedTimestamp(position);
+  const openedTs = getPositionTimestamp(position);
+  const tsCandidate = Number.isFinite(closedTs) && closedTs > 0 ? closedTs : openedTs;
+  if (symbol && Number.isFinite(tsCandidate) && tsCandidate >= 0) {
+    return `${symbol}:${tsCandidate.toFixed(3)}`;
+  }
+  if (Number.isFinite(tsCandidate) && tsCandidate >= 0) {
+    return tsCandidate.toFixed(3);
+  }
+  if (symbol) {
+    return symbol;
+  }
+  return '';
+}
+
+function registerCompletedPosition(position, options = {}) {
+  if (!position || typeof position !== 'object') {
+    return false;
+  }
+  const key = getCompletedPositionKey(position);
+  if (!key) {
+    return false;
+  }
+  const timestampHint = Number(options.timestamp);
+  const closedTs = getPositionClosedTimestamp(position);
+  const openedTs = getPositionTimestamp(position);
+  const resolvedTimestamp = Number.isFinite(timestampHint) && timestampHint >= 0
+    ? timestampHint
+    : Number.isFinite(closedTs) && closedTs >= 0
+      ? closedTs
+      : Number.isFinite(openedTs) && openedTs >= 0
+        ? openedTs
+        : Date.now() / 1000;
+  const existing = completedPositionsIndex.get(key);
+  if (existing) {
+    const { changed } = mergeCompletedPositionPayload(existing.position, position);
+    const timestampChanged = !Object.is(existing.ts, resolvedTimestamp);
+    if (timestampChanged) {
+      existing.ts = resolvedTimestamp;
+    }
+    return changed || timestampChanged;
+  }
+  const { payload } = mergeCompletedPositionPayload({}, position);
+  const entry = {
+    key,
+    position: payload,
+    ts: resolvedTimestamp,
+  };
+  completedPositionsIndex.set(key, entry);
+  if (options.countTowardsStats !== false) {
+    incrementCompletedPositionsStats(position);
+  }
+  return true;
+}
+
+function rebuildCompletedPositionsHistory() {
+  const entries = Array.from(completedPositionsIndex.values());
+  if (!entries.length) {
+    completedPositionsHistory = [];
+    return;
+  }
+  entries.sort((a, b) => b.ts - a.ts);
+  if (entries.length > COMPLETED_POSITIONS_HISTORY_LIMIT) {
+    const trimmed = entries.slice(0, COMPLETED_POSITIONS_HISTORY_LIMIT);
+    const keepKeys = new Set(trimmed.map((entry) => entry.key));
+    completedPositionsIndex.forEach((entry, key) => {
+      if (!keepKeys.has(key)) {
+        completedPositionsIndex.delete(key);
+      }
+    });
+    completedPositionsHistory = trimmed;
+    return;
+  }
+  completedPositionsHistory = entries;
+}
+
+function rememberCompletedPositions(positions = [], options = {}) {
   const entries = Array.isArray(positions) ? positions : [];
   if (!entries.length) {
     return;
   }
+  const {
+    countTowardsStats = true,
+    skipSummaryRefresh = false,
+    timestampResolver = null,
+  } = options || {};
   let mutated = false;
   entries.forEach((position) => {
     if (!position || typeof position !== 'object') {
       return;
     }
-    const timestamp = getPositionTimestamp(position);
-    completedPositionsHistory.push({
-      position,
-      ts: Number.isFinite(timestamp) ? timestamp : Date.now() / 1000,
+    const timestampHint =
+      typeof timestampResolver === 'function' ? timestampResolver(position) : undefined;
+    const changed = registerCompletedPosition(position, {
+      countTowardsStats,
+      timestamp: timestampHint,
     });
-    incrementCompletedPositionsStats(position);
-    mutated = true;
+    if (changed) {
+      mutated = true;
+    }
   });
   if (!mutated) {
     return;
   }
-  completedPositionsHistory.sort((a, b) => b.ts - a.ts);
-  if (completedPositionsHistory.length > COMPLETED_POSITIONS_HISTORY_LIMIT) {
-    completedPositionsHistory.length = COMPLETED_POSITIONS_HISTORY_LIMIT;
-  }
+  rebuildCompletedPositionsHistory();
   renderCompletedPositionsHistory();
-  refreshTradeSummaryFromCompletedPositions();
+  if (!skipSummaryRefresh) {
+    refreshTradeSummaryFromCompletedPositions();
+  }
+}
+
+function syncCompletedPositionsFromTrades(history = []) {
+  if (!Array.isArray(history) || history.length === 0) {
+    return;
+  }
+  const limit = Math.max(COMPLETED_POSITIONS_HISTORY_LIMIT * 3, COMPLETED_POSITIONS_HISTORY_LIMIT);
+  const subset = history.slice(0, limit);
+  rememberCompletedPositions(subset, {
+    countTowardsStats: false,
+    skipSummaryRefresh: true,
+    timestampResolver: (trade) => getPositionClosedTimestamp(trade),
+  });
 }
 
 function refreshPositionUpdatesFromHistory() {
@@ -8445,6 +8675,7 @@ function renderTradeHistory(history) {
   tradeList.replaceChildren(fragment);
 
   requestTradeListViewportSync();
+  syncCompletedPositionsFromTrades(sortedHistory);
 }
 
 function handleTradeModalKeydown(event) {
