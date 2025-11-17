@@ -12294,9 +12294,55 @@ function closePnlModal() {
   document.removeEventListener('keydown', handlePnlModalKeydown);
 }
 
-function renderPnlChart(history) {
-  if (!pnlChartCanvas) return;
+function formatPnlSeriesLabel(rawLabel, fallbackIndex) {
+  const labelIndex = Number.isFinite(fallbackIndex) ? fallbackIndex : 0;
+  if (typeof rawLabel === 'string' && rawLabel.trim()) {
+    const date = new Date(rawLabel);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toLocaleString(undefined, {
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    }
+    return rawLabel;
+  }
+  if (Number.isFinite(rawLabel)) {
+    const numeric = Number(rawLabel);
+    const ms = numeric > 9_999_999_999 ? numeric : numeric * 1000;
+    const date = new Date(ms);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toLocaleString(undefined, {
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    }
+  }
+  return `Trade ${labelIndex + 1}`;
+}
 
+function prepareServerPnlSeries(seriesPayload) {
+  if (!seriesPayload || typeof seriesPayload !== 'object') return null;
+  const rawValues = Array.isArray(seriesPayload.values) ? seriesPayload.values : [];
+  const rawLabels = Array.isArray(seriesPayload.labels) ? seriesPayload.labels : [];
+  if (rawValues.length === 0) return null;
+  const labels = [];
+  const values = [];
+  rawValues.forEach((value, index) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return;
+    const label = formatPnlSeriesLabel(rawLabels[index], labels.length);
+    labels.push(label);
+    values.push(Number(numeric));
+  });
+  if (values.length === 0) return null;
+  return { labels, values };
+}
+
+function buildHistoryPnlSeries(history) {
   const entries = Array.isArray(history) ? history.slice() : [];
   const prepared = entries
     .map((trade) => {
@@ -12313,6 +12359,44 @@ function renderPnlChart(history) {
     });
 
   if (prepared.length === 0) {
+    return null;
+  }
+
+  const labels = [];
+  const values = [];
+  let cumulative = 0;
+  for (const { trade, pnl } of prepared) {
+    cumulative += pnl;
+    const timestamp = trade.closed_at_iso || trade.opened_at_iso;
+    if (timestamp) {
+      const date = new Date(timestamp);
+      if (!Number.isNaN(date.getTime())) {
+        labels.push(
+          date.toLocaleString(undefined, {
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+        );
+      } else {
+        labels.push(`Trade ${labels.length + 1}`);
+      }
+    } else {
+      labels.push(`Trade ${labels.length + 1}`);
+    }
+    values.push(Number(cumulative.toFixed(2)));
+  }
+
+  return { labels, values };
+}
+
+function renderPnlChart(history, seriesPayload) {
+  if (!pnlChartCanvas) return;
+
+  const payload = prepareServerPnlSeries(seriesPayload) || buildHistoryPnlSeries(history);
+
+  if (!payload || payload.values.length === 0) {
     if (
       tradeHistoryEmptyStreak === 1 &&
       lastPnlChartPayload &&
@@ -12345,35 +12429,9 @@ function renderPnlChart(history) {
   }
   pnlChartCanvas.style.display = 'block';
 
-  const labels = [];
-  const values = [];
-  let cumulative = 0;
-  for (const { trade, pnl } of prepared) {
-    cumulative += pnl;
-    const timestamp = trade.closed_at_iso || trade.opened_at_iso;
-    if (timestamp) {
-      const date = new Date(timestamp);
-      if (!Number.isNaN(date.getTime())) {
-        labels.push(
-          date.toLocaleString(undefined, {
-            month: 'short',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-          })
-        );
-      } else {
-        labels.push(`Trade ${labels.length + 1}`);
-      }
-    } else {
-      labels.push(`Trade ${labels.length + 1}`);
-    }
-    values.push(Number(cumulative.toFixed(2)));
-  }
-
   lastPnlChartPayload = {
-    labels: labels.slice(),
-    values: values.slice(),
+    labels: payload.labels.slice(),
+    values: payload.values.slice(),
   };
 
   if (pnlChartWrapper) {
@@ -13652,7 +13710,7 @@ async function loadTrades() {
         snapshot.hero_metrics,
       );
       renderDecisionStats(snapshot.decision_stats);
-      renderPnlChart(snapshot.history);
+      renderPnlChart(snapshot.history, snapshot.pnl_series);
       renderAiBudget(snapshot.ai_budget);
       renderAiRequests(snapshot.ai_requests);
       renderPlaybookOverview(
