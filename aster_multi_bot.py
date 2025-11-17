@@ -3802,17 +3802,81 @@ class AITradeAdvisor:
             pass
         return payload or None
 
-    @staticmethod
-    def _persona_confidence_bias(request_payload: Optional[Dict[str, Any]]) -> float:
+    def _persona_confidence_bias(self, request_payload: Optional[Dict[str, Any]]) -> float:
         if not isinstance(request_payload, dict):
             return 0.0
         persona = request_payload.get("persona")
         if not isinstance(persona, dict):
             return 0.0
         try:
-            return float(persona.get("confidence_bias", 0.0) or 0.0)
+            base_bias = float(persona.get("confidence_bias", 0.0) or 0.0)
         except (TypeError, ValueError):
+            base_bias = 0.0
+        persona_key = str(persona.get("key", "")).strip().lower()
+        dynamic_adjustment = 0.0
+        if persona_key == "mean_reversion":
+            dynamic_adjustment = self._mean_reversion_dynamic_bias(request_payload)
+            if abs(dynamic_adjustment) > 1e-6:
+                persona["_dynamic_confidence_bias"] = dynamic_adjustment
+            elif "_dynamic_confidence_bias" in persona:
+                persona.pop("_dynamic_confidence_bias", None)
+        total_bias = base_bias + dynamic_adjustment
+        persona["_effective_confidence_bias"] = total_bias
+        return total_bias
+
+    def _mean_reversion_dynamic_bias(
+        self, request_payload: Optional[Dict[str, Any]]
+    ) -> float:
+        if not isinstance(request_payload, dict):
             return 0.0
+        sources: List[Dict[str, Any]] = []
+        stats_block = request_payload.get("stats")
+        if isinstance(stats_block, dict):
+            sources.append(stats_block)
+        context_block = request_payload.get("context")
+        if isinstance(context_block, dict):
+            sources.append(context_block)
+        sources.append(request_payload)
+
+        def _metric(keys: Iterable[str]) -> Optional[float]:
+            for key in keys:
+                for source in sources:
+                    if key not in source:
+                        continue
+                    value = self._coerce_float(source.get(key))
+                    if value is not None:
+                        return value
+            return None
+
+        atr_pct = _metric(("atr_pct", "atr_percent", "atr_ratio"))
+        htf_up = _metric(("htf_trend_up", "htf_trend_up_prob"))
+        htf_down = _metric(("htf_trend_down", "htf_trend_down_prob"))
+        trend_strength = _metric(("trend_strength", "trend", "regime_slope"))
+        trend_bias = trend_strength
+        if trend_bias is None and (htf_up is not None or htf_down is not None):
+            trend_bias = (htf_up or 0.0) - (htf_down or 0.0)
+        adjustment = 0.0
+        if atr_pct is not None:
+            atr_val = max(0.0, float(atr_pct))
+            if atr_val <= 0.25:
+                adjustment += 0.035
+            elif atr_val <= 0.4:
+                adjustment += 0.02
+            elif atr_val >= 0.9:
+                adjustment -= 0.05
+            elif atr_val >= 0.65:
+                adjustment -= 0.025
+        if trend_bias is not None:
+            raw_trend = abs(float(trend_bias))
+            magnitude = min(1.0, raw_trend if raw_trend <= 1.0 else raw_trend * 5.0)
+            if magnitude >= 0.8:
+                adjustment -= 0.04
+            elif magnitude >= 0.4:
+                adjustment -= 0.02
+            elif magnitude <= 0.15:
+                adjustment += 0.02
+        adjustment = clamp(adjustment, -0.08, 0.08)
+        return adjustment if abs(adjustment) >= 1e-6 else 0.0
 
     @staticmethod
     def _persona_plan_meta(request_payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -3833,10 +3897,23 @@ class AITradeAdvisor:
             result["advisor_persona_focus"] = [
                 str(term) for term in focus if isinstance(term, str)
             ]
-        bias = persona.get("confidence_bias")
+        base_bias = persona.get("confidence_bias")
+        effective_bias = persona.get("_effective_confidence_bias")
+        bias_value = effective_bias if effective_bias is not None else base_bias
         try:
-            if bias is not None:
-                result["advisor_persona_confidence_bias"] = float(bias)
+            if bias_value is not None:
+                result["advisor_persona_confidence_bias"] = float(bias_value)
+        except (TypeError, ValueError):
+            pass
+        try:
+            if base_bias is not None:
+                result["advisor_persona_confidence_bias_base"] = float(base_bias)
+        except (TypeError, ValueError):
+            pass
+        dynamic_bias = persona.get("_dynamic_confidence_bias")
+        try:
+            if dynamic_bias is not None:
+                result["advisor_persona_confidence_bias_dynamic"] = float(dynamic_bias)
         except (TypeError, ValueError):
             pass
         source = persona.get("source")
@@ -4666,8 +4743,7 @@ class AITradeAdvisor:
             plan["take_profit"] = float(tp_px)
         persona_meta = self._persona_plan_meta(request_payload)
         if persona_meta:
-            for key, value in persona_meta.items():
-                plan.setdefault(key, value)
+            plan.update(persona_meta)
         return plan
 
     def _apply_trend_plan_overrides(
@@ -4821,8 +4897,7 @@ class AITradeAdvisor:
             plan["take_profit"] = float(tp_px)
         persona_meta = self._persona_plan_meta(request_payload)
         if persona_meta:
-            for key, value in persona_meta.items():
-                plan.setdefault(key, value)
+            plan.update(persona_meta)
         return plan
 
     def plan_trade(

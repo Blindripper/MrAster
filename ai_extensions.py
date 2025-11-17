@@ -1260,6 +1260,130 @@ class PlaybookManager:
             slug = slug.replace("__", "_")
         return slug
 
+    @staticmethod
+    def _clamp_value(value: float, lower: float, upper: float) -> float:
+        if lower > upper:
+            lower, upper = upper, lower
+        return max(lower, min(upper, value))
+
+    def _feature_lookup(self, active: Dict[str, Any]) -> Dict[str, float]:
+        lookup: Dict[str, float] = {}
+        for container_key in ("features", "feature_aliases"):
+            source = active.get(container_key)
+            if not isinstance(source, dict):
+                continue
+            for key, value in source.items():
+                try:
+                    numeric = float(value)
+                except (TypeError, ValueError):
+                    continue
+                key_str = str(key).lower()
+                lookup[key_str] = numeric
+                slug = self._normalize_feature_key(key)
+                if slug:
+                    lookup[slug] = numeric
+        return lookup
+
+    def _resolve_feature_metric(
+        self, lookup: Dict[str, float], keys: Iterable[str]
+    ) -> Optional[float]:
+        for key in keys:
+            token = str(key).strip().lower()
+            if not token:
+                continue
+            if token in lookup:
+                return lookup[token]
+        return None
+
+    @staticmethod
+    def _normalize_bandwidth(value: float) -> float:
+        magnitude = abs(value)
+        if magnitude > 1.0:
+            magnitude = magnitude / 100.0
+        return max(0.0, min(1.0, magnitude))
+
+    def _persona_bias_delta(
+        self, active: Dict[str, Any], persona_key: str
+    ) -> Optional[float]:
+        persona = str(persona_key or "").lower()
+        if persona not in {"mean_reversion", "trend_follower"}:
+            return None
+        lookup = self._feature_lookup(active)
+        if not lookup:
+            return None
+        trend_strength = self._resolve_feature_metric(
+            lookup,
+            (
+                "trend_strength",
+                "trend",
+                "momentum",
+                "regime_slope",
+                "trend_score",
+                "playbook_feature_trend_strength",
+            ),
+        )
+        rsi_band = self._resolve_feature_metric(
+            lookup,
+            (
+                "rsi_bandwidth",
+                "rsi_band",
+                "rsi_range",
+                "oscillator_bandwidth",
+                "oscillator_range",
+                "range_bandwidth",
+            ),
+        )
+        delta = 0.0
+        touched = False
+        if trend_strength is not None:
+            touched = True
+            strength = min(1.0, abs(float(trend_strength)))
+            if persona == "mean_reversion":
+                if strength >= 0.6:
+                    delta -= 0.05
+                elif strength >= 0.4:
+                    delta -= 0.025
+                elif strength <= 0.2:
+                    delta += 0.02
+            else:
+                if strength >= 0.6:
+                    delta += 0.05
+                elif strength >= 0.4:
+                    delta += 0.02
+                elif strength <= 0.2:
+                    delta -= 0.03
+        if rsi_band is not None:
+            touched = True
+            band = self._normalize_bandwidth(float(rsi_band))
+            if persona == "mean_reversion":
+                if band <= 0.25:
+                    delta += 0.02
+                elif band >= 0.55:
+                    delta -= 0.02
+            else:
+                if band >= 0.55:
+                    delta += 0.015
+                elif band <= 0.25:
+                    delta -= 0.015
+        if not touched or abs(delta) < 0.002:
+            return None
+        return self._clamp_value(delta, -0.08, 0.08)
+
+    def _persona_bias_override(
+        self, active: Dict[str, Any], persona_key: str
+    ) -> Optional[float]:
+        delta = self._persona_bias_delta(active, persona_key)
+        if delta is None:
+            return None
+        definition = _advisor_persona_definition(persona_key)
+        base = 0.0
+        if isinstance(definition, dict):
+            try:
+                base = float(definition.get("confidence_bias", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                base = 0.0
+        return self._clamp_value(base + delta, -0.2, 0.2)
+
     @classmethod
     def _normalize_string_list(
         cls, raw: Any, *, limit: int = 6
@@ -2304,12 +2428,14 @@ class PlaybookManager:
 
     def _apply_persona_hint(self, active: Dict[str, Any], now: float) -> None:
         persona_key, reason, focus_terms = self._select_persona_key(active)
+        bias_override = self._persona_bias_override(active, persona_key)
         entry = advisor_register_persona(
             self._root,
             "playbook",
             persona_key,
             reason=reason,
             focus=focus_terms,
+            confidence_bias=bias_override,
             now=now,
         )
         if not entry:

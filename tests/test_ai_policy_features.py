@@ -75,3 +75,20 @@ def test_inject_context_adds_guardrail_reason_features():
     assert ctx.get("playbook_guardrail_reason_tp", 0.0) > 0.0
     assert ctx.get("playbook_guardrail_reason_event", 0.0) >= 0.6
     assert ctx.get("playbook_guardrail_reason_volatility", 0.0) >= 0.5
+
+
+def test_playbook_persona_bias_override_tracks_regime():
+    advisor, _ = _advisor()
+    manager = advisor.playbook_manager
+    strong_trend = {"features": {"trend_strength": 0.7, "rsi_bandwidth": 0.65}}
+    bias_trend = manager._persona_bias_override(strong_trend, "trend_follower")
+    assert bias_trend is not None
+    assert bias_trend > 0.05
+    quiet_range = {"features": {"trend_strength": 0.1, "rsi_bandwidth": 0.2}}
+    bias_range = manager._persona_bias_override(quiet_range, "mean_reversion")
+    assert bias_range is not None
+    assert bias_range > -0.02
+    trending_range = {"features": {"trend_strength": 0.85, "rsi_bandwidth": 0.7}}
+    bias_range_trend = manager._persona_bias_override(trending_range, "mean_reversion")
+    assert bias_range_trend is not None
+    assert bias_range_trend < -0.02

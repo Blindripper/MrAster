@@ -102,3 +102,70 @@ def test_sentinel_clears_persona_when_risk_drops():
     sources = state.get("advisor_persona", {}).get("sources", {})
     assert "sentinel" not in sources or sources["sentinel"].get("key") != "event_risk"
     assert persona_after is None or persona_after.get("source") != "sentinel"
+
+
+def test_mean_reversion_bias_strengthens_in_range_context():
+    state: dict = {}
+    budget = DailyBudgetTracker(state, limit=100.0, strict=False)
+    advisor = AITradeAdvisor("key", "gpt-4o-mini", budget, state, enabled=False)
+    fallback = {
+        "symbol": "ETHUSDT",
+        "take": True,
+        "decision": "take",
+        "size_multiplier": 1.0,
+        "sl_multiplier": 1.0,
+        "tp_multiplier": 1.0,
+        "leverage": 3.0,
+    }
+    parsed = {"confidence": 0.5}
+    request_payload = {
+        "symbol": "ETHUSDT",
+        "stats": {"atr_pct": 0.22, "htf_trend_up": 0.0, "htf_trend_down": 0.0},
+        "persona": {
+            "key": "mean_reversion",
+            "label": "Mean-Reversion",
+            "confidence_bias": -0.02,
+            "focus": ["range"],
+            "source": "playbook",
+        },
+    }
+    plan = advisor._apply_plan_overrides(fallback, parsed, request_payload=request_payload)
+    assert plan["confidence"] > 0.5
+    assert plan["advisor_persona_confidence_bias_applied"] > -0.02
+    assert plan.get("advisor_persona_confidence_bias_dynamic", 0.0) > 0.0
+
+
+def test_mean_reversion_bias_softens_on_strong_trend():
+    state: dict = {}
+    budget = DailyBudgetTracker(state, limit=100.0, strict=False)
+    advisor = AITradeAdvisor("key", "gpt-4o-mini", budget, state, enabled=False)
+    fallback = {
+        "symbol": "BTCUSDT",
+        "take": True,
+        "decision": "take",
+        "size_multiplier": 1.0,
+        "sl_multiplier": 1.0,
+        "tp_multiplier": 1.0,
+        "leverage": 4.0,
+    }
+    parsed = {"confidence": 0.58}
+    request_payload = {
+        "symbol": "BTCUSDT",
+        "stats": {
+            "atr_pct": 1.05,
+            "htf_trend_up": 1.0,
+            "htf_trend_down": 0.0,
+            "trend_strength": 0.72,
+        },
+        "persona": {
+            "key": "mean_reversion",
+            "label": "Mean-Reversion",
+            "confidence_bias": -0.02,
+            "focus": ["range"],
+            "source": "playbook",
+        },
+    }
+    plan = advisor._apply_plan_overrides(fallback, parsed, request_payload=request_payload)
+    assert plan["confidence"] < 0.56
+    assert plan["advisor_persona_confidence_bias_applied"] < -0.02
+    assert plan.get("advisor_persona_confidence_bias_dynamic", 0.0) < 0.0
