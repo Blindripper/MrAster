@@ -81,6 +81,45 @@ def test_plan_overrides_apply_persona_bias():
     assert "range" in plan.get("advisor_persona_focus", [])
 
 
+def test_mean_reversion_bias_strengthens_in_range_env():
+    state: dict = {}
+    budget = DailyBudgetTracker(state, limit=100.0, strict=False)
+    advisor = AITradeAdvisor("key", "gpt-4.1", budget, state, enabled=False)
+    fallback = {"symbol": "BTCUSDT", "take": True}
+    parsed = {"confidence": 0.5}
+    request_payload = {
+        "persona": {"key": "mean_reversion", "confidence_bias": -0.02},
+        "stats": {
+            "atr_pct": 0.007,
+            "htf_trend_up": 0.0,
+            "htf_trend_down": 0.0,
+            "rsi": 49.5,
+        },
+    }
+    plan = advisor._apply_plan_overrides(fallback, parsed, request_payload=request_payload)
+    assert plan["advisor_persona_confidence_bias_applied"] == pytest.approx(-0.077, rel=1e-6)
+    assert plan["confidence"] == pytest.approx(0.423, rel=1e-6)
+
+
+def test_mean_reversion_bias_softens_in_trend_env():
+    state: dict = {}
+    budget = DailyBudgetTracker(state, limit=100.0, strict=False)
+    advisor = AITradeAdvisor("key", "gpt-4.1", budget, state, enabled=False)
+    fallback = {"symbol": "BTCUSDT", "take": True}
+    parsed = {"confidence": 0.5}
+    request_payload = {
+        "persona": {"key": "mean_reversion", "confidence_bias": -0.02},
+        "stats": {
+            "atr_pct": 0.036,
+            "htf_trend_up": 1.0,
+            "rsi": 69.0,
+        },
+    }
+    plan = advisor._apply_plan_overrides(fallback, parsed, request_payload=request_payload)
+    assert plan["advisor_persona_confidence_bias_applied"] == pytest.approx(0.04, rel=1e-6)
+    assert plan["confidence"] == pytest.approx(0.54, rel=1e-6)
+
+
 def test_sentinel_clears_persona_when_risk_drops():
     state: dict = {}
     exchange = _DummyExchange(price_change=10.0, high=140.0, low=70.0, last=100.0)

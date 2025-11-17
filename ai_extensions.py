@@ -1225,6 +1225,9 @@ class PlaybookManager:
                 "trend_follower",
                 reason="bootstrap",
                 focus=["trend", "momentum", "breakout"],
+                confidence_bias=self._persona_confidence_override(
+                    "trend_follower", self._state.get("active", {})
+                ),
                 now=time.time(),
             )
 
@@ -2302,14 +2305,74 @@ class PlaybookManager:
         focus_terms = self._persona_focus_terms(active)
         return persona_key, persona_reason, focus_terms
 
+    def _persona_confidence_override(
+        self, persona_key: str, active: Dict[str, Any]
+    ) -> Optional[float]:
+        if not persona_key:
+            return None
+        persona_norm = persona_key.strip().lower()
+        if not persona_norm:
+            return None
+
+        combined_features: Dict[str, float] = {}
+        for source in (active.get("feature_aliases"), active.get("features")):
+            if not isinstance(source, dict):
+                continue
+            for key, value in source.items():
+                try:
+                    combined_features[str(key).lower()] = float(value)
+                except (TypeError, ValueError):
+                    continue
+
+        def _feature_value(tokens: Sequence[str]) -> Optional[float]:
+            for token in tokens:
+                normalized = token.strip().lower()
+                if normalized in combined_features:
+                    return combined_features[normalized]
+            for key, value in combined_features.items():
+                if any(term in key for term in tokens):
+                    return value
+            return None
+
+        if persona_norm != "mean_reversion":
+            return None
+
+        trend_strength = _feature_value(("trend_strength", "trend_bias", "trend"))
+        rsi_bandwidth = _feature_value(
+            (
+                "rsi_bandwidth",
+                "rsi_band",
+                "rsi_range",
+                "rsi_balance",
+                "rsi_neutral",
+                "range_signal",
+            )
+        )
+        if trend_strength is None and rsi_bandwidth is None:
+            return None
+        trend_strength = max(0.0, min(abs(trend_strength or 0.0), 1.5))
+        rsi_bandwidth = max(0.0, min(abs(rsi_bandwidth or 0.0), 1.5))
+        range_signal = (rsi_bandwidth * 0.7) - (trend_strength * 0.5)
+        if range_signal >= 0.35:
+            return -0.07
+        if range_signal >= 0.18:
+            return -0.045
+        if range_signal <= -0.45:
+            return 0.01
+        if range_signal <= -0.25:
+            return -0.005
+        return None
+
     def _apply_persona_hint(self, active: Dict[str, Any], now: float) -> None:
         persona_key, reason, focus_terms = self._select_persona_key(active)
+        bias_override = self._persona_confidence_override(persona_key, active)
         entry = advisor_register_persona(
             self._root,
             "playbook",
             persona_key,
             reason=reason,
             focus=focus_terms,
+            confidence_bias=bias_override,
             now=now,
         )
         if not entry:
