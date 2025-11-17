@@ -9139,6 +9139,7 @@ class Strategy:
         if chosen_flag in ("setup_trend_follow", "setup_breakout_retest"):
             trend_extension_score = 0.0
             active_persistence = 0
+            trend_extension_guard_enabled = not CONTRARIAN
             if sig == "BUY":
                 active_persistence = trend_persistence_up
             elif sig == "SELL":
@@ -9157,30 +9158,31 @@ class Strategy:
                 )
                 trend_extension_score = clamp(extension_ratio * adx_ratio, 0.0, 1.0)
                 ctx_base["trend_extension_score"] = float(trend_extension_score)
-            if active_persistence >= TREND_EXTENSION_BARS_HARD and adx_val >= TREND_EXTENSION_ADX_MIN:
-                ctx_base["trend_extension_gate"] = float(active_persistence)
-                return self._skip(
-                    "trend_extension",
-                    symbol,
-                    {
-                        "bars": str(active_persistence),
-                        "adx": f"{adx_val:.1f}",
-                    },
-                    ctx=ctx_base,
-                    price=mid,
-                    atr=atr,
-                )
-            elif trend_extension_score > 0:
-                penalty = clamp(
-                    trend_extension_score * (FILTER_PENALTY_WARN + 0.6),
-                    0.0,
-                    FILTER_PENALTY_HARD,
-                )
-                _add_penalty(
-                    "trend_extension",
-                    penalty,
-                    f"{active_persistence} bars @ ADX {adx_val:.1f}",
-                )
+            if trend_extension_guard_enabled:
+                if active_persistence >= TREND_EXTENSION_BARS_HARD and adx_val >= TREND_EXTENSION_ADX_MIN:
+                    ctx_base["trend_extension_gate"] = float(active_persistence)
+                    return self._skip(
+                        "trend_extension",
+                        symbol,
+                        {
+                            "bars": str(active_persistence),
+                            "adx": f"{adx_val:.1f}",
+                        },
+                        ctx=ctx_base,
+                        price=mid,
+                        atr=atr,
+                    )
+                elif trend_extension_score > 0:
+                    penalty = clamp(
+                        trend_extension_score * (FILTER_PENALTY_WARN + 0.6),
+                        0.0,
+                        FILTER_PENALTY_HARD,
+                    )
+                    _add_penalty(
+                        "trend_extension",
+                        penalty,
+                        f"{active_persistence} bars @ ADX {adx_val:.1f}",
+                    )
             if adx_val < ADX_MIN_THRESHOLD:
                 deficit = ADX_MIN_THRESHOLD - adx_val
                 penalty = clamp(deficit / max(ADX_MIN_THRESHOLD, 1.0), 0.0, FILTER_PENALTY_HARD)
