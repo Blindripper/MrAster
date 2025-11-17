@@ -310,17 +310,44 @@ const MAX_MANAGEMENT_EVENTS = 50;
 const POSITION_NOTIFICATIONS_REFRESH_INTERVAL_MS = 2_000;
 const COMPLETED_POSITIONS_HISTORY_LIMIT = 12;
 const COMPLETED_POSITION_IDENTIFIER_KEYS = [
+  'position_id',
+  'positionId',
+  'hash',
+  'uuid',
   'trade_id',
   'tradeId',
   'id',
-  'position_id',
-  'positionId',
-  'uuid',
-  'hash',
   'opened_at',
   'openedAt',
   'closed_at',
   'closedAt',
+];
+
+const TRADE_POSITION_IDENTIFIER_KEYS = [
+  'position_id',
+  'positionId',
+  'hash',
+  'uuid',
+  'trade_id',
+  'tradeId',
+  'id',
+  'order_id',
+  'orderId',
+];
+
+const TRADE_TIMESTAMP_IDENTIFIER_KEYS = [
+  'closed_at',
+  'closedAt',
+  'closed_ts',
+  'closedTs',
+  'opened_at',
+  'openedAt',
+  'ts',
+  'timestamp',
+  'created_at',
+  'createdAt',
+  'updated_at',
+  'updatedAt',
 ];
 const COMPLETED_POSITIONS_STATS_DEFAULTS = Object.freeze({
   trades: 0,
@@ -11635,6 +11662,139 @@ function lookupTradeNumber(source, key) {
   return null;
 }
 
+function lookupTradeValue(source, key) {
+  if (!source || typeof source !== 'object' || !key) return null;
+  if (key in source && source[key] !== undefined && source[key] !== null) {
+    return source[key];
+  }
+  const extra = source.extra;
+  if (extra && typeof extra === 'object' && extra[key] !== undefined && extra[key] !== null) {
+    return extra[key];
+  }
+  const context = source.context;
+  if (context && typeof context === 'object' && context[key] !== undefined && context[key] !== null) {
+    return context[key];
+  }
+  return null;
+}
+
+function parseTradeTimestamp(value) {
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) {
+    return numeric;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const direct = Number(trimmed);
+    if (Number.isFinite(direct)) {
+      return direct;
+    }
+    const parsed = Date.parse(trimmed);
+    if (!Number.isNaN(parsed)) {
+      return parsed / 1000;
+    }
+  }
+  return null;
+}
+
+function extractTradePositionKey(trade) {
+  if (!trade || typeof trade !== 'object') {
+    return '';
+  }
+  for (const key of TRADE_POSITION_IDENTIFIER_KEYS) {
+    const value = lookupTradeValue(trade, key);
+    if (value === null || value === undefined) {
+      continue;
+    }
+    const text = value.toString().trim();
+    if (text) {
+      return `${key}:${text}`;
+    }
+  }
+  const symbolCandidates = [trade.symbol, trade.s, trade.pair, trade.instrument, trade.asset, trade.base];
+  const symbol = symbolCandidates
+    .map((candidate) => (candidate === null || candidate === undefined ? '' : candidate.toString().trim().toUpperCase()))
+    .find((candidate) => candidate) || '';
+  for (const key of TRADE_TIMESTAMP_IDENTIFIER_KEYS) {
+    const candidate = lookupTradeValue(trade, key);
+    if (candidate === null || candidate === undefined) {
+      continue;
+    }
+    const parsed = parseTradeTimestamp(candidate);
+    if (Number.isFinite(parsed)) {
+      const tsLabel = parsed.toFixed(3);
+      return symbol ? `${symbol}:${tsLabel}` : `ts:${tsLabel}`;
+    }
+  }
+  if (symbol) {
+    return symbol;
+  }
+  return '';
+}
+
+function countHistoryPositions(historyEntries) {
+  if (!Array.isArray(historyEntries) || historyEntries.length === 0) {
+    return 0;
+  }
+  const identifiers = new Set();
+  let fallback = 0;
+  historyEntries.forEach((trade) => {
+    const key = extractTradePositionKey(trade);
+    if (key) {
+      identifiers.add(key);
+    } else {
+      fallback += 1;
+    }
+  });
+  return identifiers.size + fallback;
+}
+
+function summarizeHistoryWinLoss(historyEntries) {
+  if (!Array.isArray(historyEntries) || historyEntries.length === 0) {
+    return null;
+  }
+  const bucketPnls = new Map();
+  const fallbackPnls = [];
+  historyEntries.forEach((trade) => {
+    const pnlValue = lookupTradeNumber(trade, 'pnl') ?? lookupTradeNumber(trade, 'realized_pnl');
+    if (!Number.isFinite(pnlValue)) {
+      return;
+    }
+    const key = extractTradePositionKey(trade);
+    if (key) {
+      const next = (bucketPnls.get(key) ?? 0) + pnlValue;
+      bucketPnls.set(key, next);
+    } else {
+      fallbackPnls.push(pnlValue);
+    }
+  });
+  if (bucketPnls.size === 0 && fallbackPnls.length === 0) {
+    return null;
+  }
+  let wins = 0;
+  let losses = 0;
+  let draws = 0;
+  const finalizeBucket = (value) => {
+    if (value > 0) {
+      wins += 1;
+    } else if (value < 0) {
+      losses += 1;
+    } else {
+      draws += 1;
+    }
+  };
+  bucketPnls.forEach(finalizeBucket);
+  fallbackPnls.forEach(finalizeBucket);
+  const total = wins + losses + draws;
+  if (total <= 0) {
+    return null;
+  }
+  return { wins, losses, draws, total };
+}
+
 function estimateTradeVolume(entry) {
   if (!entry || typeof entry !== 'object') {
     return 0;
@@ -11783,7 +11943,7 @@ function renderHeroMetrics(
   const openPositionsCount = normalizedOpenPositions.length;
 
   const serverTotalTrades = resolveNumericField(serverMetrics, ['total_trades', 'totalTrades']);
-  const historyTradeCount = historyList.length > 0 ? historyList.length : null;
+  const historyTradeCount = historyList.length > 0 ? countHistoryPositions(historyList) : null;
   const tradeCountCandidates = [
     historyTradeCount,
     parsePositiveInteger(fallback.count ?? fallback.total_trades ?? fallback.totalTrades),
@@ -11898,25 +12058,7 @@ function renderHeroMetrics(
     return numeric;
   };
 
-  const historyWinLossSummary = (() => {
-    if (historyList.length === 0) return null;
-    let wins = 0;
-    let losses = 0;
-    for (const trade of historyList) {
-      const pnlValue = lookupTradeNumber(trade, 'pnl') ?? lookupTradeNumber(trade, 'realized_pnl');
-      if (!Number.isFinite(pnlValue)) continue;
-      if (pnlValue > 0) {
-        wins += 1;
-      } else if (pnlValue < 0) {
-        losses += 1;
-      }
-    }
-    return {
-      wins,
-      losses,
-      total: historyList.length,
-    };
-  })();
+  const historyWinLossSummary = summarizeHistoryWinLoss(historyList);
 
   const historyWinRate = (() => {
     if (!historyWinLossSummary) return null;

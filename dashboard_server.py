@@ -1791,6 +1791,31 @@ def _fetch_position_brackets(
 
 
 POSITION_HINT_KEYS = {"entry", "entryPrice", "qty", "quantity", "positionAmt", "side", "tp", "sl", "mark"}
+TRADE_IDENTIFIER_KEYS = (
+    "position_id",
+    "positionId",
+    "hash",
+    "uuid",
+    "trade_id",
+    "tradeId",
+    "id",
+    "order_id",
+    "orderId",
+)
+TRADE_TIMESTAMP_KEYS = (
+    "closed_at",
+    "closedAt",
+    "closed_ts",
+    "closedTs",
+    "opened_at",
+    "openedAt",
+    "ts",
+    "timestamp",
+    "created_at",
+    "createdAt",
+    "updated_at",
+    "updatedAt",
+)
 
 POSITION_NUMERIC_FIELD_ALIASES = {
     "position_amt": (
@@ -2546,6 +2571,67 @@ def _build_history_summary(stats: TradeStats) -> Dict[str, Any]:
         "draws": int(getattr(stats, "draws", 0) or 0),
     }
     return summary
+
+
+def _lookup_trade_identifier_value(trade: Dict[str, Any], key: str) -> Any:
+    if key in trade and trade[key] is not None:
+        return trade[key]
+    extra = trade.get("extra")
+    if isinstance(extra, dict) and extra.get(key) is not None:
+        return extra.get(key)
+    context = trade.get("context")
+    if isinstance(context, dict) and context.get(key) is not None:
+        return context.get(key)
+    return None
+
+
+def _parse_trade_timestamp(value: Any) -> Optional[float]:
+    numeric = _safe_float(value)
+    if numeric is not None:
+        return numeric
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        cleaned = text
+        if cleaned.endswith("Z"):
+            cleaned = cleaned[:-1] + "+00:00"
+        try:
+            parsed = datetime.fromisoformat(cleaned)
+        except ValueError:
+            return None
+        return parsed.timestamp()
+    return None
+
+
+def _extract_trade_identifier(trade: Dict[str, Any]) -> str:
+    if not isinstance(trade, dict):
+        return ""
+    for key in TRADE_IDENTIFIER_KEYS:
+        value = _lookup_trade_identifier_value(trade, key)
+        text = _clean_string(value)
+        if text:
+            return f"{key}:{text}"
+    symbol = _clean_string(
+        trade.get("symbol")
+        or trade.get("s")
+        or trade.get("pair")
+        or trade.get("instrument")
+        or trade.get("asset")
+        or trade.get("base")
+    )
+    for key in TRADE_TIMESTAMP_KEYS:
+        value = _lookup_trade_identifier_value(trade, key)
+        if value is None:
+            continue
+        ts_value = _parse_trade_timestamp(value)
+        if ts_value is None:
+            continue
+        ts_label = f"{ts_value:.3f}"
+        if symbol:
+            return f"{symbol}:{ts_label}"
+        return f"ts:{ts_label}"
+    return symbol or ""
 
 
 def _looks_like_position_record(candidate: Dict[str, Any]) -> bool:
@@ -4028,6 +4114,10 @@ def _summarize_history_totals(history: Iterable[Dict[str, Any]]) -> Dict[str, An
     if not history:
         return totals
 
+    position_pnls: Dict[str, float] = {}
+    fallback_pnls: List[float] = []
+    fallback_count = 0
+
     for trade in history:
         if not isinstance(trade, dict):
             continue
@@ -4035,14 +4125,36 @@ def _summarize_history_totals(history: Iterable[Dict[str, Any]]) -> Dict[str, An
             continue
 
         pnl = _extract_trade_pnl(trade)
-        totals["total_trades"] += 1
         totals["realized_pnl"] += pnl
-        if pnl > 0:
-            totals["wins"] += 1
-        elif pnl < 0:
-            totals["losses"] += 1
+        identifier = _extract_trade_identifier(trade)
+        if identifier:
+            position_pnls[identifier] = position_pnls.get(identifier, 0.0) + pnl
+        else:
+            fallback_count += 1
+            fallback_pnls.append(pnl)
 
-    totals["draws"] = max(totals["total_trades"] - totals["wins"] - totals["losses"], 0)
+    wins = 0
+    losses = 0
+    draws = 0
+    for aggregated_pnl in position_pnls.values():
+        if aggregated_pnl > 0:
+            wins += 1
+        elif aggregated_pnl < 0:
+            losses += 1
+        else:
+            draws += 1
+    for pnl in fallback_pnls:
+        if pnl > 0:
+            wins += 1
+        elif pnl < 0:
+            losses += 1
+        else:
+            draws += 1
+
+    totals["total_trades"] = len(position_pnls) + fallback_count
+    totals["wins"] = wins
+    totals["losses"] = losses
+    totals["draws"] = draws if draws >= 0 else 0
     return totals
 
 
