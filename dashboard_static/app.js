@@ -4432,6 +4432,32 @@ function hasMeaningfulPositionFields(position) {
   return false;
 }
 
+function hasPositionManagementContext(position) {
+  if (!position || typeof position !== 'object') {
+    return false;
+  }
+  const managementEvents = normaliseManagementEvents(position);
+  if (Array.isArray(managementEvents) && managementEvents.length > 0) {
+    return true;
+  }
+  const exitReason = extractPositionManagementExitReason(position);
+  if (exitReason) {
+    return true;
+  }
+  const managementBlock = position.management;
+  if (managementBlock && typeof managementBlock === 'object') {
+    const managementHints = [
+      'last_exit_reason',
+      'last_exit_qty',
+      'max_favourable_move',
+      'expected_r_stop',
+      'expected_r_stop_hit',
+    ];
+    return managementHints.some((key) => Boolean(managementBlock[key]));
+  }
+  return false;
+}
+
 function shouldDisplayActivePosition(position) {
   if (!position || typeof position !== 'object') {
     return false;
@@ -4440,7 +4466,10 @@ function shouldDisplayActivePosition(position) {
   if (!symbol) {
     return false;
   }
-  return hasMeaningfulPositionFields(position);
+  if (hasMeaningfulPositionFields(position)) {
+    return true;
+  }
+  return hasPositionManagementContext(position);
 }
 
 const ACTIVE_POSITION_FIELD_LABELS = {
