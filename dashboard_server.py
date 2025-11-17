@@ -7273,6 +7273,7 @@ async def trades() -> Dict[str, Any]:
         normalized["closed_at_iso"] = _format_ts(entry.get("closed_at"))
         display_history.append(normalized)
 
+    env_cfg = CONFIG.get("env", {}) if isinstance(CONFIG, dict) else {}
     open_trades = state.get("live_trades", {})
     try:
         enriched_open = await asyncio.to_thread(enrich_open_positions, open_trades, env_cfg)
