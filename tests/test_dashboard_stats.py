@@ -189,3 +189,56 @@ def test_cumulative_summary_uses_history_fallbacks() -> None:
     assert summary["draws"] == 1
     assert summary["realized_pnl"] == pytest.approx(10.0)
     assert summary["total_pnl"] == pytest.approx(9.0)
+
+
+def test_cumulative_summary_prefers_position_count_over_trade_samples() -> None:
+    shared_context = {"position": {"position_id": "abc-123"}}
+    history = [
+        {"symbol": "BTCUSDT", "pnl": 5.0, "context": shared_context},
+        {"symbol": "BTCUSDT", "pnl": -2.0, "context": shared_context},
+    ]
+    state = {
+        "trade_history": history,
+        "cumulative_metrics": {"total_trades": 0, "wins": 0, "losses": 0, "draws": 0},
+    }
+    stats = TradeStats(
+        count=2,
+        total_pnl=3.0,
+        total_r=0.0,
+        win_rate=0.5,
+        best_trade=history[0],
+        worst_trade=history[1],
+        ai_hint='',
+        wins=1,
+        losses=1,
+        draws=0,
+    )
+
+    summary = _cumulative_summary(state, stats=stats)
+
+    assert summary["total_trades"] == 1
+
+
+def test_hero_metrics_ignore_trade_samples_when_history_available() -> None:
+    stats = TradeStats(
+        count=6,
+        total_pnl=4.0,
+        total_r=0.0,
+        win_rate=0.5,
+        best_trade=None,
+        worst_trade=None,
+        ai_hint='',
+        wins=3,
+        losses=3,
+        draws=0,
+    )
+    cumulative = {
+        "total_trades": 2,
+        "total_pnl": 4.0,
+        "realized_pnl": 4.0,
+        "ai_budget_spent": 0.0,
+    }
+
+    hero = _build_hero_metrics(cumulative, stats, history_count=2)
+
+    assert hero["total_trades"] == 2
