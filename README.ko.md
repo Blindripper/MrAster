@@ -161,10 +161,10 @@
 | `ASTER_AI_MODEL` | `gpt-4.1` | 사용 모델 ID. |
 | `ASTER_AI_DAILY_BUDGET_USD` | `20` | 일일 예산(USD). `ASTER_PRESET_MODE=high/att`일 때는 무시됩니다. |
 | `ASTER_AI_STRICT_BUDGET` | `true` | 예산 초과 시 AI 호출을 중지합니다. |
-| `ASTER_AI_MIN_INTERVAL_SECONDS` | `8` | 동일 심볼 재평가 전 쿨다운. |
-| `ASTER_AI_CONCURRENCY` | `3` | 동시 LLM 요청 수. |
+| `ASTER_AI_MIN_INTERVAL_SECONDS` | `3` | 동일 심볼 재평가 전 쿨다운. |
+| `ASTER_AI_CONCURRENCY` | `4` | 동시 LLM 요청 수. |
 | `ASTER_AI_PENDING_LIMIT` | `max(4, 3×concurrency)` | 대기 중인 AI 작업 한도. |
-| `ASTER_AI_GLOBAL_COOLDOWN_SECONDS` | `2.0` | 요청 간 전역 쿨다운. |
+| `ASTER_AI_GLOBAL_COOLDOWN_SECONDS` | `1.0` | 요청 간 전역 쿨다운. |
 | `ASTER_AI_PLAN_TIMEOUT_SECONDS` | `45` | 플랜 대기 시간 초과 시 대체 경로로 전환. |
 | `ASTER_AI_SENTINEL_ENABLED` | `true` | 뉴스 센티넬 활성화. |
 | `ASTER_AI_SENTINEL_DECAY_MINUTES` | `60` | 뉴스 경고 유지 시간. |

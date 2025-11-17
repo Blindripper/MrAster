@@ -110,9 +110,9 @@ SENTINEL_ENABLED = os.getenv("ASTER_AI_SENTINEL_ENABLED", "true").lower() in ("1
 SENTINEL_DECAY_MINUTES = float(os.getenv("ASTER_AI_SENTINEL_DECAY_MINUTES", "60") or 60)
 SENTINEL_NEWS_ENDPOINT = os.getenv("ASTER_AI_NEWS_ENDPOINT", "").strip()
 SENTINEL_NEWS_TOKEN = os.getenv("ASTER_AI_NEWS_API_KEY", "").strip()
-AI_MIN_INTERVAL_SECONDS = float(os.getenv("ASTER_AI_MIN_INTERVAL_SECONDS", "8") or 0.0)
-AI_CONCURRENCY = max(1, int(os.getenv("ASTER_AI_CONCURRENCY", "3") or 1))
-AI_GLOBAL_COOLDOWN = max(0.0, float(os.getenv("ASTER_AI_GLOBAL_COOLDOWN_SECONDS", "2.0") or 0.0))
+AI_MIN_INTERVAL_SECONDS = float(os.getenv("ASTER_AI_MIN_INTERVAL_SECONDS", "3") or 0.0)
+AI_CONCURRENCY = max(1, int(os.getenv("ASTER_AI_CONCURRENCY", "4") or 1))
+AI_GLOBAL_COOLDOWN = max(0.0, float(os.getenv("ASTER_AI_GLOBAL_COOLDOWN_SECONDS", "1.0") or 0.0))
 AI_PLAN_TIMEOUT = max(10.0, float(os.getenv("ASTER_AI_PLAN_TIMEOUT_SECONDS", "45") or 0.0))
 AI_PLAN_GRACE = max(0.0, float(os.getenv("ASTER_AI_PLAN_GRACE_SECONDS", "3.0") or 0.0))
 _default_pending_limit = max(4, AI_CONCURRENCY * 3)
@@ -1009,7 +1009,7 @@ ACTIVE_POSITION_MONITOR_ENABLED = os.getenv(
 ).lower() in {"1", "true", "yes", "on"}
 ACTIVE_POSITION_MONITOR_INTERVAL = max(
     0.25,
-    float(os.getenv("ASTER_ACTIVE_POSITION_MONITOR_INTERVAL", "0.75") or 0.75),
+    float(os.getenv("ASTER_ACTIVE_POSITION_MONITOR_INTERVAL", "0.25") or 0.25),
 )
 
 FUNDING_FILTER_ENABLED = os.getenv("ASTER_FUNDING_FILTER_ENABLED", "true").lower() in ("1", "true", "yes", "on")
@@ -1024,7 +1024,7 @@ NON_ARB_SKIP_GAP = abs(float(os.getenv("ASTER_NON_ARB_SKIP_GAP", str(NON_ARB_CLA
 HTTP_RETRIES = max(0, int(os.getenv("ASTER_HTTP_RETRIES", "2")))
 HTTP_BACKOFF = max(0.0, float(os.getenv("ASTER_HTTP_BACKOFF", "0.6")))
 HTTP_TIMEOUT = max(5.0, float(os.getenv("ASTER_HTTP_TIMEOUT", "20")))
-KLINE_CACHE_SEC = max(5.0, float(os.getenv("ASTER_KLINE_CACHE_SEC", "45")))
+KLINE_CACHE_SEC = max(5.0, float(os.getenv("ASTER_KLINE_CACHE_SEC", "9")))
 
 MAX_OPEN_GLOBAL = _int_env("ASTER_MAX_OPEN_GLOBAL", 0)
 MAX_OPEN_PER_SYMBOL = _int_env("ASTER_MAX_OPEN_PER_SYMBOL", 1)
@@ -1034,7 +1034,7 @@ _STATE_FILE_ENV = os.getenv("ASTER_STATE_FILE", "aster_state.json")
 STATE_FILE = _ROOT_DIR / _STATE_FILE_ENV
 PAPER = os.getenv("ASTER_PAPER", "false").lower() in ("1", "true", "yes", "on")
 
-LOOP_SLEEP = int(os.getenv("ASTER_LOOP_SLEEP", "30"))  # Sekunden
+LOOP_SLEEP = int(os.getenv("ASTER_LOOP_SLEEP", "10"))  # Sekunden
 WORKING_TYPE = os.getenv("ASTER_WORKING_TYPE", "MARK_PRICE")  # an Guard weitergeben
 QUOTE_VOLUME_COOLDOWN_CYCLES = max(
     0, int(os.getenv("ASTER_QUOTE_VOLUME_COOLDOWN_CYCLES", "500"))

@@ -105,7 +105,7 @@ ENV_DEFAULTS: Dict[str, str] = {
     "ASTER_MAX_OPEN_GLOBAL": "0",
     "ASTER_MAX_OPEN_PER_SYMBOL": "1",
     "ASTER_STATE_FILE": "aster_state.json",
-    "ASTER_LOOP_SLEEP": "20",
+    "ASTER_LOOP_SLEEP": "10",
     "ASTER_BANDIT_ENABLED": "true",
     "ASTER_ALPHA_ENABLED": "true",
     "ASTER_ALPHA_THRESHOLD": "0.50",
