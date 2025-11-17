@@ -2270,6 +2270,26 @@ def _strip_realized_income_trades(history: Sequence[Dict[str, Any]]) -> List[Dic
     return filtered
 
 
+def _build_history_summary(stats: TradeStats) -> Dict[str, Any]:
+    avg_r = 0.0
+    if stats.count:
+        try:
+            avg_r = float(stats.total_r or 0.0) / float(stats.count)
+        except ZeroDivisionError:
+            avg_r = 0.0
+    summary = {
+        "trades": int(stats.count or 0),
+        "realized_pnl": float(stats.total_pnl or 0.0),
+        "total_r": float(stats.total_r or 0.0),
+        "avg_r": avg_r,
+        "win_rate": float(stats.win_rate or 0.0),
+        "wins": int(getattr(stats, "wins", 0) or 0),
+        "losses": int(getattr(stats, "losses", 0) or 0),
+        "draws": int(getattr(stats, "draws", 0) or 0),
+    }
+    return summary
+
+
 def _looks_like_position_record(candidate: Dict[str, Any]) -> bool:
     if not isinstance(candidate, dict):
         return False
@@ -3941,6 +3961,55 @@ def _cumulative_summary(
     if updated_at is not None:
         summary["updated_at"] = updated_at
     return summary
+
+
+def _build_hero_metrics(
+    cumulative: Dict[str, Any],
+    stats: TradeStats,
+    *,
+    history_count: int = 0,
+) -> Dict[str, Any]:
+    summary = dict(cumulative or {})
+
+    def _coerce_int(value: Any) -> int:
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    wins = _coerce_int(summary.get("wins"))
+    losses = _coerce_int(summary.get("losses"))
+    draws = _coerce_int(summary.get("draws"))
+    denominator = wins + losses + draws
+    if stats.count:
+        win_rate = float(stats.win_rate or 0.0)
+    elif denominator > 0:
+        win_rate = max(0.0, min(1.0, wins / denominator))
+    else:
+        win_rate = 0.0
+
+    total_candidates = [
+        _coerce_int(summary.get("total_trades")),
+        _coerce_int(history_count),
+        _coerce_int(stats.count),
+    ]
+    total_trades = max(total_candidates)
+
+    realized = summary.get("realized_pnl")
+    if realized is None:
+        realized = float(stats.total_pnl or 0.0)
+
+    hero_payload = {
+        "total_trades": total_trades,
+        "total_pnl": float(summary.get("total_pnl", 0.0) or 0.0),
+        "realized_pnl": float(realized or 0.0),
+        "ai_budget_spent": float(summary.get("ai_budget_spent", 0.0) or 0.0),
+        "win_rate": win_rate,
+        "wins": wins,
+        "losses": losses,
+        "draws": draws,
+    }
+    return hero_payload
 
 
 class AIChatEngine:
@@ -7194,31 +7263,9 @@ async def trades() -> Dict[str, Any]:
         history_source = []
     run_started_at = _resolve_run_started_at(state)
     filtered_history = _filter_history_for_run(history_source, run_started_at)
-    history: List[Dict[str, Any]] = [dict(entry) for entry in filtered_history[-200:]]
+    history_window: List[Dict[str, Any]] = [dict(entry) for entry in filtered_history[-200:]]
 
-    env_cfg = CONFIG.get("env", {})
-    realized_enrich_enabled = _is_truthy(
-        env_cfg.get("ASTER_DASHBOARD_REALIZED_ENRICH")
-        or env_cfg.get("ASTER_REALIZED_PNL_ENRICH")
-    )
-
-    if realized_enrich_enabled:
-        realized_entries: List[Dict[str, Any]] = []
-        try:
-            fetch_limit = max(len(history) * 3, 200)
-            realized_entries = await asyncio.to_thread(
-                _fetch_realized_pnl_entries, env_cfg, fetch_limit
-            )
-        except Exception as exc:
-            logger.debug("realized pnl enrichment failed: %s", exc)
-            realized_entries = []
-
-        if realized_entries:
-            history = _merge_realized_pnl(history, realized_entries)
-            history = _filter_history_for_run(history, run_started_at)
-            history = history[-200:]
-
-    stats_history: List[Dict[str, Any]] = history
+    stats_history: List[Dict[str, Any]] = history_window
     display_history: List[Dict[str, Any]] = []
     for entry in _strip_realized_income_trades(stats_history):
         normalized = dict(entry)
@@ -7226,6 +7273,7 @@ async def trades() -> Dict[str, Any]:
         normalized["closed_at_iso"] = _format_ts(entry.get("closed_at"))
         display_history.append(normalized)
 
+    env_cfg = CONFIG.get("env", {}) if isinstance(CONFIG, dict) else {}
     open_trades = state.get("live_trades", {})
     try:
         enriched_open = await asyncio.to_thread(enrich_open_positions, open_trades, env_cfg)
@@ -7264,12 +7312,22 @@ async def trades() -> Dict[str, Any]:
             if entry.get("queued_at") is not None:
                 record["queued_at"] = entry.get("queued_at")
             proposals.append(record)
+    cumulative_summary = _cumulative_summary(state, stats=stats, ai_budget=ai_budget)
+    history_summary = _build_history_summary(stats)
+    hero_metrics = _build_hero_metrics(
+        cumulative_summary,
+        stats,
+        history_count=len(display_history),
+    )
+
     return {
         "open": enriched_open,
         "history": display_history[::-1],
         "stats": stats.dict(),
         "decision_stats": decision_stats,
-        "cumulative_stats": _cumulative_summary(state, stats=stats, ai_budget=ai_budget),
+        "cumulative_stats": cumulative_summary,
+        "history_summary": history_summary,
+        "hero_metrics": hero_metrics,
         "ai_budget": ai_budget,
         "ai_activity": ai_activity,
         "ai_requests": ai_requests,
