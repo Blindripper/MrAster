@@ -133,12 +133,12 @@ Curious about the engines, guardrails, and configuration surface? Expand the sec
 | `ASTER_RUN_ONCE` | `false` | Executes exactly one scan cycle. |
 | `ASTER_LOGLEVEL` | `INFO` | Logging verbosity (`DEBUG`, `INFO`, ...). |
 | `ASTER_MODE` | `standard` | Default dashboard mode (`standard`, `pro`, `ai`). |
-| `ASTER_LOOP_SLEEP` | `30` | Pause between scans in seconds. |
+| `ASTER_LOOP_SLEEP` | `10` | Pause between scans in seconds. |
 | `ASTER_STATE_FILE` | `aster_state.json` | Persistence file for bot and AI state. |
 | `ASTER_HTTP_RETRIES` | `2` | Additional HTTP retry attempts. |
 | `ASTER_HTTP_BACKOFF` | `0.6` | Base wait time (seconds) between retries. |
 | `ASTER_HTTP_TIMEOUT` | `20` | HTTP timeout in seconds. |
-| `ASTER_KLINE_CACHE_SEC` | `45` | Lifetime of the kline cache. |
+| `ASTER_KLINE_CACHE_SEC` | `9` | Lifetime of the kline cache. |
 
 </details>
 
@@ -206,10 +206,10 @@ Curious about the engines, guardrails, and configuration surface? Expand the sec
 | `ASTER_AI_MODEL` | `gpt-4.1` | Model ID for AI analysis. |
 | `ASTER_AI_DAILY_BUDGET_USD` | `20` | Daily budget limit (USD). Ignored when `ASTER_PRESET_MODE` is `high` or `att`. |
 | `ASTER_AI_STRICT_BUDGET` | `true` | Stops AI calls after hitting the budget. |
-| `ASTER_AI_MIN_INTERVAL_SECONDS` | `8` | Cooldown before the AI re-evaluates the same symbol. |
-| `ASTER_AI_CONCURRENCY` | `3` | Maximum concurrent LLM requests dispatched via the advisor thread pool.|
+| `ASTER_AI_MIN_INTERVAL_SECONDS` | `3` | Cooldown before the AI re-evaluates the same symbol. |
+| `ASTER_AI_CONCURRENCY` | `4` | Maximum concurrent LLM requests dispatched via the advisor thread pool.|
 | `ASTER_AI_PENDING_LIMIT` | `max(4, 3×concurrency)` | Cap on queued AI jobs before falling back to heuristics.|
-| `ASTER_AI_GLOBAL_COOLDOWN_SECONDS` | `2.0` | Global pause enforced between requests to prevent API bursts.|
+| `ASTER_AI_GLOBAL_COOLDOWN_SECONDS` | `1.0` | Global pause enforced between requests to prevent API bursts.|
 | `ASTER_AI_PLAN_TIMEOUT_SECONDS` | `45` | Maximum wait for a pending AI plan before reverting to fallbacks.|
 | `ASTER_AI_SENTINEL_ENABLED` | `true` | Activates the News Sentinel. |
 | `ASTER_AI_SENTINEL_DECAY_MINUTES` | `60` | Lifetime of a news warning. |

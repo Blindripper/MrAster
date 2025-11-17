@@ -161,10 +161,10 @@
 | `ASTER_AI_MODEL` | `gpt-4.1` | ID del modelo. |
 | `ASTER_AI_DAILY_BUDGET_USD` | `20` | Presupuesto diario (USD); se ignora con `ASTER_PRESET_MODE=high/att`. |
 | `ASTER_AI_STRICT_BUDGET` | `true` | Detiene llamadas IA al agotar el presupuesto. |
-| `ASTER_AI_MIN_INTERVAL_SECONDS` | `8` | Enfriamiento antes de reevaluar el mismo símbolo. |
-| `ASTER_AI_CONCURRENCY` | `3` | Máximo de peticiones LLM simultáneas. |
+| `ASTER_AI_MIN_INTERVAL_SECONDS` | `3` | Enfriamiento antes de reevaluar el mismo símbolo. |
+| `ASTER_AI_CONCURRENCY` | `4` | Máximo de peticiones LLM simultáneas. |
 | `ASTER_AI_PENDING_LIMIT` | `max(4, 3×concurrency)` | Límite de la cola pendiente. |
-| `ASTER_AI_GLOBAL_COOLDOWN_SECONDS` | `2.0` | Pausa global entre peticiones. |
+| `ASTER_AI_GLOBAL_COOLDOWN_SECONDS` | `1.0` | Pausa global entre peticiones. |
 | `ASTER_AI_PLAN_TIMEOUT_SECONDS` | `45` | Tiempo de espera antes de recurrir a fallback. |
 | `ASTER_AI_SENTINEL_ENABLED` | `true` | Activa el centinela de noticias. |
 | `ASTER_AI_SENTINEL_DECAY_MINUTES` | `60` | Duración de una alerta. |

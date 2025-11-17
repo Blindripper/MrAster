@@ -161,10 +161,10 @@
 | `ASTER_AI_MODEL` | `gpt-4.1` | 使用的模型 ID。 |
 | `ASTER_AI_DAILY_BUDGET_USD` | `20` | 日度预算（美元），`ASTER_PRESET_MODE=high/att` 时忽略。 |
 | `ASTER_AI_STRICT_BUDGET` | `true` | 预算耗尽后终止 AI 请求。 |
-| `ASTER_AI_MIN_INTERVAL_SECONDS` | `8` | 同一品种再次评估的冷却时间。 |
-| `ASTER_AI_CONCURRENCY` | `3` | 并发 LLM 请求上限。 |
+| `ASTER_AI_MIN_INTERVAL_SECONDS` | `3` | 同一品种再次评估的冷却时间。 |
+| `ASTER_AI_CONCURRENCY` | `4` | 并发 LLM 请求上限。 |
 | `ASTER_AI_PENDING_LIMIT` | `max(4, 3×concurrency)` | 待处理 AI 队列长度上限。 |
-| `ASTER_AI_GLOBAL_COOLDOWN_SECONDS` | `2.0` | 请求间隔的全局冷却。 |
+| `ASTER_AI_GLOBAL_COOLDOWN_SECONDS` | `1.0` | 请求间隔的全局冷却。 |
 | `ASTER_AI_PLAN_TIMEOUT_SECONDS` | `45` | 计划生成超时后转入备用方案。 |
 | `ASTER_AI_SENTINEL_ENABLED` | `true` | 启用新闻哨兵。 |
 | `ASTER_AI_SENTINEL_DECAY_MINUTES` | `60` | 单条预警的存续时间。 |

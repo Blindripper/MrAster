@@ -161,10 +161,10 @@ Motorları, korumaları ve konfigürasyonu merak mı ediyorsun? Aşağıdaki bö
 | `ASTER_AI_MODEL` | `gpt-4.1` | AI modeli kimliği. |
 | `ASTER_AI_DAILY_BUDGET_USD` | `20` | Günlük bütçe (USD); `ASTER_PRESET_MODE=high/att` iken yok sayılır. |
 | `ASTER_AI_STRICT_BUDGET` | `true` | Bütçe bitince AI çağrılarını durdurur. |
-| `ASTER_AI_MIN_INTERVAL_SECONDS` | `8` | Aynı sembolü yeniden değerlendirmeden önceki cooldown. |
-| `ASTER_AI_CONCURRENCY` | `3` | Eşzamanlı LLM isteği sınırı. |
+| `ASTER_AI_MIN_INTERVAL_SECONDS` | `3` | Aynı sembolü yeniden değerlendirmeden önceki cooldown. |
+| `ASTER_AI_CONCURRENCY` | `4` | Eşzamanlı LLM isteği sınırı. |
 | `ASTER_AI_PENDING_LIMIT` | `max(4, 3×concurrency)` | Bekleyen AI iş kuyruğu limiti. |
-| `ASTER_AI_GLOBAL_COOLDOWN_SECONDS` | `2.0` | İstekler arası global bekleme. |
+| `ASTER_AI_GLOBAL_COOLDOWN_SECONDS` | `1.0` | İstekler arası global bekleme. |
 | `ASTER_AI_PLAN_TIMEOUT_SECONDS` | `45` | Plan bekleme süresi; aşılırsa fallback devreye girer. |
 | `ASTER_AI_SENTINEL_ENABLED` | `true` | Haber nöbetçisini açar. |
 | `ASTER_AI_SENTINEL_DECAY_MINUTES` | `60` | Haber uyarısı ömrü. |
