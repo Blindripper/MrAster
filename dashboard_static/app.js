@@ -309,6 +309,16 @@ const COMPACT_SKIP_AGGREGATION_WINDOW = 600; // seconds
 const MAX_MANAGEMENT_EVENTS = 50;
 const POSITION_NOTIFICATIONS_REFRESH_INTERVAL_MS = 45_000;
 const COMPLETED_POSITIONS_HISTORY_LIMIT = 12;
+const COMPLETED_POSITIONS_STATS_DEFAULTS = Object.freeze({
+  trades: 0,
+  realizedPnl: 0,
+  totalR: 0,
+  wins: 0,
+  losses: 0,
+  draws: 0,
+});
+let completedPositionsStatsTotals = { ...COMPLETED_POSITIONS_STATS_DEFAULTS };
+let tradeSummaryOverride = null;
 const activePositionManagementCache = new Map();
 
 const PLAYBOOK_CARD_TIMESTAMP_KEYS = {
@@ -4435,6 +4445,14 @@ const ACTIVE_POSITION_ALIASES = {
     'pnl_usdt',
     'computedPnl',
     'computed_pnl',
+    'realized',
+    'realized_pnl',
+    'realizedPnl',
+    'realizedPNL',
+    'realized_profit',
+    'realizedProfit',
+    'pnl_realized',
+    'pnlRealized',
   ],
   leverage: ['leverage', 'lever', 'leverage_value', 'leverageValue'],
   margin: [
@@ -4449,6 +4467,24 @@ const ACTIVE_POSITION_ALIASES = {
   ],
   side: ['side', 'positionSide', 'direction'],
 };
+
+const COMPLETED_POSITION_PNL_KEYS = Array.from(
+  new Set([...(ACTIVE_POSITION_ALIASES.pnl || [])])
+);
+
+const COMPLETED_POSITION_R_KEYS = [
+  'r',
+  'r_multiple',
+  'rMultiple',
+  'reward_r',
+  'rewardR',
+  'pnl_r',
+  'pnlR',
+  'pnl_r_multiple',
+  'pnlRMultiple',
+  'rr',
+  'rratio',
+];
 
 const POSITION_MEANINGFUL_FIELD_KEYS = Array.from(
   new Set(
@@ -5990,7 +6026,7 @@ function buildCompletedPositionEntry(position, options = {}) {
   pnlLabel.textContent = translate('trades.completed.pnl', 'Realized PNL');
   const pnlValue = document.createElement('dd');
   pnlValue.className = 'completed-position__value';
-  const pnlField = pickNumericField(position, ACTIVE_POSITION_ALIASES.pnl || []);
+  const pnlField = pickNumericField(position, COMPLETED_POSITION_PNL_KEYS);
   const pnlPercentField = pickNumericField(position, ACTIVE_POSITION_ALIASES.roe || []);
   let pnlTone = null;
   if (Number.isFinite(pnlField.numeric)) {
@@ -6029,6 +6065,123 @@ function buildCompletedPositionEntry(position, options = {}) {
 
   container.append(metrics);
   return container;
+}
+
+function normalizeStatNumber(value, fallback = NaN) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function normalizeStatInteger(value, fallback = NaN) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.round(numeric) : fallback;
+}
+
+function syncCompletedPositionsStats(summary) {
+  if (!summary || typeof summary !== 'object') {
+    return;
+  }
+  const trades = Math.max(0, normalizeStatInteger(summary.trades ?? summary.count, 0));
+  const realizedCandidate =
+    summary.realized_pnl ?? summary.realizedPnl ?? summary.total_pnl ?? summary.totalPnl ?? summary.realized;
+  const realizedPnl = normalizeStatNumber(realizedCandidate, 0);
+  const totalR = normalizeStatNumber(summary.total_r ?? summary.totalR, 0);
+  let wins = normalizeStatInteger(summary.wins, NaN);
+  let losses = normalizeStatInteger(summary.losses, NaN);
+  let draws = normalizeStatInteger(summary.draws, NaN);
+  const winRate = normalizeStatNumber(summary.win_rate ?? summary.winRate, NaN);
+  if (Number.isNaN(wins) && Number.isFinite(winRate) && trades > 0) {
+    wins = Math.round(trades * winRate);
+  }
+  if (Number.isNaN(wins)) {
+    wins = 0;
+  }
+  if (Number.isNaN(losses)) {
+    losses = 0;
+  }
+  if (Number.isNaN(draws)) {
+    draws = 0;
+  }
+  let accounted = wins + losses + draws;
+  if (accounted < trades) {
+    draws += trades - accounted;
+  } else if (accounted > trades) {
+    const overflow = accounted - trades;
+    if (draws >= overflow) {
+      draws -= overflow;
+    } else if (losses >= overflow - draws) {
+      losses -= overflow - draws;
+      draws = 0;
+    }
+  }
+  completedPositionsStatsTotals = {
+    trades,
+    realizedPnl,
+    totalR,
+    wins,
+    losses,
+    draws,
+  };
+}
+
+function incrementCompletedPositionsStats(position) {
+  if (!position || typeof position !== 'object') {
+    return;
+  }
+  completedPositionsStatsTotals.trades += 1;
+  const pnlField = pickNumericField(position, COMPLETED_POSITION_PNL_KEYS);
+  if (Number.isFinite(pnlField.numeric)) {
+    completedPositionsStatsTotals.realizedPnl += pnlField.numeric;
+    if (pnlField.numeric > 0) {
+      completedPositionsStatsTotals.wins += 1;
+    } else if (pnlField.numeric < 0) {
+      completedPositionsStatsTotals.losses += 1;
+    } else {
+      completedPositionsStatsTotals.draws += 1;
+    }
+  } else {
+    completedPositionsStatsTotals.draws += 1;
+  }
+  const rField = pickNumericField(position, COMPLETED_POSITION_R_KEYS);
+  if (Number.isFinite(rField.numeric)) {
+    completedPositionsStatsTotals.totalR += rField.numeric;
+  }
+}
+
+function buildCompletedPositionsSummaryFromTotals() {
+  if (!completedPositionsStatsTotals || completedPositionsStatsTotals.trades <= 0) {
+    return null;
+  }
+  const { trades, realizedPnl, totalR, wins, losses, draws } = completedPositionsStatsTotals;
+  const avgR = trades > 0 ? totalR / trades : 0;
+  const winRate = trades > 0 ? wins / trades : 0;
+  return {
+    trades,
+    realized_pnl: realizedPnl,
+    total_r: totalR,
+    avg_r: avgR,
+    win_rate: winRate,
+    wins,
+    losses,
+    draws,
+  };
+}
+
+function setTradeSummaryOverride(summary) {
+  tradeSummaryOverride = summary && typeof summary === 'object' ? summary : null;
+}
+
+function getTradeSummaryOverride() {
+  return tradeSummaryOverride;
+}
+
+function refreshTradeSummaryFromCompletedPositions() {
+  const override = buildCompletedPositionsSummaryFromTotals();
+  if (!override) {
+    return;
+  }
+  setTradeSummaryOverride(override);
+  renderTradeSummary(lastTradeStats, override);
 }
 
 function renderCompletedPositionsHistory() {
@@ -6074,6 +6227,7 @@ function rememberCompletedPositions(positions = []) {
       position,
       ts: Number.isFinite(timestamp) ? timestamp : Date.now() / 1000,
     });
+    incrementCompletedPositionsStats(position);
     mutated = true;
   });
   if (!mutated) {
@@ -6084,6 +6238,7 @@ function rememberCompletedPositions(positions = []) {
     completedPositionsHistory.length = COMPLETED_POSITIONS_HISTORY_LIMIT;
   }
   renderCompletedPositionsHistory();
+  refreshTradeSummaryFromCompletedPositions();
 }
 
 function refreshPositionUpdatesFromHistory() {
@@ -6564,6 +6719,9 @@ function updateActivePositionsView(options = {}) {
 
   closedPositions.forEach((position) => clearCachedManagementEvent(position));
   rememberCompletedPositions(closedPositions);
+  if (closedPositions.length > 0) {
+    scheduleTradesRefresh(500);
+  }
 
   const notifications = managementNotifications.slice();
   const sortedNotifications = notifications
@@ -11775,11 +11933,25 @@ async function handlePostToX(event) {
   }
 }
 
+function resolveTradeSummaryPayload(summaryOverride) {
+  if (summaryOverride && typeof summaryOverride === 'object') {
+    return summaryOverride;
+  }
+  const override = getTradeSummaryOverride();
+  if (override && typeof override === 'object') {
+    return override;
+  }
+  return buildCompletedPositionsSummaryFromTotals();
+}
+
 function renderTradeSummary(stats, summaryOverride = null) {
+  if (!tradeSummary) {
+    return;
+  }
   lastTradeStats = stats || null;
-  const summary = summaryOverride && typeof summaryOverride === 'object' ? summaryOverride : null;
+  const summary = resolveTradeSummaryPayload(summaryOverride);
   const fragment = document.createDocumentFragment();
-  if (!stats) {
+  if (!stats && !summary) {
     const placeholder = document.createElement('div');
     placeholder.className = 'trade-metric muted';
     placeholder.innerHTML = `
@@ -11793,12 +11965,31 @@ function renderTradeSummary(stats, summaryOverride = null) {
     );
     return;
   }
-  const tradesCount = Number.isFinite(Number(summary?.trades))
-    ? Number(summary.trades)
-    : stats.count ?? 0;
-  const realizedTotal = summary?.realized_pnl ?? summary?.realizedPnl ?? stats.total_pnl ?? 0;
-  const avgR = summary?.avg_r ?? (stats.count ? stats.total_r / stats.count : 0);
-  const winRateValue = summary?.win_rate ?? summary?.winRate ?? stats.win_rate ?? 0;
+  const tradesCountCandidate = summary?.trades ?? summary?.count ?? stats?.count ?? 0;
+  const tradesCount = Number.isFinite(Number(tradesCountCandidate))
+    ? Math.max(0, Math.round(Number(tradesCountCandidate)))
+    : 0;
+  const realizedTotalCandidate =
+    summary?.realized_pnl ?? summary?.realizedPnl ?? stats?.total_pnl ?? stats?.totalPnl ?? 0;
+  const realizedTotalNumeric = Number(realizedTotalCandidate);
+  const realizedTotal = Number.isFinite(realizedTotalNumeric) ? realizedTotalNumeric : 0;
+  const avgRCandidate = summary?.avg_r ?? summary?.avgR;
+  const totalRSource = summary?.total_r ?? summary?.totalR ?? stats?.total_r ?? stats?.totalR ?? 0;
+  const totalRNumeric = Number(totalRSource);
+  const avgR = Number.isFinite(Number(avgRCandidate))
+    ? Number(avgRCandidate)
+    : tradesCount > 0 && Number.isFinite(totalRNumeric)
+      ? totalRNumeric / tradesCount
+      : 0;
+  const winRateCandidate = summary?.win_rate ?? summary?.winRate;
+  const winRateValue = Number.isFinite(Number(winRateCandidate))
+    ? Number(winRateCandidate)
+    : Number.isFinite(Number(stats?.win_rate))
+      ? Number(stats.win_rate)
+      : tradesCount > 0 && Number.isFinite(Number(summary?.wins))
+        ? Number(summary.wins) / tradesCount
+        : 0;
+  const normalizedWinRate = Math.min(Math.max(winRateValue, 0), 1);
   const metrics = [
     {
       label: translate('trades.metric.trades', 'Trades'),
@@ -11812,7 +12003,7 @@ function renderTradeSummary(stats, summaryOverride = null) {
     },
     {
       label: translate('trades.metric.winRate', 'Win rate'),
-      value: `${((winRateValue ?? 0) * 100).toFixed(1)}%`,
+      value: `${((normalizedWinRate ?? 0) * 100).toFixed(1)}%`,
       tone: 'neutral',
     },
     {
@@ -11831,7 +12022,7 @@ function renderTradeSummary(stats, summaryOverride = null) {
     fragment.append(el);
   }
   tradeSummary.replaceChildren(fragment);
-  setAiHintMessage(stats.ai_hint);
+  setAiHintMessage(stats?.ai_hint);
 }
 
 function updateDecisionReasonsVisibility() {
@@ -13760,6 +13951,8 @@ async function loadTrades() {
       setTradeDataStale(false);
       renderTradeHistory(snapshot.history);
       renderTradeSummary(snapshot.stats, snapshot.history_summary);
+      syncCompletedPositionsStats(snapshot.history_summary || snapshot.stats);
+      setTradeSummaryOverride(null);
       renderHeroMetrics(
         snapshot.cumulative_stats,
         snapshot.stats,
