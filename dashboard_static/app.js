@@ -10791,18 +10791,31 @@ function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null,
     return numeric;
   };
 
-  const historyWinRate = (() => {
+  const historyWinLossSummary = (() => {
     if (historyList.length === 0) return null;
     let wins = 0;
+    let losses = 0;
     for (const trade of historyList) {
       const pnlValue = lookupTradeNumber(trade, 'pnl') ?? lookupTradeNumber(trade, 'realized_pnl');
       if (!Number.isFinite(pnlValue)) continue;
       if (pnlValue > 0) {
         wins += 1;
+      } else if (pnlValue < 0) {
+        losses += 1;
       }
     }
-    if (wins <= 0) return 0;
-    return Math.min(1, wins / historyList.length);
+    return {
+      wins,
+      losses,
+      total: historyList.length,
+    };
+  })();
+
+  const historyWinRate = (() => {
+    if (!historyWinLossSummary) return null;
+    if (historyWinLossSummary.total <= 0) return null;
+    if (historyWinLossSummary.wins <= 0) return 0;
+    return Math.min(1, historyWinLossSummary.wins / historyWinLossSummary.total);
   })();
 
   const fallbackWinRate = normalizeWinRate(fallback.win_rate ?? fallback.winRate);
@@ -10848,6 +10861,7 @@ function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null,
     fallback.profitable_trades,
     fallback.positive_trades,
     fallback.green_trades,
+    historyWinLossSummary ? historyWinLossSummary.wins : null,
   );
   const lossesCount = parseTradeCount(
     resolveNumericField(serverMetrics, ['losses']),
@@ -10859,6 +10873,7 @@ function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null,
     fallback.unprofitable_trades,
     fallback.negative_trades,
     fallback.red_trades,
+    historyWinLossSummary ? historyWinLossSummary.losses : null,
   );
 
   if (pnlTradesWonValue) {
