@@ -192,8 +192,25 @@ def test_collect_run_trade_symbols_deduplicates_and_limits() -> None:
     assert symbols == ["BTCUSDT", "ETHUSDT", "ADAUSDT", "SOLUSDT"]
 
 
+def test_collect_run_trade_symbols_prioritizes_current_run_history() -> None:
+    history = [
+        {"symbol": f"OLD{idx}USDT", "closed_at": 1_000.0 + idx * 10.0}
+        for idx in range(30)
+    ]
+    state = {"trade_history": history}
+
+    symbols = _collect_run_trade_symbols(state, limit=3, run_started_at=1_250.0)
+
+    assert symbols == ["OLD25USDT", "OLD26USDT", "OLD27USDT"]
+
+
 def test_compute_run_realized_from_exchange_filters_by_run_start() -> None:
-    state = {"trade_history": [{"symbol": "BTCUSDT"}, {"symbol": "ETHUSDT"}]}
+    state = {
+        "trade_history": [
+            {"symbol": "BTCUSDT", "closed_at": 1_010.0},
+            {"symbol": "ETHUSDT", "closed_at": 1_020.0},
+        ]
+    }
     env = {"ASTER_API_KEY": "key", "ASTER_API_SECRET": "secret"}
 
     def fake_fetch(_env: dict, symbol: str, **kwargs):

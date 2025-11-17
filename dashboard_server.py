@@ -2064,9 +2064,15 @@ def _fetch_realized_pnl_entries(env: Dict[str, Any], limit: int = 400) -> List[D
     return results
 
 
-def _collect_run_trade_symbols(state: Dict[str, Any], *, limit: int = EXCHANGE_HISTORY_SYMBOL_LIMIT) -> List[str]:
+def _collect_run_trade_symbols(
+    state: Dict[str, Any],
+    *,
+    limit: int = EXCHANGE_HISTORY_SYMBOL_LIMIT,
+    run_started_at: Optional[float] = None,
+) -> List[str]:
     symbols: List[str] = []
     seen: Set[str] = set()
+    cutoff = _safe_float(run_started_at) if run_started_at is not None else None
 
     def _register_symbol(value: Any) -> None:
         if len(symbols) >= limit:
@@ -2083,6 +2089,18 @@ def _collect_run_trade_symbols(state: Dict[str, Any], *, limit: int = EXCHANGE_H
     if not isinstance(state, dict):
         return symbols
 
+    def _is_recent_history_entry(entry: Dict[str, Any]) -> bool:
+        if cutoff is None:
+            return True
+        closed_ts = _safe_float(entry.get("closed_at"))
+        if closed_ts is not None and closed_ts >= cutoff:
+            return True
+        if closed_ts is None:
+            opened_ts = _safe_float(entry.get("opened_at"))
+            if opened_ts is not None and opened_ts >= cutoff:
+                return True
+        return False
+
     history_sources = [state.get("trade_history"), state.get("manual_trade_history")]
     for source in history_sources:
         if len(symbols) >= limit:
@@ -2091,6 +2109,8 @@ def _collect_run_trade_symbols(state: Dict[str, Any], *, limit: int = EXCHANGE_H
             continue
         for entry in source:
             if not isinstance(entry, dict):
+                continue
+            if not _is_recent_history_entry(entry):
                 continue
             _register_symbol(entry.get("symbol"))
             if len(symbols) >= limit:
@@ -2227,7 +2247,7 @@ def _compute_run_realized_from_exchange(
     if run_start is None:
         return {}
 
-    symbols = _collect_run_trade_symbols(state)
+    symbols = _collect_run_trade_symbols(state, run_started_at=run_start)
     if not symbols:
         return {}
 
