@@ -2360,6 +2360,13 @@ let activePositions = [];
 let tradeHistoryEmptyStreak = 0;
 let aiRequestsEmptyStreak = 0;
 const POSITION_NOTIFICATION_HISTORY_LIMIT = 15;
+const MANAGEMENT_EXIT_REASON_KEYS = [
+  'management_exit_reason',
+  'managementExitReason',
+  'exit_reason',
+  'exitReason',
+];
+const MANAGEMENT_BLOCK_EXIT_REASON_KEYS = ['exit_reason', 'exitReason', 'last_reason', 'lastReason', 'reason'];
 let positionNotificationHistory = [];
 let positionUpdatesRefreshTimer = null;
 let tradesRefreshTimer = null;
@@ -5944,7 +5951,23 @@ function buildClosedPositionNotification(position, options = {}) {
   time.textContent = formatManagementRelativeTime(Date.now() / 1000);
   container.append(time);
 
+  let reasonLabel = '';
+  const reasonCode = extractPositionManagementExitReason(position);
+  if (reasonCode) {
+    const friendlyLabel = friendlyReason(reasonCode);
+    if (friendlyLabel) {
+      reasonLabel = friendlyLabel;
+      const reasonBadge = document.createElement('span');
+      reasonBadge.className = 'active-position-management-reason';
+      reasonBadge.textContent = friendlyLabel;
+      container.append(reasonBadge);
+    }
+  }
+
   const detailParts = [];
+  if (reasonLabel) {
+    detailParts.push(reasonLabel);
+  }
   const pnlField = pickNumericField(position, ACTIVE_POSITION_ALIASES.pnl || []);
   if (Number.isFinite(pnlField.numeric)) {
     detailParts.push(`${formatSignedNumber(pnlField.numeric, 2)} USDT`);
@@ -5959,6 +5982,28 @@ function buildClosedPositionNotification(position, options = {}) {
   }
 
   return container;
+}
+
+function extractPositionManagementExitReason(position) {
+  if (!position || typeof position !== 'object') {
+    return '';
+  }
+  for (let index = 0; index < MANAGEMENT_EXIT_REASON_KEYS.length; index += 1) {
+    const key = MANAGEMENT_EXIT_REASON_KEYS[index];
+    if (position[key]) {
+      return position[key];
+    }
+  }
+  const management = position.management;
+  if (management && typeof management === 'object') {
+    for (let index = 0; index < MANAGEMENT_BLOCK_EXIT_REASON_KEYS.length; index += 1) {
+      const key = MANAGEMENT_BLOCK_EXIT_REASON_KEYS[index];
+      if (management[key]) {
+        return management[key];
+      }
+    }
+  }
+  return '';
 }
 
 function buildPositionProgressBar({ takeEntry, stopEntry, markPrice, side, pnlTone }) {
@@ -6242,6 +6287,17 @@ function updateActivePositionsView(options = {}) {
     row.append(pnlCell);
 
     rowsFragment.append(row);
+  });
+
+  closedPositions.forEach((position) => {
+    const symbolValue = getPositionSymbol(position);
+    const closedNotification = buildClosedPositionNotification(position, {
+      includeSymbol: true,
+      symbolText: symbolValue,
+    });
+    if (closedNotification) {
+      managementNotifications.push(closedNotification);
+    }
   });
 
   closedPositions.forEach((position) => clearCachedManagementEvent(position));

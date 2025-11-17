@@ -1349,6 +1349,17 @@ body.paper-mode .hero-paper-toggle span {
   letter-spacing: 0.12em;
 }
 
+.active-position-management-reason {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(199, 206, 225, 0.88);
+  letter-spacing: 0.05em;
+  text-transform: none;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.12);
+}
+
 .active-positions-symbol-wrapper {
   display: inline-flex;
   align-items: center;
