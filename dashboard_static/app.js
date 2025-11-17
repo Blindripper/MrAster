@@ -5926,13 +5926,9 @@ function prunePositionNotificationHistory() {
     positionNotificationHistory = [];
     return;
   }
-  if (!(activePositionSymbols instanceof Set) || activePositionSymbols.size === 0) {
-    positionNotificationHistory = [];
-    return;
-  }
   positionNotificationHistory = positionNotificationHistory.filter((entry) => {
     const normalizedSymbol = normalizeSymbolValue(entry?.symbol);
-    return normalizedSymbol && activePositionSymbols.has(normalizedSymbol);
+    return Boolean(normalizedSymbol);
   });
 }
 
@@ -5944,7 +5940,7 @@ function rememberPositionNotifications(notifications) {
     .map((element) => {
       if (!(element instanceof HTMLElement)) return null;
       const normalizedSymbol = getNotificationElementSymbol(element);
-      if (!normalizedSymbol || (activePositionSymbols instanceof Set && !activePositionSymbols.has(normalizedSymbol))) {
+      if (!normalizedSymbol) {
         return null;
       }
       const rawTs = element.dataset?.timestamp;
@@ -5977,9 +5973,6 @@ function rememberPositionNotifications(notifications) {
   const seen = new Set();
   positionNotificationHistory = merged.filter((entry) => {
     const symbol = normalizeSymbolValue(entry?.symbol);
-    if (!symbol || !activePositionSymbols.has(symbol)) {
-      return false;
-    }
     const key = entry.signature || `${entry.ts}|${entry.template?.textContent || ''}`;
     if (seen.has(key)) {
       return false;
@@ -6000,7 +5993,7 @@ function buildHistoricalNotifications(limit = 5) {
   const nodes = [];
   positionNotificationHistory.slice(0, limit).forEach((entry) => {
     const normalizedSymbol = normalizeSymbolValue(entry?.symbol);
-    if (!normalizedSymbol || !activePositionSymbols.has(normalizedSymbol)) {
+    if (!normalizedSymbol) {
       return;
     }
     const template = entry?.template;
@@ -6033,10 +6026,7 @@ function refreshRenderedPositionNotifications() {
 
 function renderPositionNotifications(notifications) {
   const relevantNotifications = Array.isArray(notifications)
-    ? notifications.filter((notification) => {
-        const symbol = getNotificationElementSymbol(notification);
-        return symbol && activePositionSymbols instanceof Set && activePositionSymbols.has(symbol);
-      })
+    ? notifications.filter((notification) => notification instanceof HTMLElement)
     : [];
   const hasNotifications = relevantNotifications.length > 0;
 
@@ -7210,10 +7200,7 @@ function updateActivePositionsView(options = {}) {
 
   const limitedNotifications = sortedNotifications.slice(0, 5);
   rememberPositionNotifications(limitedNotifications);
-  let notificationsToRender = limitedNotifications.filter((element) => {
-    const symbol = getNotificationElementSymbol(element);
-    return symbol && activePositionSymbols instanceof Set && activePositionSymbols.has(symbol);
-  });
+  let notificationsToRender = limitedNotifications.filter((element) => element instanceof HTMLElement);
   if (!notificationsToRender.length) {
     notificationsToRender = buildHistoricalNotifications(5);
   }
