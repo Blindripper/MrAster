@@ -3715,6 +3715,66 @@ def _extract_trade_volume(trade: Dict[str, Any]) -> float:
     return 0.0
 
 
+def _resolve_trade_timestamp(trade: Dict[str, Any]) -> Optional[float]:
+    """Best-effort extraction of a trade timestamp for ordering purposes."""
+
+    if not isinstance(trade, dict):
+        return None
+
+    ts_candidates = (
+        _safe_float(trade.get("closed_at")),
+        _safe_float(trade.get("opened_at")),
+        _safe_float(trade.get("ts")),
+    )
+    for candidate in ts_candidates:
+        if candidate is not None:
+            return candidate
+
+    iso_candidates = (
+        trade.get("closed_at_iso"),
+        trade.get("opened_at_iso"),
+    )
+    for iso in iso_candidates:
+        if not isinstance(iso, str) or not iso.strip():
+            continue
+        parsed = _parse_activity_ts(iso)
+        if parsed:
+            return parsed.timestamp()
+    return None
+
+
+def _build_pnl_series(
+    history: Sequence[Dict[str, Any]], limit: int = 240
+) -> Dict[str, Any]:
+    """Return a cumulative PnL series suitable for chart rendering."""
+
+    ordered: List[Tuple[float, float, Optional[str]]] = []
+    for entry in history or []:
+        if not isinstance(entry, dict):
+            continue
+        pnl = _extract_trade_pnl(entry)
+        ts = _resolve_trade_timestamp(entry)
+        iso = entry.get("closed_at_iso") or entry.get("opened_at_iso")
+        if iso is None:
+            iso = _format_ts(ts)
+        ordered.append((ts or 0.0, pnl, iso))
+
+    ordered.sort(key=lambda item: item[0])
+
+    points: List[Tuple[str, float]] = []
+    cumulative = 0.0
+    for _, pnl, label in ordered:
+        cumulative += pnl
+        points.append((label or f"Trade {len(points) + 1}", round(cumulative, 6)))
+
+    if limit > 0 and len(points) > limit:
+        points = points[-limit:]
+
+    labels = [label for label, _ in points]
+    values = [value for _, value in points]
+    return {"labels": labels, "values": values, "sample": len(points)}
+
+
 def _summarize_history_totals(history: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
     """Aggregate win/loss counts and realized PnL across a history list."""
 
@@ -7365,6 +7425,7 @@ async def trades() -> Dict[str, Any]:
 
     stats_history: List[Dict[str, Any]] = history_window
     display_history = _prepare_display_history(stats_history)
+    pnl_series = _build_pnl_series(history_source)
 
     open_trades = state.get("live_trades", {})
     try:
@@ -7420,6 +7481,7 @@ async def trades() -> Dict[str, Any]:
     return {
         "open": enriched_open,
         "history": display_history[::-1],
+        "pnl_series": pnl_series,
         "stats": stats.dict(),
         "decision_stats": decision_stats,
         "cumulative_stats": cumulative_summary,
