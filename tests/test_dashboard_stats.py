@@ -1,12 +1,12 @@
 import pytest
 
-import pytest
-
 from dashboard_server import (
     TradeStats,
     _build_hero_metrics,
     _build_history_summary,
     _compute_stats,
+    _cumulative_summary,
+    _summarize_history_totals,
 )
 
 
@@ -25,6 +25,23 @@ def _synthetic_income(symbol: str, pnl: float) -> dict:
         "synthetic": True,
         "synthetic_source": "realized_income",
     }
+
+
+def test_summarize_history_totals_counts_real_trades() -> None:
+    history = [
+        _trade("BTCUSDT", 10.0),
+        _trade("ETHUSDT", -4.0),
+        _trade("SOLUSDT", 0.0),
+        _synthetic_income("BTCUSDT", 2.0),
+    ]
+
+    totals = _summarize_history_totals(history)
+
+    assert totals["total_trades"] == 3
+    assert totals["wins"] == 1
+    assert totals["losses"] == 1
+    assert totals["draws"] == 1
+    assert totals["realized_pnl"] == pytest.approx(6.0)
 
 
 def test_compute_stats_ignores_realized_income_rows() -> None:
@@ -114,3 +131,42 @@ def test_build_hero_metrics_prefers_history_count_for_total_trades() -> None:
     assert hero["realized_pnl"] == pytest.approx(4.5)
     assert hero["ai_budget_spent"] == pytest.approx(1.5)
     assert hero["win_rate"] == pytest.approx(2 / 3)
+
+
+def test_cumulative_summary_uses_history_fallbacks() -> None:
+    history = [
+        _trade("BTCUSDT", 12.0),
+        _trade("ETHUSDT", -2.0),
+        _trade("SOLUSDT", 0.0),
+    ]
+    state = {
+        "trade_history": history,
+        "cumulative_metrics": {
+            "total_trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "draws": 0,
+            "total_pnl": 0.0,
+        },
+    }
+    stats = TradeStats(
+        count=1,
+        total_pnl=4.0,
+        total_r=0.0,
+        win_rate=1.0,
+        best_trade=None,
+        worst_trade=None,
+        ai_hint='',
+        wins=1,
+        losses=0,
+        draws=0,
+    )
+
+    summary = _cumulative_summary(state, stats=stats, ai_budget={"spent": 1.0})
+
+    assert summary["total_trades"] == 3
+    assert summary["wins"] == 1
+    assert summary["losses"] == 1
+    assert summary["draws"] == 1
+    assert summary["realized_pnl"] == pytest.approx(10.0)
+    assert summary["total_pnl"] == pytest.approx(9.0)

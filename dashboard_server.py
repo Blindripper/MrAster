@@ -3715,6 +3715,38 @@ def _extract_trade_volume(trade: Dict[str, Any]) -> float:
     return 0.0
 
 
+def _summarize_history_totals(history: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    """Aggregate win/loss counts and realized PnL across a history list."""
+
+    totals = {
+        "total_trades": 0,
+        "wins": 0,
+        "losses": 0,
+        "draws": 0,
+        "realized_pnl": 0.0,
+    }
+
+    if not history:
+        return totals
+
+    for trade in history:
+        if not isinstance(trade, dict):
+            continue
+        if _is_realized_income_trade(trade):
+            continue
+
+        pnl = _extract_trade_pnl(trade)
+        totals["total_trades"] += 1
+        totals["realized_pnl"] += pnl
+        if pnl > 0:
+            totals["wins"] += 1
+        elif pnl < 0:
+            totals["losses"] += 1
+
+    totals["draws"] = max(totals["total_trades"] - totals["wins"] - totals["losses"], 0)
+    return totals
+
+
 def _estimate_history_volume(history: Iterable[Dict[str, Any]]) -> float:
     total = 0.0
     for trade in history or []:
@@ -3925,6 +3957,7 @@ def _cumulative_summary(
     *,
     stats: Optional[TradeStats] = None,
     ai_budget: Optional[Dict[str, Any]] = None,
+    history_totals: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     metrics = state.get("cumulative_metrics") or {}
     summary = {
@@ -3934,6 +3967,12 @@ def _cumulative_summary(
         "losses": int(metrics.get("losses", 0) or 0),
         "draws": int(metrics.get("draws", 0) or 0),
     }
+
+    history_totals = history_totals or _summarize_history_totals(state.get("trade_history", []))
+    history_total_trades = int(history_totals.get("total_trades", 0) or 0)
+    history_wins = int(history_totals.get("wins", 0) or 0)
+    history_losses = int(history_totals.get("losses", 0) or 0)
+    history_draws = int(history_totals.get("draws", 0) or 0)
 
     total_volume = metrics.get("total_volume")
     try:
@@ -3945,6 +3984,11 @@ def _cumulative_summary(
         history_volume = _estimate_history_volume(state.get("trade_history", []))
         if history_volume > 0:
             summary["total_volume"] = max(summary["total_volume"], history_volume)
+
+    summary["total_trades"] = max(summary["total_trades"], history_total_trades)
+    summary["wins"] = max(summary["wins"], history_wins)
+    summary["losses"] = max(summary["losses"], history_losses)
+    summary["draws"] = max(summary["draws"], history_draws)
 
     realized_total: Optional[float] = None
     if stats is not None:
@@ -3959,6 +4003,11 @@ def _cumulative_summary(
         candidate_val = _safe_float(candidate)
         if candidate_val is not None:
             realized_total = candidate_val
+
+    if history_total_trades > 0:
+        history_realized = _safe_float(history_totals.get("realized_pnl"))
+        if history_realized is not None:
+            realized_total = history_realized
 
     if realized_total is None:
         realized_total = summary["total_pnl"]
@@ -7280,6 +7329,7 @@ async def trades() -> Dict[str, Any]:
     history_source = state.get("trade_history", [])
     if not isinstance(history_source, list):
         history_source = []
+    history_totals = _summarize_history_totals(history_source)
     run_started_at = _resolve_run_started_at(state)
     filtered_history = _filter_history_for_run(history_source, run_started_at)
     history_window: List[Dict[str, Any]] = [dict(entry) for entry in filtered_history[-200:]]
@@ -7326,12 +7376,17 @@ async def trades() -> Dict[str, Any]:
             if entry.get("queued_at") is not None:
                 record["queued_at"] = entry.get("queued_at")
             proposals.append(record)
-    cumulative_summary = _cumulative_summary(state, stats=stats, ai_budget=ai_budget)
+    cumulative_summary = _cumulative_summary(
+        state,
+        stats=stats,
+        ai_budget=ai_budget,
+        history_totals=history_totals,
+    )
     history_summary = _build_history_summary(stats)
     hero_metrics = _build_hero_metrics(
         cumulative_summary,
         stats,
-        history_count=len(display_history),
+        history_count=history_totals.get("total_trades", len(display_history)),
     )
 
     return {
