@@ -10063,10 +10063,48 @@ class TradeManager:
             for key in precedence:
                 if mgmt.get(key):
                     return key
+            hint_keys = (
+                "expected_r_stop_hit",
+                "expected_r_stop",
+                "breakeven_guard",
+                "breakeven",
+                "trail",
+                "fasttp_exit",
+                "fasttp",
+                "auto_half_take_profit",
+            )
+            for key in hint_keys:
+                if mgmt.get(key):
+                    return key
+            event_reason = TradeManager._latest_management_event_reason(mgmt.get("events"))
+            if event_reason:
+                return event_reason
             fallback_mgmt = TradeManager._extract_exit_reason(mgmt)
             if fallback_mgmt:
                 return fallback_mgmt
+        top_level_event_reason = TradeManager._latest_management_event_reason(rec.get("management_events"))
+        if top_level_event_reason:
+            return top_level_event_reason
         return TradeManager._extract_exit_reason(rec)
+
+    @staticmethod
+    def _latest_management_event_reason(events: Optional[Iterable[Dict[str, Any]]]) -> Optional[str]:
+        if not events:
+            return None
+        if isinstance(events, list):
+            iterable = reversed(events)
+        else:
+            iterable = reversed(list(events))
+        for entry in iterable:
+            if not isinstance(entry, dict):
+                continue
+            raw = entry.get("action") or entry.get("event") or entry.get("type") or entry.get("reason")
+            if not raw:
+                continue
+            cleaned = str(raw).strip()
+            if cleaned:
+                return cleaned
+        return None
 
     @staticmethod
     def _extract_exit_reason(*sources: Optional[Dict[str, Any]]) -> Optional[str]:

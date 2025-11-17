@@ -2451,6 +2451,21 @@ const MANAGEMENT_EXIT_REASON_KEYS = [
   'exitReason',
 ];
 const MANAGEMENT_BLOCK_EXIT_REASON_KEYS = ['exit_reason', 'exitReason', 'last_reason', 'lastReason', 'reason'];
+const MANAGEMENT_EXIT_HINT_KEYS = [
+  'expected_r_stop_hit',
+  'expected_r_stop',
+  'breakeven_guard',
+  'breakeven',
+  'trail',
+  'fasttp_exit',
+  'fasttp',
+  'auto_half_take_profit',
+  'time_cut',
+  'time_stop',
+  'compression_time_cut',
+  'compression_scale_down',
+  'scale_half',
+];
 let positionNotificationHistory = [];
 let completedPositionsHistory = [];
 const completedPositionsIndex = new Map();
@@ -6760,6 +6775,58 @@ function extractPositionManagementExitReason(position) {
       if (management[key]) {
         return management[key];
       }
+    }
+    for (let index = 0; index < MANAGEMENT_EXIT_HINT_KEYS.length; index += 1) {
+      const hintKey = MANAGEMENT_EXIT_HINT_KEYS[index];
+      if (!Object.prototype.hasOwnProperty.call(management, hintKey)) {
+        continue;
+      }
+      const value = management[hintKey];
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed) {
+          return trimmed;
+        }
+      }
+      if (value) {
+        return hintKey;
+      }
+    }
+  }
+  const eventReason = extractLatestManagementEventAction(position);
+  if (eventReason) {
+    return eventReason;
+  }
+  return '';
+}
+
+function extractLatestManagementEventAction(position) {
+  if (!position || typeof position !== 'object') {
+    return '';
+  }
+  const pools = [];
+  const management = position.management;
+  if (management && Array.isArray(management.events)) {
+    pools.push(...management.events);
+  }
+  if (Array.isArray(position.management_events)) {
+    pools.push(...position.management_events);
+  }
+  if (!pools.length) {
+    return '';
+  }
+  for (let index = pools.length - 1; index >= 0; index -= 1) {
+    const entry = pools[index];
+    if (!entry || typeof entry !== 'object') {
+      continue;
+    }
+    const raw = entry.action || entry.event || entry.reason || entry.type || entry.name;
+    if (!raw) {
+      continue;
+    }
+    const label = raw.toString().trim();
+    if (label) {
+      return label;
     }
   }
   return '';
