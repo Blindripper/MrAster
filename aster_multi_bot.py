@@ -1508,11 +1508,38 @@ def adx_latest(kl: List[List[float]], period: int = 14) -> Tuple[float, float]:
         adx_prev = adx_last
     return adx_last, adx_last - adx_prev
 
-def round_price(symbol: str, price: float, tick: float) -> float:
+def round_price(symbol: str, price: float, tick: float, *, bias: Optional[str] = None) -> float:
+    """Align ``price`` to the exchange ``tick`` respecting directional intent.
+
+    ``bias`` controls how the rounding behaves:
+
+    - ``"down"`` (default) emulates the previous floor behaviour
+    - ``"up"`` guarantees the price does not move past the requested level in
+      the adverse direction
+    - ``"nearest"`` can be used for symmetric adjustments
+
+    This keeps stop-loss levels for shorts (and targets for longs) from being
+    rounded onto the wrong side when the ATR distance is smaller than a single
+    tick – a situation that primarily affected high-priced symbols such as
+    BTCUSDT.
+    """
+
     if tick <= 0:
         return float(price)
-    steps = math.floor(price / tick + 1e-12)
-    return float(steps * tick)
+
+    step = float(tick)
+    value = float(price)
+    eps = 1e-12
+    bias_token = str(bias or "").strip().lower()
+
+    if bias_token in {"up", "ceil", "ceiling"}:
+        steps = math.ceil(value / step - eps)
+    elif bias_token in {"nearest", "round"}:
+        steps = round(value / step)
+    else:  # default + explicit "down"
+        steps = math.floor(value / step + eps)
+
+    return float(steps * step)
 
 def _format_decimal(value: float) -> str:
     s = f"{float(value):.12f}".rstrip("0").rstrip(".")
@@ -15198,10 +15225,13 @@ class Bot:
         tick = float(self.risk.symbol_filters.get(symbol, {}).get("tickSize", 0.0001) or 0.0001)
         limit_price_value: Optional[float] = None
         if execution_force_limit:
-            limit_price_value = round_price(symbol, px, tick)
+            limit_bias = "down" if sig == "BUY" else "up"
+            limit_price_value = round_price(symbol, px, tick, bias=limit_bias)
             ctx["execution_force_limit_price"] = float(limit_price_value)
-        sl = round_price(symbol, sl, tick)
-        tp = round_price(symbol, tp, tick)
+        sl_bias = "down" if sig == "BUY" else "up"
+        tp_bias = "up" if sig == "BUY" else "down"
+        sl = round_price(symbol, sl, tick, bias=sl_bias)
+        tp = round_price(symbol, tp, tick, bias=tp_bias)
 
         step = self.risk.step_size(symbol)
 
