@@ -33,7 +33,7 @@ import threading
 import random
 from pathlib import Path
 from datetime import datetime, timezone, date
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 from typing import Dict, List, Tuple, Optional, Any, Callable, Sequence, Set, Iterable, Mapping
 
 from collections import Counter, OrderedDict, deque
@@ -6308,12 +6308,38 @@ class Exchange:
         ws_env = os.getenv("ASTER_WS_BASE", "").strip()
         if ws_env:
             self.ws_base = ws_env.rstrip("/")
-        elif self.base.startswith("https://"):
-            self.ws_base = "wss://" + self.base[len("https://") :]
-        elif self.base.startswith("http://"):
-            self.ws_base = "ws://" + self.base[len("http://") :]
         else:
-            self.ws_base = self.base
+            self.ws_base = self._derive_ws_base(self.base)
+
+    def _derive_ws_base(self, base: str) -> str:
+        """Infer a websocket endpoint from the REST base URL."""
+
+        parsed = urlparse(base if "://" in base else f"https://{base}")
+        scheme = parsed.scheme.lower()
+        if scheme in {"ws", "wss"}:
+            ws_scheme = scheme
+        elif scheme == "http":
+            ws_scheme = "ws"
+        else:
+            ws_scheme = "wss"
+
+        hostname = parsed.hostname or parsed.netloc or base
+        host_lower = hostname.lower()
+        if host_lower.startswith("fapi."):
+            hostname = "fstream." + hostname[len("fapi.") :]
+        elif host_lower.startswith("dapi."):
+            hostname = "dstream." + hostname[len("dapi.") :]
+
+        port = parsed.port
+        netloc = hostname
+        if port:
+            netloc = f"{netloc}:{port}"
+
+        # Preserve custom paths only when the base already specifies a ws(s) scheme.
+        path = parsed.path.rstrip("/") if scheme in {"ws", "wss"} else ""
+        if path:
+            return f"{ws_scheme}://{netloc}{path}"
+        return f"{ws_scheme}://{netloc}"
 
     def _headers(self) -> Dict[str, str]:
         h = {"Content-Type": "application/x-www-form-urlencoded"}
