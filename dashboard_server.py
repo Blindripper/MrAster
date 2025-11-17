@@ -128,6 +128,7 @@ ENV_DEFAULTS: Dict[str, str] = {
     "ASTER_AI_NEWS_ENDPOINT": "",
     "ASTER_AI_NEWS_API_KEY": "",
     "ASTER_CHAT_OPENAI_API_KEY": "",
+    "ASTER_DASHBOARD_REALIZED_ENRICH": "false",
 }
 
 # Mapping of well-known asset names to their corresponding base tickers to
@@ -7196,21 +7197,26 @@ async def trades() -> Dict[str, Any]:
     history: List[Dict[str, Any]] = [dict(entry) for entry in filtered_history[-200:]]
 
     env_cfg = CONFIG.get("env", {})
+    realized_enrich_enabled = _is_truthy(
+        env_cfg.get("ASTER_DASHBOARD_REALIZED_ENRICH")
+        or env_cfg.get("ASTER_REALIZED_PNL_ENRICH")
+    )
 
-    realized_entries: List[Dict[str, Any]] = []
-    try:
-        fetch_limit = max(len(history) * 3, 200)
-        realized_entries = await asyncio.to_thread(
-            _fetch_realized_pnl_entries, env_cfg, fetch_limit
-        )
-    except Exception as exc:
-        logger.debug("realized pnl enrichment failed: %s", exc)
-        realized_entries = []
+    if realized_enrich_enabled:
+        realized_entries: List[Dict[str, Any]] = []
+        try:
+            fetch_limit = max(len(history) * 3, 200)
+            realized_entries = await asyncio.to_thread(
+                _fetch_realized_pnl_entries, env_cfg, fetch_limit
+            )
+        except Exception as exc:
+            logger.debug("realized pnl enrichment failed: %s", exc)
+            realized_entries = []
 
-    if realized_entries:
-        history = _merge_realized_pnl(history, realized_entries)
-        history = _filter_history_for_run(history, run_started_at)
-        history = history[-200:]
+        if realized_entries:
+            history = _merge_realized_pnl(history, realized_entries)
+            history = _filter_history_for_run(history, run_started_at)
+            history = history[-200:]
 
     stats_history: List[Dict[str, Any]] = history
     display_history: List[Dict[str, Any]] = []
