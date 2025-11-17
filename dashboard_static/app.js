@@ -2551,6 +2551,7 @@ function applyTranslations(lang) {
       latestTradesSnapshot.stats,
       latestTradesSnapshot.history,
       latestTradesSnapshot.hero_metrics,
+      latestTradesSnapshot.open ?? latestTradesSnapshot.open_positions ?? null,
     );
   }
   if (btnSaveConfig) {
@@ -11166,7 +11167,13 @@ function deriveHistoryVolume(historyEntries) {
   return total;
 }
 
-function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null, preparedMetrics = null) {
+function renderHeroMetrics(
+  cumulativeStats,
+  sessionStats,
+  historyEntries = null,
+  preparedMetrics = null,
+  openPositions = null,
+) {
   if (!heroTotalTrades || !heroTotalPnl || !heroTotalWinRate) return;
 
   const totals = cumulativeStats && typeof cumulativeStats === 'object' ? cumulativeStats : {};
@@ -11194,61 +11201,100 @@ function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null,
     return Math.round(Math.abs(numeric));
   };
 
+  const pickFirstFinite = (...candidates) => {
+    for (const candidate of candidates) {
+      if (candidate == null) continue;
+      const numeric = Number(candidate);
+      if (Number.isFinite(numeric)) {
+        return numeric;
+      }
+    }
+    return null;
+  };
+
+  const normalizeOpenPositionPayload = (payload) => {
+    if (!payload) return [];
+    if (Array.isArray(payload)) {
+      return payload.filter((entry) => entry && typeof entry === 'object');
+    }
+    if (typeof payload === 'object') {
+      return Object.values(payload).filter((entry) => entry && typeof entry === 'object');
+    }
+    return [];
+  };
+
+  const openPayloadSources = [
+    openPositions,
+    totals?.open_positions ?? totals?.openPositions,
+    fallback?.open_positions ?? fallback?.openPositions,
+  ];
+  let normalizedOpenPositions = [];
+  for (const source of openPayloadSources) {
+    if (!source) continue;
+    const normalized = normalizeOpenPositionPayload(source);
+    if (normalized.length > 0) {
+      normalizedOpenPositions = normalized;
+      break;
+    }
+  }
+  const openPositionsCount = normalizedOpenPositions.length;
+
   const serverTotalTrades = resolveNumericField(serverMetrics, ['total_trades', 'totalTrades']);
+  const historyTradeCount = historyList.length > 0 ? historyList.length : null;
   const tradeCountCandidates = [
+    historyTradeCount,
+    parsePositiveInteger(fallback.count ?? fallback.total_trades ?? fallback.totalTrades),
     serverTotalTrades != null ? parsePositiveInteger(serverTotalTrades) : null,
     parsePositiveInteger(totals.total_trades ?? totals.count),
-    parsePositiveInteger(fallback.count),
-    historyList.length > 0 ? historyList.length : null,
   ];
-  const totalTrades = tradeCountCandidates.find((value) => value != null) ?? 0;
+  let totalTrades = tradeCountCandidates.find((value) => value != null) ?? 0;
+  if (openPositionsCount > 0) {
+    totalTrades += openPositionsCount;
+  }
   heroTotalTrades.textContent = totalTrades.toLocaleString();
 
-  const netPnlCandidate = totals.total_pnl ?? fallback.total_pnl ?? 0;
+  const aiBudgetSpentRaw = pickFirstFinite(
+    resolveNumericField(sessionStats, ['ai_budget_spent', 'aiBudgetSpent']),
+    resolveNumericField(serverMetrics, ['ai_budget_spent', 'aiBudgetSpent']),
+    resolveNumericField(totals, ['ai_budget_spent', 'aiBudgetSpent']),
+    resolveNumericField(fallback, ['ai_budget_spent', 'aiBudgetSpent']),
+  );
+  const aiBudgetSpent = Number.isFinite(aiBudgetSpentRaw) ? Math.max(aiBudgetSpentRaw, 0) : 0;
+
+  const realizedPnlRaw = pickFirstFinite(
+    resolveNumericField(sessionStats, ['realized_pnl', 'realizedPnl']),
+    resolveNumericField(sessionStats, ['total_pnl', 'totalPnl']),
+    resolveNumericField(serverMetrics, ['realized_pnl', 'realizedPnl']),
+    resolveNumericField(totals, ['realized_pnl', 'realizedPnl']),
+    resolveNumericField(fallback, ['realized_pnl', 'realizedPnl']),
+    totals.total_pnl,
+    fallback.total_pnl,
+  );
+
   const serverNetPnl = resolveNumericField(serverMetrics, ['total_pnl', 'totalPnl']);
-  let netPnlRaw = serverNetPnl != null ? serverNetPnl : Number(netPnlCandidate);
-  let realizedPnlRaw = resolveNumericField(serverMetrics, ['realized_pnl', 'realizedPnl']);
-  if (!Number.isFinite(realizedPnlRaw)) {
-    realizedPnlRaw = Number(
-      totals.realized_pnl ?? totals.realizedPnl ?? fallback.realized_pnl ?? NaN,
-    );
-  }
-  let aiBudgetSpentRaw = resolveNumericField(serverMetrics, ['ai_budget_spent', 'aiBudgetSpent']);
-  if (!Number.isFinite(aiBudgetSpentRaw)) {
-    aiBudgetSpentRaw = Number(
-      totals.ai_budget_spent ?? totals.aiBudgetSpent ?? fallback.ai_budget_spent ?? NaN,
-    );
+  const fallbackNetPnl = pickFirstFinite(
+    totals.total_pnl,
+    resolveNumericField(totals, ['total_pnl', 'totalPnl']),
+    fallback.total_pnl,
+    resolveNumericField(fallback, ['total_pnl', 'totalPnl']),
+  );
+
+  let netPnl = null;
+  if (Number.isFinite(realizedPnlRaw)) {
+    netPnl = realizedPnlRaw - aiBudgetSpent;
+  } else if (Number.isFinite(serverNetPnl)) {
+    netPnl = serverNetPnl;
+  } else if (Number.isFinite(fallbackNetPnl)) {
+    netPnl = fallbackNetPnl;
+  } else {
+    netPnl = 0;
   }
 
-  if (!Number.isFinite(aiBudgetSpentRaw)) {
-    aiBudgetSpentRaw = Number((sessionStats || {}).ai_budget_spent ?? NaN);
+  if (!Number.isFinite(netPnl)) {
+    netPnl = 0;
   }
 
-  if (!Number.isFinite(aiBudgetSpentRaw)) {
-    aiBudgetSpentRaw = 0;
-  }
-
-  if (!Number.isFinite(realizedPnlRaw)) {
-    realizedPnlRaw = Number(fallback.total_pnl ?? NaN);
-  }
-
-  if (!Number.isFinite(realizedPnlRaw) && Number.isFinite(netPnlRaw)) {
-    realizedPnlRaw = Number(netPnlRaw) + Number(aiBudgetSpentRaw);
-  }
-
-  if (!Number.isFinite(netPnlRaw) && Number.isFinite(realizedPnlRaw)) {
-    netPnlRaw = Number(realizedPnlRaw) - Number(aiBudgetSpentRaw);
-  }
-
-  if (!Number.isFinite(netPnlRaw)) {
-    netPnlRaw = 0;
-  }
-
-  const netPnl = netPnlRaw;
-  const realizedPnl = Number.isFinite(realizedPnlRaw) ? realizedPnlRaw : netPnl + aiBudgetSpentRaw;
-  const aiBudgetSpent = Number.isFinite(aiBudgetSpentRaw)
-    ? aiBudgetSpentRaw
-    : Math.max((realizedPnl || 0) - netPnl, 0);
+  const realizedPnl = Number.isFinite(realizedPnlRaw) ? realizedPnlRaw : netPnl + aiBudgetSpent;
 
   if (Number.isFinite(netPnl)) {
     const formatted = Math.abs(netPnl).toLocaleString(undefined, {
@@ -11348,10 +11394,10 @@ function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null,
       ? Math.max(0, Math.min(1, winsRaw / denominator))
       : null;
   const computedWinRate =
+    historyWinRate ??
     serverWinRate ??
     totalsWinRate ??
     derivedTotalsWinRate ??
-    historyWinRate ??
     fallbackWinRate ??
     0;
 
@@ -13958,6 +14004,7 @@ async function loadTrades() {
         snapshot.stats,
         snapshot.history,
         snapshot.hero_metrics,
+        snapshot.open ?? snapshot.open_positions ?? null,
       );
       renderDecisionStats(snapshot.decision_stats);
       renderPnlChart(snapshot.history, snapshot.pnl_series);
