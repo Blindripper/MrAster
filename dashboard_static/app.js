@@ -359,7 +359,7 @@ const TRANSLATIONS = {
     'active.mode.paper': 'Бумажный режим',
     'active.mode.unrealized': 'Совокупный нереализованный PNL',
     'active.notifications.title': 'Обновления по позициям',
-    'active.notifications.subtitle': 'Последние действия по управлению и закрытию позиций.',
+    'active.notifications.subtitle': 'Оперативные обновления по текущим открытым позициям.',
     'active.notifications.empty': 'Свежих обновлений по управлению пока нет.',
     'active.empty': 'Нет активных позиций.',
     'active.empty.paper': 'Пока нет бумажных сделок.',
@@ -650,7 +650,7 @@ const TRANSLATIONS = {
     'active.mode.paper': 'Papiermodus',
     'active.mode.unrealized': 'Gesamter unrealisierter PNL',
     'active.notifications.title': 'Positions-Updates',
-    'active.notifications.subtitle': 'Neueste Management- und Schließungsereignisse.',
+    'active.notifications.subtitle': 'Live-Updates zu den aktuell offenen Positionen.',
     'active.notifications.empty': 'Noch keine aktuellen Verwaltungsereignisse.',
     'active.empty': 'Keine aktiven Positionen.',
     'active.empty.paper': 'Noch keine Papier-Trades.',
@@ -944,7 +944,7 @@ const TRANSLATIONS = {
     'active.mode.paper': '페이퍼 모드',
     'active.mode.unrealized': '총 미실현 PNL',
     'active.notifications.title': '포지션 업데이트',
-    'active.notifications.subtitle': '최근 관리 및 청산 이벤트.',
+    'active.notifications.subtitle': '현재 오픈된 포지션을 위한 실시간 업데이트.',
     'active.notifications.empty': '최근 관리 이벤트가 아직 없습니다.',
     'active.empty': '활성 포지션이 없습니다.',
     'active.empty.paper': '아직 페이퍼 거래가 없습니다.',
@@ -1238,7 +1238,7 @@ const TRANSLATIONS = {
     'active.mode.paper': 'Mode papier',
     'active.mode.unrealized': 'PNL total non réalisé',
     'active.notifications.title': 'Mises à jour des positions',
-    'active.notifications.subtitle': 'Dernières actions de gestion et de clôture.',
+    'active.notifications.subtitle': 'Mises à jour en temps réel pour les positions ouvertes.',
     'active.notifications.empty': 'Aucune gestion récente pour le moment.',
     'active.empty': 'Aucune position active.',
     'active.empty.paper': 'Aucun trade en mode papier pour l’instant.',
@@ -1532,7 +1532,7 @@ const TRANSLATIONS = {
     'active.mode.paper': 'Modo simulado',
     'active.mode.unrealized': 'PNL total no realizado',
     'active.notifications.title': 'Actualizaciones de posiciones',
-    'active.notifications.subtitle': 'Últimos eventos de gestión y cierre.',
+    'active.notifications.subtitle': 'Actualizaciones en tiempo real de las posiciones abiertas.',
     'active.notifications.empty': 'Aún no hay eventos recientes de gestión.',
     'active.empty': 'Sin posiciones activas.',
     'active.empty.paper': 'Todavía no hay operaciones simuladas.',
@@ -1825,7 +1825,7 @@ const TRANSLATIONS = {
     'active.mode.paper': 'Demo modu',
     'active.mode.unrealized': 'Toplam gerçekleşmemiş PNL',
     'active.notifications.title': 'Pozisyon güncellemeleri',
-    'active.notifications.subtitle': 'En son yönetim ve kapatma olayları.',
+    'active.notifications.subtitle': 'Anlık olarak açık pozisyonlara dair güncellemeler.',
     'active.notifications.empty': 'Henüz son yönetim olayları yok.',
     'active.empty': 'Aktif pozisyon yok.',
     'active.empty.paper': 'Henüz demo işlemi yok.',
@@ -2112,7 +2112,7 @@ const TRANSLATIONS = {
     'active.mode.paper': '模拟模式',
     'active.mode.unrealized': '总未实现PNL',
     'active.notifications.title': '仓位更新',
-    'active.notifications.subtitle': '最新的风控与平仓动态。',
+    'active.notifications.subtitle': '实时呈现当前持仓的更新动态。',
     'active.notifications.empty': '暂无最新的风控更新。',
     'active.empty': '暂无持仓。',
     'active.empty.paper': '模拟交易尚未产生。',
@@ -2403,6 +2403,7 @@ let aiChatHistory = [];
 let aiChatPending = false;
 let aiAnalyzePending = false;
 let activePositions = [];
+let activePositionSymbols = new Set();
 let tradeHistoryEmptyStreak = 0;
 let aiRequestsEmptyStreak = 0;
 const POSITION_NOTIFICATION_HISTORY_LIMIT = 15;
@@ -5782,6 +5783,28 @@ function updateNotificationRelativeTime(element, timestamp) {
   }
 }
 
+function getNotificationElementSymbol(element) {
+  if (!(element instanceof HTMLElement)) return '';
+  const symbolValue =
+    element.dataset?.symbol || element.dataset?.symbolNormalized || element.dataset?.symbolText || '';
+  return normalizeSymbolValue(symbolValue);
+}
+
+function prunePositionNotificationHistory() {
+  if (!Array.isArray(positionNotificationHistory) || !positionNotificationHistory.length) {
+    positionNotificationHistory = [];
+    return;
+  }
+  if (!(activePositionSymbols instanceof Set) || activePositionSymbols.size === 0) {
+    positionNotificationHistory = [];
+    return;
+  }
+  positionNotificationHistory = positionNotificationHistory.filter((entry) => {
+    const normalizedSymbol = normalizeSymbolValue(entry?.symbol);
+    return normalizedSymbol && activePositionSymbols.has(normalizedSymbol);
+  });
+}
+
 function rememberPositionNotifications(notifications) {
   if (!Array.isArray(notifications) || notifications.length === 0) {
     return;
@@ -5789,6 +5812,10 @@ function rememberPositionNotifications(notifications) {
   const entries = notifications
     .map((element) => {
       if (!(element instanceof HTMLElement)) return null;
+      const normalizedSymbol = getNotificationElementSymbol(element);
+      if (!normalizedSymbol || (activePositionSymbols instanceof Set && !activePositionSymbols.has(normalizedSymbol))) {
+        return null;
+      }
       const rawTs = element.dataset?.timestamp;
       const parsedTs = rawTs ? Number(rawTs) : Number.NaN;
       const ts = Number.isFinite(parsedTs) ? parsedTs : Date.now() / 1000;
@@ -5804,7 +5831,10 @@ function rememberPositionNotifications(notifications) {
       if (template && Number.isFinite(ts)) {
         template.dataset.timestamp = ts.toString();
       }
-      return { ts, signature, template };
+      if (template) {
+        template.dataset.symbol = normalizedSymbol;
+      }
+      return { ts, signature, template, symbol: normalizedSymbol };
     })
     .filter((entry) => entry && entry.template);
 
@@ -5815,7 +5845,11 @@ function rememberPositionNotifications(notifications) {
   const merged = [...entries, ...positionNotificationHistory];
   const seen = new Set();
   positionNotificationHistory = merged.filter((entry) => {
-    const key = entry.signature || `${entry.ts}|${entry.template.textContent || ''}`;
+    const symbol = normalizeSymbolValue(entry?.symbol);
+    if (!symbol || !activePositionSymbols.has(symbol)) {
+      return false;
+    }
+    const key = entry.signature || `${entry.ts}|${entry.template?.textContent || ''}`;
     if (seen.has(key)) {
       return false;
     }
@@ -5834,6 +5868,10 @@ function buildHistoricalNotifications(limit = 5) {
   }
   const nodes = [];
   positionNotificationHistory.slice(0, limit).forEach((entry) => {
+    const normalizedSymbol = normalizeSymbolValue(entry?.symbol);
+    if (!normalizedSymbol || !activePositionSymbols.has(normalizedSymbol)) {
+      return;
+    }
     const template = entry?.template;
     if (!template) return;
     const clone = template.cloneNode(true);
@@ -5842,6 +5880,7 @@ function buildHistoricalNotifications(limit = 5) {
       clone.dataset.timestamp = entry.ts.toString();
       updateNotificationRelativeTime(clone, entry.ts);
     }
+    clone.dataset.symbol = normalizedSymbol;
     if (!clone.hasAttribute('role')) {
       clone.setAttribute('role', 'listitem');
     }
@@ -5862,12 +5901,18 @@ function refreshRenderedPositionNotifications() {
 }
 
 function renderPositionNotifications(notifications) {
-  const hasNotifications = Array.isArray(notifications) && notifications.length > 0;
+  const relevantNotifications = Array.isArray(notifications)
+    ? notifications.filter((notification) => {
+        const symbol = getNotificationElementSymbol(notification);
+        return symbol && activePositionSymbols instanceof Set && activePositionSymbols.has(symbol);
+      })
+    : [];
+  const hasNotifications = relevantNotifications.length > 0;
 
   if (activePositionsNotifications) {
     if (hasNotifications) {
       const notificationFragment = document.createDocumentFragment();
-      notifications.forEach((notification) => {
+      relevantNotifications.forEach((notification) => {
         if (notification && !notification.hasAttribute('role')) {
           notification.setAttribute('role', 'listitem');
         }
@@ -6068,6 +6113,10 @@ function buildPositionManagementSummary(position, options = {}) {
   container.className = 'active-position-management';
   container.setAttribute('role', 'listitem');
   container.dataset.action = latest.action || '';
+  const normalizedSymbol = getNormalizedActivePositionSymbol(position);
+  if (normalizedSymbol) {
+    container.dataset.symbol = normalizedSymbol;
+  }
   const timestampNumeric = Number.isFinite(latest.ts) ? Number(latest.ts) : null;
   if (timestampNumeric !== null) {
     container.dataset.timestamp = timestampNumeric.toString();
@@ -6132,6 +6181,10 @@ function buildClosedPositionNotification(position, options = {}) {
   container.className = 'active-position-management';
   container.setAttribute('role', 'listitem');
   container.dataset.action = 'closed';
+  const normalizedSymbol = getNormalizedActivePositionSymbol(position);
+  if (normalizedSymbol) {
+    container.dataset.symbol = normalizedSymbol;
+  }
   const closedTs = getPositionTimestamp(position);
   const closedTimestamp = Number.isFinite(closedTs) && closedTs > 0 ? closedTs : Date.now() / 1000;
   container.dataset.timestamp = closedTimestamp.toString();
@@ -6527,7 +6580,10 @@ function updateActivePositionsView(options = {}) {
 
   const limitedNotifications = sortedNotifications.slice(0, 5);
   rememberPositionNotifications(limitedNotifications);
-  let notificationsToRender = limitedNotifications;
+  let notificationsToRender = limitedNotifications.filter((element) => {
+    const symbol = getNotificationElementSymbol(element);
+    return symbol && activePositionSymbols instanceof Set && activePositionSymbols.has(symbol);
+  });
   if (!notificationsToRender.length) {
     notificationsToRender = buildHistoricalNotifications(5);
   }
@@ -6578,6 +6634,8 @@ function renderActivePositions(openPositions) {
   });
 
   activePositions = nextPositions;
+  activePositionSymbols = nextSymbols;
+  prunePositionNotificationHistory();
   updateActivePositionsView({ closedPositions });
   refreshTradeProposalPlacementAvailability();
 }
