@@ -254,6 +254,35 @@ def test_playbook_persona_mean_reversion_overrides_trend():
     assert any("range" in term for term in focus_terms)
 
 
+def test_playbook_persona_bias_override_tracks_regime():
+    mgr = _manager()
+    now = time.time()
+    range_payload = {
+        "mode": "range",  # emphasise neutral regime
+        "bias": "balanced",
+        "features": {"rsi_bandwidth": 0.55, "trend_strength": 0.05},
+    }
+    mgr._normalize_playbook(range_payload, now)  # pylint: disable=protected-access
+    persona = advisor_active_persona(mgr._root, now)  # pylint: disable=protected-access
+    assert persona and persona.get("key") == "mean_reversion"
+    assert persona.get("confidence_bias", 0.0) <= -0.04
+
+    conflict_mgr = _manager()
+    payload_conflict = {
+        "mode": "range focus",  # keep mean reversion selected
+        "bias": "neutral",
+        "features": {
+            "rsi_bandwidth": 0.2,
+            "range_signal": 0.5,
+            "trend_strength": 0.85,
+        },
+    }
+    conflict_mgr._normalize_playbook(payload_conflict, now)  # pylint: disable=protected-access
+    persona_conflict = advisor_active_persona(conflict_mgr._root, now)  # pylint: disable=protected-access
+    assert persona_conflict and persona_conflict.get("key") == "mean_reversion"
+    assert persona_conflict.get("confidence_bias", 0.0) >= -0.01
+
+
 def test_playbook_focus_adjustment_helper_applies_side_and_risk_bias():
     ctx = {"playbook_focus_side_bias": 0.8}
     size, sl, tp = _apply_playbook_focus_adjustments(dict(ctx), "BUY", 1.0, 1.0, 1.0)

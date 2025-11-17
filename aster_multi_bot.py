@@ -3809,17 +3809,84 @@ class AITradeAdvisor:
             pass
         return payload or None
 
-    @staticmethod
-    def _persona_confidence_bias(request_payload: Optional[Dict[str, Any]]) -> float:
+    def _persona_confidence_bias(self, request_payload: Optional[Dict[str, Any]]) -> float:
         if not isinstance(request_payload, dict):
             return 0.0
         persona = request_payload.get("persona")
         if not isinstance(persona, dict):
             return 0.0
         try:
-            return float(persona.get("confidence_bias", 0.0) or 0.0)
+            base_bias = float(persona.get("confidence_bias", 0.0) or 0.0)
         except (TypeError, ValueError):
-            return 0.0
+            base_bias = 0.0
+        persona_key = str(persona.get("key") or "").strip().lower()
+        if persona_key == "mean_reversion":
+            return self._mean_reversion_confidence_bias(base_bias, request_payload)
+        return base_bias
+
+    def _mean_reversion_confidence_bias(
+        self, base_bias: float, request_payload: Dict[str, Any]
+    ) -> float:
+        stats = request_payload.get("stats") if isinstance(request_payload.get("stats"), dict) else {}
+        context = (
+            request_payload.get("context")
+            if isinstance(request_payload.get("context"), dict)
+            else {}
+        )
+
+        def _stat_lookup(keys: Sequence[str]) -> Optional[float]:
+            sources = (stats, context, request_payload)
+            for source in sources:
+                if not isinstance(source, dict):
+                    continue
+                for key in keys:
+                    if key not in source:
+                        continue
+                    numeric = self._coerce_float(source.get(key))
+                    if numeric is not None:
+                        return numeric
+            return None
+
+        atr_pct = _stat_lookup(("atr_pct",))
+        trend_strength: Optional[float] = None
+        htf_up = _stat_lookup(("htf_trend_up",))
+        htf_down = _stat_lookup(("htf_trend_down",))
+        if htf_up is not None or htf_down is not None:
+            trend_strength = max(htf_up or 0.0, htf_down or 0.0)
+        if trend_strength is None:
+            trend_strength = _stat_lookup(("trend_strength", "regime_slope", "trend"))
+            if trend_strength is not None:
+                trend_strength = abs(trend_strength)
+        rsi_val = _stat_lookup(("rsi", "rsi_14", "rsi14"))
+
+        net_signal = 0.0
+        if atr_pct is not None:
+            if atr_pct <= 0.008:
+                net_signal += 0.6
+            elif atr_pct <= 0.015:
+                net_signal += 0.25
+            elif atr_pct >= 0.035:
+                net_signal -= 0.55
+            elif atr_pct >= 0.025:
+                net_signal -= 0.25
+        if trend_strength is not None:
+            net_signal -= min(max(trend_strength, 0.0), 1.5) * 0.55
+        if rsi_val is not None:
+            distance = abs(rsi_val - 50.0)
+            if distance <= 5.0:
+                net_signal += 0.35
+            elif distance <= 12.0:
+                net_signal += 0.18
+            elif distance >= 30.0:
+                net_signal -= 0.25
+            elif distance >= 22.0:
+                net_signal -= 0.15
+
+        if abs(net_signal) < 1e-6:
+            return base_bias
+        net_signal = clamp(net_signal, -1.0, 1.0)
+        adjusted = clamp(base_bias - (net_signal * 0.06), -0.18, 0.05)
+        return adjusted
 
     @staticmethod
     def _persona_plan_meta(request_payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
