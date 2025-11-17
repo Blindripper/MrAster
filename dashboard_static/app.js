@@ -10981,9 +10981,9 @@ function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null,
   const serverTotalTrades = resolveNumericField(serverMetrics, ['total_trades', 'totalTrades']);
   const tradeCountCandidates = [
     serverTotalTrades != null ? parsePositiveInteger(serverTotalTrades) : null,
+    parsePositiveInteger(totals.total_trades ?? totals.count),
     parsePositiveInteger(fallback.count),
     historyList.length > 0 ? historyList.length : null,
-    parsePositiveInteger(totals.total_trades ?? totals.count),
   ];
   const totalTrades = tradeCountCandidates.find((value) => value != null) ?? 0;
   heroTotalTrades.textContent = totalTrades.toLocaleString();
@@ -11127,18 +11127,17 @@ function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null,
   const lossesRaw = Number(totals.losses ?? fallback.losses ?? 0);
   const drawsRaw = Number(totals.draws ?? fallback.draws ?? 0);
   const denominator = totalTrades > 0 ? totalTrades : winsRaw + lossesRaw + drawsRaw;
-  const computedWinRate =
-    serverWinRate != null
-      ? serverWinRate
-      : historyWinRate != null
-      ? historyWinRate
-      : fallbackWinRate != null
-      ? fallbackWinRate
-      : totalsWinRate != null
-      ? totalsWinRate
-      : denominator > 0 && Number.isFinite(winsRaw)
+  const derivedTotalsWinRate =
+    denominator > 0 && Number.isFinite(winsRaw)
       ? Math.max(0, Math.min(1, winsRaw / denominator))
-      : 0;
+      : null;
+  const computedWinRate =
+    serverWinRate ??
+    totalsWinRate ??
+    derivedTotalsWinRate ??
+    historyWinRate ??
+    fallbackWinRate ??
+    0;
 
   heroTotalWinRate.textContent = `${(computedWinRate * 100).toFixed(1)}%`;
 
