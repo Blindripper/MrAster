@@ -12041,6 +12041,15 @@ function renderHeroMetrics(
     fallback.total_pnl,
   );
 
+  const hasCompletedStats =
+    completedPositionsStatsTotals && completedPositionsStatsTotals.trades > 0;
+  const completedPositionsRealizedPnl = hasCompletedStats
+    ? Number(completedPositionsStatsTotals.realizedPnl)
+    : null;
+  const completedRealizedPnl = Number.isFinite(completedPositionsRealizedPnl)
+    ? completedPositionsRealizedPnl
+    : null;
+
   const serverNetPnl = resolveNumericField(serverMetrics, ['total_pnl', 'totalPnl']);
   const fallbackNetPnl = pickFirstFinite(
     totals.total_pnl,
@@ -12050,7 +12059,9 @@ function renderHeroMetrics(
   );
 
   let netPnl = null;
-  if (Number.isFinite(realizedPnlRaw)) {
+  if (Number.isFinite(completedRealizedPnl)) {
+    netPnl = completedRealizedPnl;
+  } else if (Number.isFinite(realizedPnlRaw)) {
     netPnl = realizedPnlRaw - aiBudgetSpent;
   } else if (Number.isFinite(serverNetPnl)) {
     netPnl = serverNetPnl;
@@ -12064,7 +12075,11 @@ function renderHeroMetrics(
     netPnl = 0;
   }
 
-  const realizedPnl = Number.isFinite(realizedPnlRaw) ? realizedPnlRaw : netPnl + aiBudgetSpent;
+  const realizedPnl = Number.isFinite(completedRealizedPnl)
+    ? completedRealizedPnl
+    : Number.isFinite(realizedPnlRaw)
+      ? realizedPnlRaw
+      : netPnl + aiBudgetSpent;
 
   if (Number.isFinite(netPnl)) {
     const formatted = Math.abs(netPnl).toLocaleString(undefined, {
