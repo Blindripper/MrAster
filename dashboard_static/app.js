@@ -309,6 +309,7 @@ const COMPACT_SKIP_AGGREGATION_WINDOW = 600; // seconds
 const MAX_MANAGEMENT_EVENTS = 50;
 const POSITION_NOTIFICATIONS_REFRESH_INTERVAL_MS = 45_000;
 const COMPLETED_POSITIONS_HISTORY_LIMIT = 12;
+const COMPLETED_POSITION_TRADE_MATCH_WINDOW_SECONDS = 15 * 60;
 const COMPLETED_POSITIONS_STATS_DEFAULTS = Object.freeze({
   trades: 0,
   realizedPnl: 0,
@@ -317,9 +318,11 @@ const COMPLETED_POSITIONS_STATS_DEFAULTS = Object.freeze({
   losses: 0,
   draws: 0,
 });
+let completedPositionsStatsBaseline = { ...COMPLETED_POSITIONS_STATS_DEFAULTS };
 let completedPositionsStatsTotals = { ...COMPLETED_POSITIONS_STATS_DEFAULTS };
 let tradeSummaryOverride = null;
 const activePositionManagementCache = new Map();
+const completedPositionMatchedTradeIds = new Set();
 
 const PLAYBOOK_CARD_TIMESTAMP_KEYS = {
   summary: ['requested_ts', 'requested', 'refreshed_ts', 'refreshed', 'applied_ts', 'applied'],
@@ -455,6 +458,7 @@ const TRANSLATIONS = {
     'trades.completed.pnl': 'Реализованный PNL',
     'trades.completed.reason': 'Причина выхода',
     'trades.completed.noReason': 'Причина не указана.',
+    'trades.completed.pendingDetails': 'Ждём синхронизации журнала сделки…',
     'pnl.title': 'Обзор эффективности',
     'pnl.subtitle': 'Совокупный реализованный PNL по вашим сделкам.',
     'pnl.tradesWon': 'Победные сделки',
@@ -746,6 +750,7 @@ const TRANSLATIONS = {
     'trades.completed.pnl': 'Realisierter PNL',
     'trades.completed.reason': 'Exit-Grund',
     'trades.completed.noReason': 'Kein Grund protokolliert.',
+    'trades.completed.pendingDetails': 'Trade-Log wird synchronisiert…',
     'pnl.title': 'Performance-Überblick',
     'pnl.subtitle': 'Kumulierte realisierte PNL aus deinen Trades.',
     'pnl.tradesWon': 'Gewonnene Trades',
@@ -1040,6 +1045,7 @@ const TRANSLATIONS = {
     'trades.completed.pnl': '실현 PNL',
     'trades.completed.reason': '청산 사유',
     'trades.completed.noReason': '사유가 기록되지 않았습니다.',
+    'trades.completed.pendingDetails': '거래 로그 동기화 중…',
     'pnl.title': '성과 개요',
     'pnl.subtitle': '거래 기반 누적 실현 PNL입니다.',
     'pnl.tradesWon': '승리한 트레이드',
@@ -1334,6 +1340,7 @@ const TRANSLATIONS = {
     'trades.completed.pnl': 'PNL réalisé',
     'trades.completed.reason': 'Motif de sortie',
     'trades.completed.noReason': 'Aucun motif consigné.',
+    'trades.completed.pendingDetails': 'Journal de trade en cours de synchronisation…',
     'pnl.title': 'Vue d’ensemble des performances',
     'pnl.subtitle': 'PNL réalisé cumulé sur vos trades.',
     'pnl.tradesWon': 'Trades gagnants',
@@ -1628,6 +1635,7 @@ const TRANSLATIONS = {
     'trades.completed.pnl': 'PNL realizado',
     'trades.completed.reason': 'Motivo de salida',
     'trades.completed.noReason': 'Sin motivo registrado.',
+    'trades.completed.pendingDetails': 'Sincronizando el registro de la operación…',
     'pnl.title': 'Resumen de rendimiento',
     'pnl.subtitle': 'PNL realizado acumulado de tus operaciones.',
     'pnl.tradesWon': 'Operaciones ganadas',
@@ -1921,6 +1929,7 @@ const TRANSLATIONS = {
     'trades.completed.pnl': 'Gerçekleşen PNL',
     'trades.completed.reason': 'Çıkış nedeni',
     'trades.completed.noReason': 'Neden kaydedilmedi.',
+    'trades.completed.pendingDetails': 'İşlem günlüğü senkronize ediliyor…',
     'pnl.title': 'Performans özeti',
     'pnl.subtitle': 'İşlemlerinizin kümülatif gerçekleşen PNL’i.',
     'pnl.tradesWon': 'Kazanılan işlemler',
@@ -2208,6 +2217,7 @@ const TRANSLATIONS = {
     'trades.completed.pnl': '已实现PNL',
     'trades.completed.reason': '离场原因',
     'trades.completed.noReason': '未记录原因。',
+    'trades.completed.pendingDetails': '交易日志同步中…',
     'pnl.title': '绩效概览',
     'pnl.subtitle': '基于您的交易计算的累计已实现盈亏。',
     'pnl.tradesWon': '盈利笔数',
@@ -5990,10 +6000,202 @@ function renderPositionNotifications(notifications) {
   }
 }
 
-function buildCompletedPositionEntry(position, options = {}) {
+function resolveCompletedPositionPnlInfo(entry) {
+  if (!entry || typeof entry !== 'object') {
+    return { numeric: null, percent: null, fallbackText: null };
+  }
+  const position = entry.position && typeof entry.position === 'object' ? entry.position : null;
+  const trade = entry.trade && typeof entry.trade === 'object' ? entry.trade : null;
+  const roeField = position ? pickNumericField(position, ACTIVE_POSITION_ALIASES.roe || []) : null;
+  const percentField = formatPercentField(roeField, 2);
+
+  if (trade) {
+    const pnl = extractRealizedPnl(trade);
+    if (Number.isFinite(pnl)) {
+      return { numeric: pnl, percent: percentField, fallbackText: null };
+    }
+  }
+
+  if (position) {
+    const pnlField = pickNumericField(position, COMPLETED_POSITION_PNL_KEYS);
+    if (Number.isFinite(pnlField.numeric)) {
+      return { numeric: pnlField.numeric, percent: percentField, fallbackText: null };
+    }
+    const fallback = pnlField?.value ?? pnlField?.raw;
+    if (fallback !== undefined && fallback !== null && fallback !== '') {
+      return {
+        numeric: null,
+        percent: percentField,
+        fallbackText: fallback.toString(),
+      };
+    }
+  }
+
+  if (percentField?.text) {
+    return { numeric: null, percent: percentField, fallbackText: percentField.text };
+  }
+
+  return { numeric: null, percent: null, fallbackText: null };
+}
+
+function resolveCompletedPositionRValue(entry) {
+  if (!entry || typeof entry !== 'object') {
+    return null;
+  }
+  const trade = entry.trade && typeof entry.trade === 'object' ? entry.trade : null;
+  if (trade) {
+    const candidates = ['pnl_r', 'pnlR', 'pnl_r_multiple', 'pnlRMultiple', 'rr', 'r', 'reward_r', 'rewardR'];
+    for (const key of candidates) {
+      const numeric = lookupTradeNumber(trade, key);
+      if (numeric !== null && numeric !== undefined) {
+        const value = Number(numeric);
+        if (Number.isFinite(value)) {
+          return value;
+        }
+      }
+    }
+  }
+  const position = entry.position && typeof entry.position === 'object' ? entry.position : null;
+  if (position) {
+    const rField = pickNumericField(position, COMPLETED_POSITION_R_KEYS);
+    if (Number.isFinite(rField.numeric)) {
+      return rField.numeric;
+    }
+  }
+  return null;
+}
+
+function getTradeIdentifier(trade) {
+  if (!trade || typeof trade !== 'object') {
+    return '';
+  }
+  const candidates = [
+    trade.id,
+    trade.trade_id,
+    trade.tradeId,
+    trade.order_id,
+    trade.orderId,
+    trade.execution_id,
+    trade.executionId,
+    trade.position_id,
+    trade.positionId,
+    trade.uuid,
+    trade.external_id,
+  ];
+  for (const candidate of candidates) {
+    if (candidate === undefined || candidate === null) continue;
+    const token = candidate.toString().trim();
+    if (token) {
+      return token;
+    }
+  }
+  const symbol = normalizeSymbolValue(trade.symbol);
+  const timestamp = getTradeTimestamp(trade);
+  const pnl = extractRealizedPnl(trade);
+  return `${symbol}|${Number.isFinite(timestamp) ? timestamp : 'na'}|${
+    Number.isFinite(pnl) ? pnl.toFixed(4) : 'na'
+  }`;
+}
+
+function findMatchingTradeForPosition(position, referenceTimestamp) {
   if (!position || typeof position !== 'object') {
     return null;
   }
+  const history = Array.isArray(latestTradesSnapshot?.history) ? latestTradesSnapshot.history : [];
+  if (!history.length) {
+    return null;
+  }
+  const normalizedSymbol = normalizeSymbolValue(getPositionSymbol(position));
+  if (!normalizedSymbol) {
+    return null;
+  }
+  const targetTs = Number.isFinite(referenceTimestamp) ? Number(referenceTimestamp) : null;
+  const candidates = [];
+  history.forEach((trade) => {
+    if (!trade || typeof trade !== 'object') return;
+    const tradeSymbol = normalizeSymbolValue(trade.symbol);
+    if (!tradeSymbol || tradeSymbol !== normalizedSymbol) return;
+    const tradeId = getTradeIdentifier(trade);
+    if (tradeId && completedPositionMatchedTradeIds.has(tradeId)) {
+      return;
+    }
+    const tradeTimestampMs = getTradeTimestamp(trade);
+    const tradeTimestamp = Number.isFinite(tradeTimestampMs) ? tradeTimestampMs / 1000 : null;
+    const delta =
+      targetTs !== null && Number.isFinite(tradeTimestamp)
+        ? Math.abs(tradeTimestamp - targetTs)
+        : Number.POSITIVE_INFINITY;
+    candidates.push({ trade, tradeId, delta });
+  });
+  if (!candidates.length) {
+    return null;
+  }
+  const timed = candidates.filter((entry) => Number.isFinite(entry.delta)).sort((a, b) => a.delta - b.delta);
+  if (timed.length && timed[0].delta <= COMPLETED_POSITION_TRADE_MATCH_WINDOW_SECONDS) {
+    return timed[0];
+  }
+  if (candidates.length === 1) {
+    return candidates[0];
+  }
+  if (!timed.length) {
+    return candidates[0];
+  }
+  return null;
+}
+
+function attachTradeMatchToEntry(entry) {
+  if (!entry || entry.trade) {
+    return false;
+  }
+  const match = findMatchingTradeForPosition(entry.position, entry.ts);
+  if (match) {
+    entry.trade = match.trade;
+    entry.tradeId = match.tradeId;
+    if (match.tradeId) {
+      completedPositionMatchedTradeIds.add(match.tradeId);
+    }
+    return true;
+  }
+  return false;
+}
+
+function refreshCompletedPositionMatchRegistry() {
+  const active = new Set();
+  completedPositionsHistory.forEach((entry) => {
+    if (entry?.tradeId) {
+      active.add(entry.tradeId);
+    }
+  });
+  Array.from(completedPositionMatchedTradeIds).forEach((id) => {
+    if (!active.has(id)) {
+      completedPositionMatchedTradeIds.delete(id);
+    }
+  });
+}
+
+function matchCompletedPositionsToTrades() {
+  let updated = false;
+  completedPositionsHistory.forEach((entry) => {
+    if (attachTradeMatchToEntry(entry)) {
+      updated = true;
+    }
+  });
+  if (updated) {
+    refreshCompletedPositionMatchRegistry();
+    recomputeCompletedPositionsStatsTotals();
+    renderCompletedPositionsHistory();
+  }
+}
+
+function buildCompletedPositionEntry(entry, options = {}) {
+  if (!entry || typeof entry !== 'object') {
+    return null;
+  }
+  const position = entry.position && typeof entry.position === 'object' ? entry.position : null;
+  if (!position) {
+    return null;
+  }
+  const trade = entry.trade && typeof entry.trade === 'object' ? entry.trade : null;
   const container = document.createElement('article');
   container.className = 'completed-position';
   container.setAttribute('role', 'listitem');
@@ -6007,7 +6209,9 @@ function buildCompletedPositionEntry(position, options = {}) {
 
   const referenceTimestamp = Number.isFinite(options.timestamp)
     ? Number(options.timestamp)
-    : getPositionTimestamp(position);
+    : Number.isFinite(entry.ts)
+      ? Number(entry.ts)
+      : getPositionTimestamp(position);
   if (Number.isFinite(referenceTimestamp)) {
     const time = document.createElement('time');
     const iso = new Date(referenceTimestamp * 1000).toISOString();
@@ -6026,20 +6230,20 @@ function buildCompletedPositionEntry(position, options = {}) {
   pnlLabel.textContent = translate('trades.completed.pnl', 'Realized PNL');
   const pnlValue = document.createElement('dd');
   pnlValue.className = 'completed-position__value';
-  const pnlField = pickNumericField(position, COMPLETED_POSITION_PNL_KEYS);
-  const pnlPercentField = pickNumericField(position, ACTIVE_POSITION_ALIASES.roe || []);
+  const pnlInfo = resolveCompletedPositionPnlInfo(entry);
+  const percentText = pnlInfo.percent?.text || null;
   let pnlTone = null;
-  if (Number.isFinite(pnlField.numeric)) {
-    pnlTone = pnlField.numeric;
-    pnlValue.textContent = `${formatSignedNumber(pnlField.numeric, 2)} USDT`;
-    if (pnlPercentField && pnlPercentField.text) {
-      pnlValue.textContent += ` (${pnlPercentField.text})`;
+  if (Number.isFinite(pnlInfo.numeric)) {
+    pnlTone = pnlInfo.numeric;
+    pnlValue.textContent = `${formatSignedNumber(pnlInfo.numeric, 2)} USDT`;
+    if (percentText) {
+      pnlValue.textContent += ` (${percentText})`;
     }
-  } else if (pnlPercentField && pnlPercentField.text) {
-    pnlTone = pnlPercentField.numeric;
-    pnlValue.textContent = pnlPercentField.text;
-  } else if (pnlField && pnlField.text) {
-    pnlValue.textContent = pnlField.text;
+  } else if (percentText) {
+    pnlTone = Number.isFinite(pnlInfo.percent?.numeric) ? pnlInfo.percent.numeric : null;
+    pnlValue.textContent = percentText;
+  } else if (pnlInfo.fallbackText) {
+    pnlValue.textContent = pnlInfo.fallbackText;
   } else {
     pnlValue.textContent = '—';
   }
@@ -6064,6 +6268,25 @@ function buildCompletedPositionEntry(position, options = {}) {
   metrics.append(reasonLabel, reasonValue);
 
   container.append(metrics);
+
+  const actions = document.createElement('div');
+  actions.className = 'completed-position__actions';
+  const detailButton = document.createElement('button');
+  detailButton.type = 'button';
+  detailButton.className = 'completed-position__action';
+  detailButton.textContent = translate('trades.viewDetails', 'View details');
+  if (trade) {
+    detailButton.addEventListener('click', () => openTradeModal(trade, detailButton));
+  } else {
+    detailButton.disabled = true;
+    detailButton.title = translate(
+      'trades.completed.pendingDetails',
+      'Waiting for trade log…',
+    );
+  }
+  actions.append(detailButton);
+  container.append(actions);
+
   return container;
 }
 
@@ -6077,9 +6300,9 @@ function normalizeStatInteger(value, fallback = NaN) {
   return Number.isFinite(numeric) ? Math.round(numeric) : fallback;
 }
 
-function syncCompletedPositionsStats(summary) {
+function normalizeCompletedPositionsStats(summary) {
   if (!summary || typeof summary !== 'object') {
-    return;
+    return { ...COMPLETED_POSITIONS_STATS_DEFAULTS };
   }
   const trades = Math.max(0, normalizeStatInteger(summary.trades ?? summary.count, 0));
   const realizedCandidate =
@@ -6114,38 +6337,68 @@ function syncCompletedPositionsStats(summary) {
       draws = 0;
     }
   }
-  completedPositionsStatsTotals = {
-    trades,
-    realizedPnl,
-    totalR,
-    wins,
-    losses,
-    draws,
-  };
+  return { trades, realizedPnl, totalR, wins, losses, draws };
 }
 
-function incrementCompletedPositionsStats(position) {
-  if (!position || typeof position !== 'object') {
-    return;
-  }
-  completedPositionsStatsTotals.trades += 1;
-  const pnlField = pickNumericField(position, COMPLETED_POSITION_PNL_KEYS);
-  if (Number.isFinite(pnlField.numeric)) {
-    completedPositionsStatsTotals.realizedPnl += pnlField.numeric;
-    if (pnlField.numeric > 0) {
-      completedPositionsStatsTotals.wins += 1;
-    } else if (pnlField.numeric < 0) {
-      completedPositionsStatsTotals.losses += 1;
-    } else {
-      completedPositionsStatsTotals.draws += 1;
+function hasPendingCompletedPositions() {
+  return completedPositionsHistory.some((entry) => entry && entry.settled !== true);
+}
+
+function summarizeCompletedPositionsDelta() {
+  const delta = { ...COMPLETED_POSITIONS_STATS_DEFAULTS };
+  completedPositionsHistory.forEach((entry) => {
+    if (!entry || entry.settled === true) {
+      return;
     }
-  } else {
-    completedPositionsStatsTotals.draws += 1;
+    delta.trades += 1;
+    const pnlInfo = resolveCompletedPositionPnlInfo(entry);
+    if (Number.isFinite(pnlInfo.numeric)) {
+      delta.realizedPnl += pnlInfo.numeric;
+      if (pnlInfo.numeric > 0) {
+        delta.wins += 1;
+      } else if (pnlInfo.numeric < 0) {
+        delta.losses += 1;
+      } else {
+        delta.draws += 1;
+      }
+    } else {
+      delta.draws += 1;
+    }
+    const rValue = resolveCompletedPositionRValue(entry);
+    if (Number.isFinite(rValue)) {
+      delta.totalR += rValue;
+    }
+  });
+  return delta;
+}
+
+function recomputeCompletedPositionsStatsTotals() {
+  const delta = summarizeCompletedPositionsDelta();
+  completedPositionsStatsTotals = {
+    trades: completedPositionsStatsBaseline.trades + delta.trades,
+    realizedPnl: completedPositionsStatsBaseline.realizedPnl + delta.realizedPnl,
+    totalR: completedPositionsStatsBaseline.totalR + delta.totalR,
+    wins: completedPositionsStatsBaseline.wins + delta.wins,
+    losses: completedPositionsStatsBaseline.losses + delta.losses,
+    draws: completedPositionsStatsBaseline.draws + delta.draws,
+  };
+  if (hasPendingCompletedPositions()) {
+    refreshTradeSummaryFromCompletedPositions();
   }
-  const rField = pickNumericField(position, COMPLETED_POSITION_R_KEYS);
-  if (Number.isFinite(rField.numeric)) {
-    completedPositionsStatsTotals.totalR += rField.numeric;
-  }
+}
+
+function settleCompletedPositionsHistory() {
+  completedPositionsHistory.forEach((entry) => {
+    if (entry) {
+      entry.settled = true;
+    }
+  });
+}
+
+function syncCompletedPositionsStats(summary) {
+  completedPositionsStatsBaseline = normalizeCompletedPositionsStats(summary);
+  settleCompletedPositionsHistory();
+  recomputeCompletedPositionsStatsTotals();
 }
 
 function buildCompletedPositionsSummaryFromTotals() {
@@ -6176,6 +6429,9 @@ function getTradeSummaryOverride() {
 }
 
 function refreshTradeSummaryFromCompletedPositions() {
+  if (!hasPendingCompletedPositions()) {
+    return;
+  }
   const override = buildCompletedPositionsSummaryFromTotals();
   if (!override) {
     return;
@@ -6204,7 +6460,7 @@ function renderCompletedPositionsHistory() {
   const fragment = document.createDocumentFragment();
   completedPositionsHistory.forEach((entry) => {
     if (!entry || !entry.position) return;
-    const card = buildCompletedPositionEntry(entry.position, { timestamp: entry.ts });
+    const card = buildCompletedPositionEntry(entry, { timestamp: entry.ts });
     if (card) {
       fragment.append(card);
     }
@@ -6223,11 +6479,15 @@ function rememberCompletedPositions(positions = []) {
       return;
     }
     const timestamp = getPositionTimestamp(position);
-    completedPositionsHistory.push({
+    const entry = {
       position,
       ts: Number.isFinite(timestamp) ? timestamp : Date.now() / 1000,
-    });
-    incrementCompletedPositionsStats(position);
+      trade: null,
+      tradeId: null,
+      settled: false,
+    };
+    attachTradeMatchToEntry(entry);
+    completedPositionsHistory.push(entry);
     mutated = true;
   });
   if (!mutated) {
@@ -6237,8 +6497,9 @@ function rememberCompletedPositions(positions = []) {
   if (completedPositionsHistory.length > COMPLETED_POSITIONS_HISTORY_LIMIT) {
     completedPositionsHistory.length = COMPLETED_POSITIONS_HISTORY_LIMIT;
   }
+  refreshCompletedPositionMatchRegistry();
+  recomputeCompletedPositionsStatsTotals();
   renderCompletedPositionsHistory();
-  refreshTradeSummaryFromCompletedPositions();
 }
 
 function refreshPositionUpdatesFromHistory() {
@@ -13950,6 +14211,7 @@ async function loadTrades() {
       tradesHydrated = true;
       setTradeDataStale(false);
       renderTradeHistory(snapshot.history);
+      matchCompletedPositionsToTrades();
       renderTradeSummary(snapshot.stats, snapshot.history_summary);
       syncCompletedPositionsStats(snapshot.history_summary || snapshot.stats);
       setTradeSummaryOverride(null);
