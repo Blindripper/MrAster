@@ -2475,7 +2475,7 @@ function applyTranslations(lang) {
   updateModeButtons();
   updateAiBudgetModeLabel();
   updateActivePositionsView();
-  renderTradeSummary(lastTradeStats);
+  renderTradeSummary(lastTradeStats, latestTradesSnapshot?.history_summary);
   renderDecisionStats(lastDecisionStats);
   renderAiBudget(lastAiBudget);
   if (latestTradesSnapshot) {
@@ -2483,6 +2483,7 @@ function applyTranslations(lang) {
       latestTradesSnapshot.cumulative_stats,
       latestTradesSnapshot.stats,
       latestTradesSnapshot.history,
+      latestTradesSnapshot.hero_metrics,
     );
   }
   if (btnSaveConfig) {
@@ -3899,6 +3900,14 @@ function mergeTradeSnapshot(previous, next) {
 
   if (!snapshot.playbook_market_overview || typeof snapshot.playbook_market_overview !== 'object') {
     snapshot.playbook_market_overview = previous?.playbook_market_overview ?? null;
+  }
+
+  if (!snapshot.hero_metrics || typeof snapshot.hero_metrics !== 'object') {
+    snapshot.hero_metrics = previous?.hero_metrics ?? null;
+  }
+
+  if (!snapshot.history_summary || typeof snapshot.history_summary !== 'object') {
+    snapshot.history_summary = previous?.history_summary ?? null;
   }
 
   if (!isValidOpenPositionsPayload(snapshot.open)) {
@@ -10639,12 +10648,25 @@ function deriveHistoryVolume(historyEntries) {
   return total;
 }
 
-function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null) {
+function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null, preparedMetrics = null) {
   if (!heroTotalTrades || !heroTotalPnl || !heroTotalWinRate) return;
 
   const totals = cumulativeStats && typeof cumulativeStats === 'object' ? cumulativeStats : {};
   const fallback = sessionStats && typeof sessionStats === 'object' ? sessionStats : {};
   const historyList = Array.isArray(historyEntries) ? historyEntries : [];
+  const serverMetrics = preparedMetrics && typeof preparedMetrics === 'object' ? preparedMetrics : null;
+
+  const resolveNumericField = (source, keys) => {
+    if (!source) return null;
+    for (const key of keys) {
+      if (!(key in source)) continue;
+      const numeric = Number(source[key]);
+      if (Number.isFinite(numeric)) {
+        return numeric;
+      }
+    }
+    return null;
+  };
 
   const parsePositiveInteger = (value) => {
     if (value == null) return null;
@@ -10654,7 +10676,9 @@ function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null)
     return Math.round(Math.abs(numeric));
   };
 
+  const serverTotalTrades = resolveNumericField(serverMetrics, ['total_trades', 'totalTrades']);
   const tradeCountCandidates = [
+    serverTotalTrades != null ? parsePositiveInteger(serverTotalTrades) : null,
     parsePositiveInteger(fallback.count),
     historyList.length > 0 ? historyList.length : null,
     parsePositiveInteger(totals.total_trades ?? totals.count),
@@ -10663,13 +10687,20 @@ function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null)
   heroTotalTrades.textContent = totalTrades.toLocaleString();
 
   const netPnlCandidate = totals.total_pnl ?? fallback.total_pnl ?? 0;
-  let netPnlRaw = Number(netPnlCandidate);
-  let realizedPnlRaw = Number(
-    totals.realized_pnl ?? totals.realizedPnl ?? fallback.realized_pnl ?? NaN,
-  );
-  let aiBudgetSpentRaw = Number(
-    totals.ai_budget_spent ?? totals.aiBudgetSpent ?? fallback.ai_budget_spent ?? NaN,
-  );
+  const serverNetPnl = resolveNumericField(serverMetrics, ['total_pnl', 'totalPnl']);
+  let netPnlRaw = serverNetPnl != null ? serverNetPnl : Number(netPnlCandidate);
+  let realizedPnlRaw = resolveNumericField(serverMetrics, ['realized_pnl', 'realizedPnl']);
+  if (!Number.isFinite(realizedPnlRaw)) {
+    realizedPnlRaw = Number(
+      totals.realized_pnl ?? totals.realizedPnl ?? fallback.realized_pnl ?? NaN,
+    );
+  }
+  let aiBudgetSpentRaw = resolveNumericField(serverMetrics, ['ai_budget_spent', 'aiBudgetSpent']);
+  if (!Number.isFinite(aiBudgetSpentRaw)) {
+    aiBudgetSpentRaw = Number(
+      totals.ai_budget_spent ?? totals.aiBudgetSpent ?? fallback.ai_budget_spent ?? NaN,
+    );
+  }
 
   if (!Number.isFinite(aiBudgetSpentRaw)) {
     aiBudgetSpentRaw = Number((sessionStats || {}).ai_budget_spent ?? NaN);
@@ -10776,12 +10807,15 @@ function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null)
 
   const fallbackWinRate = normalizeWinRate(fallback.win_rate ?? fallback.winRate);
   const totalsWinRate = normalizeWinRate(totals.win_rate ?? totals.winRate);
+  const serverWinRate = normalizeWinRate(resolveNumericField(serverMetrics, ['win_rate', 'winRate']));
   const winsRaw = Number(totals.wins ?? fallback.wins ?? 0);
   const lossesRaw = Number(totals.losses ?? fallback.losses ?? 0);
   const drawsRaw = Number(totals.draws ?? fallback.draws ?? 0);
   const denominator = totalTrades > 0 ? totalTrades : winsRaw + lossesRaw + drawsRaw;
   const computedWinRate =
-    historyWinRate != null
+    serverWinRate != null
+      ? serverWinRate
+      : historyWinRate != null
       ? historyWinRate
       : fallbackWinRate != null
       ? fallbackWinRate
@@ -10805,6 +10839,7 @@ function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null)
   };
 
   const winsCount = parseTradeCount(
+    resolveNumericField(serverMetrics, ['wins']),
     totals.wins,
     totals.profitable_trades,
     totals.positive_trades,
@@ -10815,6 +10850,7 @@ function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null)
     fallback.green_trades,
   );
   const lossesCount = parseTradeCount(
+    resolveNumericField(serverMetrics, ['losses']),
     totals.losses,
     totals.unprofitable_trades,
     totals.negative_trades,
@@ -11359,8 +11395,9 @@ async function handlePostToX(event) {
   }
 }
 
-function renderTradeSummary(stats) {
+function renderTradeSummary(stats, summaryOverride = null) {
   lastTradeStats = stats || null;
+  const summary = summaryOverride && typeof summaryOverride === 'object' ? summaryOverride : null;
   const fragment = document.createDocumentFragment();
   if (!stats) {
     const placeholder = document.createElement('div');
@@ -11376,21 +11413,26 @@ function renderTradeSummary(stats) {
     );
     return;
   }
-  const avgR = stats.count ? stats.total_r / stats.count : 0;
+  const tradesCount = Number.isFinite(Number(summary?.trades))
+    ? Number(summary.trades)
+    : stats.count ?? 0;
+  const realizedTotal = summary?.realized_pnl ?? summary?.realizedPnl ?? stats.total_pnl ?? 0;
+  const avgR = summary?.avg_r ?? (stats.count ? stats.total_r / stats.count : 0);
+  const winRateValue = summary?.win_rate ?? summary?.winRate ?? stats.win_rate ?? 0;
   const metrics = [
     {
       label: translate('trades.metric.trades', 'Trades'),
-      value: stats.count ?? 0,
+      value: tradesCount,
       tone: 'neutral',
     },
     {
       label: translate('trades.metric.totalPnl', 'Realized PNL'),
-      value: `${stats.total_pnl > 0 ? '+' : ''}${formatNumber(stats.total_pnl, 2)} USDT`,
-      tone: stats.total_pnl > 0 ? 'profit' : stats.total_pnl < 0 ? 'loss' : 'neutral',
+      value: `${realizedTotal > 0 ? '+' : ''}${formatNumber(realizedTotal, 2)} USDT`,
+      tone: realizedTotal > 0 ? 'profit' : realizedTotal < 0 ? 'loss' : 'neutral',
     },
     {
       label: translate('trades.metric.winRate', 'Win rate'),
-      value: `${((stats.win_rate ?? 0) * 100).toFixed(1)}%`,
+      value: `${((winRateValue ?? 0) * 100).toFixed(1)}%`,
       tone: 'neutral',
     },
     {
@@ -13169,6 +13211,8 @@ async function downloadTradeHistory() {
       stats: snapshot?.stats ?? {},
       decision_stats: snapshot?.decision_stats ?? {},
       cumulative_stats: snapshot?.cumulative_stats ?? {},
+      history_summary: snapshot?.history_summary ?? null,
+      hero_metrics: snapshot?.hero_metrics ?? null,
       ai_budget: snapshot?.ai_budget ?? null,
       open: snapshot?.open ?? {},
     };
@@ -13208,8 +13252,13 @@ async function loadTrades() {
       tradesHydrated = true;
       setTradeDataStale(false);
       renderTradeHistory(snapshot.history);
-      renderTradeSummary(snapshot.stats);
-      renderHeroMetrics(snapshot.cumulative_stats, snapshot.stats, snapshot.history);
+      renderTradeSummary(snapshot.stats, snapshot.history_summary);
+      renderHeroMetrics(
+        snapshot.cumulative_stats,
+        snapshot.stats,
+        snapshot.history,
+        snapshot.hero_metrics,
+      );
       renderDecisionStats(snapshot.decision_stats);
       renderPnlChart(snapshot.history);
       renderAiBudget(snapshot.ai_budget);
