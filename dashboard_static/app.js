@@ -4029,6 +4029,12 @@ function mergeTradeSnapshot(previous, next) {
     snapshot.ai_requests = Array.isArray(previous?.ai_requests) ? previous.ai_requests : [];
   }
 
+  if (!Array.isArray(snapshot.exchange_positions)) {
+    snapshot.exchange_positions = Array.isArray(previous?.exchange_positions)
+      ? previous.exchange_positions
+      : [];
+  }
+
   if (!snapshot.playbook || typeof snapshot.playbook !== 'object') {
     snapshot.playbook = previous?.playbook ?? null;
   }
@@ -6636,6 +6642,17 @@ function syncCompletedPositionsFromTrades(history = []) {
     countTowardsStats: false,
     skipSummaryRefresh: true,
     timestampResolver: (trade) => getPositionClosedTimestamp(trade),
+  });
+}
+
+function syncExchangeCompletedPositions(entries = []) {
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return;
+  }
+  rememberCompletedPositions(entries, {
+    countTowardsStats: false,
+    skipSummaryRefresh: true,
+    timestampResolver: (entry) => getPositionClosedTimestamp(entry),
   });
 }
 
@@ -14826,6 +14843,12 @@ async function loadTrades() {
         snapshot.playbook_process,
         snapshot.playbook_market_overview,
       );
+      const exchangePositions = Array.isArray(snapshot.exchange_positions)
+        ? snapshot.exchange_positions
+        : [];
+      if (exchangePositions.length > 0) {
+        syncExchangeCompletedPositions(exchangePositions);
+      }
       applyActivePositionsPayload(snapshot.open, { syncSnapshot: false });
       const proposals = Array.isArray(snapshot.ai_trade_proposals)
         ? snapshot.ai_trade_proposals

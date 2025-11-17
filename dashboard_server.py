@@ -166,6 +166,38 @@ REALIZED_PNL_MATCH_PADDING_SECONDS = 180.0
 EXCHANGE_HISTORY_SYMBOL_LIMIT = 24
 EXCHANGE_TRADES_PER_SYMBOL = 1000
 
+TRADE_POSITION_IDENTIFIER_KEYS: Tuple[str, ...] = (
+    "position_id",
+    "positionId",
+    "position_uuid",
+    "positionUuid",
+    "position_hash",
+    "positionHash",
+    "position_key",
+    "positionKey",
+    "strategy_position_id",
+    "strategyPositionId",
+    "clientOrderId",
+    "client_order_id",
+)
+
+TRADE_METADATA_PASSTHROUGH_KEYS: Tuple[str, ...] = (
+    "side",
+    "positionSide",
+    "clientOrderId",
+    "client_order_id",
+    "position_id",
+    "positionId",
+    "position_uuid",
+    "positionUuid",
+    "position_hash",
+    "positionHash",
+    "position_key",
+    "positionKey",
+    "strategy_position_id",
+    "strategyPositionId",
+)
+
 
 def _is_truthy(value: Optional[str]) -> bool:
     if value is None:
@@ -2194,6 +2226,28 @@ def _collect_run_trade_symbols(
     return symbols[:limit]
 
 
+def _extract_trade_position_identifier(trade: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    """Return the first available position identifier tuple for a trade row."""
+
+    if not isinstance(trade, dict):
+        return None, None
+
+    for key in TRADE_POSITION_IDENTIFIER_KEYS:
+        if key not in trade:
+            continue
+        raw_value = trade.get(key)
+        if raw_value is None:
+            continue
+        if isinstance(raw_value, str):
+            text = raw_value.strip()
+        else:
+            text = str(raw_value).strip()
+        if text:
+            return key, text
+
+    return None, None
+
+
 def _fetch_user_trades_for_symbol(
     env: Dict[str, Any],
     symbol: str,
@@ -2267,6 +2321,9 @@ def _fetch_user_trades_for_symbol(
         for key in ("buyer", "maker", "orderId", "id", "tradeId"):
             if item.get(key) is not None:
                 entry[key] = item.get(key)
+        for meta_key in TRADE_METADATA_PASSTHROUGH_KEYS:
+            if item.get(meta_key) is not None:
+                entry[meta_key] = item.get(meta_key)
         results.append(entry)
     return results
 
@@ -2303,6 +2360,7 @@ def _compute_run_realized_from_exchange(
     realized_total = 0.0
     trade_samples = 0
     aggregated_trades: List[Dict[str, Any]] = []
+    position_groups: Dict[str, Dict[str, Any]] = {}
 
     for sym in symbols:
         try:
@@ -2315,10 +2373,8 @@ def _compute_run_realized_from_exchange(
             if ts_val is None or ts_val < run_start:
                 continue
             pnl_val = _safe_float(trade.get("realized_pnl"))
-            if pnl_val is None or math.isclose(pnl_val, 0.0):
+            if pnl_val is None:
                 continue
-            realized_total += pnl_val
-            trade_samples += 1
             record: Dict[str, Any] = {
                 "symbol": str(sym).upper(),
                 "pnl": float(pnl_val),
@@ -2332,13 +2388,61 @@ def _compute_run_realized_from_exchange(
             for ctx_key in ("buyer", "maker", "orderId", "id", "tradeId"):
                 if trade.get(ctx_key) is not None:
                     record["context"][ctx_key] = trade.get(ctx_key)
-            aggregated_trades.append(record)
+            if not math.isclose(pnl_val, 0.0):
+                realized_total += pnl_val
+                trade_samples += 1
+                aggregated_trades.append(record)
 
-    if trade_samples == 0:
+            key_name, key_value = _extract_trade_position_identifier(trade)
+            if key_name and key_value:
+                position_key = f"{key_name}:{key_value}"
+            else:
+                fallback_parts: List[str] = [str(sym).upper()]
+                order_ref = trade.get("orderId") or trade.get("id") or trade.get("tradeId")
+                if order_ref is not None:
+                    fallback_parts.append(f"order:{order_ref}")
+                fallback_parts.append(f"ts:{int(ts_val)}")
+                position_key = "|".join(str(part) for part in fallback_parts if part)
+
+            group = position_groups.get(position_key)
+            if not group:
+                group = {
+                    "symbol": str(sym).upper(),
+                    "pnl": 0.0,
+                    "realized_pnl": 0.0,
+                    "closed_at": float(ts_val),
+                    "closed_at_iso": datetime.fromtimestamp(ts_val, tz=timezone.utc).isoformat(),
+                    "synthetic": True,
+                    "synthetic_source": "exchange_trades",
+                    "context": {"source": "exchange_trades"},
+                    "trade_count": 0,
+                    "exchange_position_key": position_key,
+                }
+                if key_name and key_value:
+                    group[key_name] = key_value
+                for meta_key in TRADE_METADATA_PASSTHROUGH_KEYS:
+                    if meta_key in trade and trade.get(meta_key) is not None and meta_key not in group:
+                        group[meta_key] = trade.get(meta_key)
+                position_groups[position_key] = group
+
+            group["pnl"] += float(pnl_val)
+            group["realized_pnl"] = group["pnl"]
+            group["trade_count"] += 1
+            if ts_val > group.get("closed_at", 0.0):
+                group["closed_at"] = float(ts_val)
+                group["closed_at_iso"] = datetime.fromtimestamp(ts_val, tz=timezone.utc).isoformat()
+
+    if trade_samples == 0 and not position_groups:
         return {}
 
     history_totals = _summarize_history_totals(aggregated_trades)
     pnl_series = _build_pnl_series(aggregated_trades)
+
+    grouped_positions = sorted(
+        position_groups.values(), key=lambda entry: entry.get("closed_at", 0.0), reverse=True
+    )
+    if len(grouped_positions) > 200:
+        grouped_positions = grouped_positions[:200]
 
     return {
         "realized_pnl": float(realized_total),
@@ -2346,6 +2450,7 @@ def _compute_run_realized_from_exchange(
         "source": "exchange_trades",
         "history_totals": history_totals,
         "pnl_series": pnl_series,
+        "position_groups": grouped_positions,
     }
 
 
@@ -7893,6 +7998,9 @@ async def trades() -> Dict[str, Any]:
         source_label = run_exchange_metrics.get("source")
         if source_label:
             hero_metrics["run_metrics_source"] = source_label
+        exchange_positions = run_exchange_metrics.get("position_groups") or []
+    else:
+        exchange_positions = []
 
     return {
         "open": enriched_open,
@@ -7911,6 +8019,7 @@ async def trades() -> Dict[str, Any]:
         "playbook_process": playbook_process,
         "playbook_market_overview": market_overview,
         "ai_trade_proposals": proposals,
+        "exchange_positions": exchange_positions,
     }
 
 
