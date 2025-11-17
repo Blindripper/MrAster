@@ -12039,9 +12039,9 @@ function renderHeroMetrics(
   const serverTotalTrades = resolveNumericField(serverMetrics, ['total_trades', 'totalTrades']);
   const historyTradeCount = historyList.length > 0 ? countHistoryPositions(historyList) : null;
   const tradeCountCandidates = [
+    serverTotalTrades != null ? parsePositiveInteger(serverTotalTrades) : null,
     historyTradeCount,
     parsePositiveInteger(fallback.count ?? fallback.total_trades ?? fallback.totalTrades),
-    serverTotalTrades != null ? parsePositiveInteger(serverTotalTrades) : null,
     parsePositiveInteger(totals.total_trades ?? totals.count),
   ];
   let totalTrades = tradeCountCandidates.find((value) => value != null) ?? 0;
