@@ -2477,6 +2477,7 @@ class AITradeAdvisor:
             detail = f" — {body}" if body else ""
             log.debug("AI activity %s | %s%s", kind, headline, detail)
 
+
     def _new_request_id(self, kind: str, throttle_key: Optional[str] = None) -> str:
         prefix_bits: List[str] = []
         kind_part = re.sub(r"[^a-z0-9]+", "-", (kind or "").strip().lower())
@@ -6454,6 +6455,16 @@ class Exchange:
             return orders
         return self.signed("get", "/fapi/v1/openOrders", {"symbol": symbol})
 
+    def get_all_open_orders(self) -> List[Dict[str, Any]]:
+        if PAPER and self._paper:
+            payload: List[Dict[str, Any]] = []
+            for symbol in list(self._paper.positions.keys()):
+                for order in self.get_open_orders(symbol) or []:
+                    if isinstance(order, dict):
+                        payload.append(order)
+            return payload
+        return self.signed("get", "/fapi/v1/openOrders", {})
+
     def query_order(
         self,
         symbol: str,
@@ -9724,15 +9735,20 @@ class TradeManager:
             return False
         return text in {"1", "true", "yes", "on"}
 
-    def _cancel_stale_exit_orders(self, symbol: str) -> None:
-        try:
-            orders = self.exchange.get_open_orders(symbol) or []
-        except Exception as exc:
-            log.debug(f"cleanup open orders fail {symbol}: {exc}")
-            return
+    def _cancel_stale_exit_orders(
+        self,
+        symbol: str,
+        orders: Optional[Sequence[Dict[str, Any]]] = None,
+    ) -> None:
+        if orders is None:
+            try:
+                orders = self.exchange.get_open_orders(symbol) or []
+            except Exception as exc:
+                log.debug(f"cleanup open orders fail {symbol}: {exc}")
+                return
 
         cancelled = 0
-        for order in orders:
+        for order in orders or []:
             order_type = str(order.get("type") or "").upper()
             if "STOP" not in order_type and "TAKE_PROFIT" not in order_type:
                 continue
@@ -9766,6 +9782,12 @@ class TradeManager:
 
         if cancelled:
             log.debug(f"cleanup removed {cancelled} exit orders for {symbol}")
+
+    def sync_positions(self) -> None:
+        try:
+            self.remove_closed_trades()
+        except Exception as exc:
+            log.debug(f"trade manager position sync failed: {exc}")
 
     def _sanitize_meta(self, meta: Dict[str, Any]) -> Dict[str, Any]:
         try:
@@ -10625,6 +10647,22 @@ class TradeManager:
             log.debug(f"positionRisk fail: {e}")
             pos_map = {}
 
+        open_orders_map: Dict[str, List[Dict[str, Any]]] = {}
+        try:
+            batch_method = getattr(self.exchange, "get_all_open_orders", None)
+            batch_payload = batch_method() if callable(batch_method) else None
+        except Exception as exc:
+            log.debug(f"openOrders batch fetch failed: {exc}")
+            batch_payload = None
+        if isinstance(batch_payload, list):
+            for order in batch_payload:
+                if not isinstance(order, dict):
+                    continue
+                sym = str(order.get("symbol") or "").upper()
+                if not sym:
+                    continue
+                open_orders_map.setdefault(sym, []).append(order)
+
         to_del: List[str] = []
         for sym, rec in live.items():
             if sym in processed_syms:
@@ -10679,7 +10717,7 @@ class TradeManager:
             # Position exists no longer on the exchange. Make sure any leftover
             # safety orders (SL/TP) are cleared so the UI does not keep showing
             # invalid reduce-only orders from prior trades.
-            self._cancel_stale_exit_orders(sym)
+            self._cancel_stale_exit_orders(sym, open_orders_map.get(sym))
 
             if closing_qty <= 0:
                 filled_qty = _coerce_float(rec.get("filled_qty")) or 0.0
@@ -11031,6 +11069,16 @@ class Bot:
         self.state.setdefault("ai_trade_proposals", [])
         self.state.setdefault("manual_trade_requests", [])
         self.state.setdefault("manual_trade_history", [])
+        exec_log = self.state.get("execution_telemetry")
+        if not isinstance(exec_log, list):
+            exec_log = []
+        self.state["execution_telemetry"] = exec_log
+        try:
+            self._execution_telemetry_limit = max(
+                10, int(os.getenv("ASTER_EXECUTION_TELEMETRY_LIMIT", "200") or 200)
+            )
+        except Exception:
+            self._execution_telemetry_limit = 200
         self._initialize_run_metadata()
         hype_history = self.state.get(self.HYPE_HISTORY_KEY)
         if not isinstance(hype_history, dict):
@@ -12952,6 +13000,115 @@ class Bot:
                 self.trade_mgr.save()
             except Exception as exc:
                 log.debug(f"ai activity persist failed: {exc}")
+
+    def _record_execution_telemetry(
+        self,
+        event: str,
+        symbol: Optional[str] = None,
+        *,
+        detail: Optional[str] = None,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        bucket = self.state.get("execution_telemetry")
+        if not isinstance(bucket, list):
+            bucket = []
+            self.state["execution_telemetry"] = bucket
+        entry: Dict[str, Any] = {"ts": time.time(), "event": event}
+        if symbol:
+            entry["symbol"] = symbol
+        if detail:
+            entry["detail"] = detail
+        if data:
+            entry["data"] = data
+        bucket.append(entry)
+        limit = getattr(self, "_execution_telemetry_limit", 200) or 200
+        if len(bucket) > limit:
+            del bucket[: len(bucket) - limit]
+
+    def _ensure_guard_after_entry(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        entry_price: float,
+        stop_price: float,
+        take_price: float,
+    ) -> bool:
+        guard = getattr(self, "guard", None)
+        if guard is None:
+            return True
+        telemetry_base = {"side": side, "qty": float(quantity or 0.0)}
+        try:
+            return bool(guard.ensure_after_entry(symbol, side, float(quantity), entry_price, stop_price, take_price))
+        except TypeError as exc:
+            self._record_execution_telemetry(
+                "bracket_guard_legacy_fallback",
+                symbol,
+                detail="legacy_signature",
+                data={**telemetry_base, "error": str(exc)},
+            )
+            try:
+                return bool(guard.ensure_after_entry(symbol, side, stop_price, take_price))
+            except Exception as fallback_exc:
+                self._record_execution_telemetry(
+                    "bracket_guard_failure",
+                    symbol,
+                    detail="legacy_signature_failed",
+                    data={**telemetry_base, "error": str(fallback_exc)},
+                )
+                raise
+        except Exception as exc:
+            self._record_execution_telemetry(
+                "bracket_guard_failure",
+                symbol,
+                detail="modern_signature_failed",
+                data={**telemetry_base, "error": str(exc)},
+            )
+            raise
+
+    def _await_fill_with_retry(
+        self,
+        symbol: str,
+        order_info: Optional[Dict[str, Any]],
+    ) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
+        if not order_info:
+            return None, []
+        try:
+            max_attempts = max(1, int(os.getenv("ASTER_ORDER_FILL_RETRIES", "3") or 3))
+        except Exception:
+            max_attempts = 3
+        try:
+            delay = max(0.1, float(os.getenv("ASTER_ORDER_FILL_RETRY_DELAY", "0.4") or 0.4))
+        except Exception:
+            delay = 0.4
+        last_exc: Optional[BaseException] = None
+        latest_order: Optional[Dict[str, Any]] = None
+        trades: List[Dict[str, Any]] = []
+        for attempt in range(1, max_attempts + 1):
+            try:
+                latest_order, trades = self.exchange.await_order_fill(symbol, order_info)
+                return latest_order, trades
+            except Exception as exc:
+                last_exc = exc
+                self._record_execution_telemetry(
+                    "order_fill_retry",
+                    symbol,
+                    detail="await_order_fill",
+                    data={"attempt": attempt, "error": str(exc)},
+                )
+                time.sleep(min(delay * attempt, 2.0))
+        self._record_execution_telemetry(
+            "order_fill_sync_triggered",
+            symbol,
+            detail="await_order_fill",
+            data={"attempts": max_attempts, "error": str(last_exc) if last_exc else "unknown"},
+        )
+        if self.trade_mgr and hasattr(self.trade_mgr, "sync_positions"):
+            try:
+                self.trade_mgr.sync_positions()
+            except Exception as exc:
+                log.debug(f"sync positions after fill failure failed for {symbol}: {exc}")
+        return latest_order, trades
 
     def _reset_decision_stats(self) -> None:
         baseline = {
@@ -14923,10 +15080,7 @@ class Bot:
                 )
                 ok = True
             else:
-                try:
-                    ok = self.guard.ensure_after_entry(symbol, sig, float(q_str), px, sl, tp)
-                except TypeError:
-                    ok = self.guard.ensure_after_entry(symbol, sig, sl, tp)
+                ok = self._ensure_guard_after_entry(symbol, sig, float(q_str), px, sl, tp)
             if not ok:
                 log.warning(f"Bracket orders for {symbol} could not be fully created.")
             if self.decision_tracker and not manual_override:
@@ -14934,10 +15088,7 @@ class Bot:
             self.trade_mgr.note_entry(symbol, px, sl, tp, sig, float(q_str), ctx, bucket, atr_abs, meta=ai_meta)
             final_order: Optional[Dict[str, Any]] = None
             order_trades: List[Dict[str, Any]] = []
-            try:
-                final_order, order_trades = self.exchange.await_order_fill(symbol, order_response)
-            except Exception as exc:
-                log.debug(f"order fill await failed for {symbol}: {exc}")
+            final_order, order_trades = self._await_fill_with_retry(symbol, order_response)
             if final_order or order_trades:
                 try:
                     self.trade_mgr.register_entry_fill(symbol, final_order, order_trades)

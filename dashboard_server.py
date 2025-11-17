@@ -27,11 +27,13 @@ from urllib.parse import urlencode
 import requests
 
 from brackets_guard import BracketGuard
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 ROOT_DIR = Path(__file__).resolve().parent
 STATE_FILE = ROOT_DIR / os.getenv("ASTER_STATE_FILE", "aster_state.json")
@@ -2692,8 +2694,7 @@ class ChatRequestPayload(BaseModel):
 class ProposalExecutionRequest(BaseModel):
     proposal_id: str = Field(..., min_length=4, alias="proposalId")
 
-    class Config:
-        allow_population_by_field_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 def _ensure_static_dir() -> None:
@@ -3028,7 +3029,17 @@ loghub = LogHub()
 position_stream = PositionStream()
 runner = BotRunner(loghub)
 
-app = FastAPI(title="Aster Bot Control Center")
+
+@asynccontextmanager
+async def dashboard_lifespan(_: FastAPI):
+    position_stream.start()
+    try:
+        yield
+    finally:
+        await position_stream.stop()
+
+
+app = FastAPI(title="Aster Bot Control Center", lifespan=dashboard_lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -3036,16 +3047,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
-
-@app.on_event("startup")
-async def _startup() -> None:
-    position_stream.start()
-
-
-@app.on_event("shutdown")
-async def _shutdown() -> None:
-    await position_stream.stop()
 
 
 @app.get("/")
