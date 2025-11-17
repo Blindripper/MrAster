@@ -98,6 +98,9 @@ const activePositionsModeLabel = document.getElementById('active-positions-mode'
 const activePositionsWrapper = document.getElementById('active-positions-wrapper');
 const activePositionsRows = document.getElementById('active-positions-rows');
 const activePositionsNotifications = document.getElementById('active-positions-notifications');
+const activePositionsNotificationsEmpty = document.getElementById(
+  'active-positions-notifications-empty',
+);
 const statusCard = document.querySelector('.card.status');
 const tradesCard = document.getElementById('trades');
 const aiRequestsCard = aiRequestList ? aiRequestList.closest('.card') : null;
@@ -6049,6 +6052,8 @@ function renderPositionNotifications(notifications) {
     activePositionsNotifications.removeAttribute('hidden');
   }
 
+  setPositionNotificationsEmptyState(!hasNotifications);
+
   if (hasNotifications) {
     notifications.forEach((notification) => {
       if (!(notification instanceof HTMLElement)) return;
@@ -6058,6 +6063,15 @@ function renderPositionNotifications(notifications) {
         updateNotificationRelativeTime(notification, ts);
       }
     });
+  }
+}
+
+function setPositionNotificationsEmptyState(isEmpty) {
+  if (!activePositionsNotificationsEmpty) return;
+  if (isEmpty) {
+    activePositionsNotificationsEmpty.removeAttribute('hidden');
+  } else {
+    activePositionsNotificationsEmpty.setAttribute('hidden', 'true');
   }
 }
 
@@ -6628,10 +6642,12 @@ function syncCompletedPositionsFromTrades(history = []) {
 function refreshPositionUpdatesFromHistory() {
   refreshRenderedPositionNotifications();
   if (activePositionsNotifications && activePositionsNotifications.children.length > 0) {
+    setPositionNotificationsEmptyState(false);
     return;
   }
   const historical = buildHistoricalNotifications(5);
   if (!historical.length) {
+    setPositionNotificationsEmptyState(true);
     return;
   }
   renderPositionNotifications(historical);
