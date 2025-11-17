@@ -1794,6 +1794,14 @@ POSITION_HINT_KEYS = {"entry", "entryPrice", "qty", "quantity", "positionAmt", "
 TRADE_IDENTIFIER_KEYS = (
     "position_id",
     "positionId",
+    "position_uuid",
+    "positionUuid",
+    "position_hash",
+    "positionHash",
+    "position_key",
+    "positionKey",
+    "strategy_position_id",
+    "strategyPositionId",
     "hash",
     "uuid",
     "trade_id",
@@ -1801,6 +1809,21 @@ TRADE_IDENTIFIER_KEYS = (
     "id",
     "order_id",
     "orderId",
+)
+TRADE_IDENTIFIER_CONTAINER_KEYS = (
+    "extra",
+    "context",
+    "position",
+    "position_info",
+    "positionInfo",
+    "position_meta",
+    "positionMeta",
+    "position_context",
+    "positionContext",
+    "position_snapshot",
+    "positionSnapshot",
+    "position_details",
+    "positionDetails",
 )
 TRADE_TIMESTAMP_KEYS = (
     "closed_at",
@@ -2573,19 +2596,34 @@ def _build_history_summary(stats: TradeStats) -> Dict[str, Any]:
     return summary
 
 
+def _iter_trade_identifier_sources(trade: Dict[str, Any]) -> Iterable[Dict[str, Any]]:
+    if not isinstance(trade, dict):
+        return []
+    queue: List[Dict[str, Any]] = [trade]
+    seen: Set[int] = {id(trade)}
+    for current in queue:
+        yield current
+        for container_key in TRADE_IDENTIFIER_CONTAINER_KEYS:
+            candidate = current.get(container_key)
+            if not isinstance(candidate, dict):
+                continue
+            ident = id(candidate)
+            if ident in seen:
+                continue
+            seen.add(ident)
+            queue.append(candidate)
+
+
 def _lookup_trade_identifier_value(trade: Dict[str, Any], key: str) -> Any:
-    if key in trade and trade[key] is not None:
-        return trade[key]
-    extra = trade.get("extra")
-    if isinstance(extra, dict) and extra.get(key) is not None:
-        return extra.get(key)
-    context = trade.get("context")
-    if isinstance(context, dict) and context.get(key) is not None:
-        return context.get(key)
+    if not isinstance(trade, dict):
+        return None
+    for container in _iter_trade_identifier_sources(trade):
+        if container.get(key) is not None:
+            return container.get(key)
     return None
 
 
-def _parse_trade_timestamp(value: Any) -> Optional[float]:
+def _parse_timestamp_value(value: Any) -> Optional[float]:
     numeric = _safe_float(value)
     if numeric is not None:
         return numeric
@@ -2624,7 +2662,7 @@ def _extract_trade_identifier(trade: Dict[str, Any]) -> str:
         value = _lookup_trade_identifier_value(trade, key)
         if value is None:
             continue
-        ts_value = _parse_trade_timestamp(value)
+        ts_value = _parse_timestamp_value(value)
         if ts_value is None:
             continue
         ts_label = f"{ts_value:.3f}"
