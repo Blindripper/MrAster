@@ -11134,9 +11134,9 @@ function renderHeroMetrics(cumulativeStats, sessionStats, historyEntries = null,
   const computedWinRate =
     serverWinRate ??
     totalsWinRate ??
-    derivedTotalsWinRate ??
     historyWinRate ??
     fallbackWinRate ??
+    derivedTotalsWinRate ??
     0;
 
   heroTotalWinRate.textContent = `${(computedWinRate * 100).toFixed(1)}%`;
