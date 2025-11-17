@@ -304,6 +304,7 @@ const DEFAULT_LANGUAGE = 'en';
 const SUPPORTED_LANGUAGES = ['en', 'ru', 'zh', 'ko', 'de', 'fr', 'es', 'tr'];
 const COMPACT_SKIP_AGGREGATION_WINDOW = 600; // seconds
 const MAX_MANAGEMENT_EVENTS = 50;
+const POSITION_NOTIFICATIONS_REFRESH_INTERVAL_MS = 45_000;
 const activePositionManagementCache = new Map();
 
 const PLAYBOOK_CARD_TIMESTAMP_KEYS = {
@@ -2360,6 +2361,7 @@ let tradeHistoryEmptyStreak = 0;
 let aiRequestsEmptyStreak = 0;
 const POSITION_NOTIFICATION_HISTORY_LIMIT = 15;
 let positionNotificationHistory = [];
+let positionUpdatesRefreshTimer = null;
 let tradesRefreshTimer = null;
 let tradeViewportSyncHandle = null;
 let lastDecisionStats = null;
@@ -5780,6 +5782,84 @@ function buildHistoricalNotifications(limit = 5) {
   return nodes;
 }
 
+function refreshRenderedPositionNotifications() {
+  if (!activePositionsNotifications) return;
+  Array.from(activePositionsNotifications.children || []).forEach((element) => {
+    if (!(element instanceof HTMLElement)) return;
+    const rawTs = element.dataset?.timestamp;
+    const parsedTs = rawTs ? Number(rawTs) : Number.NaN;
+    if (!Number.isFinite(parsedTs)) return;
+    updateNotificationRelativeTime(element, parsedTs);
+  });
+}
+
+function renderPositionNotifications(notifications) {
+  const hasNotifications = Array.isArray(notifications) && notifications.length > 0;
+
+  if (activePositionsNotifications) {
+    if (hasNotifications) {
+      const notificationFragment = document.createDocumentFragment();
+      notifications.forEach((notification) => {
+        if (notification && !notification.hasAttribute('role')) {
+          notification.setAttribute('role', 'listitem');
+        }
+        notificationFragment.append(notification);
+      });
+      activePositionsNotifications.replaceChildren(notificationFragment);
+      activePositionsNotifications.removeAttribute('hidden');
+    } else {
+      activePositionsNotifications.replaceChildren();
+      activePositionsNotifications.setAttribute('hidden', '');
+    }
+  }
+
+  if (activePositionsNotificationsEmpty) {
+    if (hasNotifications) {
+      activePositionsNotificationsEmpty.setAttribute('hidden', '');
+    } else {
+      activePositionsNotificationsEmpty.removeAttribute('hidden');
+    }
+  }
+
+  if (activePositionsNotificationsPanel) {
+    if (hasNotifications) {
+      activePositionsNotificationsPanel.removeAttribute('hidden');
+    } else {
+      activePositionsNotificationsPanel.setAttribute('hidden', '');
+    }
+  }
+
+  if (hasNotifications) {
+    notifications.forEach((notification) => {
+      if (!(notification instanceof HTMLElement)) return;
+      const rawTs = notification.dataset?.timestamp;
+      const ts = rawTs ? Number(rawTs) : Number.NaN;
+      if (Number.isFinite(ts)) {
+        updateNotificationRelativeTime(notification, ts);
+      }
+    });
+  }
+}
+
+function refreshPositionUpdatesFromHistory() {
+  refreshRenderedPositionNotifications();
+  if (activePositionsNotifications && activePositionsNotifications.children.length > 0) {
+    return;
+  }
+  const historical = buildHistoricalNotifications(5);
+  if (!historical.length) {
+    return;
+  }
+  renderPositionNotifications(historical);
+}
+
+function ensurePositionUpdatesRefreshTimer() {
+  if (positionUpdatesRefreshTimer) return;
+  positionUpdatesRefreshTimer = setInterval(() => {
+    refreshPositionUpdatesFromHistory();
+  }, POSITION_NOTIFICATIONS_REFRESH_INTERVAL_MS);
+}
+
 function buildPositionManagementSummary(position, options = {}) {
   const latest = resolveLatestManagementEvent(position);
   if (!latest) return null;
@@ -6197,41 +6277,13 @@ function updateActivePositionsView(options = {}) {
 
   const limitedNotifications = sortedNotifications.slice(0, 5);
   rememberPositionNotifications(limitedNotifications);
-  const notificationsToRender = limitedNotifications;
-  const hasNotifications = notificationsToRender.length > 0;
-
-  if (activePositionsNotifications) {
-    if (hasNotifications) {
-      const notificationFragment = document.createDocumentFragment();
-      notificationsToRender.forEach((notification) => {
-        if (notification && !notification.hasAttribute('role')) {
-          notification.setAttribute('role', 'listitem');
-        }
-        notificationFragment.append(notification);
-      });
-      activePositionsNotifications.replaceChildren(notificationFragment);
-      activePositionsNotifications.removeAttribute('hidden');
-    } else {
-      activePositionsNotifications.replaceChildren();
-      activePositionsNotifications.setAttribute('hidden', '');
-    }
+  let notificationsToRender = limitedNotifications;
+  if (!notificationsToRender.length) {
+    notificationsToRender = buildHistoricalNotifications(5);
   }
 
-  if (activePositionsNotificationsEmpty) {
-    if (hasNotifications) {
-      activePositionsNotificationsEmpty.setAttribute('hidden', '');
-    } else {
-      activePositionsNotificationsEmpty.removeAttribute('hidden');
-    }
-  }
-
-  if (activePositionsNotificationsPanel) {
-    if (hasNotifications) {
-      activePositionsNotificationsPanel.removeAttribute('hidden');
-    } else {
-      activePositionsNotificationsPanel.setAttribute('hidden', '');
-    }
-  }
+  renderPositionNotifications(notificationsToRender);
+  ensurePositionUpdatesRefreshTimer();
 
   activePositionsRows.replaceChildren(rowsFragment);
 }
