@@ -678,7 +678,7 @@ def _compute_trade_performance_summary(
 
 
 MIN_QUOTE_VOL = float(os.getenv("ASTER_MIN_QUOTE_VOL_USDT", "850000"))
-SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.00090"))  # 0.09 %
+SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.00200"))  # 0.20 %
 SPREAD_BPS_SOFT_CAP = float(os.getenv("ASTER_SPREAD_BPS_SOFT_CAP", "0.00065"))
 WICKINESS_MAX = float(os.getenv("ASTER_WICKINESS_MAX", "0.985"))
 MIN_EDGE_R = float(os.getenv("ASTER_MIN_EDGE_R", "0.18"))
@@ -1019,7 +1019,9 @@ FUNDING_MAX_SHORT = float(os.getenv("ASTER_FUNDING_MAX_SHORT", "0.0010"))  # 0.1
 NON_ARB_FILTER_ENABLED = os.getenv("ASTER_NON_ARB_FILTER_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 NON_ARB_CLAMP_BPS = abs(float(os.getenv("ASTER_NON_ARB_CLAMP_BPS", "0.00065"))) or 0.00065
 NON_ARB_EDGE_THRESHOLD = abs(float(os.getenv("ASTER_NON_ARB_EDGE_THRESHOLD", "0.00005")))
-NON_ARB_SKIP_GAP = abs(float(os.getenv("ASTER_NON_ARB_SKIP_GAP", str(NON_ARB_CLAMP_BPS * 3.5))))
+NON_ARB_SKIP_GAP = abs(
+    float(os.getenv("ASTER_NON_ARB_SKIP_GAP", str(max(NON_ARB_CLAMP_BPS * 3.5, 0.003))))
+)
 
 HTTP_RETRIES = max(0, int(os.getenv("ASTER_HTTP_RETRIES", "2")))
 HTTP_BACKOFF = max(0.0, float(os.getenv("ASTER_HTTP_BACKOFF", "0.6")))

@@ -113,7 +113,7 @@
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | 强制不同周期趋势同向。 |
 | `ASTER_TREND_BIAS` | `with` | 顺势或逆势操作。 |
 | `ASTER_MIN_QUOTE_VOL_USDT` | `150000` | 可交易品种的最低成交额。 |
-| `ASTER_SPREAD_BPS_MAX` | `0.0030` | 最大允许点差（bps）。 |
+| `ASTER_SPREAD_BPS_MAX` | `0.0020` | 最大允许点差（bps）。 |
 | `ASTER_WICKINESS_MAX` | `0.97` | 过滤影线过长的 K 线。 |
 | `ASTER_MIN_EDGE_R` | `0.30` | 批准交易的最小 Edge（以 R 计）。 |
 | `ASTER_DEFAULT_NOTIONAL` | `0` | 缺乏自适应数据时的基础名义仓位（0 = 交由 AI 计算）。 |
@@ -139,7 +139,7 @@
 | `ASTER_NON_ARB_FILTER_ENABLED` | `true` | 启用防套利夹层。 |
 | `ASTER_NON_ARB_CLAMP_BPS` | `0.0005` | 溢价夹层宽度（±bps）。 |
 | `ASTER_NON_ARB_EDGE_THRESHOLD` | `0.00005` | 允许的资金费率 Edge 阈值。 |
-| `ASTER_NON_ARB_SKIP_GAP` | `0.0015` | 触发直接跳过的 Mark/Oracle 差距。 |
+| `ASTER_NON_ARB_SKIP_GAP` | `0.0030` | 触发直接跳过的 Mark/Oracle 差距。 |
 
 *从 Dashboard 启动时默认使用 RSI 51/49 与风险 0.007。仅 CLI 启动则为 52/48 和 0.006，直至覆盖或通过 `dashboard_config.json` 同步。*
 

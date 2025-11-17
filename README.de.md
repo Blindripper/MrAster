@@ -113,7 +113,7 @@ Neugierig auf Engines, Schutzmechanismen und Konfiguration? Klappe die folgenden
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | Erzwingt Trend-Ausrichtung zwischen den Timeframes. |
 | `ASTER_TREND_BIAS` | `with` | Handel mit oder gegen den Trend. |
 | `ASTER_MIN_QUOTE_VOL_USDT` | `150000` | Minimales Volumen für handelbare Symbole. |
-| `ASTER_SPREAD_BPS_MAX` | `0.0030` | Maximal tolerierter Bid/Ask-Spread (bps). |
+| `ASTER_SPREAD_BPS_MAX` | `0.0020` | Maximal tolerierter Bid/Ask-Spread (bps). |
 | `ASTER_WICKINESS_MAX` | `0.97` | Filter gegen übermäßig volatile Kerzen. |
 | `ASTER_MIN_EDGE_R` | `0.30` | Mindest-Edge (in R) für Trade-Freigabe. |
 | `ASTER_DEFAULT_NOTIONAL` | `0` | Basisnotional, wenn keine adaptiven Daten vorliegen (0 = KI berechnet). |
@@ -139,7 +139,7 @@ Neugierig auf Engines, Schutzmechanismen und Konfiguration? Klappe die folgenden
 | `ASTER_NON_ARB_FILTER_ENABLED` | `true` | Aktiviert Mark/Oracle-Clamp gegen Arbitrage. |
 | `ASTER_NON_ARB_CLAMP_BPS` | `0.0005` | Breite der Premium-Klammer (±bps). |
 | `ASTER_NON_ARB_EDGE_THRESHOLD` | `0.00005` | Tolerierte Funding-Edge vor Blockierung. |
-| `ASTER_NON_ARB_SKIP_GAP` | `0.0015` | Absoluter Mark/Oracle-Gap, der zum Skip führt. |
+| `ASTER_NON_ARB_SKIP_GAP` | `0.0030` | Absoluter Mark/Oracle-Gap, der zum Skip führt. |
 
 *Beim Dashboard-Start werden RSI 51/49 und 0.007 Risikoanteil gesetzt. CLI-Starts nutzen 52/48 und 0.006, bis überschrieben oder via `dashboard_config.json` synchronisiert.*
 

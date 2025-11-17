@@ -152,7 +152,7 @@ Curious about the engines, guardrails, and configuration surface? Expand the sec
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | Enforces trend alignment between timeframes. |
 | `ASTER_TREND_BIAS` | `with` | Trade with or against the trend. |
 | `ASTER_MIN_QUOTE_VOL_USDT` | `150000` | Minimum volume for tradable symbols. |
-| `ASTER_SPREAD_BPS_MAX` | `0.0030` | Maximum tolerated bid/ask spread (bps). |
+| `ASTER_SPREAD_BPS_MAX` | `0.0020` | Maximum tolerated bid/ask spread (bps). |
 | `ASTER_WICKINESS_MAX` | `0.97` | Filter against overly volatile candles. |
 | `ASTER_MIN_EDGE_R` | `0.30` | Minimum edge (in R) required to approve a trade. |
 | `ASTER_DEFAULT_NOTIONAL` | `1000` | Baseline notional for trades when no adaptive sizing data is available (raised to 1000 USDT by the aggressive risk profile). |
@@ -181,7 +181,7 @@ Curious about the engines, guardrails, and configuration surface? Expand the sec
 | `ASTER_NON_ARB_FILTER_ENABLED` | `true` | Activates the mark/oracle clamp derived from Jez (2025) to avoid negative-funding arbitrage. |
 | `ASTER_NON_ARB_CLAMP_BPS` | `0.0005` | Width of the clamp applied to the premium (±bps). |
 | `ASTER_NON_ARB_EDGE_THRESHOLD` | `0.00005` | Funding edge tolerated before the guard blocks a biased entry. |
-| `ASTER_NON_ARB_SKIP_GAP` | `0.0015` | Absolute mark/oracle gap that forces a skip regardless of direction. |
+| `ASTER_NON_ARB_SKIP_GAP` | `0.0030` | Absolute mark/oracle gap that forces a skip regardless of direction. |
 
 *When launched from the dashboard, values seed to 51/49 RSI and inherit the selected risk profile (default `aggressive`, i.e. a 0.02 risk share — High preset in AI mode still escalates to 0.10). CLI-only launches fall back to 52/48 and the profile floor until overridden or synced via `dashboard_config.json`.*
 

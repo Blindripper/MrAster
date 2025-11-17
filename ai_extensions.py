@@ -2543,11 +2543,11 @@ class BudgetLearner:
         self._skip_reason_cap = 6
         self._skip_penalty_factor = 0.22
         self._skip_penalty_increment = {
-            "plan": 0.55,
+            "plan": 0.45,
             "trend": 0.45,
             "postmortem": 0.2,
         }
-        self._skip_limit_plan = 1.65
+        self._skip_limit_plan = 1.85
         self._skip_limit_trend = 1.1
         self._skip_limit_any = 2.35
         self._skip_limit_soft = 0.45

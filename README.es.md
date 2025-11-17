@@ -113,7 +113,7 @@
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | Obliga a alinear tendencias entre marcos. |
 | `ASTER_TREND_BIAS` | `with` | Opera con/en contra de la tendencia. |
 | `ASTER_MIN_QUOTE_VOL_USDT` | `150000` | Volumen mínimo para símbolos operables. |
-| `ASTER_SPREAD_BPS_MAX` | `0.0030` | Spread bid/ask máximo (bps). |
+| `ASTER_SPREAD_BPS_MAX` | `0.0020` | Spread bid/ask máximo (bps). |
 | `ASTER_WICKINESS_MAX` | `0.97` | Filtro contra velas demasiado volátiles. |
 | `ASTER_MIN_EDGE_R` | `0.30` | Edge mínimo (en R) requerido para aprobar un trade. |
 | `ASTER_DEFAULT_NOTIONAL` | `0` | Notional base cuando no hay datos adaptativos (0 = IA lo calcula). |
@@ -139,7 +139,7 @@
 | `ASTER_NON_ARB_FILTER_ENABLED` | `true` | Activa la pinza mark/oracle anti-arbitraje. |
 | `ASTER_NON_ARB_CLAMP_BPS` | `0.0005` | Ancho de la pinza (±bps). |
 | `ASTER_NON_ARB_EDGE_THRESHOLD` | `0.00005` | Edge de funding tolerado antes de bloquear. |
-| `ASTER_NON_ARB_SKIP_GAP` | `0.0015` | Brecha mark/oracle que fuerza un skip. |
+| `ASTER_NON_ARB_SKIP_GAP` | `0.0030` | Brecha mark/oracle que fuerza un skip. |
 
 *Cuando se lanza desde el dashboard se usan RSI 51/49 y riesgo 0.007. Con solo CLI, las semillas son 52/48 y 0.006 hasta que las reemplaces o sincronices vía `dashboard_config.json`.*
 

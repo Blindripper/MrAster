@@ -113,7 +113,7 @@ Envie d’en savoir plus sur les moteurs, les garde-fous et la configuration ? D
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | Force l’alignement des tendances entre horizons. |
 | `ASTER_TREND_BIAS` | `with` | Trade dans / contre la tendance. |
 | `ASTER_MIN_QUOTE_VOL_USDT` | `150000` | Volume minimal des symboles. |
-| `ASTER_SPREAD_BPS_MAX` | `0.0030` | Spread bid/ask maximal (bps). |
+| `ASTER_SPREAD_BPS_MAX` | `0.0020` | Spread bid/ask maximal (bps). |
 | `ASTER_WICKINESS_MAX` | `0.97` | Filtre des chandeliers trop volatils. |
 | `ASTER_MIN_EDGE_R` | `0.30` | Edge minimal (en R) pour valider un trade. |
 | `ASTER_DEFAULT_NOTIONAL` | `0` | Notionnel de base si aucune donnée adaptative (0 = calculé par l’IA). |
@@ -139,7 +139,7 @@ Envie d’en savoir plus sur les moteurs, les garde-fous et la configuration ? D
 | `ASTER_NON_ARB_FILTER_ENABLED` | `true` | Active la pince mark/oracle anti-arbitrage. |
 | `ASTER_NON_ARB_CLAMP_BPS` | `0.0005` | Largeur de la pince (±bps). |
 | `ASTER_NON_ARB_EDGE_THRESHOLD` | `0.00005` | Edge funding toléré avant blocage. |
-| `ASTER_NON_ARB_SKIP_GAP` | `0.0015` | Ecart mark/oracle déclenchant un skip immédiat. |
+| `ASTER_NON_ARB_SKIP_GAP` | `0.0030` | Ecart mark/oracle déclenchant un skip immédiat. |
 
 *Au lancement depuis le dashboard, les valeurs par défaut sont RSI 51/49 et risque 0.007. En CLI uniquement, la graine est 52/48 et 0.006 jusqu’à ce que vous les remplaciez ou synchronisiez via `dashboard_config.json`.*
 

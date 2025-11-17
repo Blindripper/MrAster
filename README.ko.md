@@ -113,7 +113,7 @@
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | 타임프레임 간 추세 정렬을 강제합니다. |
 | `ASTER_TREND_BIAS` | `with` | 추세와 함께 혹은 역추세로 매매. |
 | `ASTER_MIN_QUOTE_VOL_USDT` | `150000` | 거래 가능한 최소 거래대금. |
-| `ASTER_SPREAD_BPS_MAX` | `0.0030` | 허용 최대 스프레드(bps). |
+| `ASTER_SPREAD_BPS_MAX` | `0.0020` | 허용 최대 스프레드(bps). |
 | `ASTER_WICKINESS_MAX` | `0.97` | 과도한 심지의 캔들을 필터링. |
 | `ASTER_MIN_EDGE_R` | `0.30` | 트레이드를 승인하기 위한 최소 엣지(R). |
 | `ASTER_DEFAULT_NOTIONAL` | `0` | 적응 데이터가 없을 때의 기본 노셔널(0 = AI 계산). |
@@ -139,7 +139,7 @@
 | `ASTER_NON_ARB_FILTER_ENABLED` | `true` | 마크/오라클 클램프 가드 활성화. |
 | `ASTER_NON_ARB_CLAMP_BPS` | `0.0005` | 프리미엄 클램프 폭(±bps). |
 | `ASTER_NON_ARB_EDGE_THRESHOLD` | `0.00005` | 차익 허용 한계. |
-| `ASTER_NON_ARB_SKIP_GAP` | `0.0015` | 즉시 스킵을 유발하는 마크/오라클 격차. |
+| `ASTER_NON_ARB_SKIP_GAP` | `0.0030` | 즉시 스킵을 유발하는 마크/오라클 격차. |
 
 *대시보드에서 시작하면 RSI 51/49와 리스크 0.007로 초기화됩니다. CLI에서만 실행 시 52/48과 0.006이 적용되며 값을 덮어쓰거나 `dashboard_config.json`으로 동기화할 때까지 유지됩니다.*
 
