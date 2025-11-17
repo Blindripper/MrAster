@@ -3,6 +3,8 @@ import asyncio
 import pytest
 
 from dashboard_server import (
+    _collect_run_trade_symbols,
+    _compute_run_realized_from_exchange,
     _merge_realized_pnl,
     _resolve_history_with_realized,
     _strip_realized_income_trades,
@@ -174,3 +176,56 @@ def test_resolve_history_with_realized_skips_when_disabled(monkeypatch):
         assert enriched == history
 
     asyncio.run(run())
+
+
+def test_collect_run_trade_symbols_deduplicates_and_limits() -> None:
+    state = {
+        "trade_history": [{"symbol": "btcusdt"}, {"symbol": "ethusdt"}],
+        "manual_trade_history": [{"symbol": "adausdt"}],
+        "live_trades": {"solusdt": {}, "BTCUSDT": {}},
+        "ai_trade_proposals": [{"payload": {"symbol": "dotusdt"}}],
+        "symbol_performance_profile": {"xrpusdt": {}},
+    }
+
+    symbols = _collect_run_trade_symbols(state, limit=4)
+
+    assert symbols == ["BTCUSDT", "ETHUSDT", "ADAUSDT", "SOLUSDT"]
+
+
+def test_compute_run_realized_from_exchange_filters_by_run_start() -> None:
+    state = {"trade_history": [{"symbol": "BTCUSDT"}, {"symbol": "ETHUSDT"}]}
+    env = {"ASTER_API_KEY": "key", "ASTER_API_SECRET": "secret"}
+
+    def fake_fetch(_env: dict, symbol: str, **kwargs):
+        assert kwargs.get("start_time") == 1_000.0
+        if symbol == "BTCUSDT":
+            return [
+                {"symbol": symbol, "time": 999.0, "realized_pnl": 5.0},
+                {"symbol": symbol, "time": 1_005.0, "realized_pnl": 1.2},
+            ]
+        return [
+            {"symbol": symbol, "time": 1_001.0, "realized_pnl": -0.5},
+            {"symbol": symbol, "time": 1_002.0, "realized_pnl": 0.0},
+        ]
+
+    result = _compute_run_realized_from_exchange(state, env, run_started_at=1_000.0, fetcher=fake_fetch)
+
+    assert result["realized_pnl"] == pytest.approx(0.7)
+    assert result["trade_samples"] == 2
+    assert result["source"] == "exchange_trades"
+
+
+def test_compute_run_realized_from_exchange_requires_credentials() -> None:
+    state = {"trade_history": [{"symbol": "BTCUSDT"}]}
+
+    called = False
+
+    def fake_fetch(*_args, **_kwargs):
+        nonlocal called
+        called = True
+        return []
+
+    result = _compute_run_realized_from_exchange(state, {}, run_started_at=1_000.0, fetcher=fake_fetch)
+
+    assert result == {}
+    assert called is False

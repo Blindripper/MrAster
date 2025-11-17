@@ -21,7 +21,7 @@ import uuid
 from collections import OrderedDict, deque
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from urllib.parse import urlencode
 
 import requests
@@ -163,6 +163,8 @@ ALLOWED_ENV_KEYS = set(ENV_DEFAULTS.keys())
 
 
 REALIZED_PNL_MATCH_PADDING_SECONDS = 180.0
+EXCHANGE_HISTORY_SYMBOL_LIMIT = 24
+EXCHANGE_TRADES_PER_SYMBOL = 1000
 
 
 def _is_truthy(value: Optional[str]) -> bool:
@@ -2060,6 +2062,203 @@ def _fetch_realized_pnl_entries(env: Dict[str, Any], limit: int = 400) -> List[D
 
     results.sort(key=lambda e: e["time"])
     return results
+
+
+def _collect_run_trade_symbols(state: Dict[str, Any], *, limit: int = EXCHANGE_HISTORY_SYMBOL_LIMIT) -> List[str]:
+    symbols: List[str] = []
+    seen: Set[str] = set()
+
+    def _register_symbol(value: Any) -> None:
+        if len(symbols) >= limit:
+            return
+        text = _clean_string(value)
+        if not text:
+            return
+        token = text.upper()
+        if token in seen:
+            return
+        seen.add(token)
+        symbols.append(token)
+
+    if not isinstance(state, dict):
+        return symbols
+
+    history_sources = [state.get("trade_history"), state.get("manual_trade_history")]
+    for source in history_sources:
+        if len(symbols) >= limit:
+            break
+        if not isinstance(source, list):
+            continue
+        for entry in source:
+            if not isinstance(entry, dict):
+                continue
+            _register_symbol(entry.get("symbol"))
+            if len(symbols) >= limit:
+                break
+
+    if len(symbols) < limit:
+        live_trades = state.get("live_trades")
+        if isinstance(live_trades, dict):
+            for sym in live_trades.keys():
+                _register_symbol(sym)
+                if len(symbols) >= limit:
+                    break
+
+    if len(symbols) < limit:
+        proposals = state.get("ai_trade_proposals")
+        if isinstance(proposals, list):
+            for proposal in proposals:
+                if not isinstance(proposal, dict):
+                    continue
+                payload = proposal.get("payload") if isinstance(proposal.get("payload"), dict) else proposal
+                _register_symbol(payload.get("symbol"))
+                if len(symbols) >= limit:
+                    break
+
+    if len(symbols) < limit:
+        symbol_profiles = state.get("symbol_performance_profile")
+        if isinstance(symbol_profiles, dict):
+            for sym in symbol_profiles.keys():
+                _register_symbol(sym)
+                if len(symbols) >= limit:
+                    break
+
+    return symbols[:limit]
+
+
+def _fetch_user_trades_for_symbol(
+    env: Dict[str, Any],
+    symbol: str,
+    *,
+    start_time: Optional[float] = None,
+    end_time: Optional[float] = None,
+    limit: int = EXCHANGE_TRADES_PER_SYMBOL,
+) -> List[Dict[str, Any]]:
+    api_key = (env.get("ASTER_API_KEY") or "").strip()
+    api_secret = (env.get("ASTER_API_SECRET") or "").strip()
+    if not api_key or not api_secret:
+        return []
+    if _is_truthy(env.get("ASTER_PAPER")):
+        return []
+    base = (env.get("ASTER_EXCHANGE_BASE") or "https://fapi.asterdex.com").rstrip("/")
+
+    try:
+        recv_window = int(float(env.get("ASTER_RECV_WINDOW", 10000)))
+    except (TypeError, ValueError):
+        recv_window = 10000
+
+    params: Dict[str, Any] = {
+        "symbol": str(symbol).upper(),
+        "limit": max(1, min(int(limit), 1000)),
+        "timestamp": int(time.time() * 1000),
+        "recvWindow": recv_window,
+    }
+    if start_time is not None:
+        if start_time > 1e12:
+            params["startTime"] = int(start_time)
+        else:
+            params["startTime"] = int(max(0.0, start_time) * 1000)
+    if end_time is not None:
+        if end_time > 1e12:
+            params["endTime"] = int(end_time)
+        else:
+            params["endTime"] = int(max(0.0, end_time) * 1000)
+
+    ordered = [(k, params[k]) for k in sorted(params)]
+    qs = urlencode(ordered, doseq=True)
+    signature = hmac.new(api_secret.encode(), qs.encode(), hashlib.sha256).hexdigest()
+    url = f"{base}/fapi/v1/userTrades?{qs}&signature={signature}"
+    headers = {"X-MBX-APIKEY": api_key, "Content-Type": "application/x-www-form-urlencoded"}
+
+    try:
+        resp = requests.get(url, headers=headers, timeout=8)
+        resp.raise_for_status()
+        payload = resp.json()
+    except Exception as exc:
+        logger.debug("trade history fetch failed for %s: %s", symbol, exc)
+        return []
+
+    entries = payload if isinstance(payload, list) else []
+    results: List[Dict[str, Any]] = []
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        ts_val = _safe_float(item.get("time"))
+        if ts_val is None:
+            continue
+        if ts_val > 1e12:
+            ts_val /= 1000.0
+        realized = _safe_float(item.get("realizedPnl"))
+        if realized is None:
+            realized = _safe_float(item.get("realized_pnl"))
+        entry: Dict[str, Any] = {
+            "symbol": str(symbol).upper(),
+            "time": ts_val,
+            "realized_pnl": realized,
+        }
+        for key in ("buyer", "maker", "orderId", "id", "tradeId"):
+            if item.get(key) is not None:
+                entry[key] = item.get(key)
+        results.append(entry)
+    return results
+
+
+def _compute_run_realized_from_exchange(
+    state: Dict[str, Any],
+    env_cfg: Dict[str, Any],
+    run_started_at: Optional[float] = None,
+    *,
+    fetcher: Optional[
+        Any
+    ] = None,
+) -> Dict[str, Any]:
+    if not isinstance(env_cfg, dict):
+        return {}
+    if _is_truthy(env_cfg.get("ASTER_PAPER")):
+        return {}
+    api_key = (env_cfg.get("ASTER_API_KEY") or "").strip()
+    api_secret = (env_cfg.get("ASTER_API_SECRET") or "").strip()
+    if not api_key or not api_secret:
+        return {}
+
+    run_start = run_started_at
+    if run_start is None:
+        run_start = _resolve_run_started_at(state)
+    if run_start is None:
+        return {}
+
+    symbols = _collect_run_trade_symbols(state)
+    if not symbols:
+        return {}
+
+    fetch_fn = fetcher or _fetch_user_trades_for_symbol
+    realized_total = 0.0
+    trade_samples = 0
+
+    for sym in symbols:
+        try:
+            trades = fetch_fn(env_cfg, sym, start_time=run_start)
+        except Exception as exc:  # pragma: no cover - defensive guard
+            logger.debug("run trade history fetch failed for %s: %s", sym, exc)
+            continue
+        for trade in trades:
+            ts_val = _safe_float(trade.get("time"))
+            if ts_val is None or ts_val < run_start:
+                continue
+            pnl_val = _safe_float(trade.get("realized_pnl"))
+            if pnl_val is None or math.isclose(pnl_val, 0.0):
+                continue
+            realized_total += pnl_val
+            trade_samples += 1
+
+    if trade_samples == 0:
+        return {}
+
+    return {
+        "realized_pnl": float(realized_total),
+        "trade_samples": trade_samples,
+        "source": "exchange_trades",
+    }
 
 
 def _parse_trade_timestamp(trade: Dict[str, Any], numeric_key: str, iso_key: str) -> Optional[float]:
@@ -7421,6 +7620,16 @@ async def trades() -> Dict[str, Any]:
     history_totals = _summarize_history_totals(history_source)
     run_started_at = _resolve_run_started_at(state)
     filtered_history = _filter_history_for_run(history_source, run_started_at)
+    try:
+        run_exchange_metrics = await asyncio.to_thread(
+            _compute_run_realized_from_exchange,
+            state,
+            env_cfg,
+            run_started_at,
+        )
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logger.debug("run exchange metrics failed: %s", exc)
+        run_exchange_metrics = {}
     history_window: List[Dict[str, Any]] = [dict(entry) for entry in filtered_history[-200:]]
 
     stats_history: List[Dict[str, Any]] = history_window
@@ -7477,6 +7686,18 @@ async def trades() -> Dict[str, Any]:
         stats,
         history_count=history_totals.get("total_trades", len(display_history)),
     )
+    if run_exchange_metrics:
+        realized_override = _safe_float(run_exchange_metrics.get("realized_pnl"))
+        if realized_override is not None:
+            hero_metrics["realized_pnl"] = float(realized_override)
+            ai_spent = _safe_float(hero_metrics.get("ai_budget_spent")) or 0.0
+            hero_metrics["total_pnl"] = float(realized_override) - float(ai_spent)
+        trade_samples = run_exchange_metrics.get("trade_samples")
+        if isinstance(trade_samples, (int, float)) and math.isfinite(trade_samples):
+            hero_metrics["run_trade_samples"] = int(trade_samples)
+        source_label = run_exchange_metrics.get("source")
+        if source_label:
+            hero_metrics["run_metrics_source"] = source_label
 
     return {
         "open": enriched_open,
