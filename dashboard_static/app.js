@@ -6005,81 +6005,179 @@ function renderPositionNotifications(notifications) {
   }
 }
 
-function buildCompletedPositionEntry(position, options = {}) {
-  if (!position || typeof position !== 'object') {
+function buildCompletedPositionCard(entry) {
+  if (!entry || !entry.position) {
     return null;
   }
-  const container = document.createElement('article');
-  container.className = 'completed-position';
-  container.setAttribute('role', 'listitem');
-
-  const meta = document.createElement('header');
-  meta.className = 'completed-position__meta';
-  const symbol = document.createElement('span');
-  symbol.className = 'completed-position__symbol';
-  symbol.textContent = getPositionSymbol(position) || '—';
-  meta.append(symbol);
-
-  const referenceTimestamp = Number.isFinite(options.timestamp)
-    ? Number(options.timestamp)
+  const position = entry.position;
+  const referenceTimestamp = Number.isFinite(entry.ts)
+    ? Number(entry.ts)
     : getPositionTimestamp(position);
-  if (Number.isFinite(referenceTimestamp)) {
-    const time = document.createElement('time');
-    const iso = new Date(referenceTimestamp * 1000).toISOString();
-    time.className = 'completed-position__time';
-    time.textContent = formatRelativeTime(referenceTimestamp);
-    time.dateTime = iso;
-    meta.append(time);
-  }
-  container.append(meta);
-
-  const metrics = document.createElement('dl');
-  metrics.className = 'completed-position__metrics';
-
-  const pnlLabel = document.createElement('dt');
-  pnlLabel.className = 'completed-position__label';
-  pnlLabel.textContent = translate('trades.completed.pnl', 'Realized PNL');
-  const pnlValue = document.createElement('dd');
-  pnlValue.className = 'completed-position__value';
   const pnlField = pickNumericField(position, COMPLETED_POSITION_PNL_KEYS);
-  const pnlPercentField = pickNumericField(position, ACTIVE_POSITION_ALIASES.roe || []);
-  let pnlTone = null;
-  if (Number.isFinite(pnlField.numeric)) {
-    pnlTone = pnlField.numeric;
-    pnlValue.textContent = `${formatSignedNumber(pnlField.numeric, 2)} USDT`;
-    if (pnlPercentField && pnlPercentField.text) {
-      pnlValue.textContent += ` (${pnlPercentField.text})`;
-    }
-  } else if (pnlPercentField && pnlPercentField.text) {
-    pnlTone = pnlPercentField.numeric;
-    pnlValue.textContent = pnlPercentField.text;
-  } else if (pnlField && pnlField.text) {
-    pnlValue.textContent = pnlField.text;
+  const pnlNumeric = Number.isFinite(pnlField.numeric) ? pnlField.numeric : null;
+  const pnlTone = pnlNumeric > 0 ? 'profit' : pnlNumeric < 0 ? 'loss' : 'neutral';
+  const pnlDisplay = pnlNumeric !== null
+    ? `${formatSignedNumber(pnlNumeric, 2)} USDT`
+    : pnlField.value
+      ? pnlField.value.toString()
+      : '—';
+  const roeField = pickFieldValue(position, ACTIVE_POSITION_ALIASES.roe || []);
+  const roeNumeric = toNumeric(roeField.value);
+  let roeDisplay = null;
+  if (Number.isFinite(roeNumeric)) {
+    roeDisplay = `${formatSignedNumber(roeNumeric, 2)}%`;
   } else {
-    pnlValue.textContent = '—';
-  }
-  if (Number.isFinite(pnlTone)) {
-    if (pnlTone > 0) {
-      pnlValue.classList.add('tone-profit');
-    } else if (pnlTone < 0) {
-      pnlValue.classList.add('tone-loss');
+    const roeText = extractFieldStringSource(roeField);
+    if (roeText) {
+      roeDisplay = roeText;
     }
   }
-  metrics.append(pnlLabel, pnlValue);
-
-  const reasonLabel = document.createElement('dt');
-  reasonLabel.className = 'completed-position__label';
-  reasonLabel.textContent = translate('trades.completed.reason', 'Exit reason');
-  const reasonValue = document.createElement('dd');
-  reasonValue.className = 'completed-position__value';
+  const rField = pickNumericField(position, COMPLETED_POSITION_R_KEYS);
+  const rTone = Number.isFinite(rField.numeric)
+    ? rField.numeric > 0
+      ? 'profit'
+      : rField.numeric < 0
+        ? 'loss'
+        : 'neutral'
+    : null;
+  const rDisplay = Number.isFinite(rField.numeric)
+    ? `${formatSignedNumber(rField.numeric, 2)} R`
+    : null;
+  const notionalField = pickNumericField(position, ACTIVE_POSITION_NOTIONAL_KEYS || []);
+  const notionalDisplay = Number.isFinite(notionalField.numeric)
+    ? `${formatNumber(Math.abs(notionalField.numeric), 2)} USDT`
+    : null;
+  const signedSizeField = pickNumericField(position, ACTIVE_POSITION_SIGNED_SIZE_KEYS || []);
+  const side = extractPositionSide(position, notionalField, signedSizeField);
   const reasonCode = extractPositionManagementExitReason(position);
-  reasonValue.textContent = reasonCode
+  const reasonLabel = reasonCode
     ? friendlyReason(reasonCode)
     : translate('trades.completed.noReason', 'No exit reason logged.');
-  metrics.append(reasonLabel, reasonValue);
+  const postmortemSummary = extractPostmortemSummary(position);
+  const relativeTime = Number.isFinite(referenceTimestamp) ? formatRelativeTime(referenceTimestamp) : null;
+  const absoluteTimeLabel = Number.isFinite(referenceTimestamp)
+    ? formatTimestamp(new Date(referenceTimestamp * 1000).toISOString())
+    : null;
 
-  container.append(metrics);
-  return container;
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'completed-position-card';
+  card.setAttribute('role', 'listitem');
+  if (pnlTone && pnlTone !== 'neutral') {
+    card.dataset.pnl = pnlTone;
+  }
+
+  const header = document.createElement('div');
+  header.className = 'completed-position-card__header';
+
+  const title = document.createElement('div');
+  title.className = 'completed-position-card__title';
+  const symbol = document.createElement('span');
+  symbol.className = 'completed-position-card__symbol';
+  symbol.textContent = getPositionSymbol(position) || '—';
+  title.append(symbol);
+  const sideBadge = buildSideBadge(side);
+  if (sideBadge) {
+    sideBadge.classList.add('completed-position-card__side');
+    title.append(sideBadge);
+  }
+  header.append(title);
+
+  const pnlEl = document.createElement('span');
+  const pnlToneClass = pnlTone && pnlTone !== 'neutral' ? `tone-${pnlTone}` : '';
+  pnlEl.className = `completed-position-card__pnl ${pnlToneClass}`.trim();
+  pnlEl.textContent = pnlDisplay;
+  header.append(pnlEl);
+
+  card.append(header);
+
+  const meta = document.createElement('div');
+  meta.className = 'completed-position-card__meta';
+  if (relativeTime) {
+    const time = document.createElement('span');
+    time.textContent = relativeTime;
+    if (absoluteTimeLabel && absoluteTimeLabel !== '–') {
+      time.title = absoluteTimeLabel;
+    }
+    meta.append(time);
+  }
+  const reason = document.createElement('span');
+  reason.className = 'completed-position-card__reason';
+  reason.textContent = reasonLabel;
+  meta.append(reason);
+  card.append(meta);
+
+  const metrics = document.createElement('div');
+  metrics.className = 'completed-position-card__metrics';
+  const metricEntries = [
+    {
+      label: translate('trades.completed.pnl', 'Realized PNL'),
+      value: pnlDisplay,
+      tone: pnlTone,
+    },
+    {
+      label: 'Notional',
+      value: notionalDisplay,
+    },
+    {
+      label: 'R multiple',
+      value: rDisplay,
+      tone: rTone,
+    },
+    {
+      label: 'ROE',
+      value: roeDisplay,
+    },
+  ].filter((metric) => metric.value);
+  metricEntries.forEach((metric) => {
+    const item = document.createElement('div');
+    item.className = 'completed-position-card__metric';
+    const label = document.createElement('span');
+    label.className = 'completed-position-card__metric-label';
+    label.textContent = metric.label;
+    const value = document.createElement('span');
+    value.className = 'completed-position-card__metric-value';
+    value.textContent = metric.value;
+    if (metric.tone && metric.tone !== 'neutral') {
+      value.classList.add(`tone-${metric.tone}`);
+    }
+    item.append(label, value);
+    metrics.append(item);
+  });
+  if (metrics.childElementCount > 0) {
+    card.append(metrics);
+  }
+
+  if (postmortemSummary) {
+    const snippet = document.createElement('div');
+    snippet.className = 'completed-position-card__postmortem';
+    const label = document.createElement('span');
+    label.className = 'completed-position-card__postmortem-label';
+    label.textContent = translate('trades.postmortem.label', 'Post-mortem coach');
+    const text = document.createElement('p');
+    text.className = 'completed-position-card__postmortem-text';
+    text.textContent = postmortemSummary;
+    snippet.append(label, text);
+    card.append(snippet);
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'completed-position-card__actions';
+  const actionHint = document.createElement('span');
+  actionHint.className = 'completed-position-card__hint';
+  actionHint.textContent = translate('trades.viewDetails', 'View details');
+  actions.append(actionHint);
+  card.append(actions);
+
+  const symbolLabel = getPositionSymbol(position) || translate('trades.completed.title', 'Completed positions');
+  const accessibleTime = relativeTime || absoluteTimeLabel || '';
+  card.setAttribute('aria-label', `${symbolLabel} · ${accessibleTime} · ${reasonLabel}`.trim());
+
+  card.addEventListener('click', () => {
+    openCompletedPositionModal(position, { timestamp: referenceTimestamp, returnTarget: card });
+  });
+
+  return card;
 }
 
 function normalizeStatNumber(value, fallback = NaN) {
@@ -6218,8 +6316,7 @@ function renderCompletedPositionsHistory() {
   }
   const fragment = document.createDocumentFragment();
   completedPositionsHistory.forEach((entry) => {
-    if (!entry || !entry.position) return;
-    const card = buildCompletedPositionEntry(entry.position, { timestamp: entry.ts });
+    const card = buildCompletedPositionCard(entry);
     if (card) {
       fragment.append(card);
     }
@@ -6491,6 +6588,40 @@ function getPositionTimestamp(position) {
     }
   }
   return Number.NEGATIVE_INFINITY;
+}
+
+function getPositionClosedTimestamp(position) {
+  if (!position || typeof position !== 'object') return Number.NEGATIVE_INFINITY;
+  for (const key of POSITION_CLOSED_TIMESTAMP_KEYS) {
+    if (!(key in position)) continue;
+    const raw = unwrapPositionValue(position[key]);
+    if (raw === undefined || raw === null || raw === '') {
+      continue;
+    }
+    const numeric = toNumeric(raw);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      if (numeric > 1e12 || numeric > 1e10) {
+        return numeric / 1000;
+      }
+      return numeric;
+    }
+    if (typeof raw === 'string') {
+      const parsed = Date.parse(raw);
+      if (Number.isFinite(parsed)) {
+        return parsed / 1000;
+      }
+    }
+  }
+  return Number.NEGATIVE_INFINITY;
+}
+
+function computePositionDurationSeconds(position) {
+  const openedTs = getPositionTimestamp(position);
+  const closedTs = getPositionClosedTimestamp(position);
+  if (Number.isFinite(openedTs) && Number.isFinite(closedTs)) {
+    return Math.max(0, Math.round(closedTs - openedTs));
+  }
+  return null;
 }
 
 function updateActivePositionsView(options = {}) {
@@ -7925,6 +8056,120 @@ function buildTradeDetailContent(trade) {
   return container;
 }
 
+function buildCompletedPositionDetailContent(position) {
+  const pnlField = pickNumericField(position, COMPLETED_POSITION_PNL_KEYS);
+  const pnlNumeric = Number.isFinite(pnlField.numeric) ? pnlField.numeric : null;
+  const pnlTone = pnlNumeric > 0 ? 'profit' : pnlNumeric < 0 ? 'loss' : 'neutral';
+  const pnlDisplay = pnlNumeric !== null
+    ? `${formatSignedNumber(pnlNumeric, 2)} USDT`
+    : pnlField.value
+      ? pnlField.value.toString()
+      : '—';
+  const rField = pickNumericField(position, COMPLETED_POSITION_R_KEYS);
+  const rNumeric = Number.isFinite(rField.numeric) ? rField.numeric : null;
+  const rTone = rNumeric > 0 ? 'profit' : rNumeric < 0 ? 'loss' : 'neutral';
+  const rDisplay = rNumeric !== null ? `${formatSignedNumber(rNumeric, 2)} R` : null;
+  const roeField = pickFieldValue(position, ACTIVE_POSITION_ALIASES.roe || []);
+  const roeNumeric = toNumeric(roeField.value);
+  let roeDisplay = null;
+  if (Number.isFinite(roeNumeric)) {
+    roeDisplay = `${formatSignedNumber(roeNumeric, 2)}%`;
+  } else {
+    const roeText = extractFieldStringSource(roeField);
+    if (roeText) {
+      roeDisplay = roeText;
+    }
+  }
+  const notionalField = pickNumericField(position, ACTIVE_POSITION_NOTIONAL_KEYS || []);
+  const notionalDisplay = Number.isFinite(notionalField.numeric)
+    ? `${formatNumber(Math.abs(notionalField.numeric), 2)} USDT`
+    : null;
+  const leverageField = pickNumericField(position, ACTIVE_POSITION_ALIASES.leverage || []);
+  const leverageDisplay = Number.isFinite(leverageField.numeric)
+    ? formatLeverage(leverageField.numeric)
+    : null;
+  const entryField = pickNumericField(position, TRADE_ENTRY_KEYS);
+  const exitField = pickNumericField(position, TRADE_EXIT_KEYS);
+  const openedTs = getPositionTimestamp(position);
+  const closedTs = getPositionClosedTimestamp(position);
+  const openedLabel = Number.isFinite(openedTs)
+    ? formatTimestamp(new Date(openedTs * 1000).toISOString())
+    : null;
+  const closedLabel = Number.isFinite(closedTs)
+    ? formatTimestamp(new Date(closedTs * 1000).toISOString())
+    : null;
+  const durationSeconds = computePositionDurationSeconds(position);
+  const reasonCode = extractPositionManagementExitReason(position);
+  const reasonLabel = reasonCode
+    ? friendlyReason(reasonCode)
+    : translate('trades.completed.noReason', 'No exit reason logged.');
+
+  const container = document.createElement('div');
+  container.className = 'trade-modal-content completed-position-modal-content';
+
+  const highlight = document.createElement('div');
+  highlight.className = 'trade-modal-highlight';
+  const statsGroup = document.createElement('div');
+  statsGroup.className = 'trade-detail-group';
+  statsGroup.append(
+    createTradeDetail(translate('trades.completed.pnl', 'Realized PNL'), pnlDisplay, { tone: pnlTone })
+  );
+  if (roeDisplay) {
+    statsGroup.append(createTradeDetail('ROE', roeDisplay));
+  }
+  if (rDisplay) {
+    statsGroup.append(createTradeDetail('R multiple', rDisplay, { tone: rTone }));
+  }
+  highlight.append(statsGroup);
+  container.append(highlight);
+
+  const metricGrid = document.createElement('div');
+  metricGrid.className = 'trade-metric-grid';
+  const metrics = [];
+  if (notionalDisplay) {
+    metrics.push(createMetric('Notional', notionalDisplay));
+  }
+  if (leverageDisplay) {
+    metrics.push(createMetric('Leverage', leverageDisplay));
+  }
+  if (Number.isFinite(entryField.numeric)) {
+    metrics.push(createMetric('Entry', formatNumber(entryField.numeric, 4)));
+  }
+  if (Number.isFinite(exitField.numeric)) {
+    metrics.push(createMetric('Exit', formatNumber(exitField.numeric, 4)));
+  }
+  if (openedLabel && openedLabel !== '–') {
+    metrics.push(createMetric('Opened', openedLabel));
+  }
+  if (closedLabel && closedLabel !== '–') {
+    metrics.push(createMetric('Closed', closedLabel));
+  }
+  if (Number.isFinite(durationSeconds)) {
+    metrics.push(createMetric('Duration', formatDuration(durationSeconds)));
+  }
+  if (reasonLabel) {
+    metrics.push(createMetric(translate('trades.completed.reason', 'Exit reason'), reasonLabel));
+  }
+  metrics.forEach((metric) => metricGrid.append(metric));
+  if (metricGrid.childElementCount > 0) {
+    container.append(metricGrid);
+  }
+
+  const postmortem = position.postmortem && typeof position.postmortem === 'object' ? position.postmortem : null;
+  if (postmortem && postmortem.analysis) {
+    const postSection = document.createElement('div');
+    postSection.className = 'trade-postmortem';
+    const heading = document.createElement('h4');
+    heading.textContent = translate('trades.postmortem.label', 'Post-mortem coach');
+    const summary = document.createElement('p');
+    summary.textContent = postmortem.analysis;
+    postSection.append(heading, summary);
+    container.append(postSection);
+  }
+
+  return container;
+}
+
 function buildTradeSummaryCard(trade) {
   const pnl = extractRealizedPnl(trade);
   const pnlTone = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'neutral';
@@ -8209,39 +8454,8 @@ function handleTradeModalKeydown(event) {
   }
 }
 
-function openTradeModal(trade, returnTarget) {
+function presentTradeModalContent({ title, subtitle, content, returnTarget } = {}) {
   if (!tradeModal || !tradeModalBody) return;
-
-  const pnl = extractRealizedPnl(trade);
-  const pnlTone = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'neutral';
-  const pnlDisplay = `${pnl > 0 ? '+' : ''}${formatNumber(pnl, 2)} USDT`;
-  const durationSeconds = computeDurationSeconds(trade.opened_at_iso, trade.closed_at_iso);
-  const symbol = trade.symbol || 'Trade';
-  const sideLabel = trade.side ? formatSideLabel(trade.side) : null;
-  const titleParts = [symbol];
-  if (sideLabel) {
-    titleParts.push(sideLabel);
-  }
-  if (tradeModalTitle) {
-    tradeModalTitle.textContent = titleParts.join(' · ');
-  }
-
-  const outcomeLabel =
-    pnlTone === 'profit' ? 'Realized profit' : pnlTone === 'loss' ? 'Realized loss' : 'Flat';
-  const timestampLabel = formatTimestamp(trade.closed_at_iso || trade.opened_at_iso);
-  const subtitleParts = [];
-  if (timestampLabel && timestampLabel !== '–') {
-    subtitleParts.push(`Closed ${timestampLabel}`);
-  }
-  if (Number.isFinite(durationSeconds)) {
-    subtitleParts.push(`Held ${formatDuration(durationSeconds)}`);
-  }
-  subtitleParts.push(`${outcomeLabel} ${pnlDisplay}`);
-  if (tradeModalSubtitle) {
-    tradeModalSubtitle.textContent =
-      subtitleParts.filter(Boolean).join(' · ') ||
-      translate('trades.modal.noMetadata', 'No additional metadata available.');
-  }
 
   const active =
     returnTarget instanceof HTMLElement
@@ -8260,10 +8474,19 @@ function openTradeModal(trade, returnTarget) {
     tradeModalFinalizeHandler = null;
   }
 
+  const resolvedContent = content instanceof Node ? content : document.createElement('div');
   tradeModalBody.innerHTML = '';
-  const content = buildTradeDetailContent(trade);
-  tradeModalBody.append(content);
+  tradeModalBody.append(resolvedContent);
   tradeModalBody.scrollTop = 0;
+
+  if (tradeModalTitle) {
+    tradeModalTitle.textContent = title || translate('modals.trade.title', 'Trade details');
+  }
+
+  if (tradeModalSubtitle) {
+    tradeModalSubtitle.textContent =
+      subtitle || translate('trades.modal.noMetadata', 'No additional metadata available.');
+  }
 
   tradeModal.removeAttribute('hidden');
   tradeModal.removeAttribute('aria-hidden');
@@ -8276,6 +8499,81 @@ function openTradeModal(trade, returnTarget) {
   if (tradeModalClose) {
     setTimeout(() => tradeModalClose.focus(), 120);
   }
+}
+
+function openTradeModal(trade, returnTarget) {
+  if (!tradeModal || !tradeModalBody) return;
+
+  const pnl = extractRealizedPnl(trade);
+  const pnlTone = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'neutral';
+  const pnlDisplay = `${pnl > 0 ? '+' : ''}${formatNumber(pnl, 2)} USDT`;
+  const durationSeconds = computeDurationSeconds(trade.opened_at_iso, trade.closed_at_iso);
+  const symbol = trade.symbol || 'Trade';
+  const sideLabel = trade.side ? formatSideLabel(trade.side) : null;
+  const titleParts = [symbol];
+  if (sideLabel) {
+    titleParts.push(sideLabel);
+  }
+
+  const outcomeLabel =
+    pnlTone === 'profit' ? 'Realized profit' : pnlTone === 'loss' ? 'Realized loss' : 'Flat';
+  const timestampLabel = formatTimestamp(trade.closed_at_iso || trade.opened_at_iso);
+  const subtitleParts = [];
+  if (timestampLabel && timestampLabel !== '–') {
+    subtitleParts.push(`Closed ${timestampLabel}`);
+  }
+  if (Number.isFinite(durationSeconds)) {
+    subtitleParts.push(`Held ${formatDuration(durationSeconds)}`);
+  }
+  subtitleParts.push(`${outcomeLabel} ${pnlDisplay}`);
+
+  const content = buildTradeDetailContent(trade);
+  presentTradeModalContent({
+    title: titleParts.filter(Boolean).join(' · '),
+    subtitle: subtitleParts.filter(Boolean).join(' · '),
+    content,
+    returnTarget,
+  });
+}
+
+function openCompletedPositionModal(position, options = {}) {
+  if (!tradeModal || !tradeModalBody || !position) return;
+  const { timestamp, returnTarget } = options || {};
+  const notionalField = pickNumericField(position, ACTIVE_POSITION_NOTIONAL_KEYS || []);
+  const signedSizeField = pickNumericField(position, ACTIVE_POSITION_SIGNED_SIZE_KEYS || []);
+  const side = extractPositionSide(position, notionalField, signedSizeField);
+  const titleParts = [getPositionSymbol(position) || translate('trades.completed.title', 'Completed positions')];
+  if (side) {
+    titleParts.push(formatSideLabel(side));
+  }
+  const referenceTimestamp = Number.isFinite(timestamp)
+    ? Number(timestamp)
+    : getPositionClosedTimestamp(position);
+  const subtitleParts = [];
+  if (Number.isFinite(referenceTimestamp)) {
+    const absolute = formatTimestamp(new Date(referenceTimestamp * 1000).toISOString());
+    if (absolute && absolute !== '–') {
+      subtitleParts.push(`Closed ${absolute}`);
+    }
+  }
+  const durationSeconds = computePositionDurationSeconds(position);
+  if (Number.isFinite(durationSeconds)) {
+    subtitleParts.push(`Held ${formatDuration(durationSeconds)}`);
+  }
+  const pnlField = pickNumericField(position, COMPLETED_POSITION_PNL_KEYS);
+  if (Number.isFinite(pnlField.numeric)) {
+    subtitleParts.push(
+      `${translate('trades.completed.pnl', 'Realized PNL')} ${formatSignedNumber(pnlField.numeric, 2)} USDT`,
+    );
+  }
+
+  const content = buildCompletedPositionDetailContent(position);
+  presentTradeModalContent({
+    title: titleParts.filter(Boolean).join(' · '),
+    subtitle: subtitleParts.filter(Boolean).join(' · '),
+    content,
+    returnTarget,
+  });
 }
 
 function closeTradeModal() {

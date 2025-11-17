@@ -304,41 +304,33 @@
           </section>
 
           <section
-            class="card trades hero-overview-card"
-            aria-label="Recent trade history"
-            id="trades"
+            class="card completed-positions-card hero-overview-card"
+            aria-label="Completed positions"
+            id="completed-positions-panel"
             data-mobile-collapsible
           >
-            <div class="card-header trade-header" data-mobile-collapsible-header>
-              <div class="trade-title">
-                <h2 data-i18n="trades.title">Trade history</h2>
-                <p class="card-subtitle" data-i18n="trades.subtitle">Latest fills and realized performance at a glance.</p>
+            <div class="card-header" data-mobile-collapsible-header>
+              <div>
+                <h2 data-i18n="trades.completed.title">Completed positions</h2>
+                <p class="card-subtitle" data-i18n="trades.completed.subtitle">
+                  Documented exits from the position manager.
+                </p>
               </div>
-              <div class="trade-overview" id="trade-summary"></div>
             </div>
-            <div class="card-section-body" data-mobile-collapsible-body>
-              <div class="ai-hint" id="ai-hint" hidden></div>
-              <div class="trade-history">
-                <div id="trade-list" class="trade-list"></div>
-              </div>
-              <section class="completed-positions" id="completed-positions-panel">
-                <div class="completed-positions__header">
-                  <h3 data-i18n="trades.completed.title">Completed positions</h3>
-                  <p class="completed-positions__subtitle" data-i18n="trades.completed.subtitle">
-                    Documented exits from the position manager.
-                  </p>
-                </div>
-                <div class="completed-positions__body">
-                  <p
-                    class="completed-positions__empty"
-                    id="completed-positions-empty"
-                    data-i18n="trades.completed.empty"
-                  >
-                    Closed positions will appear once the bot exits a trade.
-                  </p>
-                  <div class="completed-positions__list" id="completed-positions-list" role="list"></div>
-                </div>
-              </section>
+            <div class="completed-positions-history" data-mobile-collapsible-body>
+              <p
+                class="completed-positions-empty"
+                id="completed-positions-empty"
+                data-i18n="trades.completed.empty"
+              >
+                Closed positions will appear once the bot exits a trade.
+              </p>
+              <div
+                class="completed-positions-list"
+                id="completed-positions-list"
+                role="list"
+                aria-live="polite"
+              ></div>
             </div>
           </section>
 
