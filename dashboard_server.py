@@ -4442,7 +4442,8 @@ def _cumulative_summary(
     realized_total: Optional[float] = None
     if stats is not None:
         realized_total = float(stats.total_pnl or 0.0)
-        summary["total_trades"] = max(summary["total_trades"], int(stats.count or 0))
+        if summary["total_trades"] <= 0 and history_total_trades <= 0:
+            summary["total_trades"] = max(summary["total_trades"], int(stats.count or 0))
         summary["wins"] = max(summary["wins"], int(getattr(stats, "wins", 0) or 0))
         summary["losses"] = max(summary["losses"], int(getattr(stats, "losses", 0) or 0))
         summary["draws"] = max(summary["draws"], int(getattr(stats, "draws", 0) or 0))
@@ -4505,11 +4506,11 @@ def _build_hero_metrics(
     else:
         win_rate = 0.0
 
-    total_candidates = [
-        _coerce_int(summary.get("total_trades")),
-        _coerce_int(history_count),
-        _coerce_int(stats.count),
-    ]
+    summary_total = _coerce_int(summary.get("total_trades"))
+    history_total = _coerce_int(history_count)
+    total_candidates = [summary_total, history_total]
+    if max(total_candidates) <= 0:
+        total_candidates.append(_coerce_int(stats.count))
     total_trades = max(total_candidates)
 
     realized = summary.get("realized_pnl")
