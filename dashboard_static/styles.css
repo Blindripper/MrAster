@@ -749,6 +749,14 @@ body.pro-mode [data-normal-only] {
   justify-content: flex-start;
 }
 
+.hero-stat-panel {
+  margin: 2.5rem 0 1.5rem;
+}
+
+.hero-stat-panel .hero-metrics {
+  justify-content: center;
+}
+
 .hero-tagline {
   margin: 1rem 0 0;
   font-size: 0.85rem;
@@ -1044,6 +1052,15 @@ body.paper-mode .hero-paper-toggle span {
 
   .hero-metrics {
     flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hero-stat-panel {
+    margin: 2rem 0 1rem;
+  }
+
+  .hero-stat-panel .hero-metrics {
+    justify-content: flex-start;
   }
 
   .hero-metric {

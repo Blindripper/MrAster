@@ -152,27 +152,6 @@
               <button class="ghost hero-share" id="btn-post-x" data-i18n="hero.share">Post on X</button>
             </div>
             <p class="share-feedback" id="share-feedback" role="status" aria-live="polite"></p>
-            <dl class="hero-metrics">
-              <div class="hero-metric">
-                <dt data-i18n="hero.metrics.trades">Total trades</dt>
-                <dd id="hero-total-trades">0</dd>
-              </div>
-              <div class="hero-metric">
-                <dt data-i18n="hero.metrics.pnl">Total PNL</dt>
-                <dd id="hero-total-pnl">0 USDT</dd>
-                <small
-                  class="hero-metric-note"
-                  id="hero-total-pnl-note"
-                  data-i18n="hero.metrics.pnlNote"
-                >
-                  Realized PNL minus AI budget spend.
-                </small>
-              </div>
-              <div class="hero-metric">
-                <dt data-i18n="hero.metrics.winrate">Total win rate</dt>
-                <dd id="hero-total-win-rate">0.0%</dd>
-              </div>
-            </dl>
           </div>
           <div class="hero-visual">
             <div class="hero-orbit" aria-hidden="true">
@@ -193,74 +172,24 @@
           </div>
         </div>
 
-        <section
-          class="card hero-active-positions hero-overview-card"
-          id="active-positions-card"
-          aria-label="Active positions overview"
-          data-mobile-collapsible
-        >
-          <div class="card-header" data-mobile-collapsible-header>
-            <div>
-              <h2 data-i18n="active.title">Active positions</h2>
-              <p class="card-subtitle" data-i18n="active.subtitle">Live exposure across all modes.</p>
+        <section class="hero-stat-panel" aria-label="Bot performance overview">
+          <dl class="hero-metrics">
+            <div class="hero-metric">
+              <dt data-i18n="hero.metrics.trades">Total trades</dt>
+              <dd id="hero-total-trades">0</dd>
             </div>
-            <div class="active-positions-summary">
-              <span class="active-positions-summary-label" data-i18n="active.mode.unrealized">Total unrealized PNL</span>
-              <span class="active-positions-mode" id="active-positions-mode">0.00 USDT</span>
+            <div class="hero-metric">
+              <dt data-i18n="hero.metrics.pnl">Total PNL</dt>
+              <dd id="hero-total-pnl">0 USDT</dd>
+              <small class="hero-metric-note" id="hero-total-pnl-note" data-i18n="hero.metrics.pnlNote">
+                Realized PNL minus AI budget spend.
+              </small>
             </div>
-          </div>
-          <div class="active-positions-body" data-mobile-collapsible-body>
-            <div class="active-positions-empty" id="active-positions-empty" data-i18n="active.empty">
-              No active positions.
+            <div class="hero-metric">
+              <dt data-i18n="hero.metrics.winrate">Total win rate</dt>
+              <dd id="hero-total-win-rate">0.0%</dd>
             </div>
-            <div class="active-positions-table-wrapper" id="active-positions-wrapper" hidden>
-              <table class="active-positions-table" aria-live="polite">
-                <thead>
-                  <tr>
-                    <th scope="col" data-i18n="active.table.symbol">Symbol</th>
-                    <th scope="col" class="numeric" data-i18n="active.table.size">Size</th>
-                    <th scope="col" class="numeric" data-i18n="active.table.entry">Entry price</th>
-                    <th scope="col" class="numeric" data-i18n="active.table.mark">Mark price</th>
-                    <th scope="col" class="numeric" data-i18n="active.table.leverage">Leverage</th>
-                    <th scope="col" class="numeric" data-i18n="active.table.margin">Margin</th>
-                    <th scope="col" class="numeric" data-i18n="active.table.pnl">PNL (ROE%)</th>
-                  </tr>
-                </thead>
-                <tbody id="active-positions-rows"></tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-
-        <section
-          class="card hero-position-updates hero-overview-card"
-          id="position-updates-card"
-          aria-label="Position updates"
-          data-mobile-collapsible
-        >
-          <div class="card-header" data-mobile-collapsible-header>
-            <div>
-              <h2 class="active-positions-updates-title" data-i18n="active.notifications.title">Position updates</h2>
-              <p class="card-subtitle" data-i18n="active.notifications.subtitle">Live updates for open positions.</p>
-            </div>
-          </div>
-          <div class="card-section-body" data-mobile-collapsible-body>
-            <div class="active-positions-updates-panel" id="active-positions-notifications-panel" hidden>
-              <div
-                class="active-positions-notifications"
-                id="active-positions-notifications"
-                aria-live="polite"
-                role="list"
-              ></div>
-            </div>
-            <div
-              class="active-positions-notifications-empty"
-              id="active-positions-notifications-empty"
-              data-i18n="active.notifications.empty"
-            >
-              No recent management events yet.
-            </div>
-          </div>
+          </dl>
         </section>
 
         <div class="hero-overview-grid">
