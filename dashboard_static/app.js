@@ -5976,14 +5976,6 @@ function renderPositionNotifications(notifications) {
     }
   }
 
-  if (activePositionsNotificationsEmpty) {
-    if (hasNotifications) {
-      activePositionsNotificationsEmpty.setAttribute('hidden', '');
-    } else {
-      activePositionsNotificationsEmpty.removeAttribute('hidden');
-    }
-  }
-
   if (activePositionsNotificationsPanel) {
     if (hasNotifications) {
       activePositionsNotificationsPanel.removeAttribute('hidden');
