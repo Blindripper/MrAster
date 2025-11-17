@@ -100,7 +100,6 @@ const activePositionsEmpty = document.getElementById('active-positions-empty');
 const activePositionsNotificationsPanel = document.getElementById('active-positions-notifications-panel');
 const activePositionsRows = document.getElementById('active-positions-rows');
 const activePositionsNotifications = document.getElementById('active-positions-notifications');
-const activePositionsNotificationsEmpty = document.getElementById('active-positions-notifications-empty');
 const statusCard = document.querySelector('.card.status');
 const tradesCard = document.getElementById('trades');
 const aiRequestsCard = aiRequestList ? aiRequestList.closest('.card') : null;
