@@ -305,6 +305,11 @@ const SUPPORTED_LANGUAGES = ['en', 'ru', 'zh', 'ko', 'de', 'fr', 'es', 'tr'];
 const COMPACT_SKIP_AGGREGATION_WINDOW = 600; // seconds
 const MAX_MANAGEMENT_EVENTS = 50;
 const POSITION_NOTIFICATIONS_REFRESH_INTERVAL_MS = 45_000;
+const POSITION_NOTIFICATIONS_LIMIT = 5;
+const POSITION_NOTIFICATION_STATUS = {
+  OPEN: 'open',
+  CLOSED: 'closed',
+};
 const activePositionManagementCache = new Map();
 
 const PLAYBOOK_CARD_TIMESTAMP_KEYS = {
@@ -5780,7 +5785,31 @@ function rememberPositionNotifications(notifications) {
   }
 }
 
-function buildHistoricalNotifications(limit = 5) {
+function isOpenPositionNotification(element) {
+  if (!(element instanceof HTMLElement)) {
+    return false;
+  }
+  const status = element.dataset?.positionStatus;
+  return status !== POSITION_NOTIFICATION_STATUS.CLOSED;
+}
+
+function prioritiseOpenPositionNotifications(elements = []) {
+  if (!Array.isArray(elements) || elements.length === 0) {
+    return [];
+  }
+  const openEntries = [];
+  const otherEntries = [];
+  elements.forEach((element) => {
+    if (isOpenPositionNotification(element)) {
+      openEntries.push(element);
+    } else {
+      otherEntries.push(element);
+    }
+  });
+  return openEntries.concat(otherEntries);
+}
+
+function buildHistoricalNotifications(limit = POSITION_NOTIFICATIONS_LIMIT) {
   if (!positionNotificationHistory.length) {
     return [];
   }
@@ -5866,7 +5895,7 @@ function refreshPositionUpdatesFromHistory() {
   if (activePositionsNotifications && activePositionsNotifications.children.length > 0) {
     return;
   }
-  const historical = buildHistoricalNotifications(5);
+  const historical = buildHistoricalNotifications(POSITION_NOTIFICATIONS_LIMIT);
   if (!historical.length) {
     return;
   }
@@ -5888,6 +5917,7 @@ function buildPositionManagementSummary(position, options = {}) {
   container.className = 'active-position-management';
   container.setAttribute('role', 'listitem');
   container.dataset.action = latest.action || '';
+  container.dataset.positionStatus = POSITION_NOTIFICATION_STATUS.OPEN;
   const timestampNumeric = Number.isFinite(latest.ts) ? Number(latest.ts) : null;
   if (timestampNumeric !== null) {
     container.dataset.timestamp = timestampNumeric.toString();
@@ -5952,6 +5982,7 @@ function buildClosedPositionNotification(position, options = {}) {
   container.className = 'active-position-management';
   container.setAttribute('role', 'listitem');
   container.dataset.action = 'closed';
+  container.dataset.positionStatus = POSITION_NOTIFICATION_STATUS.CLOSED;
   const closedTs = getPositionTimestamp(position);
   const closedTimestamp = Number.isFinite(closedTs) && closedTs > 0 ? closedTs : Date.now() / 1000;
   container.dataset.timestamp = closedTimestamp.toString();
@@ -6344,11 +6375,12 @@ function updateActivePositionsView(options = {}) {
     .sort((a, b) => b.ts - a.ts)
     .map((entry) => entry.element);
 
-  const limitedNotifications = sortedNotifications.slice(0, 5);
+  const prioritisedNotifications = prioritiseOpenPositionNotifications(sortedNotifications);
+  const limitedNotifications = prioritisedNotifications.slice(0, POSITION_NOTIFICATIONS_LIMIT);
   rememberPositionNotifications(limitedNotifications);
   let notificationsToRender = limitedNotifications;
   if (!notificationsToRender.length) {
-    notificationsToRender = buildHistoricalNotifications(5);
+    notificationsToRender = buildHistoricalNotifications(POSITION_NOTIFICATIONS_LIMIT);
   }
 
   renderPositionNotifications(notificationsToRender);
