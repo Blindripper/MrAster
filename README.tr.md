@@ -113,7 +113,7 @@ Motorları, korumaları ve konfigürasyonu merak mı ediyorsun? Aşağıdaki bö
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | Zaman dilimleri arasında trend hizası zorunlu. |
 | `ASTER_TREND_BIAS` | `with` | Trendle veya trende karşı işlem. |
 | `ASTER_MIN_QUOTE_VOL_USDT` | `150000` | İşlem yapılabilir minimum hacim. |
-| `ASTER_SPREAD_BPS_MAX` | `0.0030` | Maksimum bid/ask spread’i (bps). |
+| `ASTER_SPREAD_BPS_MAX` | `0.0020` | Maksimum bid/ask spread’i (bps). |
 | `ASTER_WICKINESS_MAX` | `0.97` | Aşırı oynak mumları filtreler. |
 | `ASTER_MIN_EDGE_R` | `0.30` | İşlemi onaylamak için gereken minimum edge (R cinsinden). |
 | `ASTER_DEFAULT_NOTIONAL` | `0` | Adaptif veri yoksa temel notional (0 = AI hesaplar). |
@@ -139,7 +139,7 @@ Motorları, korumaları ve konfigürasyonu merak mı ediyorsun? Aşağıdaki bö
 | `ASTER_NON_ARB_FILTER_ENABLED` | `true` | Mark/oracle klempini etkinleştirir. |
 | `ASTER_NON_ARB_CLAMP_BPS` | `0.0005` | Premium klempi genişliği (±bps). |
 | `ASTER_NON_ARB_EDGE_THRESHOLD` | `0.00005` | Bloklama öncesi izin verilen funding edge. |
-| `ASTER_NON_ARB_SKIP_GAP` | `0.0015` | Skip zorunluluğu oluşturan mark/oracle farkı. |
+| `ASTER_NON_ARB_SKIP_GAP` | `0.0030` | Skip zorunluluğu oluşturan mark/oracle farkı. |
 
 *Dashboard’dan başlatıldığında RSI 51/49 ve risk 0.007 olarak tohumlanır. Sadece CLI ile açıldığında 52/48 ve 0.006 değerleri kullanılır; üzerine yazana veya `dashboard_config.json` ile senkronlayana kadar.*
 

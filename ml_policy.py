@@ -373,7 +373,7 @@ class BanditPolicy:
         self.eps_gate: float = 0.0          # ε-greedy Chance auf TAKE
         self.gate_margin: float = -0.02     # Margin-Anforderung auf UCB>0 (negativ = aggressiver)
         self.anti_stall_min: int = 60       # Mindestsekunden zwischen Trades (Anti-Stall aus)
-        self.skip_push: float = -0.03       # Bonus auf SKIP (negativ = weniger konservativ)
+        self.skip_push: float = -0.01       # Bonus auf SKIP (negativ = weniger konservativ)
         self.eps_size: float = 0.12         # ε-greedy Chance auf größeren Bucket
         self.size_tie_epsilon: float = 1e-3 # relative Toleranz für Bucket-Gleichstand
 
