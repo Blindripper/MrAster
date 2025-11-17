@@ -1052,6 +1052,14 @@ CONTRARIAN = TREND_BIAS in ("against", "att", "contrarian")
 ADX_MIN_THRESHOLD = float(os.getenv("ASTER_ADX_MIN", "23.0"))
 ADX_DELTA_MIN = float(os.getenv("ASTER_ADX_DELTA_MIN", "0.0"))
 CONTINUATION_ADX_DELTA_MIN = max(0.0, float(os.getenv("ASTER_CONT_ADX_DELTA_MIN", "0.0")))
+TREND_EXTENSION_BARS = max(4, int(os.getenv("ASTER_TREND_EXTENSION_BARS", "12")))
+TREND_EXTENSION_BARS_HARD = max(
+    TREND_EXTENSION_BARS + 1, int(os.getenv("ASTER_TREND_EXTENSION_BARS_HARD", "18"))
+)
+TREND_EXTENSION_ADX_MIN = float(os.getenv("ASTER_TREND_EXTENSION_ADX_MIN", "35.0"))
+TREND_EXTENSION_LOOKBACK = max(
+    TREND_EXTENSION_BARS_HARD * 2, int(os.getenv("ASTER_TREND_EXTENSION_LOOKBACK", "80"))
+)
 CONTINUATION_STOCHRSI_MIN = float(os.getenv("ASTER_CONT_STOCHRSI_MIN", "20.0"))
 LONG_RSI_MAX = float(os.getenv("ASTER_LONG_RSI_MAX", "70.0"))
 SHORT_RSI_MIN = float(os.getenv("ASTER_SHORT_RSI_MIN", "30.0"))
@@ -1275,6 +1283,20 @@ def _rolling_std(values: List[float], period: int) -> List[float]:
         variance = max(0.0, (sum_x2 / count) - (mean * mean))
         out.append(math.sqrt(variance))
     return out
+
+
+def _consecutive_true(flags: Sequence[bool], limit: Optional[int] = None) -> int:
+    if not flags:
+        return 0
+    if limit is not None and limit > 0:
+        flags = list(flags[-limit:])
+    count = 0
+    for flag in reversed(flags):
+        if flag:
+            count += 1
+        else:
+            break
+    return count
 
 
 def bollinger_bands(
@@ -8988,6 +9010,18 @@ class Strategy:
             }
         )
 
+        ema_fast_above = [fast > slow for fast, slow in zip(ema_fast, ema_slow)]
+        ema_fast_below = [fast < slow for fast, slow in zip(ema_fast, ema_slow)]
+        trend_persistence_up = _consecutive_true(ema_fast_above, TREND_EXTENSION_LOOKBACK)
+        trend_persistence_down = _consecutive_true(ema_fast_below, TREND_EXTENSION_LOOKBACK)
+        ctx_base.update(
+            {
+                "trend_persistence_up": float(trend_persistence_up),
+                "trend_persistence_down": float(trend_persistence_down),
+            }
+        )
+        ctx_base.setdefault("trend_extension_score", 0.0)
+
 
         adx_val, adx_delta = adx_latest(kl, 14)
         slope_fast = (ema_fast[-1] - ema_fast[-5]) / max(abs(ema_fast[-5]), 1e-9)
@@ -9103,6 +9137,50 @@ class Strategy:
         ctx_base["adx_delta_filter"] = float(adx_delta)
 
         if chosen_flag in ("setup_trend_follow", "setup_breakout_retest"):
+            trend_extension_score = 0.0
+            active_persistence = 0
+            if sig == "BUY":
+                active_persistence = trend_persistence_up
+            elif sig == "SELL":
+                active_persistence = trend_persistence_down
+            if active_persistence:
+                ctx_base["trend_persistence_active"] = float(active_persistence)
+            if (
+                active_persistence >= TREND_EXTENSION_BARS
+                and adx_val >= TREND_EXTENSION_ADX_MIN
+            ):
+                extension_ratio = (active_persistence - TREND_EXTENSION_BARS) / max(
+                    TREND_EXTENSION_BARS_HARD - TREND_EXTENSION_BARS, 1.0
+                )
+                adx_ratio = max(0.0, adx_val - TREND_EXTENSION_ADX_MIN) / max(
+                    TREND_EXTENSION_ADX_MIN, 1.0
+                )
+                trend_extension_score = clamp(extension_ratio * adx_ratio, 0.0, 1.0)
+                ctx_base["trend_extension_score"] = float(trend_extension_score)
+            if active_persistence >= TREND_EXTENSION_BARS_HARD and adx_val >= TREND_EXTENSION_ADX_MIN:
+                ctx_base["trend_extension_gate"] = float(active_persistence)
+                return self._skip(
+                    "trend_extension",
+                    symbol,
+                    {
+                        "bars": str(active_persistence),
+                        "adx": f"{adx_val:.1f}",
+                    },
+                    ctx=ctx_base,
+                    price=mid,
+                    atr=atr,
+                )
+            elif trend_extension_score > 0:
+                penalty = clamp(
+                    trend_extension_score * (FILTER_PENALTY_WARN + 0.6),
+                    0.0,
+                    FILTER_PENALTY_HARD,
+                )
+                _add_penalty(
+                    "trend_extension",
+                    penalty,
+                    f"{active_persistence} bars @ ADX {adx_val:.1f}",
+                )
             if adx_val < ADX_MIN_THRESHOLD:
                 deficit = ADX_MIN_THRESHOLD - adx_val
                 penalty = clamp(deficit / max(ADX_MIN_THRESHOLD, 1.0), 0.0, FILTER_PENALTY_HARD)
