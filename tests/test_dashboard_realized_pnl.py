@@ -213,6 +213,10 @@ def test_compute_run_realized_from_exchange_filters_by_run_start() -> None:
     assert result["realized_pnl"] == pytest.approx(0.7)
     assert result["trade_samples"] == 2
     assert result["source"] == "exchange_trades"
+    assert result["history_totals"]["wins"] == 1
+    assert result["history_totals"]["losses"] == 1
+    assert result["history_totals"]["total_trades"] == 2
+    assert result["pnl_series"]["values"] == pytest.approx([-0.5, 0.7])
 
 
 def test_compute_run_realized_from_exchange_requires_credentials() -> None:

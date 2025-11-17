@@ -2234,6 +2234,7 @@ def _compute_run_realized_from_exchange(
     fetch_fn = fetcher or _fetch_user_trades_for_symbol
     realized_total = 0.0
     trade_samples = 0
+    aggregated_trades: List[Dict[str, Any]] = []
 
     for sym in symbols:
         try:
@@ -2250,14 +2251,33 @@ def _compute_run_realized_from_exchange(
                 continue
             realized_total += pnl_val
             trade_samples += 1
+            record: Dict[str, Any] = {
+                "symbol": str(sym).upper(),
+                "pnl": float(pnl_val),
+                "realized_pnl": float(pnl_val),
+                "closed_at": float(ts_val),
+                "closed_at_iso": datetime.fromtimestamp(ts_val, tz=timezone.utc).isoformat(),
+                "synthetic": True,
+                "synthetic_source": "exchange_trades",
+                "context": {"source": "exchange_trades"},
+            }
+            for ctx_key in ("buyer", "maker", "orderId", "id", "tradeId"):
+                if trade.get(ctx_key) is not None:
+                    record["context"][ctx_key] = trade.get(ctx_key)
+            aggregated_trades.append(record)
 
     if trade_samples == 0:
         return {}
+
+    history_totals = _summarize_history_totals(aggregated_trades)
+    pnl_series = _build_pnl_series(aggregated_trades)
 
     return {
         "realized_pnl": float(realized_total),
         "trade_samples": trade_samples,
         "source": "exchange_trades",
+        "history_totals": history_totals,
+        "pnl_series": pnl_series,
     }
 
 
@@ -7630,11 +7650,16 @@ async def trades() -> Dict[str, Any]:
     except Exception as exc:  # pragma: no cover - defensive guard
         logger.debug("run exchange metrics failed: %s", exc)
         run_exchange_metrics = {}
+    run_history_totals = run_exchange_metrics.get("history_totals")
+    if isinstance(run_history_totals, dict) and run_history_totals.get("total_trades"):
+        history_totals = run_history_totals
     history_window: List[Dict[str, Any]] = [dict(entry) for entry in filtered_history[-200:]]
 
     stats_history: List[Dict[str, Any]] = history_window
     display_history = _prepare_display_history(stats_history)
-    pnl_series = _build_pnl_series(history_source)
+    pnl_series = run_exchange_metrics.get("pnl_series")
+    if not pnl_series:
+        pnl_series = _build_pnl_series(history_source)
 
     open_trades = state.get("live_trades", {})
     try:
