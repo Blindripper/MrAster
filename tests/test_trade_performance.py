@@ -207,3 +207,33 @@ def test_management_exit_reason_propagates_to_history() -> None:
     assert history, "trade history should contain the management stop exit"
     record = history[-1]
     assert record.get("management_exit_reason") == "atr_adverse_stop"
+
+
+def test_management_exit_reason_derives_expected_r_stop_flag() -> None:
+    rec = {"management": {"expected_r_stop": True}}
+
+    assert TradeManager._derive_management_exit_reason(rec) == "expected_r_stop"
+
+
+def test_management_exit_reason_prefers_latest_management_event() -> None:
+    rec = {
+        "management": {
+            "events": [
+                {"action": "scale_half"},
+                {"action": "trail"},
+            ]
+        }
+    }
+
+    assert TradeManager._derive_management_exit_reason(rec) == "trail"
+
+
+def test_management_exit_reason_uses_top_level_management_events() -> None:
+    rec = {
+        "management_events": [
+            {"action": "breakeven"},
+            {"action": "fasttp_exit"},
+        ]
+    }
+
+    assert TradeManager._derive_management_exit_reason(rec) == "fasttp_exit"
