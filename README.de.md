@@ -109,13 +109,13 @@ Neugierig auf Engines, Schutzmechanismen und Konfiguration? Klappe die folgenden
 | Variable | Standard | Beschreibung |
 | --- | --- | --- |
 | `ASTER_INTERVAL` / `ASTER_HTF_INTERVAL` | `5m` / `30m` | Zeitrahmen für Signale und Bestätigung. |
-| `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `51` / `49`* | RSI-Grenzen für Long- bzw. Short-Einstiege. |
+| `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `49` / `51`* | RSI-Grenzen für Long- bzw. Short-Einstiege. |
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | Erzwingt Trend-Ausrichtung zwischen den Timeframes. |
 | `ASTER_TREND_BIAS` | `with` | Handel mit oder gegen den Trend. |
 | `ASTER_MIN_QUOTE_VOL_USDT` | `150000` | Minimales Volumen für handelbare Symbole. |
 | `ASTER_SPREAD_BPS_MAX` | `0.0020` | Maximal tolerierter Bid/Ask-Spread (bps). |
 | `ASTER_WICKINESS_MAX` | `0.97` | Filter gegen übermäßig volatile Kerzen. |
-| `ASTER_MIN_EDGE_R` | `0.30` | Mindest-Edge (in R) für Trade-Freigabe. |
+| `ASTER_MIN_EDGE_R` | `0.04` | Mindest-Edge (in R) für Trade-Freigabe. |
 | `ASTER_DEFAULT_NOTIONAL` | `0` | Basisnotional, wenn keine adaptiven Daten vorliegen (0 = KI berechnet). |
 | `ASTER_SIZE_MULT_FLOOR` | `0` | Mindest-Multiplikator für Positionsgröße (1.0 erzwingt Basisnotional). |
 | `ASTER_MAX_NOTIONAL_USDT` | `0` | Harte Obergrenze für Order-Notional (0 = Leverage/Equity-Guards entscheiden). |

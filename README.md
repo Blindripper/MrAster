@@ -191,15 +191,15 @@ Curious about the engines, guardrails, and configuration surface? Expand the sec
 | Variable | Default | Description |
 | --- | --- | --- |
 | `ASTER_INTERVAL` / `ASTER_HTF_INTERVAL` | `5m` / `30m` | Timeframes for signals and confirmation. |
-| `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `51` / `49`* | RSI bounds for long and short entries. |
+| `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `49` / `51`* | RSI bounds for long and short entries. |
 | `ASTER_CONT_PULLBACK_STOCH_WARN` / `ASTER_CONT_PULLBACK_STOCH_MAX` | `70.0` / `90.0` | Soft/hard thresholds for the continuation pullback guard (set to `0` to disable, or raise to loosen the filter). |
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | Enforces trend alignment between timeframes. |
 | `ASTER_TREND_BIAS` | `with` | Trade with or against the trend. |
 | `ASTER_MIN_QUOTE_VOL_USDT` | `150000` | Minimum volume for tradable symbols. |
 | `ASTER_SPREAD_BPS_MAX` | `0.0020` | Maximum tolerated bid/ask spread (bps). |
 | `ASTER_WICKINESS_MAX` | `0.97` | Filter against overly volatile candles. |
-| `ASTER_MIN_EDGE_R` | `0.30` | Minimum edge (in R) required to approve a trade. |
-| `ASTER_DEFAULT_NOTIONAL` | `1000` | Baseline notional for trades when no adaptive sizing data is available (raised to 1000 USDT by the aggressive risk profile). |
+| `ASTER_MIN_EDGE_R` | `0.04` | Minimum edge (in R) required to approve a trade. |
+| `ASTER_DEFAULT_NOTIONAL` | `0` | Baseline notional for trades when no adaptive sizing data is available (set to `0` so the AI can size High/ATT trades without a floor). |
 | `ASTER_SIZE_MULT_FLOOR` | `0.75` | Minimum position-size multiplier for autonomous trades (set higher to keep the AI close to the configured baseline stake). |
 | `ASTER_MAX_NOTIONAL_USDT` | `0` | Optional hard cap on order notional (set to `0` to let leverage and equity guards decide). |
 | `ASTER_SIZE_MULT_CAP` | `5.0` | Maximum position-size multiplier allowed after all adjustments. |
