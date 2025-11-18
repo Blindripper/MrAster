@@ -691,8 +691,8 @@ MIN_QUOTE_VOL = float(os.getenv("ASTER_MIN_QUOTE_VOL_USDT", "850000"))
 SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.00200"))  # 0.20 %
 SPREAD_BPS_SOFT_CAP = float(os.getenv("ASTER_SPREAD_BPS_SOFT_CAP", "0.00065"))
 WICKINESS_MAX = float(os.getenv("ASTER_WICKINESS_MAX", "0.985"))
-MIN_EDGE_R = float(os.getenv("ASTER_MIN_EDGE_R", "0.18"))
-EXPECTED_R_MIN_FLOOR = float(os.getenv("ASTER_EXPECTED_R_MIN_FLOOR", "0.06") or 0.06)
+MIN_EDGE_R = float(os.getenv("ASTER_MIN_EDGE_R", "0.05"))
+EXPECTED_R_MIN_FLOOR = float(os.getenv("ASTER_EXPECTED_R_MIN_FLOOR", "0.05") or 0.05)
 SKIP_HISTORY_LIMIT = max(20, int(os.getenv("ASTER_SKIP_HISTORY_LIMIT", "200") or 200))
 SKIP_RELIEF_WINDOW = max(10, min(SKIP_HISTORY_LIMIT, int(os.getenv("ASTER_SKIP_RELIEF_WINDOW", "80") or 80)))
 EDGE_RELIEF_THRESHOLD = float(os.getenv("ASTER_SKIP_EDGE_THRESHOLD", "0.45"))
@@ -1005,8 +1005,8 @@ SYMBOL_DRAWDOWN_PCT = max(0.0, float(os.getenv("ASTER_SYMBOL_DRAWDOWN_PCT", "0.0
 
 SHORT_SIZE_BIAS = max(0.5, float(os.getenv("ASTER_SHORT_SIZE_BIAS", "1.12") or 1.0))
 
-LONG_OVEREXTENDED_RSI = float(os.getenv("ASTER_LONG_OVEREXTENDED_RSI", "55.0"))
-LONG_ATR_PCT_CAP = max(0.0, float(os.getenv("ASTER_LONG_ATR_PCT_CAP", "0.007") or 0.0))
+LONG_OVEREXTENDED_RSI = float(os.getenv("ASTER_LONG_OVEREXTENDED_RSI", "58.0"))
+LONG_ATR_PCT_CAP = max(0.0, float(os.getenv("ASTER_LONG_ATR_PCT_CAP", "0.008") or 0.0))
 LONG_ATR_WINNER_MULT = float(os.getenv("ASTER_LONG_ATR_WINNER_MULT", "0.98"))
 WINNER_ATR_LOOKBACK = max(10, int(os.getenv("ASTER_WINNER_ATR_LOOKBACK", "160") or 160))
 
