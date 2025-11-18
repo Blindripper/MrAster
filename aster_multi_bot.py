@@ -3382,6 +3382,10 @@ class AITradeAdvisor:
             data=activity_data,
             force=True,
         )
+        try:
+            self.apply_playbook_filters()
+        except Exception:
+            pass
 
     def _prune_pending_queue(self) -> None:
         if not self._pending_order:
@@ -8258,6 +8262,7 @@ class Strategy:
     ) -> None:
         self._reset_filter_attributes()
         if not isinstance(filters, dict) or not filters:
+            self._active_playbook_filters = {}
             if self.state is not None:
                 self.state["playbook_filter_overrides"] = {}
             return
@@ -8273,7 +8278,8 @@ class Strategy:
             if isinstance(value, (int, float)):
                 numeric = float(value)
                 guarded = self._guarded_filter_value("min_edge_r", numeric, "edge_r")
-                self.min_edge_r = float(max(EXPECTED_R_MIN_FLOOR, guarded))
+                capped = min(0.05, guarded)
+                self.min_edge_r = float(max(EXPECTED_R_MIN_FLOOR, capped))
                 _record("edge_r", "min_edge_r", self.min_edge_r)
 
         spread_override = filters.get("spread_tight")
@@ -8602,6 +8608,60 @@ class Strategy:
                 json.dumps(applied, sort_keys=True),
             )
 
+    def _playbook_filter_snapshot(self) -> Optional[Dict[str, Any]]:
+        thresholds: Dict[str, Dict[str, float]] = {
+            "edge_r": {"min_edge_r": round(float(self.min_edge_r), 5)},
+            "spread_tight": {"spread_bps_max": round(float(self.spread_bps_max), 6)},
+            "no_cross": {
+                "rsi_buy_min": round(float(self.rsi_buy_min), 3),
+                "rsi_sell_max": round(float(self.rsi_sell_max), 3),
+            },
+            "stoch_rsi_trend_short": {
+                "stoch_min": round(float(self.trend_short_stochrsi_min), 3)
+            },
+            "long_overextended": {
+                "rsi_cap": round(float(self.long_overextended_rsi_cap), 3),
+                "atr_pct_cap": round(float(self.long_overextended_atr_cap), 5),
+            },
+            "trend_extension": {
+                "bars_soft": float(self.trend_extension_bars),
+                "bars_hard": float(self.trend_extension_bars_hard),
+                "adx_min": round(float(self.trend_extension_adx_min), 3),
+            },
+            "continuation_pullback": {
+                "stoch_warn": round(float(self.continuation_pullback_warn), 3),
+                "stoch_max": round(float(self.continuation_pullback_max), 3),
+                "stoch_min": round(float(self.continuation_stoch_min), 3),
+                "adx_delta_min": round(float(self.continuation_adx_delta_min), 3),
+            },
+            "sentinel_veto": {
+                "event_risk_gate": round(float(self.sentinel_gate_event_risk), 3),
+                "block_risk": round(float(self.sentinel_gate_block_risk), 3),
+                "min_multiplier": round(float(self.sentinel_gate_min_mult), 3),
+                "weight": round(float(self.sentinel_gate_weight), 3),
+            },
+            "playbook_structured_block": {
+                "event_risk_max": round(float(self.structured_block_event_risk_cap), 3),
+                "soft_multiplier": round(float(self.structured_block_soft_multiplier), 3),
+            },
+        }
+        snapshot: Dict[str, Any] = {"thresholds": thresholds}
+        relief = getattr(self, "_skip_relief_snapshot", None)
+        if isinstance(relief, dict) and relief:
+            snapshot["skip_relief"] = dict(relief)
+        counts, total = self._recent_skip_counts(SKIP_RELIEF_WINDOW)
+        if total > 0 and counts:
+            reasons = []
+            for reason, count in counts.most_common(6):
+                if not reason:
+                    continue
+                entry = {"reason": reason, "count": int(count)}
+                entry["share"] = round(count / total, 4)
+                reasons.append(entry)
+            if reasons:
+                snapshot["recent_rejections"] = {"total": int(total), "reasons": reasons}
+        return snapshot
+
     def apply_playbook_filters(self) -> None:
         filters: Optional[Dict[str, Dict[str, Any]]] = None
         manager = getattr(self, "playbook_manager", None)
@@ -8829,6 +8889,33 @@ class Strategy:
                 return None
             return sum(values) / float(len(values))
 
+        def _emit_percentiles(
+            values: List[float],
+            prefix: str,
+            digits: int,
+            quantiles: Sequence[float] = (0.25, 0.5, 0.75),
+        ) -> Dict[str, float]:
+            metrics: Dict[str, float] = {}
+            if len(values) < 3:
+                return metrics
+            ordered = sorted(values)
+            max_index = len(ordered) - 1
+            if max_index <= 0:
+                return metrics
+            for quant in quantiles:
+                if quant < 0.0 or quant > 1.0:
+                    continue
+                position = quant * max_index
+                lower = math.floor(position)
+                upper = math.ceil(position)
+                if lower == upper:
+                    val = ordered[int(position)]
+                else:
+                    weight = position - lower
+                    val = ordered[lower] * (1 - weight) + ordered[upper] * weight
+                metrics[f"{prefix}_p{int(quant * 100)}"] = round(float(val), digits)
+            return metrics
+
         if isinstance(technical_state, dict) and technical_state:
             entries = [
                 (sym, rec)
@@ -8892,6 +8979,12 @@ class Strategy:
                 avg_bb_width = _average(bb_width_values)
                 if avg_bb_width is not None:
                     metrics["avg_bb_width"] = round(avg_bb_width, 6)
+                for key, val in _emit_percentiles(rsi_values, "rsi", 2).items():
+                    metrics[key] = val
+                for key, val in _emit_percentiles(adx_values, "adx", 2).items():
+                    metrics[key] = val
+                for key, val in _emit_percentiles(atr_values, "atr_pct", 5).items():
+                    metrics[key] = val
                 total = float(len(entries))
                 if total > 0:
                     metrics["trend_up_ratio"] = round(trend_up / total, 3)
@@ -8949,6 +9042,14 @@ class Strategy:
                 avg_hype = _average(hype_scores)
                 if avg_hype is not None:
                     metrics["avg_hype_score"] = round(avg_hype, 3)
+                for key, val in _emit_percentiles(
+                    event_risks, "event_risk", 3, quantiles=(0.25, 0.5, 0.75, 0.9)
+                ).items():
+                    metrics[key] = val
+                for key, val in _emit_percentiles(
+                    hype_scores, "hype_score", 3, quantiles=(0.25, 0.5, 0.75, 0.9)
+                ).items():
+                    metrics[key] = val
                 if label_counts:
                     metrics["label_counts"] = label_counts
                 metrics["warning_symbols"] = warning_symbols
@@ -9047,6 +9148,9 @@ class Strategy:
                 reason: dict(values)
                 for reason, values in self._active_playbook_filters.items()
             }
+        filter_state = self._playbook_filter_snapshot()
+        if filter_state:
+            snapshot["filter_state"] = filter_state
         if self.playbook_manager:
             try:
                 active_playbook = self.playbook_manager.active()

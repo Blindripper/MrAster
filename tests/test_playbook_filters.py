@@ -153,10 +153,8 @@ def test_strategy_softens_overly_strict_filters():
     }
     strategy.playbook_manager = _DummyManager(overrides)
     strategy.apply_playbook_filters()
-    expected_edge = max(
-        EXPECTED_R_MIN_FLOOR,
-        strategy._guarded_filter_value("min_edge_r", defaults["min_edge_r"] * 3),
-    )
+    guarded = strategy._guarded_filter_value("min_edge_r", defaults["min_edge_r"] * 3)
+    expected_edge = max(EXPECTED_R_MIN_FLOOR, min(0.05, guarded))
     assert strategy.min_edge_r == pytest.approx(expected_edge)
     expected_spread = max(
         1e-5,
@@ -185,3 +183,13 @@ def test_strategy_softens_overly_strict_filters():
         ),
     )
     assert strategy.rsi_sell_max == pytest.approx(expected_sell)
+
+
+def test_strategy_caps_min_edge_override_to_point_zero_five():
+    state: dict = {}
+    strategy = Strategy(exchange=_DummyExchange(), state=state)
+    overrides = {"filters": {"edge_r": {"min_edge_r": 0.25}}}
+    strategy.playbook_manager = _DummyManager(overrides)
+    strategy.apply_playbook_filters()
+    assert strategy.min_edge_r == pytest.approx(0.05, rel=1e-3)
+    assert strategy.min_edge_r >= EXPECTED_R_MIN_FLOOR
