@@ -559,6 +559,31 @@ def _extract_playbook_market_overview(state: Dict[str, Any]) -> Optional[Dict[st
     return None
 
 
+def _normalize_playbook_filters(raw: Any) -> Optional[Dict[str, Dict[str, float]]]:
+    if not isinstance(raw, dict):
+        return None
+
+    normalized: Dict[str, Dict[str, float]] = {}
+    for reason, data in raw.items():
+        if not isinstance(data, dict):
+            continue
+        clean_reason = str(reason or "").strip()
+        if not clean_reason:
+            continue
+        cleaned_fields: Dict[str, float] = {}
+        for key, value in data.items():
+            clean_key = str(key or "").strip()
+            if not clean_key:
+                continue
+            numeric = _safe_float(value)
+            if numeric is None:
+                continue
+            cleaned_fields[clean_key] = numeric
+        if cleaned_fields:
+            normalized[clean_reason] = cleaned_fields
+    return normalized or None
+
+
 def _normalize_playbook_state(raw: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(raw, dict):
         return None
@@ -630,6 +655,7 @@ def _normalize_playbook_state(raw: Any) -> Optional[Dict[str, Any]]:
         confidence = _safe_float(active.get("confidence_score"))
 
     strategy = _normalize_strategy_blob(active.get("strategy"))
+    filters = _normalize_playbook_filters(active.get("filters"))
 
     reason_text = _clean_string(active.get("reason"))
     if not reason_text and strategy:
@@ -659,6 +685,8 @@ def _normalize_playbook_state(raw: Any) -> Optional[Dict[str, Any]]:
         result["reason"] = reason_text
     if strategy:
         result["strategy"] = strategy
+    if filters:
+        result["filters"] = filters
 
     return result
 
@@ -735,6 +763,7 @@ def _derive_playbook_state_from_activity(
             result["notes"] = notes.strip()
 
         normalized_strategy = _normalize_strategy_blob(strategy_raw)
+        normalized_filters = _normalize_playbook_filters(entry.get("filters"))
         if normalized_strategy:
             result["strategy"] = normalized_strategy
 
@@ -747,6 +776,9 @@ def _derive_playbook_state_from_activity(
         numeric_confidence = _safe_float(confidence)
         if numeric_confidence is not None:
             result["confidence"] = numeric_confidence
+
+        if normalized_filters:
+            result["filters"] = normalized_filters
 
         result.setdefault("mode", "baseline")
         result.setdefault("bias", "neutral")
@@ -1033,6 +1065,10 @@ def _collect_playbook_activity(ai_activity: List[Any]) -> List[Dict[str, Any]]:
                 features.sort(key=lambda item: abs(item["value"]), reverse=True)
                 if features:
                     record["features"] = features[:5]
+
+            normalized_filters = _normalize_playbook_filters(data.get("filters"))
+            if normalized_filters:
+                record["filters"] = normalized_filters
 
             strategy_blob = _normalize_strategy_blob(data.get("strategy"))
             if strategy_blob:

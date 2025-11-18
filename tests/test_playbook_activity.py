@@ -352,6 +352,27 @@ class PlaybookStateTests(unittest.TestCase):
         self.assertAlmostEqual(state["confidence"], 0.12)
         self.assertEqual(state["notes"], "Example note")
 
+    def test_normalize_state_includes_filters(self):
+        raw = {
+            "active": {
+                "mode": "baseline",
+                "bias": "neutral",
+                "filters": {
+                    "edge_r": {"min_edge_r": 0.22},
+                    "sentinel_veto": {"event_risk_gate": 0.55, "min_multiplier": 0.3},
+                },
+            }
+        }
+
+        state = _normalize_playbook_state(raw)
+        self.assertIn("filters", state)
+        filters = state["filters"]
+        self.assertIn("edge_r", filters)
+        self.assertIn("sentinel_veto", filters)
+        self.assertAlmostEqual(filters["edge_r"]["min_edge_r"], 0.22)
+        self.assertAlmostEqual(filters["sentinel_veto"]["event_risk_gate"], 0.55)
+        self.assertAlmostEqual(filters["sentinel_veto"]["min_multiplier"], 0.3)
+
     def test_normalize_state_includes_strategy(self):
         raw = {
             "active": {
@@ -410,6 +431,29 @@ class PlaybookStateTests(unittest.TestCase):
         self.assertAlmostEqual(state["sl_bias"], 1.15)
         self.assertAlmostEqual(state["confidence"], 0.33)
         self.assertIn("refreshed", state)
+
+    def test_derive_state_includes_filters(self):
+        raw_activity = [
+            {
+                "kind": "playbook",
+                "headline": "Filter adjustments",
+                "ts": "2024-07-01T10:05:00Z",
+                "data": {
+                    "mode": "baseline",
+                    "filters": {
+                        "edge_r": {"min_edge_r": 0.18},
+                        "wicky": {"wickiness_max": 0.96},
+                    },
+                },
+            }
+        ]
+
+        activity = _collect_playbook_activity(raw_activity)
+        state = _derive_playbook_state_from_activity(activity)
+        self.assertIn("filters", state)
+        self.assertIn("edge_r", state["filters"])
+        self.assertAlmostEqual(state["filters"]["edge_r"]["min_edge_r"], 0.18)
+        self.assertAlmostEqual(state["filters"]["wicky"]["wickiness_max"], 0.96)
 
     def test_resolve_state_prefers_activity_when_placeholder(self):
         placeholder = {
