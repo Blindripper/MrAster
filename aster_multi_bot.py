@@ -1655,6 +1655,65 @@ def clamp(value: float, lower: float, upper: float) -> float:
     return max(lower, min(upper, value))
 
 
+def summarize_decision_stats(
+    state: Optional[Dict[str, Any]]
+) -> Optional[Dict[str, Any]]:
+    if not isinstance(state, dict):
+        return None
+    stats = state.get("decision_stats")
+    if not isinstance(stats, dict):
+        return None
+    taken = int(stats.get("taken", 0) or 0)
+    rejected_total = int(stats.get("rejected_total", 0) or 0)
+    reasons_raw = stats.get("rejected")
+    summary: Dict[str, Any] = {
+        "taken": taken,
+        "rejected_total": rejected_total,
+    }
+    top_reasons: List[Dict[str, Any]] = []
+    if isinstance(reasons_raw, dict):
+        items = [
+            (str(reason), int(count or 0))
+            for reason, count in reasons_raw.items()
+            if reason
+        ]
+        if items:
+            denom = max(1, rejected_total)
+            for reason, count in sorted(
+                items, key=lambda pair: pair[1], reverse=True
+            ):
+                entry = {
+                    "reason": reason,
+                    "count": count,
+                }
+                if denom:
+                    entry["share"] = round(count / denom, 4)
+                top_reasons.append(entry)
+            summary["reasons"] = top_reasons[:10]
+    history = stats.get("rejected_history")
+    if isinstance(history, list) and history:
+        latest = history[-1]
+        if isinstance(latest, (list, tuple)) and len(latest) >= 2:
+            summary["latest_reason"] = latest[-1]
+            try:
+                summary["latest_ts"] = float(latest[0])
+            except (TypeError, ValueError):
+                pass
+        elif isinstance(latest, dict):
+            reason = latest.get("reason") or latest.get("skip")
+            if isinstance(reason, str):
+                summary["latest_reason"] = reason
+            ts_val = latest.get("ts")
+            try:
+                if ts_val is not None:
+                    summary["latest_ts"] = float(ts_val)
+            except (TypeError, ValueError):
+                pass
+    if not taken and not rejected_total and not top_reasons:
+        return None
+    return summary
+
+
 def _apply_playbook_focus_adjustments(
     ctx: Dict[str, Any],
     side: str,
@@ -2870,60 +2929,7 @@ class AITradeAdvisor:
             pass
 
     def _playbook_decision_stats(self) -> Optional[Dict[str, Any]]:
-        if not isinstance(self.state, dict):
-            return None
-        stats = self.state.get("decision_stats")
-        if not isinstance(stats, dict):
-            return None
-        taken = int(stats.get("taken", 0) or 0)
-        rejected_total = int(stats.get("rejected_total", 0) or 0)
-        reasons_raw = stats.get("rejected")
-        summary: Dict[str, Any] = {
-            "taken": taken,
-            "rejected_total": rejected_total,
-        }
-        top_reasons: List[Dict[str, Any]] = []
-        if isinstance(reasons_raw, dict):
-            items = [
-                (str(reason), int(count or 0))
-                for reason, count in reasons_raw.items()
-                if reason
-            ]
-            if items:
-                denom = max(1, rejected_total)
-                for reason, count in sorted(
-                    items, key=lambda pair: pair[1], reverse=True
-                ):
-                    entry = {
-                        "reason": reason,
-                        "count": count,
-                    }
-                    if denom:
-                        entry["share"] = round(count / denom, 4)
-                    top_reasons.append(entry)
-                summary["reasons"] = top_reasons[:10]
-        history = stats.get("rejected_history")
-        if isinstance(history, list) and history:
-            latest = history[-1]
-            if isinstance(latest, (list, tuple)) and len(latest) >= 2:
-                summary["latest_reason"] = latest[-1]
-                try:
-                    summary["latest_ts"] = float(latest[0])
-                except (TypeError, ValueError):
-                    pass
-            elif isinstance(latest, dict):
-                reason = latest.get("reason") or latest.get("skip")
-                if isinstance(reason, str):
-                    summary["latest_reason"] = reason
-                ts_val = latest.get("ts")
-                try:
-                    if ts_val is not None:
-                        summary["latest_ts"] = float(ts_val)
-                except (TypeError, ValueError):
-                    pass
-        if not taken and not rejected_total and not top_reasons:
-            return None
-        return summary
+        return summarize_decision_stats(self.state)
 
     def _summarize_playbook_snapshot(
         self, snapshot: Optional[Dict[str, Any]]
@@ -8642,6 +8648,9 @@ class Strategy:
             if item:
                 trimmed[sym] = item
         return trimmed
+
+    def _playbook_decision_stats(self) -> Optional[Dict[str, Any]]:
+        return summarize_decision_stats(self.state)
 
     @staticmethod
     def _playbook_market_overview(
