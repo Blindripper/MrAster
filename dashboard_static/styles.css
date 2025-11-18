@@ -936,41 +936,47 @@ body.pro-mode [data-normal-only] {
 }
 
 .hero-orbit {
-  position: relative;
-  width: var(--hero-visual-size);
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: radial-gradient(circle at 50% 50%, rgba(245, 196, 107, 0.15) 0%, rgba(5, 7, 15, 0) 65%);
-  border: 1px solid rgba(245, 196, 107, 0.22);
-  display: grid;
-  place-items: center;
-  overflow: hidden;
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 1.25rem;
 }
 
-.hero-orbit::before,
-.hero-orbit::after {
-  content: "";
-  position: absolute;
-  border-radius: 50%;
-  inset: 12%;
-  border: 1px dashed rgba(245, 196, 107, 0.25);
-  filter: blur(0.2px);
+.hero-orbit-card {
+  flex: 1 1 clamp(280px, 32%, 420px);
+  min-width: min(100%, 280px);
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
 }
 
-.hero-orbit::after {
-  inset: 24%;
-  border-style: solid;
-  border-width: 1px;
-  border-color: rgba(97, 84, 237, 0.3);
+.hero-orbit-card .card-header,
+.hero-orbit-card .card-section-body,
+.hero-orbit-card .hero-credentials-content {
+  width: 100%;
 }
 
-.hero-orbit-core {
-  width: 56%;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: radial-gradient(circle at 32% 32%, rgba(245, 196, 107, 0.55), rgba(240, 165, 72, 0.08) 62%),
-              radial-gradient(circle at 70% 70%, rgba(96, 83, 237, 0.55), rgba(5, 6, 12, 0.4) 68%);
-  box-shadow: inset 0 0 0 1px rgba(245, 196, 107, 0.2), 0 0 32px rgba(96, 83, 237, 0.35);
+.hero-orbit-card .card-header {
+  justify-content: space-between;
+}
+
+.hero-orbit-card .status-grid {
+  text-align: left;
+}
+
+.hero-orbit .hero-credentials-grid {
+  justify-items: stretch;
+}
+
+.hero-orbit .hero-credential {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.hero-orbit .hero-credentials-actions {
+  justify-content: flex-start;
 }
 
 .hero-mode-panel {
