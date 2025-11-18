@@ -1212,7 +1212,8 @@ body.paper-mode .hero-paper-toggle span {
   width: 100%;
 }
 
-.hero-overview-grid > .pnl-card {
+.hero-overview-grid > .pnl-card,
+.hero-overview-grid > .completed-positions-card {
   grid-column: 1 / -1;
 }
 
