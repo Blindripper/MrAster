@@ -445,7 +445,7 @@ class PlaybookStateTests(unittest.TestCase):
         self.assertAlmostEqual(resolved["size_bias"]["BUY"], 1.3)
         self.assertIn("refreshed_ts", resolved)
 
-    def test_resolve_state_keeps_existing_when_fresh(self):
+    def test_resolve_state_prefers_activity_when_fresher(self):
         raw_state = {
             "active": {
                 "mode": "range",
@@ -472,9 +472,42 @@ class PlaybookStateTests(unittest.TestCase):
 
         activity = _collect_playbook_activity(raw_activity)
         resolved = _resolve_playbook_state(raw_state, activity)
-        self.assertEqual(resolved["mode"], "range")
-        self.assertEqual(resolved["bias"], "bearish")
-        self.assertAlmostEqual(resolved["size_bias"]["SELL"], 1.2)
+        self.assertEqual(resolved["mode"], "breakout")
+        self.assertEqual(resolved["bias"], "bullish")
+        self.assertAlmostEqual(resolved["sl_bias"], 1.05)
+
+    def test_resolve_state_keeps_existing_when_activity_stale(self):
+        raw_state = {
+            "active": {
+                "mode": "trend",
+                "bias": "neutral",
+                "size_bias": {"BUY": 1.05, "SELL": 0.95},
+                "sl_bias": 1.1,
+                "tp_bias": 1.35,
+                "features": {"breadth": 0.2},
+                "refreshed": datetime(2024, 7, 1, 13, 0, 0, tzinfo=timezone.utc).timestamp(),
+            }
+        }
+
+        raw_activity = [
+            {
+                "kind": "playbook",
+                "headline": "Playbook updated: baseline",
+                "ts": "2024-07-01T12:00:00Z",
+                "data": {
+                    "mode": "baseline",
+                    "bias": "neutral",
+                    "size_bias": {"BUY": 0.9, "SELL": 1.1},
+                    "sl_bias": 0.95,
+                },
+            }
+        ]
+
+        activity = _collect_playbook_activity(raw_activity)
+        resolved = _resolve_playbook_state(raw_state, activity)
+        self.assertEqual(resolved["mode"], "trend")
+        self.assertEqual(resolved["bias"], "neutral")
+        self.assertAlmostEqual(resolved["size_bias"]["BUY"], 1.05)
 
     def test_tuning_entries_default_to_baseline_neutral(self):
         raw_activity = [
