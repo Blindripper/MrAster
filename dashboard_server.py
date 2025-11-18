@@ -808,16 +808,41 @@ def _resolve_playbook_state(
     raw_state: Any, activity: List[Dict[str, Any]]
 ) -> Optional[Dict[str, Any]]:
     normalized = _normalize_playbook_state(raw_state)
-    if not _is_placeholder_playbook(normalized):
-        return normalized
-
     fallback = _derive_playbook_state_from_activity(activity)
+
     if not fallback:
         return normalized
 
-    merged: Dict[str, Any] = dict(normalized) if isinstance(normalized, dict) else {}
-    merged.update(fallback)
-    return merged if merged else fallback
+    if _is_placeholder_playbook(normalized):
+        merged: Dict[str, Any] = dict(normalized) if isinstance(normalized, dict) else {}
+        merged.update(fallback)
+        return merged if merged else fallback
+
+    normalized_ts = _safe_float(normalized.get("refreshed_ts")) if isinstance(normalized, dict) else None
+    fallback_ts = _safe_float(fallback.get("refreshed_ts"))
+
+    if normalized_ts is None and isinstance(normalized, dict):
+        normalized_refreshed = normalized.get("refreshed")
+        parsed_normalized = _parse_activity_ts(normalized_refreshed)
+        if parsed_normalized:
+            normalized_ts = parsed_normalized.timestamp()
+
+    if fallback_ts is None:
+        parsed_fallback = _parse_activity_ts(fallback.get("refreshed"))
+        if parsed_fallback:
+            fallback_ts = parsed_fallback.timestamp()
+
+    if fallback_ts is None:
+        # Without timing information we cannot assert that the fallback is fresher,
+        # so keep the existing normalized snapshot.
+        return normalized
+
+    if normalized_ts is None or fallback_ts > normalized_ts:
+        merged: Dict[str, Any] = dict(normalized) if isinstance(normalized, dict) else {}
+        merged.update(fallback)
+        return merged if merged else fallback
+
+    return normalized
 
 
 def _collect_playbook_activity(ai_activity: List[Any]) -> List[Dict[str, Any]]:
