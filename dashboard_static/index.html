@@ -154,8 +154,22 @@
             <p class="share-feedback" id="share-feedback" role="status" aria-live="polite"></p>
           </div>
           <div class="hero-visual">
-            <div class="hero-orbit" aria-hidden="true">
-              <div class="hero-orbit-core"></div>
+            <div class="hero-visual-grid">
+              <section class="hero-info-card hero-info-card--exchange" aria-label="Exchange credentials overview">
+                <p class="hero-info-card__label">Exchange credentials</p>
+                <p class="hero-info-card__value" id="hero-exchange-credentials">Encrypted &amp; synced</p>
+                <p class="hero-info-card__meta">Binance · OKX · Bybit</p>
+                <p class="hero-info-card__status-pill">Secure</p>
+              </section>
+              <section class="hero-info-card hero-info-card--status" aria-label="System status">
+                <p class="hero-info-card__label">Status</p>
+                <p class="hero-info-card__value" id="hero-system-status">Operational</p>
+                <p class="hero-info-card__meta">All bots in sync</p>
+                <p class="hero-info-card__status-pill">Live</p>
+              </section>
+              <div class="hero-orbit" aria-hidden="true">
+                <div class="hero-orbit-core"></div>
+              </div>
             </div>
             <div class="hero-mode-panel" role="group" aria-label="Select mode">
               <span class="hero-mode-label" data-i18n="hero.mode.label">Mode</span>
