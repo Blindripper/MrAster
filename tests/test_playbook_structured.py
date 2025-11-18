@@ -163,3 +163,33 @@ def test_high_preset_retains_block_when_risk_extreme(monkeypatch):
 
     assert ctx["playbook_structured_hard_block"] is True
     assert ctx.get("playbook_structured_soft_block") is not True
+
+
+def test_structured_event_risk_ignores_global_metrics():
+    state = {}
+    mgr = PlaybookManager(state, request_fn=_noop_request)
+    active = _base_active_state()
+    active["structured_risk_controls"] = [
+        {
+            "id": "event_risk_block",
+            "effect": "hard_block",
+            "condition": {"metric": "event_risk", "operator": ">", "value": 0.8},
+            "note": "Event risk high",
+        }
+    ]
+    mgr._state["active"] = active  # pylint: disable=protected-access
+
+    ctx = {
+        "side": "BUY",
+        "sentinel_event_risk": 0.25,
+        "playbook_feature_event_risk": 0.92,
+        "pm_event_risk": 0.95,
+    }
+    mgr.inject_context(ctx)
+
+    assert ctx.get("playbook_structured_hard_block") is not True
+
+    ctx_symbol = {"side": "BUY", "sentinel_event_risk": 0.91}
+    mgr.inject_context(ctx_symbol)
+
+    assert ctx_symbol["playbook_structured_hard_block"] is True
