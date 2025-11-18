@@ -109,13 +109,13 @@
 | 변수 | 기본값 | 설명 |
 | --- | --- | --- |
 | `ASTER_INTERVAL` / `ASTER_HTF_INTERVAL` | `5m` / `30m` | 신호 및 확인 타임프레임. |
-| `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `51` / `49`* | 롱/숏 진입 RSI 기준. |
+| `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `49` / `51`* | 롱/숏 진입 RSI 기준. |
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | 타임프레임 간 추세 정렬을 강제합니다. |
 | `ASTER_TREND_BIAS` | `with` | 추세와 함께 혹은 역추세로 매매. |
 | `ASTER_MIN_QUOTE_VOL_USDT` | `150000` | 거래 가능한 최소 거래대금. |
 | `ASTER_SPREAD_BPS_MAX` | `0.0020` | 허용 최대 스프레드(bps). |
 | `ASTER_WICKINESS_MAX` | `0.97` | 과도한 심지의 캔들을 필터링. |
-| `ASTER_MIN_EDGE_R` | `0.30` | 트레이드를 승인하기 위한 최소 엣지(R). |
+| `ASTER_MIN_EDGE_R` | `0.04` | 트레이드를 승인하기 위한 최소 엣지(R). |
 | `ASTER_DEFAULT_NOTIONAL` | `0` | 적응 데이터가 없을 때의 기본 노셔널(0 = AI 계산). |
 | `ASTER_SIZE_MULT_FLOOR` | `0` | 포지션 사이즈 최소 배수(1.0 = 기본 노셔널 강제). |
 | `ASTER_MAX_NOTIONAL_USDT` | `0` | 주문 노셔널 상한(0 = 레버리지/자본 가드 결정). |

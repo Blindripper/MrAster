@@ -109,13 +109,13 @@ Envie d’en savoir plus sur les moteurs, les garde-fous et la configuration ? D
 | Variable | Valeur par défaut | Description |
 | --- | --- | --- |
 | `ASTER_INTERVAL` / `ASTER_HTF_INTERVAL` | `5m` / `30m` | Périodes des signaux et de la confirmation. |
-| `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `51` / `49`* | Seuils RSI pour entrées long / short. |
+| `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `49` / `51`* | Seuils RSI pour entrées long / short. |
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | Force l’alignement des tendances entre horizons. |
 | `ASTER_TREND_BIAS` | `with` | Trade dans / contre la tendance. |
 | `ASTER_MIN_QUOTE_VOL_USDT` | `150000` | Volume minimal des symboles. |
 | `ASTER_SPREAD_BPS_MAX` | `0.0020` | Spread bid/ask maximal (bps). |
 | `ASTER_WICKINESS_MAX` | `0.97` | Filtre des chandeliers trop volatils. |
-| `ASTER_MIN_EDGE_R` | `0.30` | Edge minimal (en R) pour valider un trade. |
+| `ASTER_MIN_EDGE_R` | `0.04` | Edge minimal (en R) pour valider un trade. |
 | `ASTER_DEFAULT_NOTIONAL` | `0` | Notionnel de base si aucune donnée adaptative (0 = calculé par l’IA). |
 | `ASTER_SIZE_MULT_FLOOR` | `0` | Multiplicateur minimum de taille (1.0 impose le notionnel de base). |
 | `ASTER_MAX_NOTIONAL_USDT` | `0` | Limite dure sur le notionnel (0 = laissent les gardes levier/équité décider). |
