@@ -1816,12 +1816,9 @@ button:focus-visible {
     grid-column: span 6;
   }
 
-  body.ai-mode .layout > .playbook-overview {
-    grid-column: span 4;
-  }
-
+  body.ai-mode .layout > .playbook-overview,
   body.ai-mode .layout > .chat-window {
-    grid-column: span 8;
+    grid-column: span 12;
   }
 
   body.ai-mode .layout > .ai-config {
