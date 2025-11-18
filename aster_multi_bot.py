@@ -682,6 +682,7 @@ SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.00200"))  # 0.20 %
 SPREAD_BPS_SOFT_CAP = float(os.getenv("ASTER_SPREAD_BPS_SOFT_CAP", "0.00065"))
 WICKINESS_MAX = float(os.getenv("ASTER_WICKINESS_MAX", "0.985"))
 MIN_EDGE_R = float(os.getenv("ASTER_MIN_EDGE_R", "0.18"))
+EXPECTED_R_MIN_FLOOR = float(os.getenv("ASTER_EXPECTED_R_MIN_FLOOR", "0.08") or 0.08)
 SKIP_HISTORY_LIMIT = max(20, int(os.getenv("ASTER_SKIP_HISTORY_LIMIT", "200") or 200))
 SKIP_RELIEF_WINDOW = max(10, min(SKIP_HISTORY_LIMIT, int(os.getenv("ASTER_SKIP_RELIEF_WINDOW", "80") or 80)))
 EDGE_RELIEF_THRESHOLD = float(os.getenv("ASTER_SKIP_EDGE_THRESHOLD", "0.45"))
@@ -840,6 +841,21 @@ SHORT_CLUSTER_CORR_THRESHOLD = _env_float("ASTER_SHORT_CLUSTER_CORR", 0.7, allow
 SENTINEL_LOCK_SNAPSHOTS = max(1, int(os.getenv("ASTER_SENTINEL_LOCK_SNAPSHOTS", "3") or 3))
 SENTINEL_SIZE_LOCK_CAP = _env_float("ASTER_SENTINEL_SIZE_LOCK_CAP", 0.6, allow_zero=False)
 SENTINEL_LEVERAGE_LOCK_CAP = _env_float("ASTER_SENTINEL_LEVERAGE_CAP", 2.0, allow_zero=False)
+SENTINEL_SIZE_GATE_EVENT_RISK = float(
+    os.getenv("ASTER_SENTINEL_SIZE_GATE_EVENT_RISK", "0.60") or 0.60
+)
+SENTINEL_SIZE_GATE_BLOCK_RISK = float(
+    os.getenv("ASTER_SENTINEL_SIZE_GATE_BLOCK_RISK", "0.85") or 0.85
+)
+SENTINEL_SIZE_GATE_MIN_MULT = float(
+    os.getenv("ASTER_SENTINEL_SIZE_GATE_MIN_MULT", "0.30") or 0.30
+)
+SENTINEL_SIZE_GATE_WEIGHT = float(
+    os.getenv("ASTER_SENTINEL_SIZE_GATE_WEIGHT", "0.90") or 0.90
+)
+SENTINEL_SHORT_GATE_PENALTY = float(
+    os.getenv("ASTER_SENTINEL_SHORT_GATE_PENALTY", "0.80") or 0.80
+)
 EXECUTION_GAP_THRESHOLD = _env_float("ASTER_EXECUTION_GAP_THRESHOLD", 0.30, allow_zero=False)
 EXECUTION_FEEDBACK_TTL = max(600.0, _env_float("ASTER_EXECUTION_FEEDBACK_TTL", 7200.0, allow_zero=False))
 EXECUTION_COST_REJECT_RATIO = max(0.1, float(os.getenv("ASTER_EXECUTION_COST_REJECT_RATIO", "1.2") or 1.2))
@@ -988,6 +1004,13 @@ BUDGET_MOMENTUM_THRESHOLD = float(os.getenv("ASTER_BUDGET_MOMENTUM_THRESHOLD", "
 PERF_MOMENTUM_THRESHOLD = float(os.getenv("ASTER_PERF_MOMENTUM_THRESHOLD", "0.92"))
 BUDGET_MOMENTUM_ATR_MAX = max(0.0, float(os.getenv("ASTER_BUDGET_MOMENTUM_ATR_MAX", "0.012") or 0.0))
 BUDGET_MOMENTUM_ADX_DELTA = float(os.getenv("ASTER_BUDGET_MOMENTUM_ADX_DELTA", "1.5"))
+BUDGET_BIAS_FILTER_MIN = float(os.getenv("ASTER_BUDGET_BIAS_FILTER_MIN", "0.65") or 0.65)
+BUDGET_BIAS_FILTER_SKIP_SCORE = float(
+    os.getenv("ASTER_BUDGET_BIAS_FILTER_SKIP_SCORE", "0.20") or 0.20
+)
+BUDGET_BIAS_FILTER_SIZE_MULT = float(
+    os.getenv("ASTER_BUDGET_BIAS_FILTER_SIZE_MULT", "0.50") or 0.50
+)
 
 BREAKEVEN_REEVAL_SECONDS = max(0.0, float(os.getenv("ASTER_BREAKEVEN_REEVAL_SECONDS", "360") or 0.0))
 BREAKEVEN_R_THRESHOLD = float(os.getenv("ASTER_BREAKEVEN_R_THRESHOLD", "0.18"))
@@ -1063,6 +1086,9 @@ TREND_EXTENSION_LOOKBACK = max(
     TREND_EXTENSION_BARS_HARD * 2, int(os.getenv("ASTER_TREND_EXTENSION_LOOKBACK", "80"))
 )
 CONTINUATION_STOCHRSI_MIN = float(os.getenv("ASTER_CONT_STOCHRSI_MIN", "20.0"))
+CONTINUATION_PULLBACK_STOCH_MAX = float(
+    os.getenv("ASTER_CONT_PULLBACK_STOCH_MAX", "30.0") or 30.0
+)
 LONG_RSI_MAX = float(os.getenv("ASTER_LONG_RSI_MAX", "70.0"))
 SHORT_RSI_MIN = float(os.getenv("ASTER_SHORT_RSI_MIN", "30.0"))
 STOCHRSI_LONG_MAX = float(os.getenv("ASTER_STOCHRSI_LONG_MAX", "24.0"))
@@ -1092,6 +1118,10 @@ BREAKOUT_SLOPE_MIN = float(os.getenv("ASTER_BREAKOUT_SLOPE_MIN", "0.0035"))
 BREAKOUT_RETEST_BARS = max(2, int(os.getenv("ASTER_BREAKOUT_RETEST_BARS", "3")))
 BREAKOUT_WIDTH_SQUEEZE = float(os.getenv("ASTER_BREAKOUT_WIDTH_SQUEEZE", "0.65"))
 BREAKOUT_EXPECTED_R_MULT = float(os.getenv("ASTER_BREAKOUT_EXPECTED_R_MULT", "1.10"))
+SHORT_TREND_SLOPE_MIN = float(os.getenv("ASTER_SHORT_TREND_SLOPE_MIN", "0.0004") or 0.0004)
+SHORT_TREND_SUPERTREND_TOL = float(
+    os.getenv("ASTER_SHORT_TREND_SUPERTREND_TOL", "0.0") or 0.0
+)
 
 FILTER_PENALTY_HARD = float(os.getenv("ASTER_FILTER_PENALTY_HARD", "1.65"))
 FILTER_PENALTY_WARN = float(os.getenv("ASTER_FILTER_PENALTY_WARN", "1.05"))
@@ -1233,6 +1263,8 @@ if EARLY_ENTRY_ENABLED:
     ORDERBOOK_BIAS_SELL_MAX = min(0.45, ORDERBOOK_BIAS_SELL_MAX)
     if "ASTER_ORDERBOOK_BIAS_REQUIRED" not in os.environ:
         ORDERBOOK_BIAS_REQUIRED = False
+
+MIN_EDGE_R = max(EXPECTED_R_MIN_FLOOR, MIN_EDGE_R)
 
 # ========= Utils =========
 def ema(data: List[float], period: int) -> List[float]:
@@ -9317,6 +9349,20 @@ class Strategy:
         if sig == "BUY" and continuation_long:
             continuation_block: Dict[str, str] = {}
             cont_penalty = 0.0
+            pullback_gate = max(0.0, CONTINUATION_PULLBACK_STOCH_MAX)
+            if pullback_gate and stoch_k_last >= pullback_gate:
+                ctx_base["continuation_pullback_gate"] = float(stoch_k_last)
+                return self._skip(
+                    "continuation_pullback",
+                    symbol,
+                    {
+                        "stoch_rsi_k": f"{stoch_k_last:.1f}",
+                        "gate": f"{pullback_gate:.1f}",
+                    },
+                    ctx=ctx_base,
+                    price=mid,
+                    atr=atr,
+                )
             if adx_delta < CONTINUATION_ADX_DELTA_MIN:
                 ctx_base["continuation_adx_delta_gate"] = float(adx_delta)
                 continuation_block["adx_delta"] = (
@@ -9420,6 +9466,28 @@ class Strategy:
                 ctx_base["supertrend_conflict"] = float(supertrend_dir_last)
                 _add_penalty("supertrend", clamp(abs(supertrend_dir_last) * 0.6 + 0.4, 0.0, FILTER_PENALTY_HARD), f"{supertrend_dir_last:.2f}")
         elif sig == "SELL":
+            short_trend_conflict = False
+            short_trend_detail: Dict[str, str] = {}
+            slope_gate = float(slope_fast)
+            slope_threshold = max(0.0, SHORT_TREND_SLOPE_MIN)
+            if slope_threshold and slope_gate > -slope_threshold:
+                short_trend_conflict = True
+                short_trend_detail["slope_fast"] = f"{slope_gate:+.5f}"
+            if supertrend_gate_enabled and supertrend_dir_last > SHORT_TREND_SUPERTREND_TOL:
+                short_trend_conflict = True
+                short_trend_detail["supertrend_dir"] = f"{supertrend_dir_last:+.2f}"
+            if short_trend_conflict:
+                ctx_base["short_trend_alignment_gate"] = True
+                if not short_trend_detail:
+                    short_trend_detail = {"reason": "trend_conflict"}
+                return self._skip(
+                    "short_trend_alignment",
+                    symbol,
+                    short_trend_detail,
+                    ctx=ctx_base,
+                    price=mid,
+                    atr=atr,
+                )
             if stoch_d_last <= STOCHRSI_OVERSOLD:
                 ctx_base["stoch_rsi_oversold"] = float(stoch_d_last)
                 _add_penalty("stoch_rsi", clamp((STOCHRSI_OVERSOLD - stoch_d_last) / 100.0 * 3.0 + 0.4, 0.0, FILTER_PENALTY_HARD), f"{stoch_d_last:.1f}")
@@ -13604,6 +13672,7 @@ class Bot:
                     manual_notional = None
 
         expected_r_drift_mult = 1.0
+        budget_filter_penalty = 1.0
         hype_size_mult = 1.0
         recovered_plan: Optional[Dict[str, Any]] = None
         if sig in {"BUY", "SELL"}:
@@ -13671,6 +13740,39 @@ class Bot:
                         error="Expected-R drift guard active",
                     )
                 return
+
+            budget_bias_val = self._coerce_float(ctx.get("universe_budget_bias"))
+            universe_score_val = self._coerce_float(ctx.get("universe_score"))
+            if budget_bias_val is not None:
+                ctx["universe_budget_bias"] = float(budget_bias_val)
+            if universe_score_val is not None:
+                ctx["universe_score"] = float(universe_score_val)
+            if (
+                budget_bias_val is not None
+                and budget_bias_val < BUDGET_BIAS_FILTER_MIN
+            ):
+                ctx["budget_filter_gate_bias"] = float(budget_bias_val)
+                if universe_score_val is None or universe_score_val < BUDGET_BIAS_FILTER_SKIP_SCORE:
+                    if self.decision_tracker:
+                        self.decision_tracker.record_rejection("budget_filter")
+                    log.info(
+                        "Skip %s — budget bias %.2f with universe score %.2f below guard.",
+                        symbol,
+                        budget_bias_val,
+                        float(universe_score_val or 0.0),
+                    )
+                    if manual_override:
+                        self._complete_manual_request(
+                            manual_req,
+                            "failed",
+                            error="Budget filter blocked this symbol",
+                        )
+                    return
+                budget_filter_penalty = min(
+                    1.0,
+                    max(BUDGET_BIAS_FILTER_SIZE_MULT, float(budget_bias_val)),
+                )
+                ctx["budget_filter_multiplier"] = float(budget_filter_penalty)
 
         if self.ai_advisor and not manual_override and base_signal == "NONE":
             resumed = self.ai_advisor.consume_signal_plan(symbol)
@@ -13880,6 +13982,8 @@ class Bot:
                 return
 
         sentinel_size_cap_value: Optional[float] = None
+        sentinel_gate_penalty = 1.0
+        sentinel_gate_block = False
         sentinel_info = {
             "label": "green",
             "event_risk": 0.0,
@@ -13956,6 +14060,52 @@ class Bot:
                 conflicts[0][0],
                 float(conflicts[0][1]),
             )
+
+        sentinel_gate_trigger = False
+        if sig in {"BUY", "SELL"}:
+            sentinel_gate_trigger = (
+                sentinel_label in {"yellow", "red"}
+                or event_risk >= SENTINEL_SIZE_GATE_EVENT_RISK
+            )
+            if sentinel_gate_trigger:
+                severity = max(event_risk, SENTINEL_SIZE_GATE_EVENT_RISK)
+                gate_penalty = clamp(
+                    1.0 - severity * SENTINEL_SIZE_GATE_WEIGHT,
+                    SENTINEL_SIZE_GATE_MIN_MULT,
+                    1.0,
+                )
+                if sig == "SELL":
+                    gate_penalty = clamp(
+                        gate_penalty * SENTINEL_SHORT_GATE_PENALTY,
+                        SENTINEL_SIZE_GATE_MIN_MULT,
+                        1.0,
+                    )
+                sentinel_gate_penalty = float(gate_penalty)
+                ctx["sentinel_gate_multiplier"] = float(sentinel_gate_penalty)
+                ctx["sentinel_gate_triggered"] = True
+                ctx["sentinel_gate_label"] = sentinel_label or ""
+                ctx["sentinel_gate_event_risk"] = float(event_risk)
+                if sentinel_label == "red" or event_risk >= SENTINEL_SIZE_GATE_BLOCK_RISK:
+                    sentinel_gate_block = True
+                    ctx["sentinel_gate_block"] = True
+
+        if sentinel_gate_block and sig in {"BUY", "SELL"}:
+            if self.decision_tracker:
+                self.decision_tracker.record_rejection("sentinel_block")
+            log.info(
+                "Skip %s — sentinel gate blocked %s (label=%s risk=%.2f).",
+                symbol,
+                sig,
+                sentinel_label or "n/a",
+                event_risk,
+            )
+            if manual_override:
+                self._complete_manual_request(
+                    manual_req,
+                    "failed",
+                    error="Sentinel gate blocked this setup",
+                )
+            return
 
         orderbook_bias_val = _coerce_float(ctx.get("orderbook_bias"))
         orderbook_levels = _coerce_float(ctx.get("orderbook_levels"))
@@ -14509,6 +14659,10 @@ class Bot:
                 perf_mult = max(0.6, min(1.6, float(perf_bias_val)))
                 size_mult *= perf_mult
                 ctx["universe_perf_multiplier"] = float(perf_mult)
+        if sentinel_gate_penalty < 1.0:
+            size_mult *= sentinel_gate_penalty
+        if budget_filter_penalty < 1.0:
+            size_mult *= budget_filter_penalty
         if sig == "SELL" and SHORT_SIZE_BIAS != 1.0:
             size_mult *= SHORT_SIZE_BIAS
             ctx["short_bias_multiplier"] = float(SHORT_SIZE_BIAS)
