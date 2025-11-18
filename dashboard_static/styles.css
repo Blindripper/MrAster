@@ -25,6 +25,7 @@
   --page-inline-padding: clamp(1.25rem, 3.5vw, 3rem);
   --safe-area-top: env(safe-area-inset-top, 0px);
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --hero-visual-size: clamp(220px, 28vw, 320px);
 }
 
 *,
@@ -866,7 +867,7 @@ body.pro-mode [data-normal-only] {
   flex-direction: column;
   justify-content: space-between;
   align-items: center;
-  gap: 1.8rem;
+  gap: 2rem;
   background: rgba(10, 12, 22, 0.6);
   border-radius: 1.8rem;
   padding: 2.4rem 2rem;
@@ -874,9 +875,69 @@ body.pro-mode [data-normal-only] {
   box-shadow: inset 0 0 0 1px rgba(64, 74, 134, 0.26);
 }
 
+.hero-visual-grid {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 1.2rem;
+}
+
+.hero-info-card {
+  width: var(--hero-visual-size);
+  aspect-ratio: 1;
+  border-radius: 1.8rem;
+  padding: 1.6rem;
+  border: 1px solid rgba(245, 196, 107, 0.16);
+  background: radial-gradient(circle at 20% 20%, rgba(245, 196, 107, 0.18), transparent 60%),
+    rgba(7, 9, 16, 0.68);
+  box-shadow: inset 0 0 0 1px rgba(64, 74, 134, 0.2);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 1.2rem;
+  text-align: left;
+}
+
+.hero-info-card__label {
+  margin: 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+
+.hero-info-card__value {
+  margin: 0;
+  font-size: clamp(1.2rem, 2.3vw, 1.6rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.hero-info-card__meta {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.hero-info-card__status-pill {
+  align-self: flex-start;
+  margin: 0;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: rgba(74, 222, 128, 0.12);
+  color: var(--success);
+  border: 1px solid rgba(74, 222, 128, 0.3);
+}
+
 .hero-orbit {
   position: relative;
-  width: clamp(220px, 28vw, 320px);
+  width: var(--hero-visual-size);
   aspect-ratio: 1;
   border-radius: 50%;
   background: radial-gradient(circle at 50% 50%, rgba(245, 196, 107, 0.15) 0%, rgba(5, 7, 15, 0) 65%);
