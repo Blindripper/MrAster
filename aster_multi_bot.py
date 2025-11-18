@@ -708,6 +708,31 @@ NO_CROSS_RELIEF_MAX = float(os.getenv("ASTER_SKIP_NO_CROSS_MAX", "1.6"))
 STOCH_RELIEF_THRESHOLD = float(os.getenv("ASTER_SKIP_STOCH_THRESHOLD", "0.15"))
 STOCH_RELIEF_STRENGTH = float(os.getenv("ASTER_SKIP_STOCH_STRENGTH", "18.0"))
 STOCH_RELIEF_MAX = float(os.getenv("ASTER_SKIP_STOCH_MAX", "3.0"))
+PLAYBOOK_FILTER_TIGHTENING_RULES: Dict[str, Dict[str, float]] = {
+    "min_edge_r": {"direction": "increase", "max_abs": 0.025, "max_pct": 0.65},
+    "spread_bps_max": {"direction": "decrease", "max_pct": 0.5},
+    "wickiness_max": {"direction": "decrease", "max_pct": 0.02, "max_abs": 0.015},
+    "rsi_buy_min": {"direction": "increase", "max_abs": 8.0},
+    "rsi_sell_max": {"direction": "decrease", "max_abs": 8.0},
+    "trend_short_stochrsi_min": {"direction": "increase", "max_abs": 15.0},
+    "long_overextended_rsi_cap": {"direction": "decrease", "max_abs": 8.0},
+    "long_overextended_atr_cap": {"direction": "decrease", "max_pct": 0.5},
+    "trend_extension_bars": {"direction": "increase", "max_abs": 6.0, "max_pct": 0.4},
+    "trend_extension_bars_hard": {"direction": "increase", "max_abs": 8.0, "max_pct": 0.4},
+    "trend_extension_adx_min": {"direction": "increase", "max_abs": 6.0},
+    "continuation_pullback_warn": {"direction": "decrease", "max_abs": 12.0},
+    "continuation_pullback_max": {"direction": "decrease", "max_abs": 12.0},
+    "continuation_stoch_min": {"direction": "increase", "max_abs": 12.0},
+    "continuation_adx_delta_min": {"direction": "increase", "max_abs": 6.0},
+    "short_trend_slope_min": {"direction": "increase", "max_pct": 0.5},
+    "short_trend_supertrend_tol": {"direction": "decrease", "max_abs": 0.2},
+    "sentinel_gate_event_risk": {"direction": "decrease", "max_abs": 0.15},
+    "sentinel_gate_block_risk": {"direction": "decrease", "max_abs": 0.2},
+    "sentinel_gate_min_mult": {"direction": "increase", "max_abs": 0.12},
+    "sentinel_gate_weight": {"direction": "increase", "max_abs": 0.15},
+    "structured_block_event_risk_cap": {"direction": "decrease", "max_abs": 0.25},
+    "structured_block_soft_multiplier": {"direction": "decrease", "max_abs": 0.35},
+}
 PLAYBOOK_BULL_SHORT_BLOCK_ENABLED = (
     os.getenv("ASTER_PLAYBOOK_BULL_SHORT_BLOCK", "true").lower()
     in ("1", "true", "yes", "on")
@@ -8187,6 +8212,47 @@ class Strategy:
         )
         self._active_playbook_filters = {}
 
+    def _guarded_filter_value(
+        self, key: str, raw_value: float, reason: Optional[str] = None
+    ) -> float:
+        defaults = getattr(self, "_filter_defaults", {})
+        base_value = defaults.get(key)
+        if base_value is None:
+            return raw_value
+        guard = PLAYBOOK_FILTER_TIGHTENING_RULES.get(key)
+        if not guard:
+            return raw_value
+        direction = guard.get("direction", "increase")
+        delta = raw_value - base_value
+        tighten = False
+        if direction == "increase":
+            tighten = delta > 0
+        elif direction == "decrease":
+            tighten = delta < 0
+        elif direction == "abs":
+            tighten = abs(raw_value) > abs(base_value)
+        if not tighten:
+            return raw_value
+        limit: Optional[float] = guard.get("max_abs")
+        pct = guard.get("max_pct")
+        if pct and base_value not in (0, 0.0):
+            pct_delta = abs(base_value) * float(pct)
+            limit = min(limit, pct_delta) if limit is not None else pct_delta
+        if not limit or limit <= 0:
+            return raw_value
+        capped_delta = math.copysign(min(abs(delta), limit), delta)
+        adjusted = base_value + capped_delta
+        if abs(delta) - abs(capped_delta) > 1e-9:
+            log.info(
+                "Softened strict playbook filter %s.%s from %.4f to %.4f (base %.4f)",
+                reason or "filter",
+                key,
+                raw_value,
+                adjusted,
+                base_value,
+            )
+        return adjusted
+
     def _apply_playbook_filter_overrides(
         self, filters: Optional[Dict[str, Dict[str, Any]]]
     ) -> None:
@@ -8205,40 +8271,58 @@ class Strategy:
         if isinstance(edge_override, dict):
             value = edge_override.get("min_edge_r")
             if isinstance(value, (int, float)):
-                self.min_edge_r = float(max(EXPECTED_R_MIN_FLOOR, float(value)))
+                numeric = float(value)
+                guarded = self._guarded_filter_value("min_edge_r", numeric, "edge_r")
+                self.min_edge_r = float(max(EXPECTED_R_MIN_FLOOR, guarded))
                 _record("edge_r", "min_edge_r", self.min_edge_r)
 
         spread_override = filters.get("spread_tight")
         if isinstance(spread_override, dict):
             value = spread_override.get("spread_bps_max")
             if isinstance(value, (int, float)):
-                self.spread_bps_max = float(max(1e-5, float(value)))
+                numeric = float(value)
+                guarded = self._guarded_filter_value(
+                    "spread_bps_max", numeric, "spread_tight"
+                )
+                self.spread_bps_max = float(max(1e-5, guarded))
                 _record("spread_tight", "spread_bps_max", self.spread_bps_max)
 
         wicky_override = filters.get("wicky")
         if isinstance(wicky_override, dict):
             value = wicky_override.get("wickiness_max")
             if isinstance(value, (int, float)):
-                self.wickiness_max = float(max(0.5, min(0.9999, float(value))))
+                numeric = float(value)
+                guarded = self._guarded_filter_value("wickiness_max", numeric, "wicky")
+                self.wickiness_max = float(max(0.5, min(0.9999, guarded)))
                 _record("wicky", "wickiness_max", self.wickiness_max)
 
         no_cross_override = filters.get("no_cross")
         if isinstance(no_cross_override, dict):
             buy_val = no_cross_override.get("rsi_buy_min")
             if isinstance(buy_val, (int, float)):
-                self.rsi_buy_min = float(max(30.0, min(70.0, float(buy_val))))
+                numeric = float(buy_val)
+                guarded = self._guarded_filter_value("rsi_buy_min", numeric, "no_cross")
+                self.rsi_buy_min = float(max(30.0, min(70.0, guarded)))
                 _record("no_cross", "rsi_buy_min", self.rsi_buy_min)
             sell_val = no_cross_override.get("rsi_sell_max")
             if isinstance(sell_val, (int, float)):
-                self.rsi_sell_max = float(max(30.0, min(70.0, float(sell_val))))
+                numeric = float(sell_val)
+                guarded = self._guarded_filter_value(
+                    "rsi_sell_max", numeric, "no_cross"
+                )
+                self.rsi_sell_max = float(max(30.0, min(70.0, guarded)))
                 _record("no_cross", "rsi_sell_max", self.rsi_sell_max)
 
         long_override = filters.get("long_overextended")
         if isinstance(long_override, dict):
             rsi_cap = long_override.get("rsi_cap")
             if isinstance(rsi_cap, (int, float)):
+                numeric = float(rsi_cap)
+                guarded = self._guarded_filter_value(
+                    "long_overextended_rsi_cap", numeric, "long_overextended"
+                )
                 self.long_overextended_rsi_cap = float(
-                    max(40.0, min(80.0, float(rsi_cap)))
+                    max(40.0, min(80.0, guarded))
                 )
                 _record(
                     "long_overextended",
@@ -8247,8 +8331,12 @@ class Strategy:
                 )
             atr_cap = long_override.get("atr_pct_cap")
             if isinstance(atr_cap, (int, float)):
+                numeric = float(atr_cap)
+                guarded = self._guarded_filter_value(
+                    "long_overextended_atr_cap", numeric, "long_overextended"
+                )
                 self.long_overextended_atr_cap = float(
-                    max(0.001, min(0.05, float(atr_cap)))
+                    max(0.001, min(0.05, guarded))
                 )
                 _record(
                     "long_overextended",
@@ -8260,14 +8348,22 @@ class Strategy:
         if isinstance(trend_override, dict):
             bars_soft = trend_override.get("bars_soft")
             if isinstance(bars_soft, (int, float)):
-                self.trend_extension_bars = int(max(4, min(40, int(bars_soft))))
+                numeric = float(bars_soft)
+                guarded = self._guarded_filter_value(
+                    "trend_extension_bars", numeric, "trend_extension"
+                )
+                self.trend_extension_bars = int(max(4, min(40, int(guarded))))
                 _record("trend_extension", "bars_soft", float(self.trend_extension_bars))
             bars_hard = trend_override.get("bars_hard")
             if isinstance(bars_hard, (int, float)):
+                numeric = float(bars_hard)
+                guarded = self._guarded_filter_value(
+                    "trend_extension_bars_hard", numeric, "trend_extension"
+                )
                 self.trend_extension_bars_hard = int(
                     max(
                         self.trend_extension_bars + 1,
-                        min(60, int(bars_hard)),
+                        min(60, int(guarded)),
                     )
                 )
                 _record(
@@ -8277,8 +8373,12 @@ class Strategy:
                 )
             adx_min = trend_override.get("adx_min")
             if isinstance(adx_min, (int, float)):
+                numeric = float(adx_min)
+                guarded = self._guarded_filter_value(
+                    "trend_extension_adx_min", numeric, "trend_extension"
+                )
                 self.trend_extension_adx_min = float(
-                    max(8.0, min(70.0, float(adx_min)))
+                    max(8.0, min(70.0, guarded))
                 )
                 _record(
                     "trend_extension",
@@ -8290,8 +8390,12 @@ class Strategy:
         if isinstance(continuation_override, dict):
             warn_val = continuation_override.get("stoch_warn")
             if isinstance(warn_val, (int, float)):
+                numeric = float(warn_val)
+                guarded = self._guarded_filter_value(
+                    "continuation_pullback_warn", numeric, "continuation_pullback"
+                )
                 self.continuation_pullback_warn = float(
-                    max(30.0, min(95.0, float(warn_val)))
+                    max(30.0, min(95.0, guarded))
                 )
                 _record(
                     "continuation_pullback",
@@ -8300,8 +8404,12 @@ class Strategy:
                 )
             max_val = continuation_override.get("stoch_max")
             if isinstance(max_val, (int, float)):
+                numeric = float(max_val)
+                guarded = self._guarded_filter_value(
+                    "continuation_pullback_max", numeric, "continuation_pullback"
+                )
                 self.continuation_pullback_max = float(
-                    max(self.continuation_pullback_warn, min(99.0, float(max_val)))
+                    max(self.continuation_pullback_warn, min(99.0, guarded))
                 )
                 _record(
                     "continuation_pullback",
@@ -8310,8 +8418,12 @@ class Strategy:
                 )
             min_val = continuation_override.get("stoch_min")
             if isinstance(min_val, (int, float)):
+                numeric = float(min_val)
+                guarded = self._guarded_filter_value(
+                    "continuation_stoch_min", numeric, "continuation_pullback"
+                )
                 self.continuation_stoch_min = float(
-                    max(1.0, min(60.0, float(min_val)))
+                    max(1.0, min(60.0, guarded))
                 )
                 _record(
                     "continuation_pullback",
@@ -8320,8 +8432,12 @@ class Strategy:
                 )
             adx_delta = continuation_override.get("adx_delta_min")
             if isinstance(adx_delta, (int, float)):
+                numeric = float(adx_delta)
+                guarded = self._guarded_filter_value(
+                    "continuation_adx_delta_min", numeric, "continuation_pullback"
+                )
                 self.continuation_adx_delta_min = float(
-                    max(0.0, min(20.0, float(adx_delta)))
+                    max(0.0, min(20.0, guarded))
                 )
                 _record(
                     "continuation_pullback",
@@ -8339,8 +8455,12 @@ class Strategy:
         if isinstance(short_trend_override, dict):
             slope_val = short_trend_override.get("slope_min")
             if isinstance(slope_val, (int, float)):
+                numeric = float(slope_val)
+                guarded = self._guarded_filter_value(
+                    "short_trend_slope_min", numeric, "short_trend_alignment"
+                )
                 self.short_trend_slope_min = float(
-                    max(1e-4, min(0.005, float(slope_val)))
+                    max(1e-4, min(0.005, guarded))
                 )
                 _record(
                     "short_trend_alignment",
@@ -8349,8 +8469,12 @@ class Strategy:
                 )
             tol_val = short_trend_override.get("supertrend_tol")
             if isinstance(tol_val, (int, float)):
+                numeric = float(tol_val)
+                guarded = self._guarded_filter_value(
+                    "short_trend_supertrend_tol", numeric, "short_trend_alignment"
+                )
                 self.short_trend_supertrend_tol = float(
-                    max(-1.0, min(1.0, float(tol_val)))
+                    max(-1.0, min(1.0, guarded))
                 )
                 _record(
                     "short_trend_alignment",
@@ -8362,8 +8486,12 @@ class Strategy:
         if isinstance(trend_stoch_override, dict):
             value = trend_stoch_override.get("stoch_min")
             if isinstance(value, (int, float)):
+                numeric = float(value)
+                guarded = self._guarded_filter_value(
+                    "trend_short_stochrsi_min", numeric, "stoch_rsi_trend_short"
+                )
                 self.trend_short_stochrsi_min = float(
-                    max(5.0, min(80.0, float(value)))
+                    max(5.0, min(80.0, guarded))
                 )
                 _record(
                     "stoch_rsi_trend_short",
@@ -8375,8 +8503,12 @@ class Strategy:
         if isinstance(sentinel_override, dict):
             gate_val = sentinel_override.get("event_risk_gate")
             if isinstance(gate_val, (int, float)):
+                numeric = float(gate_val)
+                guarded = self._guarded_filter_value(
+                    "sentinel_gate_event_risk", numeric, "sentinel_veto"
+                )
                 self.sentinel_gate_event_risk = float(
-                    max(0.2, min(0.95, float(gate_val)))
+                    max(0.2, min(0.95, guarded))
                 )
                 _record(
                     "sentinel_veto",
@@ -8385,8 +8517,12 @@ class Strategy:
                 )
             block_val = sentinel_override.get("block_risk")
             if isinstance(block_val, (int, float)):
+                numeric = float(block_val)
+                guarded = self._guarded_filter_value(
+                    "sentinel_gate_block_risk", numeric, "sentinel_veto"
+                )
                 self.sentinel_gate_block_risk = float(
-                    max(0.35, min(0.99, float(block_val)))
+                    max(0.35, min(0.99, guarded))
                 )
                 _record(
                     "sentinel_veto",
@@ -8395,8 +8531,12 @@ class Strategy:
                 )
             min_mult_val = sentinel_override.get("min_multiplier")
             if isinstance(min_mult_val, (int, float)):
+                numeric = float(min_mult_val)
+                guarded = self._guarded_filter_value(
+                    "sentinel_gate_min_mult", numeric, "sentinel_veto"
+                )
                 self.sentinel_gate_min_mult = float(
-                    max(0.1, min(0.9, float(min_mult_val)))
+                    max(0.1, min(0.9, guarded))
                 )
                 _record(
                     "sentinel_veto",
@@ -8405,8 +8545,12 @@ class Strategy:
                 )
             weight_val = sentinel_override.get("weight")
             if isinstance(weight_val, (int, float)):
+                numeric = float(weight_val)
+                guarded = self._guarded_filter_value(
+                    "sentinel_gate_weight", numeric, "sentinel_veto"
+                )
                 self.sentinel_gate_weight = float(
-                    max(0.4, min(1.25, float(weight_val)))
+                    max(0.4, min(1.25, guarded))
                 )
                 _record(
                     "sentinel_veto",
@@ -8418,8 +8562,14 @@ class Strategy:
         if isinstance(structured_override, dict):
             risk_cap = structured_override.get("event_risk_max")
             if isinstance(risk_cap, (int, float)):
+                numeric = float(risk_cap)
+                guarded = self._guarded_filter_value(
+                    "structured_block_event_risk_cap",
+                    numeric,
+                    "playbook_structured_block",
+                )
                 self.structured_block_event_risk_cap = float(
-                    max(0.0, min(0.95, float(risk_cap)))
+                    max(0.0, min(0.95, guarded))
                 )
                 _record(
                     "playbook_structured_block",
@@ -8428,8 +8578,14 @@ class Strategy:
                 )
             soft_mult = structured_override.get("soft_multiplier")
             if isinstance(soft_mult, (int, float)):
+                numeric = float(soft_mult)
+                guarded = self._guarded_filter_value(
+                    "structured_block_soft_multiplier",
+                    numeric,
+                    "playbook_structured_block",
+                )
                 self.structured_block_soft_multiplier = float(
-                    max(0.2, min(1.0, float(soft_mult)))
+                    max(0.2, min(1.0, guarded))
                 )
                 _record(
                     "playbook_structured_block",

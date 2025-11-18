@@ -135,3 +135,53 @@ def test_strategy_applies_playbook_filters():
     assert strategy.structured_block_event_risk_cap == pytest.approx(
         defaults["structured_block_event_risk_cap"]
     )
+
+
+def test_strategy_softens_overly_strict_filters():
+    state: dict = {}
+    strategy = Strategy(exchange=_DummyExchange(), state=state)
+    defaults = dict(strategy._filter_defaults)
+    overrides = {
+        "filters": {
+            "edge_r": {"min_edge_r": defaults["min_edge_r"] * 3},
+            "spread_tight": {"spread_bps_max": defaults["spread_bps_max"] * 0.1},
+            "no_cross": {
+                "rsi_buy_min": defaults["rsi_buy_min"] + 30,
+                "rsi_sell_max": defaults["rsi_sell_max"] - 30,
+            },
+        }
+    }
+    strategy.playbook_manager = _DummyManager(overrides)
+    strategy.apply_playbook_filters()
+    expected_edge = max(
+        EXPECTED_R_MIN_FLOOR,
+        strategy._guarded_filter_value("min_edge_r", defaults["min_edge_r"] * 3),
+    )
+    assert strategy.min_edge_r == pytest.approx(expected_edge)
+    expected_spread = max(
+        1e-5,
+        strategy._guarded_filter_value(
+            "spread_bps_max", defaults["spread_bps_max"] * 0.1
+        ),
+    )
+    assert strategy.spread_bps_max == pytest.approx(expected_spread)
+    expected_buy = max(
+        30.0,
+        min(
+            70.0,
+            strategy._guarded_filter_value(
+                "rsi_buy_min", defaults["rsi_buy_min"] + 30
+            ),
+        ),
+    )
+    assert strategy.rsi_buy_min == pytest.approx(expected_buy)
+    expected_sell = max(
+        30.0,
+        min(
+            70.0,
+            strategy._guarded_filter_value(
+                "rsi_sell_max", defaults["rsi_sell_max"] - 30
+            ),
+        ),
+    )
+    assert strategy.rsi_sell_max == pytest.approx(expected_sell)
