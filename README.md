@@ -5,6 +5,8 @@
   <p>
     <a href="#mraster-in-60-seconds">Why MrAster?</a>
     ·
+    <a href="#before-you-start">Before you start</a>
+    ·
     <a href="#quick-start">Quick start</a>
     ·
     <a href="#dashboard-at-a-glance">Dashboard tour</a>
@@ -22,6 +24,17 @@
 
 > “Flip on the backend, open the browser, and let the copilots do the heavy lifting.”
 
+## 📚 Table of contents
+
+1. [MrAster in 60 seconds](#mraster-in-60-seconds)
+2. [Before you start](#before-you-start)
+3. [Quick start](#quick-start)
+4. [Dashboard at a glance](#dashboard-at-a-glance)
+5. [Safety first](#safety-first)
+6. [Under the hood (for builders)](#under-the-hood-for-builders)
+7. [Troubleshooting & tips](#troubleshooting--tips)
+8. [Security notice](#security-notice)
+
 ---
 
 <a id="mraster-in-60-seconds"></a>
@@ -33,27 +46,57 @@
 - **AI that respects your budget** – Daily spend caps, cool-downs, and a news sentinel keep the copilots helpful and affordable.
 - **No guesswork setup** – Use paper mode to rehearse before you flip the switch to live orders.
 
+<a id="before-you-start"></a>
+
+## 🧰 Before you start
+
+- **Python 3.10+** with `pip` (manage via `pyenv` or your package manager).
+- **Node-free stack**: the dashboard ships pre-built, so a browser is all you need.
+- **API keys** for your preferred exchange (optional in paper mode) and an **OpenAI key** for AI copilots.
+- **Recommended OS**: macOS, Linux, or WSL2; Windows PowerShell works if you adapt the activation command.
+- **Hardware**: a modest VPS or laptop (2 vCPU / 4 GB RAM) keeps the dashboard, bot, and AI helpers responsive.
+
 <a id="quick-start"></a>
 
 ## 🚀 Quick start
 
-1. **Set up Python**
+1. **Create the virtual environment**
    ```bash
    python -m venv .venv
    source .venv/bin/activate  # Windows: .venv\Scripts\activate
    pip install --upgrade pip
    pip install -r requirements.txt
    ```
-2. **Launch the backend**
+2. **Install dependencies & sync credentials**
+   - Copy your environment variables into `.env` or export them in the shell (`ASTER_API_KEY`, `ASTER_OPENAI_API_KEY`, ...).
+   - `requirements.txt` pins FastAPI, uvicorn, pandas, TA-lib, and the OpenAI client.
+3. **Launch the backend**
    ```bash
    python dashboard_server.py
    # or enable auto-reload
    uvicorn dashboard_server:app --host 0.0.0.0 --port 8000
    ```
-3. **Finish inside the browser**
+4. **Finish inside the browser**
    Open <http://localhost:8000>, connect your exchange keys (or paper mode), and follow the guided setup.
 
 > Prefer running headless? Export `ASTER_PAPER=true` (optional) and call `python aster_multi_bot.py`. Add `ASTER_RUN_ONCE=true` to perform a single scan cycle.
+
+### 🔁 Everyday workflow
+
+1. Start the dashboard backend (`python dashboard_server.py`).
+2. Use the **Control** panel to launch/stop `aster_multi_bot.py` and edit risk presets.
+3. Keep an eye on live logs—alerts surface here before they land in the exchange app.
+4. When finished, stop the bot first, then the backend to persist clean state files.
+
+### 🧪 Run the tests
+
+Unit tests give fast feedback on advisor logic, risk guards, and the dashboard API:
+
+```bash
+pytest
+```
+
+Narrow to a specific component with, for example, `pytest tests/test_risk_controls.py -k "equity"`.
 
 <a id="dashboard-at-a-glance"></a>
 
@@ -232,6 +275,18 @@ Curious about the engines, guardrails, and configuration surface? Expand the sec
 Stop the backend before editing or deleting these files to avoid partial writes; move them out of the repository if you need a snapshot before a fresh session.
 
 </details>
+
+<a id="troubleshooting--tips"></a>
+
+## 🛠️ Troubleshooting & tips
+
+- **Dashboard cannot reach the bot** – Confirm `aster_multi_bot.py` is running and `ASTER_LOOP_SLEEP` is not set extremely high.
+- **AI budget drains too fast** – Lower `ASTER_AI_DAILY_BUDGET_USD`, raise `ASTER_AI_MIN_INTERVAL_SECONDS`, or temporarily set `ASTER_AI_MODE=false` from the dashboard editor.
+- **Paper mode fills look off** – Delete `aster_state.json` and restart to clear stale symbol metadata, then verify your exchange mirror endpoint.
+- **Stuck bracket repairs** – Stop the backend, archive `brackets_queue.json`, and relaunch so `BracketGuard` can rebuild the queue.
+- **Need observability outside the UI?** – Stream logs via `tail -f logs/aster.log` (if enabled) or hook `dashboard_server.py` into a supervisor (systemd, pm2, etc.).
+
+<a id="security-notice"></a>
 
 ## 🔐 Security notice
 
