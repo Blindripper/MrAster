@@ -264,6 +264,25 @@
         </section>
 
         <section
+          class="card ai-request-log hero-overview-card dashboard-card-centered"
+          aria-label="AI decision history"
+          data-ai-only
+          data-mobile-collapsible
+        >
+          <div class="card-header" data-mobile-collapsible-header>
+            <div>
+              <h2 data-i18n="ai.requests.title">AI decisions</h2>
+              <p class="card-subtitle" data-i18n="ai.requests.subtitle">
+                Latest strategy reviews from the autonomous copilot with their outcomes.
+              </p>
+            </div>
+          </div>
+          <div class="ai-request-history" data-mobile-collapsible-body>
+            <div id="ai-request-list" class="ai-request-list" role="list"></div>
+          </div>
+        </section>
+
+        <section
           class="card pnl-card hero-overview-card"
           aria-label="PNL development"
           data-mobile-collapsible
@@ -338,25 +357,6 @@
                 role="list"
                 aria-live="polite"
               ></div>
-            </div>
-          </section>
-
-        <section
-          class="card ai-request-log hero-overview-card dashboard-card-centered"
-          aria-label="AI decision history"
-          data-ai-only
-          data-mobile-collapsible
-        >
-            <div class="card-header" data-mobile-collapsible-header>
-              <div>
-                <h2 data-i18n="ai.requests.title">AI decisions</h2>
-                <p class="card-subtitle" data-i18n="ai.requests.subtitle">
-                  Latest strategy reviews from the autonomous copilot with their outcomes.
-                </p>
-              </div>
-            </div>
-            <div class="ai-request-history" data-mobile-collapsible-body>
-              <div id="ai-request-list" class="ai-request-list" role="list"></div>
             </div>
           </section>
 
