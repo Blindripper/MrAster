@@ -59,15 +59,27 @@ def test_playbook_manager_normalizes_filters():
     normalized = manager._normalize_playbook(payload, now=time.time())
     filters = normalized.get("filters")
     assert filters is not None
-    assert pytest.approx(filters["long_overextended"]["rsi_cap"]) == 75.0
-    assert pytest.approx(filters["long_overextended"]["atr_pct_cap"], rel=1e-3) == 0.02
+    lo_rsi_bounds = manager._relaxed_filter_bounds(45.0, 75.0)
+    assert pytest.approx(filters["long_overextended"]["rsi_cap"]) == lo_rsi_bounds[1]
+    lo_atr_bounds = manager._relaxed_filter_bounds(0.002, 0.02)
+    assert pytest.approx(filters["long_overextended"]["atr_pct_cap"], rel=1e-3) == lo_atr_bounds[1]
     assert filters["trend_extension"]["bars_hard"] > filters["trend_extension"]["bars_soft"]
-    assert filters["edge_r"]["min_edge_r"] <= 0.4
-    assert filters["wicky"]["wickiness_max"] < 1.0
-    assert filters["sentinel_veto"]["event_risk_gate"] >= 0.3
-    assert filters["sentinel_veto"]["block_risk"] <= 0.98
-    assert filters["playbook_structured_block"]["event_risk_max"] <= 0.9
-    assert filters["playbook_structured_block"]["soft_multiplier"] <= 1.0
+    edge_bounds = manager._relaxed_filter_bounds(0.03, 0.4)
+    assert filters["edge_r"]["min_edge_r"] == pytest.approx(edge_bounds[1])
+    wicky_bounds = manager._relaxed_filter_bounds(0.94, 0.9995)
+    assert filters["wicky"]["wickiness_max"] == pytest.approx(wicky_bounds[1])
+    sent_gate_bounds = manager._relaxed_filter_bounds(0.3, 0.9)
+    assert filters["sentinel_veto"]["event_risk_gate"] == pytest.approx(sent_gate_bounds[0])
+    block_risk_bounds = manager._relaxed_filter_bounds(0.45, 0.98)
+    assert filters["sentinel_veto"]["block_risk"] == pytest.approx(block_risk_bounds[1])
+    struct_event_bounds = manager._relaxed_filter_bounds(0.2, 0.9)
+    assert filters["playbook_structured_block"]["event_risk_max"] == pytest.approx(
+        struct_event_bounds[1]
+    )
+    struct_soft_bounds = manager._relaxed_filter_bounds(0.25, 1.0)
+    assert filters["playbook_structured_block"]["soft_multiplier"] == pytest.approx(
+        struct_soft_bounds[1]
+    )
 
 
 def test_strategy_applies_playbook_filters():

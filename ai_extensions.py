@@ -1225,6 +1225,7 @@ class PlaybookManager:
     _SIZE_BIAS_DELTA = {"low": -0.08, "mid": 0.0, "high": 0.12, "att": 0.18}
     _RISK_BIAS_DELTA = {"low": -0.08, "mid": 0.0, "high": 0.12, "att": 0.18}
     _CONFIDENCE_DELTA = {"low": -0.05, "mid": 0.0, "high": 0.05, "att": 0.08}
+    _FILTER_RANGE_RELAXATION = {"low": 0.0, "mid": 0.12, "high": 0.22, "att": 0.32}
 
     _SELL_DELTA_RATIO = 0.65
 
@@ -1298,6 +1299,9 @@ class PlaybookManager:
         self._sell_bias_delta = self._size_bias_delta * self._SELL_DELTA_RATIO
         self._risk_bias_delta = self._RISK_BIAS_DELTA.get(self._preset_mode, 0.0)
         self._confidence_delta = self._CONFIDENCE_DELTA.get(self._preset_mode, 0.0)
+        self._filter_relaxation = self._FILTER_RANGE_RELAXATION.get(
+            self._preset_mode, 0.0
+        )
         if not advisor_active_persona(self._root):
             advisor_register_persona(
                 self._root,
@@ -1650,6 +1654,23 @@ class PlaybookManager:
 
         return strategy or None
 
+    def _relaxed_filter_bounds(self, lower: float, upper: float) -> Tuple[float, float]:
+        if self._filter_relaxation <= 0.0:
+            return lower, upper
+        if not math.isfinite(lower) or not math.isfinite(upper):
+            return lower, upper
+        span = upper - lower
+        if span <= 0.0:
+            return lower, upper
+        slack = span * self._filter_relaxation
+        relaxed_lower = lower - (slack * 0.5)
+        relaxed_upper = upper + slack
+        if lower >= 0.0 and relaxed_lower < 0.0:
+            relaxed_lower = 0.0
+        if relaxed_upper <= relaxed_lower:
+            relaxed_upper = relaxed_lower + max(1e-6, span * 0.1)
+        return relaxed_lower, relaxed_upper
+
     def _normalize_filters(self, payload: Any) -> Optional[Dict[str, Dict[str, float]]]:
         if not isinstance(payload, dict):
             return None
@@ -1667,7 +1688,7 @@ class PlaybookManager:
                     numeric = float(value)
                 except (TypeError, ValueError):
                     continue
-                lower, upper = bounds
+                lower, upper = self._relaxed_filter_bounds(*bounds)
                 cleaned[field] = float(max(lower, min(upper, numeric)))
             if not cleaned:
                 continue
