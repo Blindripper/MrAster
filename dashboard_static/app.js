@@ -2646,6 +2646,7 @@ function applyTranslations(lang) {
       latestTradesSnapshot.history,
       latestTradesSnapshot.hero_metrics,
       latestTradesSnapshot.open ?? latestTradesSnapshot.open_positions ?? null,
+      latestTradesSnapshot.history_summary,
     );
   }
   if (btnSaveConfig) {
@@ -12007,12 +12008,14 @@ function renderHeroMetrics(
   historyEntries = null,
   preparedMetrics = null,
   openPositions = null,
+  historySummary = null,
 ) {
   if (!heroTotalTrades || !heroTotalPnl || !heroTotalWinRate) return;
 
   const totals = cumulativeStats && typeof cumulativeStats === 'object' ? cumulativeStats : {};
   const fallback = sessionStats && typeof sessionStats === 'object' ? sessionStats : {};
   const historyList = Array.isArray(historyEntries) ? historyEntries : [];
+  const summaryStats = historySummary && typeof historySummary === 'object' ? historySummary : null;
   const serverMetrics = preparedMetrics && typeof preparedMetrics === 'object' ? preparedMetrics : null;
 
   const resolveNumericField = (source, keys) => {
@@ -12095,7 +12098,14 @@ function renderHeroMetrics(
   );
   const aiBudgetSpent = Number.isFinite(aiBudgetSpentRaw) ? Math.max(aiBudgetSpentRaw, 0) : 0;
 
+  const summaryRealizedPnl = pickFirstFinite(
+    resolveNumericField(summaryStats, ['realized_pnl', 'realizedPnl']),
+    resolveNumericField(summaryStats, ['total_pnl', 'totalPnl']),
+    resolveNumericField(summaryStats, ['realized']),
+  );
+
   const realizedPnlRaw = pickFirstFinite(
+    summaryRealizedPnl,
     resolveNumericField(sessionStats, ['realized_pnl', 'realizedPnl']),
     resolveNumericField(sessionStats, ['total_pnl', 'totalPnl']),
     resolveNumericField(serverMetrics, ['realized_pnl', 'realizedPnl']),
@@ -12105,6 +12115,23 @@ function renderHeroMetrics(
     fallback.total_pnl,
   );
 
+  const historyDerivedRealizedPnl = (() => {
+    if (!Array.isArray(historyList) || historyList.length === 0) {
+      return null;
+    }
+    let total = 0;
+    let counted = 0;
+    for (const entry of historyList) {
+      const pnlField = pickNumericField(entry, COMPLETED_POSITION_PNL_KEYS);
+      if (!Number.isFinite(pnlField.numeric)) {
+        continue;
+      }
+      total += pnlField.numeric;
+      counted += 1;
+    }
+    return counted > 0 ? total : null;
+  })();
+
   const hasCompletedStats =
     completedPositionsStatsTotals && completedPositionsStatsTotals.trades > 0;
   const completedPositionsRealizedPnl = hasCompletedStats
@@ -12112,6 +12139,13 @@ function renderHeroMetrics(
     : null;
   const completedRealizedPnl = Number.isFinite(completedPositionsRealizedPnl)
     ? completedPositionsRealizedPnl
+    : Number.isFinite(summaryRealizedPnl)
+      ? summaryRealizedPnl
+      : Number.isFinite(historyDerivedRealizedPnl)
+        ? historyDerivedRealizedPnl
+        : null;
+  const realizedBaseline = Number.isFinite(completedRealizedPnl)
+    ? completedRealizedPnl
     : null;
 
   const serverNetPnl = resolveNumericField(serverMetrics, ['total_pnl', 'totalPnl']);
@@ -12123,8 +12157,8 @@ function renderHeroMetrics(
   );
 
   let netPnl = null;
-  if (Number.isFinite(completedRealizedPnl)) {
-    netPnl = completedRealizedPnl;
+  if (Number.isFinite(realizedBaseline)) {
+    netPnl = realizedBaseline;
   } else if (Number.isFinite(realizedPnlRaw)) {
     netPnl = realizedPnlRaw - aiBudgetSpent;
   } else if (Number.isFinite(serverNetPnl)) {
@@ -12139,8 +12173,8 @@ function renderHeroMetrics(
     netPnl = 0;
   }
 
-  const realizedPnl = Number.isFinite(completedRealizedPnl)
-    ? completedRealizedPnl
+  const realizedPnl = Number.isFinite(realizedBaseline)
+    ? realizedBaseline
     : Number.isFinite(realizedPnlRaw)
       ? realizedPnlRaw
       : netPnl + aiBudgetSpent;
@@ -14836,6 +14870,7 @@ async function loadTrades() {
         snapshot.history,
         snapshot.hero_metrics,
         snapshot.open ?? snapshot.open_positions ?? null,
+        snapshot.history_summary,
       );
       renderDecisionStats(snapshot.decision_stats);
       renderPnlChart(snapshot.history, snapshot.pnl_series);
