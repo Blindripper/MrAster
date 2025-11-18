@@ -1116,7 +1116,9 @@ class PlaybookManager:
     }
     _STRUCTURED_SCOPE = {"BUY", "SELL", "ANY"}
     _STRUCTURED_METRIC_KEYS = {
-        "event_risk": ("sentinel_event_risk", "playbook_feature_event_risk", "event_risk", "pm_event_risk"),
+        # Event risk guardrails must be evaluated on the active symbol, so we only
+        # consider symbol-level metrics instead of global features.
+        "event_risk": ("sentinel_event_risk", "event_risk"),
         "hype": ("sentinel_hype", "playbook_feature_hype", "hype", "pm_hype_bias"),
         "volatility": ("atr_pct", "playbook_feature_volatility", "pm_volatility_bias"),
         "breadth": ("breadth", "playbook_feature_breadth"),
