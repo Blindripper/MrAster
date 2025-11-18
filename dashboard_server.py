@@ -38,6 +38,7 @@ from pydantic import BaseModel, ConfigDict, Field
 ROOT_DIR = Path(__file__).resolve().parent
 STATE_FILE = ROOT_DIR / os.getenv("ASTER_STATE_FILE", "aster_state.json")
 STATIC_DIR = ROOT_DIR / "dashboard_static"
+ASSETS_DIR = ROOT_DIR / "assets"
 CONFIG_FILE = ROOT_DIR / "dashboard_config.json"
 
 SHARE_IMAGES = {
@@ -3618,6 +3619,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
 
 
 @app.get("/")

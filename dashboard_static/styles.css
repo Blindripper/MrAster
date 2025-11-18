@@ -696,17 +696,65 @@ body.pro-mode [data-normal-only] {
 
 .hero-header {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
   gap: clamp(2rem, 5vw, 3.5rem);
   align-items: center;
   justify-items: center;
 }
 
 .hero-lede {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(1.5rem, 3vw, 3rem);
+  text-align: left;
+}
+
+.hero-lede-copy {
   display: flex;
   flex-direction: column;
   gap: 1.4rem;
-  align-items: center;
+  align-items: flex-start;
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.hero-logo-card {
+  margin: 0;
+  padding: clamp(1rem, 2vw, 1.5rem);
+  border-radius: 1.5rem;
+  border: 1px solid rgba(245, 196, 107, 0.22);
+  background: radial-gradient(circle at 30% 30%, rgba(245, 196, 107, 0.16), transparent 55%),
+              radial-gradient(circle at 72% 68%, rgba(95, 81, 237, 0.18), transparent 60%),
+              rgba(9, 11, 20, 0.85);
+  box-shadow: 0 18px 45px rgba(5, 6, 15, 0.65);
+  display: grid;
+  place-items: center;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  flex: 0 0 clamp(180px, 22vw, 260px);
+  max-width: clamp(180px, 22vw, 260px);
+  width: 100%;
+}
+
+.hero-logo-card::before {
+  content: "";
+  position: absolute;
+  inset: -40% 5% auto;
+  height: 160%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(245, 196, 107, 0.35), transparent 65%);
+  filter: blur(10px);
+  opacity: 0.7;
+  z-index: -1;
+}
+
+.hero-logo-card img {
+  display: block;
+  width: clamp(110px, 16vw, 200px);
+  height: auto;
 }
 
 .hero-lede h1 {
@@ -1130,7 +1178,13 @@ body.paper-mode .hero-paper-toggle span {
   }
 
   .hero-lede {
+    flex-direction: column;
     align-items: flex-start;
+    width: 100%;
+  }
+
+  .hero-logo-card {
+    align-self: center;
   }
 }
 
@@ -1189,8 +1243,18 @@ body.paper-mode .hero-paper-toggle span {
     gap: 1.4rem;
   }
 
+  .hero-lede-copy {
+    align-items: center;
+    text-align: center;
+  }
+
   .hero-actions {
     justify-content: center;
+  }
+
+  .hero-logo-card {
+    width: min(260px, 85%);
+    align-self: center;
   }
 
   .hero-mode-panel {
@@ -6877,6 +6941,10 @@ body.modal-open {
 
   .hero-header > * {
     width: 100%;
+  }
+
+  .hero-logo {
+    width: auto;
   }
 
   .hero-lede {
