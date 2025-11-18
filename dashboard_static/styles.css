@@ -3408,6 +3408,69 @@ body.ai-mode .playbook-overview {
   letter-spacing: 0.01em;
 }
 
+.playbook-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.8rem;
+}
+
+.playbook-filters-title {
+  font-size: 0.88rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+}
+
+.playbook-filters-subtitle {
+  margin: 0;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.playbook-filter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.playbook-filter-card {
+  border-radius: 1rem;
+  border: 1px solid rgba(245, 196, 107, 0.18);
+  padding: 0.9rem 1rem;
+  background: linear-gradient(135deg, rgba(30, 32, 48, 0.85), rgba(17, 20, 33, 0.92));
+  box-shadow: inset 0 1px 0 rgba(245, 196, 107, 0.08);
+}
+
+.playbook-filter-card__header {
+  font-weight: 600;
+  font-size: 1.02rem;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.playbook-filter-card__description {
+  margin: 0.35rem 0 0.65rem;
+  font-size: 0.92rem;
+  color: rgba(255, 255, 255, 0.72);
+  line-height: 1.45;
+}
+
+.playbook-filter-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.playbook-filter-chip {
+  padding: 0.32rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid rgba(245, 196, 107, 0.25);
+  background: rgba(41, 43, 61, 0.85);
+  font-size: 0.85rem;
+  letter-spacing: 0.01em;
+}
+
 .playbook-strategy {
   display: flex;
   flex-direction: column;
