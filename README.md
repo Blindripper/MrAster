@@ -149,7 +149,7 @@ Curious about the engines, guardrails, and configuration surface? Expand the sec
 | --- | --- | --- |
 | `ASTER_INTERVAL` / `ASTER_HTF_INTERVAL` | `5m` / `30m` | Timeframes for signals and confirmation. |
 | `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `51` / `49`* | RSI bounds for long and short entries. |
-| `ASTER_CONT_PULLBACK_STOCH_WARN` / `ASTER_CONT_PULLBACK_STOCH_MAX` | `65.0` / `85.0` | Soft/hard thresholds for the continuation pullback guard (set to `0` to disable, or raise to loosen the filter). |
+| `ASTER_CONT_PULLBACK_STOCH_WARN` / `ASTER_CONT_PULLBACK_STOCH_MAX` | `70.0` / `90.0` | Soft/hard thresholds for the continuation pullback guard (set to `0` to disable, or raise to loosen the filter). |
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | Enforces trend alignment between timeframes. |
 | `ASTER_TREND_BIAS` | `with` | Trade with or against the trend. |
 | `ASTER_MIN_QUOTE_VOL_USDT` | `150000` | Minimum volume for tradable symbols. |
