@@ -172,6 +172,26 @@
           </div>
         </div>
 
+        <section class="hero-stat-panel" aria-label="Bot performance overview">
+          <dl class="hero-metrics">
+            <div class="hero-metric">
+              <dt data-i18n="hero.metrics.trades">Total trades</dt>
+              <dd id="hero-total-trades">0</dd>
+            </div>
+            <div class="hero-metric">
+              <dt data-i18n="hero.metrics.pnl">Total PNL</dt>
+              <dd id="hero-total-pnl">0 USDT</dd>
+              <small class="hero-metric-note" id="hero-total-pnl-note" data-i18n="hero.metrics.pnlNote">
+                Realized PNL minus AI budget spend.
+              </small>
+            </div>
+            <div class="hero-metric">
+              <dt data-i18n="hero.metrics.winrate">Total win rate</dt>
+              <dd id="hero-total-win-rate">0.0%</dd>
+            </div>
+          </dl>
+        </section>
+
         <section
           class="card hero-active-positions"
           aria-label="Active positions overview"
@@ -239,24 +259,49 @@
           </div>
         </section>
 
-        <section class="hero-stat-panel" aria-label="Bot performance overview">
-          <dl class="hero-metrics">
-            <div class="hero-metric">
-              <dt data-i18n="hero.metrics.trades">Total trades</dt>
-              <dd id="hero-total-trades">0</dd>
+        <section
+          class="card pnl-card hero-overview-card"
+          aria-label="PNL development"
+          data-mobile-collapsible
+        >
+          <div class="card-header" data-mobile-collapsible-header>
+            <div>
+              <h2 data-i18n="pnl.title">PNL journey</h2>
             </div>
-            <div class="hero-metric">
-              <dt data-i18n="hero.metrics.pnl">Total PNL</dt>
-              <dd id="hero-total-pnl">0 USDT</dd>
-              <small class="hero-metric-note" id="hero-total-pnl-note" data-i18n="hero.metrics.pnlNote">
-                Realized PNL minus AI budget spend.
-              </small>
+          </div>
+          <div class="card-section-body pnl-journey" data-mobile-collapsible-body>
+            <div class="pnl-trade-summary" aria-live="polite">
+              <div class="pnl-trade-summary__item">
+                <span class="pnl-trade-summary__label" data-i18n="pnl.tradesWon">Trades won</span>
+                <span class="pnl-trade-summary__value" id="pnl-trades-won">—</span>
+              </div>
+              <div class="pnl-trade-summary__item">
+                <span class="pnl-trade-summary__label" data-i18n="pnl.tradesLost">Trades lost</span>
+                <span class="pnl-trade-summary__value" id="pnl-trades-lost">—</span>
+              </div>
             </div>
-            <div class="hero-metric">
-              <dt data-i18n="hero.metrics.winrate">Total win rate</dt>
-              <dd id="hero-total-win-rate">0.0%</dd>
+            <div class="pnl-journey__visual">
+              <div class="pnl-journey__meta">
+                <div>
+                  <p class="pnl-journey__eyebrow" data-i18n="pnl.metaLabel">Realized PNL since bot launch</p>
+                  <h3 class="pnl-journey__title" data-i18n="pnl.title">PNL journey</h3>
+                  <p class="pnl-journey__subtitle" data-i18n="pnl.subtitle">
+                    Track realized PNL growth from the first recorded trade.
+                  </p>
+                </div>
+                <div class="pnl-journey__legend">
+                  <span class="pnl-journey__legend-dot" aria-hidden="true"></span>
+                  <span class="pnl-journey__legend-label" data-i18n="pnl.legendLabel">Cumulative realized PNL</span>
+                </div>
+              </div>
+              <div class="pnl-chart-wrapper">
+                <canvas id="pnl-chart" aria-label="Cumulative PNL chart" style="display: none;"></canvas>
+                <div id="pnl-empty" class="empty-state" data-i18n="pnl.empty">
+                  No PNL data yet. Execute trades to populate the performance graph.
+                </div>
+              </div>
             </div>
-          </dl>
+          </div>
         </section>
 
         <div class="hero-overview-grid">
@@ -420,50 +465,6 @@
             </div>
           </section>
 
-          <section
-            class="card pnl-card hero-overview-card"
-            aria-label="PNL development"
-            data-mobile-collapsible
-          >
-            <div class="card-header" data-mobile-collapsible-header>
-              <div>
-                <h2 data-i18n="pnl.title">PNL journey</h2>
-              </div>
-            </div>
-            <div class="card-section-body pnl-journey" data-mobile-collapsible-body>
-              <div class="pnl-trade-summary" aria-live="polite">
-                <div class="pnl-trade-summary__item">
-                  <span class="pnl-trade-summary__label" data-i18n="pnl.tradesWon">Trades won</span>
-                  <span class="pnl-trade-summary__value" id="pnl-trades-won">—</span>
-                </div>
-                <div class="pnl-trade-summary__item">
-                  <span class="pnl-trade-summary__label" data-i18n="pnl.tradesLost">Trades lost</span>
-                  <span class="pnl-trade-summary__value" id="pnl-trades-lost">—</span>
-                </div>
-              </div>
-              <div class="pnl-journey__visual">
-                <div class="pnl-journey__meta">
-                  <div>
-                    <p class="pnl-journey__eyebrow" data-i18n="pnl.metaLabel">Realized PNL since bot launch</p>
-                    <h3 class="pnl-journey__title" data-i18n="pnl.title">PNL journey</h3>
-                    <p class="pnl-journey__subtitle" data-i18n="pnl.subtitle">
-                      Track realized PNL growth from the first recorded trade.
-                    </p>
-                  </div>
-                  <div class="pnl-journey__legend">
-                    <span class="pnl-journey__legend-dot" aria-hidden="true"></span>
-                    <span class="pnl-journey__legend-label" data-i18n="pnl.legendLabel">Cumulative realized PNL</span>
-                  </div>
-                </div>
-                <div class="pnl-chart-wrapper">
-                  <canvas id="pnl-chart" aria-label="Cumulative PNL chart" style="display: none;"></canvas>
-                  <div id="pnl-empty" class="empty-state" data-i18n="pnl.empty">
-                    No PNL data yet. Execute trades to populate the performance graph.
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
         </div>
       </div>
     </header>
