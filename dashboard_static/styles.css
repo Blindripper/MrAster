@@ -199,6 +199,14 @@ body::after {
     width: min(100%, var(--mobile-shell-width));
   }
 
+  #overview,
+  #trades,
+  #playbook,
+  #quick-setup,
+  #logs {
+    scroll-margin-top: calc(var(--safe-area-top) + clamp(4rem, 12vw, 5.5rem));
+  }
+
   body {
     padding-top: calc(var(--safe-area-top) + 1.25rem);
   }
