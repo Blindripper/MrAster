@@ -309,7 +309,7 @@ const COMPACT_SKIP_AGGREGATION_WINDOW = 600; // seconds
 const MAX_MANAGEMENT_EVENTS = 50;
 const POSITION_NOTIFICATIONS_REFRESH_INTERVAL_MS = 2_000;
 const COMPLETED_POSITIONS_HISTORY_LIMIT = 12;
-const COMPLETED_POSITION_IDENTIFIER_KEYS = [
+const COMPLETED_POSITION_IDENTIFIER_BASE_KEYS = [
   'position_id',
   'positionId',
   'hash',
@@ -342,6 +342,10 @@ const TRADE_POSITION_IDENTIFIER_KEYS = [
   'order_id',
   'orderId',
 ];
+
+const COMPLETED_POSITION_IDENTIFIER_KEYS = Array.from(
+  new Set([...COMPLETED_POSITION_IDENTIFIER_BASE_KEYS, ...TRADE_POSITION_IDENTIFIER_KEYS])
+);
 
 const TRADE_POSITION_CONTAINER_KEYS = [
   'extra',
@@ -6624,16 +6628,30 @@ function rememberCompletedPositions(positions = [], options = {}) {
 }
 
 function syncCompletedPositionsFromTrades(history = []) {
+  completedPositionsIndex.clear();
   if (!Array.isArray(history) || history.length === 0) {
+    completedPositionsHistory = [];
+    completedPositionsStatsTotals = { ...COMPLETED_POSITIONS_STATS_DEFAULTS };
+    renderCompletedPositionsHistory();
+    refreshTradeSummaryFromCompletedPositions();
+    return;
+  }
+  const { entries, stats } = buildCompletedPositionsFromHistoryEntries(history);
+  completedPositionsStatsTotals = stats;
+  if (!entries.length) {
+    completedPositionsHistory = [];
+    renderCompletedPositionsHistory();
+    refreshTradeSummaryFromCompletedPositions();
     return;
   }
   const limit = Math.max(COMPLETED_POSITIONS_HISTORY_LIMIT * 3, COMPLETED_POSITIONS_HISTORY_LIMIT);
-  const subset = history.slice(0, limit);
-  rememberCompletedPositions(subset, {
-    countTowardsStats: false,
-    skipSummaryRefresh: true,
-    timestampResolver: (trade) => getPositionClosedTimestamp(trade),
+  const subset = entries.slice(0, limit);
+  subset.forEach((entry) => {
+    completedPositionsIndex.set(entry.key, entry);
   });
+  completedPositionsHistory = subset;
+  renderCompletedPositionsHistory();
+  refreshTradeSummaryFromCompletedPositions();
 }
 
 function syncExchangeCompletedPositions(entries = []) {
@@ -11927,6 +11945,120 @@ function summarizeHistoryWinLoss(historyEntries) {
   return { wins, losses, draws, total };
 }
 
+function isSyntheticTradeHistoryEntry(trade) {
+  if (!trade || typeof trade !== 'object') {
+    return false;
+  }
+  if (Boolean(trade.synthetic)) {
+    return true;
+  }
+  const syntheticSource =
+    trade.synthetic_source ?? trade.syntheticSource ?? trade.synthetic_origin ?? trade.syntheticOrigin;
+  if (typeof syntheticSource === 'string' && syntheticSource.trim()) {
+    return true;
+  }
+  return false;
+}
+
+function resolveTradeHistoryTimestamp(trade) {
+  if (!trade || typeof trade !== 'object') {
+    return Number.NEGATIVE_INFINITY;
+  }
+  for (const key of TRADE_TIMESTAMP_IDENTIFIER_KEYS) {
+    const candidate = lookupTradeValue(trade, key);
+    if (candidate === undefined || candidate === null || candidate === '') {
+      continue;
+    }
+    const parsed = parseTradeTimestamp(candidate);
+    if (!Number.isFinite(parsed)) {
+      continue;
+    }
+    if (parsed > 1e12 || parsed > 1e10) {
+      return parsed / 1000;
+    }
+    return parsed;
+  }
+  return Number.NEGATIVE_INFINITY;
+}
+
+function buildCompletedPositionsFromHistoryEntries(historyEntries = []) {
+  const stats = { ...COMPLETED_POSITIONS_STATS_DEFAULTS };
+  if (!Array.isArray(historyEntries) || historyEntries.length === 0) {
+    return { entries: [], stats };
+  }
+  const buckets = new Map();
+  let fallbackCounter = 0;
+  historyEntries.forEach((trade) => {
+    if (!trade || typeof trade !== 'object') {
+      return;
+    }
+    if (isSyntheticTradeHistoryEntry(trade)) {
+      return;
+    }
+    let bucketKey = extractTradePositionKey(trade);
+    if (!bucketKey) {
+      fallbackCounter += 1;
+      bucketKey = `fallback:${fallbackCounter}`;
+    }
+    let bucket = buckets.get(bucketKey);
+    if (!bucket) {
+      bucket = {
+        key: bucketKey,
+        position: {},
+        ts: Number.NEGATIVE_INFINITY,
+      };
+      buckets.set(bucketKey, bucket);
+    }
+    mergeCompletedPositionPayload(bucket.position, trade);
+    const closedTs = getPositionClosedTimestamp(bucket.position);
+    const openedTs = getPositionTimestamp(bucket.position);
+    if (Number.isFinite(closedTs) && closedTs > Number.NEGATIVE_INFINITY) {
+      bucket.ts = closedTs;
+    } else if (Number.isFinite(openedTs) && openedTs > Number.NEGATIVE_INFINITY) {
+      bucket.ts = openedTs;
+    } else {
+      const fallbackTs = resolveTradeHistoryTimestamp(trade);
+      if (Number.isFinite(fallbackTs) && fallbackTs > Number.NEGATIVE_INFINITY) {
+        bucket.ts = fallbackTs;
+      }
+    }
+  });
+  const entries = Array.from(buckets.values()).map((entry) => ({
+    key: entry.key,
+    position: entry.position,
+    ts: Number.isFinite(entry.ts) ? entry.ts : Number.NEGATIVE_INFINITY,
+  }));
+  entries.sort((a, b) => {
+    const tsA = Number.isFinite(a.ts) ? a.ts : Number.NEGATIVE_INFINITY;
+    const tsB = Number.isFinite(b.ts) ? b.ts : Number.NEGATIVE_INFINITY;
+    if (tsA === tsB) {
+      return 0;
+    }
+    return tsB > tsA ? 1 : -1;
+  });
+  stats.trades = entries.length;
+  entries.forEach((entry) => {
+    const pnlField = pickNumericField(entry.position, COMPLETED_POSITION_PNL_KEYS);
+    if (Number.isFinite(pnlField.numeric)) {
+      stats.realizedPnl += pnlField.numeric;
+      if (pnlField.numeric > 0) {
+        stats.wins += 1;
+      } else if (pnlField.numeric < 0) {
+        stats.losses += 1;
+      } else {
+        stats.draws += 1;
+      }
+    } else {
+      stats.draws += 1;
+    }
+    const rField = pickNumericField(entry.position, COMPLETED_POSITION_R_KEYS);
+    if (Number.isFinite(rField.numeric)) {
+      stats.totalR += rField.numeric;
+    }
+  });
+  return { entries, stats };
+}
+
 function estimateTradeVolume(entry) {
   if (!entry || typeof entry !== 'object') {
     return 0;
@@ -12845,12 +12977,12 @@ async function handlePostToX(event) {
 }
 
 function resolveTradeSummaryPayload(summaryOverride) {
-  if (summaryOverride && typeof summaryOverride === 'object') {
-    return summaryOverride;
-  }
   const override = getTradeSummaryOverride();
   if (override && typeof override === 'object') {
     return override;
+  }
+  if (summaryOverride && typeof summaryOverride === 'object') {
+    return summaryOverride;
   }
   return buildCompletedPositionsSummaryFromTotals();
 }
@@ -14862,8 +14994,10 @@ async function loadTrades() {
       setTradeDataStale(false);
       renderTradeHistory(snapshot.history);
       renderTradeSummary(snapshot.stats, snapshot.history_summary);
-      syncCompletedPositionsStats(snapshot.history_summary || snapshot.stats);
-      setTradeSummaryOverride(null);
+      if (!completedPositionsHistory.length) {
+        syncCompletedPositionsStats(snapshot.history_summary || snapshot.stats);
+        setTradeSummaryOverride(null);
+      }
       renderHeroMetrics(
         snapshot.cumulative_stats,
         snapshot.stats,
