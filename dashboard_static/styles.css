@@ -1152,15 +1152,56 @@ body.paper-mode .hero-paper-toggle span {
 
 .hero-overview-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.4rem;
-  align-items: start;
+  align-items: stretch;
+  justify-items: center;
   grid-auto-rows: minmax(0, auto);
   width: 100%;
 }
 
 .hero-overview-grid > .card {
   height: auto;
+  width: 100%;
+  align-items: center;
+  text-align: center;
+}
+
+.hero-overview-grid > .card .card-header,
+.hero-overview-grid > .card .card-subtitle {
+  width: 100%;
+  text-align: center;
+}
+
+.hero-overview-grid > .card .card-section-body {
+  width: 100%;
+}
+
+.hero-overview-grid .completed-positions-history,
+.hero-overview-grid .ai-request-history {
+  align-items: center;
+  text-align: center;
+  width: 100%;
+}
+
+.hero-overview-grid .completed-positions-list,
+.hero-overview-grid .ai-request-list {
+  width: 100%;
+}
+
+.dashboard-card-centered {
+  align-items: center;
+  text-align: center;
+}
+
+.dashboard-card-centered .card-header {
+  width: 100%;
+  justify-content: center;
+  text-align: center;
+}
+
+.dashboard-card-centered .card-section-body {
+  width: 100%;
 }
 
 .hero-overview-grid > .pnl-card {
@@ -1898,11 +1939,6 @@ button:focus-visible {
     text-align: left;
   }
 
-  .status-grid {
-    text-align: left;
-    justify-items: stretch;
-  }
-
   .decision-summary,
   .trade-overview,
   .ai-request-card__meta,
@@ -2412,6 +2448,8 @@ input[type='range']::-moz-range-track {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 1.1rem 1.5rem;
+  text-align: center;
+  justify-items: center;
 }
 
 body.ai-mode .status h2 {
