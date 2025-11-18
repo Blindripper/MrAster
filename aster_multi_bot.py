@@ -115,6 +115,16 @@ AI_CONCURRENCY = max(1, int(os.getenv("ASTER_AI_CONCURRENCY", "4") or 1))
 AI_GLOBAL_COOLDOWN = max(0.0, float(os.getenv("ASTER_AI_GLOBAL_COOLDOWN_SECONDS", "1.0") or 0.0))
 AI_PLAN_TIMEOUT = max(10.0, float(os.getenv("ASTER_AI_PLAN_TIMEOUT_SECONDS", "45") or 0.0))
 AI_PLAN_GRACE = max(0.0, float(os.getenv("ASTER_AI_PLAN_GRACE_SECONDS", "3.0") or 0.0))
+AI_CHAT_CONNECT_TIMEOUT = max(
+    5.0, float(os.getenv("ASTER_AI_CHAT_CONNECT_TIMEOUT", "12") or 12.0)
+)
+AI_CHAT_READ_TIMEOUT = max(
+    20.0, float(os.getenv("ASTER_AI_CHAT_READ_TIMEOUT", "35") or 35.0)
+)
+AI_PLAYBOOK_READ_TIMEOUT = max(
+    AI_CHAT_READ_TIMEOUT,
+    float(os.getenv("ASTER_AI_PLAYBOOK_READ_TIMEOUT", "75") or 75.0),
+)
 _default_pending_limit = max(4, AI_CONCURRENCY * 3)
 AI_PENDING_LIMIT = max(
     AI_CONCURRENCY,
@@ -2359,6 +2369,10 @@ class AITradeAdvisor:
         self._plan_grace = AI_PLAN_GRACE
         self._pending_limit = AI_PENDING_LIMIT
         self._plan_delivery_ttl = max(self._min_interval * 3.0, 90.0)
+        self._chat_connect_timeout = AI_CHAT_CONNECT_TIMEOUT
+        self._chat_read_timeout = AI_CHAT_READ_TIMEOUT
+        self._playbook_read_timeout = AI_PLAYBOOK_READ_TIMEOUT
+        self._last_chat_error: Optional[str] = None
         self._executor: Optional[ThreadPoolExecutor] = None
         self._ready_callback = wakeup_cb
         self._activity_logger = activity_logger
@@ -2769,9 +2783,10 @@ class AITradeAdvisor:
         )
         if not response:
             if kind == "playbook":
+                reason = self._last_chat_error or "no_response"
                 self._note_playbook_failure(
                     request_id,
-                    "no_response",
+                    reason,
                     playbook_snapshot_meta,
                 )
             return None
@@ -4380,16 +4395,21 @@ class AITradeAdvisor:
             payload.setdefault("metadata", {})["request_id"] = request_id_value
 
         def _send_chat(p: Dict[str, Any]) -> requests.Response:
+            timeout = (
+                self._chat_connect_timeout,
+                self._playbook_read_timeout if kind == "playbook" else self._chat_read_timeout,
+            )
             return requests.post(
                 "https://api.openai.com/v1/chat/completions",
                 headers=headers,
                 json=p,
-                timeout=30,
+                timeout=timeout,
             )
 
         if self._temperature_supported and self._temperature_override is not None:
             payload["temperature"] = self._temperature_override
 
+        self._last_chat_error = None
         try:
             attempt = 0
             while True:
@@ -4414,6 +4434,7 @@ class AITradeAdvisor:
                     continue
                 raise RuntimeError(f"HTTP {resp.status_code}: {text_preview}")
         except Exception as exc:
+            self._last_chat_error = f"{exc}"
             log.debug(f"AI request failed ({kind}): {exc}")
             return None
 
