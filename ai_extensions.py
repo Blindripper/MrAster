@@ -1,11 +1,50 @@
 """AI-driven learning helpers for MrAster bot."""
 from __future__ import annotations
 
+import math
 import os
 from datetime import datetime
 import re
 import time
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+
+
+def _parse_env_float(key: str) -> Optional[float]:
+    raw = os.getenv(key)
+    if raw is None:
+        return None
+    token = str(raw).strip()
+    if not token:
+        return None
+    try:
+        value = float(token)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(value):
+        return None
+    return value
+
+
+def _playbook_refresh_interval_seconds() -> float:
+    """Resolve the desired refresh interval for AI playbook updates."""
+
+    default_seconds = 10 * 60.0
+    seconds = _parse_env_float("ASTER_PLAYBOOK_REFRESH_INTERVAL_SECONDS")
+    if seconds is None:
+        seconds = _parse_env_float("ASTER_PLAYBOOK_REFRESH_SECONDS")
+    if seconds is None:
+        minutes = _parse_env_float("ASTER_PLAYBOOK_REFRESH_INTERVAL_MINUTES")
+        if minutes is None:
+            minutes = _parse_env_float("ASTER_PLAYBOOK_REFRESH_MINUTES")
+        if minutes is not None:
+            seconds = minutes * 60.0
+    if seconds is None:
+        seconds = default_seconds
+    seconds = max(60.0, float(seconds))
+    return seconds
+
+
+_PLAYBOOK_REFRESH_INTERVAL_SECONDS = _playbook_refresh_interval_seconds()
 
 _ACTION_FOCUS_STOPWORDS: Set[str] = {
     "and",
@@ -1246,7 +1285,7 @@ class PlaybookManager:
             },
         )
         self._request_fn = request_fn
-        self._refresh_interval = 60 * 60
+        self._refresh_interval = _PLAYBOOK_REFRESH_INTERVAL_SECONDS
         self._bootstrap_pending = True
         self._bootstrap_deadline = time.time() + 120.0
         self._bootstrap_retry = 90.0
