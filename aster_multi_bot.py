@@ -1086,9 +1086,14 @@ TREND_EXTENSION_LOOKBACK = max(
     TREND_EXTENSION_BARS_HARD * 2, int(os.getenv("ASTER_TREND_EXTENSION_LOOKBACK", "80"))
 )
 CONTINUATION_STOCHRSI_MIN = float(os.getenv("ASTER_CONT_STOCHRSI_MIN", "20.0"))
-CONTINUATION_PULLBACK_STOCH_MAX = float(
-    os.getenv("ASTER_CONT_PULLBACK_STOCH_MAX", "30.0") or 30.0
+CONTINUATION_PULLBACK_STOCH_WARN = float(
+    os.getenv("ASTER_CONT_PULLBACK_STOCH_WARN", "65.0") or 65.0
 )
+CONTINUATION_PULLBACK_STOCH_MAX = float(
+    os.getenv("ASTER_CONT_PULLBACK_STOCH_MAX", "85.0") or 85.0
+)
+if CONTINUATION_PULLBACK_STOCH_MAX < CONTINUATION_PULLBACK_STOCH_WARN:
+    CONTINUATION_PULLBACK_STOCH_MAX = CONTINUATION_PULLBACK_STOCH_WARN
 LONG_RSI_MAX = float(os.getenv("ASTER_LONG_RSI_MAX", "70.0"))
 SHORT_RSI_MIN = float(os.getenv("ASTER_SHORT_RSI_MIN", "30.0"))
 STOCHRSI_LONG_MAX = float(os.getenv("ASTER_STOCHRSI_LONG_MAX", "24.0"))
@@ -9350,6 +9355,7 @@ class Strategy:
             continuation_block: Dict[str, str] = {}
             cont_penalty = 0.0
             pullback_gate = max(0.0, CONTINUATION_PULLBACK_STOCH_MAX)
+            pullback_warn = max(0.0, CONTINUATION_PULLBACK_STOCH_WARN)
             if pullback_gate and stoch_k_last >= pullback_gate:
                 ctx_base["continuation_pullback_gate"] = float(stoch_k_last)
                 return self._skip(
@@ -9362,6 +9368,20 @@ class Strategy:
                     ctx=ctx_base,
                     price=mid,
                     atr=atr,
+                )
+            if pullback_warn and stoch_k_last >= pullback_warn:
+                ctx_base["continuation_pullback_warning"] = float(stoch_k_last)
+                overrun = max(0.0, stoch_k_last - pullback_warn)
+                denom = max(100.0 - pullback_warn, 1.0)
+                penalty = clamp(
+                    (overrun / denom) * (FILTER_PENALTY_WARN + 0.3),
+                    0.0,
+                    FILTER_PENALTY_WARN + 0.5,
+                )
+                _add_penalty(
+                    "continuation_pullback",
+                    penalty,
+                    f"{stoch_k_last:.1f}>{pullback_warn:.1f}",
                 )
             if adx_delta < CONTINUATION_ADX_DELTA_MIN:
                 ctx_base["continuation_adx_delta_gate"] = float(adx_delta)
