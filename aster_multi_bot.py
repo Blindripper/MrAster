@@ -2731,7 +2731,15 @@ class AITradeAdvisor:
                 "size_cap, size_floor, sl_multiplier, tp_multiplier, hard_block), optional multiplier (0.1-3.0), optional scope "
                 "(BUY, SELL or ANY), and optional condition (object with metric from [event_risk, hype, volatility, breadth, "
                 "trend_strength], operator from [>, >=, <, <=, between], value (number) and optional value2 for between). Include "
-                "an optional note per structured item. Keep output strictly valid JSON."
+                "an optional note per structured item. Calibrate skip filters using the provided decision_stats to avoid both "
+                "over-trading and under-trading, and include a filters object keyed by the skip IDs long_overextended, trend_extension, "
+                "continuation_pullback, spread_tight, short_trend_alignment, edge_r, no_cross, wicky, stoch_rsi_trend_short, sentinel_veto, and playbook_structured_block. "
+                "Each filters entry may set the following keys: long_overextended (rsi_cap 45-75, atr_pct_cap 0.002-0.02), "
+                "trend_extension (bars_soft 6-30, bars_hard 8-45, adx_min 12-60), continuation_pullback (stoch_warn 40-90, "
+                "stoch_max 55-98, stoch_min 5-45, adx_delta_min 0-12), spread_tight (spread_bps_max 0.0003-0.004), short_trend_alignment "
+                "(slope_min 0.0001-0.003, supertrend_tol -0.5 to 0.5), edge_r (min_edge_r 0.03-0.35), no_cross (rsi_buy_min 38-65, "
+                "rsi_sell_max 35-65), wicky (wickiness_max 0.94-0.9995), stoch_rsi_trend_short (stoch_min 5-70), sentinel_veto (event_risk_gate 0.3-0.9, block_risk 0.5-0.98, min_multiplier 0.1-0.8, weight 0.5-1.2), and playbook_structured_block (event_risk_max 0.2-0.9, soft_multiplier 0.25-1.0). Keep output strictly "
+                "valid JSON and omit filters you do not wish to adjust."
             )
             estimate = 0.0018
         try:
@@ -2857,8 +2865,65 @@ class AITradeAdvisor:
         try:
             if self.playbook_manager:
                 self.playbook_manager.maybe_refresh(snapshot)
+                self.apply_playbook_filters()
         except Exception:
             pass
+
+    def _playbook_decision_stats(self) -> Optional[Dict[str, Any]]:
+        if not isinstance(self.state, dict):
+            return None
+        stats = self.state.get("decision_stats")
+        if not isinstance(stats, dict):
+            return None
+        taken = int(stats.get("taken", 0) or 0)
+        rejected_total = int(stats.get("rejected_total", 0) or 0)
+        reasons_raw = stats.get("rejected")
+        summary: Dict[str, Any] = {
+            "taken": taken,
+            "rejected_total": rejected_total,
+        }
+        top_reasons: List[Dict[str, Any]] = []
+        if isinstance(reasons_raw, dict):
+            items = [
+                (str(reason), int(count or 0))
+                for reason, count in reasons_raw.items()
+                if reason
+            ]
+            if items:
+                denom = max(1, rejected_total)
+                for reason, count in sorted(
+                    items, key=lambda pair: pair[1], reverse=True
+                ):
+                    entry = {
+                        "reason": reason,
+                        "count": count,
+                    }
+                    if denom:
+                        entry["share"] = round(count / denom, 4)
+                    top_reasons.append(entry)
+                summary["reasons"] = top_reasons[:10]
+        history = stats.get("rejected_history")
+        if isinstance(history, list) and history:
+            latest = history[-1]
+            if isinstance(latest, (list, tuple)) and len(latest) >= 2:
+                summary["latest_reason"] = latest[-1]
+                try:
+                    summary["latest_ts"] = float(latest[0])
+                except (TypeError, ValueError):
+                    pass
+            elif isinstance(latest, dict):
+                reason = latest.get("reason") or latest.get("skip")
+                if isinstance(reason, str):
+                    summary["latest_reason"] = reason
+                ts_val = latest.get("ts")
+                try:
+                    if ts_val is not None:
+                        summary["latest_ts"] = float(ts_val)
+                except (TypeError, ValueError):
+                    pass
+        if not taken and not rejected_total and not top_reasons:
+            return None
+        return summary
 
     def _summarize_playbook_snapshot(
         self, snapshot: Optional[Dict[str, Any]]
@@ -2909,6 +2974,21 @@ class AITradeAdvisor:
                             meta[f"budget_{key}"] = float(value)
                     except (TypeError, ValueError):
                         continue
+            decision_stats = snapshot.get("decision_stats")
+            if isinstance(decision_stats, dict):
+                taken = decision_stats.get("taken")
+                rejected = decision_stats.get("rejected_total")
+                if isinstance(taken, (int, float)):
+                    meta["decisions_taken"] = int(taken)
+                if isinstance(rejected, (int, float)):
+                    meta["decisions_rejected"] = int(rejected)
+                reasons = decision_stats.get("reasons")
+                if isinstance(reasons, list) and reasons:
+                    top_reason = reasons[0]
+                    if isinstance(top_reason, dict):
+                        reason_label = top_reason.get("reason")
+                        if isinstance(reason_label, str):
+                            meta["decision_top_reason"] = reason_label
             timestamp = snapshot.get("timestamp")
             if isinstance(timestamp, (int, float)):
                 meta["timestamp"] = float(timestamp)
@@ -2955,6 +3035,18 @@ class AITradeAdvisor:
                 budget_bits.append(f"limit={limit:.2f}")
             if budget_bits:
                 parts.append("budget " + " · ".join(budget_bits))
+        if "decisions_taken" in meta or "decisions_rejected" in meta:
+            taken = int(meta.get("decisions_taken", 0) or 0)
+            rejected = int(meta.get("decisions_rejected", 0) or 0)
+            label = (
+                f"decisions {taken}/{rejected}"
+                if rejected
+                else f"decisions {taken}"
+            )
+            reason = meta.get("decision_top_reason")
+            if reason:
+                label += f" (top: {reason})"
+            parts.append(label)
         if not parts:
             return "Snapshot collected but empty"
         return " · ".join(parts)
@@ -7857,6 +7949,52 @@ class Strategy:
         self.trend_short_stochrsi_min = TREND_SHORT_STOCHRSI_MIN
         self._skip_relief_snapshot: Dict[str, Any] = {}
         self._apply_skip_relief()
+        self.long_overextended_rsi_cap = float(LONG_OVEREXTENDED_RSI)
+        atr_cap_default = float(LONG_ATR_PCT_CAP or 0.0)
+        self.long_overextended_atr_cap = (
+            atr_cap_default if atr_cap_default > 0 else 0.007
+        )
+        self.trend_extension_bars = int(TREND_EXTENSION_BARS)
+        self.trend_extension_bars_hard = int(TREND_EXTENSION_BARS_HARD)
+        self.trend_extension_adx_min = float(TREND_EXTENSION_ADX_MIN)
+        self.continuation_pullback_warn = float(CONTINUATION_PULLBACK_STOCH_WARN)
+        self.continuation_pullback_max = float(CONTINUATION_PULLBACK_STOCH_MAX)
+        self.continuation_stoch_min = float(CONTINUATION_STOCHRSI_MIN)
+        self.continuation_adx_delta_min = float(CONTINUATION_ADX_DELTA_MIN)
+        self.short_trend_slope_min = float(SHORT_TREND_SLOPE_MIN)
+        self.short_trend_supertrend_tol = float(SHORT_TREND_SUPERTREND_TOL)
+        self.sentinel_gate_event_risk = float(SENTINEL_SIZE_GATE_EVENT_RISK)
+        self.sentinel_gate_block_risk = float(SENTINEL_SIZE_GATE_BLOCK_RISK)
+        self.sentinel_gate_min_mult = float(SENTINEL_SIZE_GATE_MIN_MULT)
+        self.sentinel_gate_weight = float(SENTINEL_SIZE_GATE_WEIGHT)
+        self.structured_block_event_risk_cap = 0.0
+        self.structured_block_soft_multiplier = 1.0
+        self._filter_defaults: Dict[str, float] = {
+            "min_edge_r": self.min_edge_r,
+            "spread_bps_max": self.spread_bps_max,
+            "wickiness_max": self.wickiness_max,
+            "rsi_buy_min": self.rsi_buy_min,
+            "rsi_sell_max": self.rsi_sell_max,
+            "trend_short_stochrsi_min": self.trend_short_stochrsi_min,
+            "long_overextended_rsi_cap": self.long_overextended_rsi_cap,
+            "long_overextended_atr_cap": self.long_overextended_atr_cap,
+            "trend_extension_bars": float(self.trend_extension_bars),
+            "trend_extension_bars_hard": float(self.trend_extension_bars_hard),
+            "trend_extension_adx_min": self.trend_extension_adx_min,
+            "continuation_pullback_warn": self.continuation_pullback_warn,
+            "continuation_pullback_max": self.continuation_pullback_max,
+            "continuation_stoch_min": self.continuation_stoch_min,
+            "continuation_adx_delta_min": self.continuation_adx_delta_min,
+            "short_trend_slope_min": self.short_trend_slope_min,
+            "short_trend_supertrend_tol": self.short_trend_supertrend_tol,
+            "sentinel_gate_event_risk": self.sentinel_gate_event_risk,
+            "sentinel_gate_block_risk": self.sentinel_gate_block_risk,
+            "sentinel_gate_min_mult": self.sentinel_gate_min_mult,
+            "sentinel_gate_weight": self.sentinel_gate_weight,
+            "structured_block_event_risk_cap": self.structured_block_event_risk_cap,
+            "structured_block_soft_multiplier": self.structured_block_soft_multiplier,
+        }
+        self._active_playbook_filters: Dict[str, Dict[str, float]] = {}
         if self.state:
             scores = self.state.get("universe_scores")
             if isinstance(scores, dict):
@@ -7974,6 +8112,347 @@ class Strategy:
             )
         else:
             self._skip_relief_snapshot = {"total": total}
+
+    def _reset_filter_attributes(self) -> None:
+        defaults = getattr(self, "_filter_defaults", {})
+        if not defaults:
+            return
+        self.min_edge_r = defaults.get("min_edge_r", self.min_edge_r)
+        self.spread_bps_max = defaults.get("spread_bps_max", self.spread_bps_max)
+        self.wickiness_max = defaults.get("wickiness_max", self.wickiness_max)
+        self.rsi_buy_min = defaults.get("rsi_buy_min", self.rsi_buy_min)
+        self.rsi_sell_max = defaults.get("rsi_sell_max", self.rsi_sell_max)
+        self.trend_short_stochrsi_min = defaults.get(
+            "trend_short_stochrsi_min", self.trend_short_stochrsi_min
+        )
+        self.long_overextended_rsi_cap = defaults.get(
+            "long_overextended_rsi_cap", self.long_overextended_rsi_cap
+        )
+        self.long_overextended_atr_cap = defaults.get(
+            "long_overextended_atr_cap", self.long_overextended_atr_cap
+        )
+        self.trend_extension_bars = int(
+            defaults.get("trend_extension_bars", float(self.trend_extension_bars))
+        )
+        self.trend_extension_bars_hard = int(
+            defaults.get(
+                "trend_extension_bars_hard", float(self.trend_extension_bars_hard)
+            )
+        )
+        self.trend_extension_adx_min = defaults.get(
+            "trend_extension_adx_min", self.trend_extension_adx_min
+        )
+        self.continuation_pullback_warn = defaults.get(
+            "continuation_pullback_warn", self.continuation_pullback_warn
+        )
+        self.continuation_pullback_max = defaults.get(
+            "continuation_pullback_max", self.continuation_pullback_max
+        )
+        self.continuation_stoch_min = defaults.get(
+            "continuation_stoch_min", self.continuation_stoch_min
+        )
+        self.continuation_adx_delta_min = defaults.get(
+            "continuation_adx_delta_min", self.continuation_adx_delta_min
+        )
+        self.short_trend_slope_min = defaults.get(
+            "short_trend_slope_min", self.short_trend_slope_min
+        )
+        self.short_trend_supertrend_tol = defaults.get(
+            "short_trend_supertrend_tol", self.short_trend_supertrend_tol
+        )
+        self.sentinel_gate_event_risk = defaults.get(
+            "sentinel_gate_event_risk", self.sentinel_gate_event_risk
+        )
+        self.sentinel_gate_block_risk = defaults.get(
+            "sentinel_gate_block_risk", self.sentinel_gate_block_risk
+        )
+        self.sentinel_gate_min_mult = defaults.get(
+            "sentinel_gate_min_mult", self.sentinel_gate_min_mult
+        )
+        self.sentinel_gate_weight = defaults.get(
+            "sentinel_gate_weight", self.sentinel_gate_weight
+        )
+        self.structured_block_event_risk_cap = defaults.get(
+            "structured_block_event_risk_cap", self.structured_block_event_risk_cap
+        )
+        self.structured_block_soft_multiplier = defaults.get(
+            "structured_block_soft_multiplier",
+            self.structured_block_soft_multiplier,
+        )
+        self._active_playbook_filters = {}
+
+    def _apply_playbook_filter_overrides(
+        self, filters: Optional[Dict[str, Dict[str, Any]]]
+    ) -> None:
+        self._reset_filter_attributes()
+        if not isinstance(filters, dict) or not filters:
+            if self.state is not None:
+                self.state["playbook_filter_overrides"] = {}
+            return
+        applied: Dict[str, Dict[str, float]] = {}
+
+        def _record(reason: str, key: str, value: float) -> None:
+            bucket = applied.setdefault(reason, {})
+            bucket[key] = value
+
+        edge_override = filters.get("edge_r")
+        if isinstance(edge_override, dict):
+            value = edge_override.get("min_edge_r")
+            if isinstance(value, (int, float)):
+                self.min_edge_r = float(max(EXPECTED_R_MIN_FLOOR, float(value)))
+                _record("edge_r", "min_edge_r", self.min_edge_r)
+
+        spread_override = filters.get("spread_tight")
+        if isinstance(spread_override, dict):
+            value = spread_override.get("spread_bps_max")
+            if isinstance(value, (int, float)):
+                self.spread_bps_max = float(max(1e-5, float(value)))
+                _record("spread_tight", "spread_bps_max", self.spread_bps_max)
+
+        wicky_override = filters.get("wicky")
+        if isinstance(wicky_override, dict):
+            value = wicky_override.get("wickiness_max")
+            if isinstance(value, (int, float)):
+                self.wickiness_max = float(max(0.5, min(0.9999, float(value))))
+                _record("wicky", "wickiness_max", self.wickiness_max)
+
+        no_cross_override = filters.get("no_cross")
+        if isinstance(no_cross_override, dict):
+            buy_val = no_cross_override.get("rsi_buy_min")
+            if isinstance(buy_val, (int, float)):
+                self.rsi_buy_min = float(max(30.0, min(70.0, float(buy_val))))
+                _record("no_cross", "rsi_buy_min", self.rsi_buy_min)
+            sell_val = no_cross_override.get("rsi_sell_max")
+            if isinstance(sell_val, (int, float)):
+                self.rsi_sell_max = float(max(30.0, min(70.0, float(sell_val))))
+                _record("no_cross", "rsi_sell_max", self.rsi_sell_max)
+
+        long_override = filters.get("long_overextended")
+        if isinstance(long_override, dict):
+            rsi_cap = long_override.get("rsi_cap")
+            if isinstance(rsi_cap, (int, float)):
+                self.long_overextended_rsi_cap = float(
+                    max(40.0, min(80.0, float(rsi_cap)))
+                )
+                _record(
+                    "long_overextended",
+                    "rsi_cap",
+                    self.long_overextended_rsi_cap,
+                )
+            atr_cap = long_override.get("atr_pct_cap")
+            if isinstance(atr_cap, (int, float)):
+                self.long_overextended_atr_cap = float(
+                    max(0.001, min(0.05, float(atr_cap)))
+                )
+                _record(
+                    "long_overextended",
+                    "atr_pct_cap",
+                    self.long_overextended_atr_cap,
+                )
+
+        trend_override = filters.get("trend_extension")
+        if isinstance(trend_override, dict):
+            bars_soft = trend_override.get("bars_soft")
+            if isinstance(bars_soft, (int, float)):
+                self.trend_extension_bars = int(max(4, min(40, int(bars_soft))))
+                _record("trend_extension", "bars_soft", float(self.trend_extension_bars))
+            bars_hard = trend_override.get("bars_hard")
+            if isinstance(bars_hard, (int, float)):
+                self.trend_extension_bars_hard = int(
+                    max(
+                        self.trend_extension_bars + 1,
+                        min(60, int(bars_hard)),
+                    )
+                )
+                _record(
+                    "trend_extension",
+                    "bars_hard",
+                    float(self.trend_extension_bars_hard),
+                )
+            adx_min = trend_override.get("adx_min")
+            if isinstance(adx_min, (int, float)):
+                self.trend_extension_adx_min = float(
+                    max(8.0, min(70.0, float(adx_min)))
+                )
+                _record(
+                    "trend_extension",
+                    "adx_min",
+                    self.trend_extension_adx_min,
+                )
+
+        continuation_override = filters.get("continuation_pullback")
+        if isinstance(continuation_override, dict):
+            warn_val = continuation_override.get("stoch_warn")
+            if isinstance(warn_val, (int, float)):
+                self.continuation_pullback_warn = float(
+                    max(30.0, min(95.0, float(warn_val)))
+                )
+                _record(
+                    "continuation_pullback",
+                    "stoch_warn",
+                    self.continuation_pullback_warn,
+                )
+            max_val = continuation_override.get("stoch_max")
+            if isinstance(max_val, (int, float)):
+                self.continuation_pullback_max = float(
+                    max(self.continuation_pullback_warn, min(99.0, float(max_val)))
+                )
+                _record(
+                    "continuation_pullback",
+                    "stoch_max",
+                    self.continuation_pullback_max,
+                )
+            min_val = continuation_override.get("stoch_min")
+            if isinstance(min_val, (int, float)):
+                self.continuation_stoch_min = float(
+                    max(1.0, min(60.0, float(min_val)))
+                )
+                _record(
+                    "continuation_pullback",
+                    "stoch_min",
+                    self.continuation_stoch_min,
+                )
+            adx_delta = continuation_override.get("adx_delta_min")
+            if isinstance(adx_delta, (int, float)):
+                self.continuation_adx_delta_min = float(
+                    max(0.0, min(20.0, float(adx_delta)))
+                )
+                _record(
+                    "continuation_pullback",
+                    "adx_delta_min",
+                    self.continuation_adx_delta_min,
+                )
+            if self.continuation_pullback_max < self.continuation_pullback_warn:
+                self.continuation_pullback_max = self.continuation_pullback_warn
+            if self.continuation_pullback_warn < self.continuation_stoch_min:
+                self.continuation_pullback_warn = self.continuation_stoch_min
+            if self.continuation_pullback_max < self.continuation_stoch_min:
+                self.continuation_pullback_max = self.continuation_stoch_min
+
+        short_trend_override = filters.get("short_trend_alignment")
+        if isinstance(short_trend_override, dict):
+            slope_val = short_trend_override.get("slope_min")
+            if isinstance(slope_val, (int, float)):
+                self.short_trend_slope_min = float(
+                    max(1e-4, min(0.005, float(slope_val)))
+                )
+                _record(
+                    "short_trend_alignment",
+                    "slope_min",
+                    self.short_trend_slope_min,
+                )
+            tol_val = short_trend_override.get("supertrend_tol")
+            if isinstance(tol_val, (int, float)):
+                self.short_trend_supertrend_tol = float(
+                    max(-1.0, min(1.0, float(tol_val)))
+                )
+                _record(
+                    "short_trend_alignment",
+                    "supertrend_tol",
+                    self.short_trend_supertrend_tol,
+                )
+
+        trend_stoch_override = filters.get("stoch_rsi_trend_short")
+        if isinstance(trend_stoch_override, dict):
+            value = trend_stoch_override.get("stoch_min")
+            if isinstance(value, (int, float)):
+                self.trend_short_stochrsi_min = float(
+                    max(5.0, min(80.0, float(value)))
+                )
+                _record(
+                    "stoch_rsi_trend_short",
+                    "stoch_min",
+                    self.trend_short_stochrsi_min,
+                )
+
+        sentinel_override = filters.get("sentinel_veto")
+        if isinstance(sentinel_override, dict):
+            gate_val = sentinel_override.get("event_risk_gate")
+            if isinstance(gate_val, (int, float)):
+                self.sentinel_gate_event_risk = float(
+                    max(0.2, min(0.95, float(gate_val)))
+                )
+                _record(
+                    "sentinel_veto",
+                    "event_risk_gate",
+                    self.sentinel_gate_event_risk,
+                )
+            block_val = sentinel_override.get("block_risk")
+            if isinstance(block_val, (int, float)):
+                self.sentinel_gate_block_risk = float(
+                    max(0.35, min(0.99, float(block_val)))
+                )
+                _record(
+                    "sentinel_veto",
+                    "block_risk",
+                    self.sentinel_gate_block_risk,
+                )
+            min_mult_val = sentinel_override.get("min_multiplier")
+            if isinstance(min_mult_val, (int, float)):
+                self.sentinel_gate_min_mult = float(
+                    max(0.1, min(0.9, float(min_mult_val)))
+                )
+                _record(
+                    "sentinel_veto",
+                    "min_multiplier",
+                    self.sentinel_gate_min_mult,
+                )
+            weight_val = sentinel_override.get("weight")
+            if isinstance(weight_val, (int, float)):
+                self.sentinel_gate_weight = float(
+                    max(0.4, min(1.25, float(weight_val)))
+                )
+                _record(
+                    "sentinel_veto",
+                    "weight",
+                    self.sentinel_gate_weight,
+                )
+
+        structured_override = filters.get("playbook_structured_block")
+        if isinstance(structured_override, dict):
+            risk_cap = structured_override.get("event_risk_max")
+            if isinstance(risk_cap, (int, float)):
+                self.structured_block_event_risk_cap = float(
+                    max(0.0, min(0.95, float(risk_cap)))
+                )
+                _record(
+                    "playbook_structured_block",
+                    "event_risk_max",
+                    self.structured_block_event_risk_cap,
+                )
+            soft_mult = structured_override.get("soft_multiplier")
+            if isinstance(soft_mult, (int, float)):
+                self.structured_block_soft_multiplier = float(
+                    max(0.2, min(1.0, float(soft_mult)))
+                )
+                _record(
+                    "playbook_structured_block",
+                    "soft_multiplier",
+                    self.structured_block_soft_multiplier,
+                )
+
+        self._active_playbook_filters = applied
+        if self.state is not None:
+            self.state["playbook_filter_overrides"] = dict(applied)
+        if applied:
+            log.info(
+                "Applied playbook filter overrides: %s",
+                json.dumps(applied, sort_keys=True),
+            )
+
+    def apply_playbook_filters(self) -> None:
+        filters: Optional[Dict[str, Dict[str, Any]]] = None
+        manager = getattr(self, "playbook_manager", None)
+        if manager:
+            try:
+                active = manager.active()
+            except Exception:
+                active = None
+            if isinstance(active, dict):
+                raw_filters = active.get("filters")
+                if isinstance(raw_filters, dict):
+                    filters = raw_filters
+        self._apply_playbook_filter_overrides(filters)
 
     @property
     def tech_snapshot_dirty(self) -> bool:
@@ -8395,6 +8874,14 @@ class Strategy:
         }
         if market_overview:
             snapshot["market_overview"] = market_overview
+        decision_stats = self._playbook_decision_stats()
+        if decision_stats:
+            snapshot["decision_stats"] = decision_stats
+        if self._active_playbook_filters:
+            snapshot["active_filters"] = {
+                reason: dict(values)
+                for reason, values in self._active_playbook_filters.items()
+            }
         if self.playbook_manager:
             try:
                 active_playbook = self.playbook_manager.active()
@@ -9322,18 +9809,24 @@ class Strategy:
             if active_persistence:
                 ctx_base["trend_persistence_active"] = float(active_persistence)
             if (
-                active_persistence >= TREND_EXTENSION_BARS
-                and adx_val >= TREND_EXTENSION_ADX_MIN
+                active_persistence >= self.trend_extension_bars
+                and adx_val >= self.trend_extension_adx_min
             ):
-                extension_ratio = (active_persistence - TREND_EXTENSION_BARS) / max(
-                    TREND_EXTENSION_BARS_HARD - TREND_EXTENSION_BARS, 1.0
+                extension_ratio = (
+                    active_persistence - self.trend_extension_bars
+                ) / max(
+                    self.trend_extension_bars_hard - self.trend_extension_bars,
+                    1.0,
                 )
-                adx_ratio = max(0.0, adx_val - TREND_EXTENSION_ADX_MIN) / max(
-                    TREND_EXTENSION_ADX_MIN, 1.0
+                adx_ratio = max(0.0, adx_val - self.trend_extension_adx_min) / max(
+                    self.trend_extension_adx_min, 1.0
                 )
                 trend_extension_score = clamp(extension_ratio * adx_ratio, 0.0, 1.0)
                 ctx_base["trend_extension_score"] = float(trend_extension_score)
-            if active_persistence >= TREND_EXTENSION_BARS_HARD and adx_val >= TREND_EXTENSION_ADX_MIN:
+            if (
+                active_persistence >= self.trend_extension_bars_hard
+                and adx_val >= self.trend_extension_adx_min
+            ):
                 ctx_base["trend_extension_gate"] = float(active_persistence)
                 return self._skip(
                     "trend_extension",
@@ -9375,8 +9868,8 @@ class Strategy:
         if sig == "BUY" and continuation_long:
             continuation_block: Dict[str, str] = {}
             cont_penalty = 0.0
-            pullback_gate = max(0.0, CONTINUATION_PULLBACK_STOCH_MAX)
-            pullback_warn = max(0.0, CONTINUATION_PULLBACK_STOCH_WARN)
+            pullback_gate = max(0.0, self.continuation_pullback_max)
+            pullback_warn = max(0.0, self.continuation_pullback_warn)
             if pullback_gate and stoch_k_last >= pullback_gate:
                 ctx_base["continuation_pullback_gate"] = float(stoch_k_last)
                 return self._skip(
@@ -9404,25 +9897,30 @@ class Strategy:
                     penalty,
                     f"{stoch_k_last:.1f}>{pullback_warn:.1f}",
                 )
-            if adx_delta < CONTINUATION_ADX_DELTA_MIN:
+            if adx_delta < self.continuation_adx_delta_min:
                 ctx_base["continuation_adx_delta_gate"] = float(adx_delta)
                 continuation_block["adx_delta"] = (
-                    f"{adx_delta:.2f} < {CONTINUATION_ADX_DELTA_MIN:.2f}"
+                    f"{adx_delta:.2f} < {self.continuation_adx_delta_min:.2f}"
                 )
-                if CONTINUATION_ADX_DELTA_MIN > 0:
+                if self.continuation_adx_delta_min > 0:
                     cont_penalty += clamp(
-                        (CONTINUATION_ADX_DELTA_MIN - adx_delta) / max(CONTINUATION_ADX_DELTA_MIN, 1.0),
+                        (self.continuation_adx_delta_min - adx_delta)
+                        / max(self.continuation_adx_delta_min, 1.0),
                         0.0,
                         0.9,
                     )
                 else:
                     cont_penalty += 0.3
-            if stoch_k_last < CONTINUATION_STOCHRSI_MIN:
+            if stoch_k_last < self.continuation_stoch_min:
                 ctx_base["continuation_stoch_rsi_gate"] = float(stoch_k_last)
                 continuation_block["stoch_rsi_k"] = (
-                    f"{stoch_k_last:.1f} < {CONTINUATION_STOCHRSI_MIN:.1f}"
+                    f"{stoch_k_last:.1f} < {self.continuation_stoch_min:.1f}"
                 )
-                cont_penalty += clamp((CONTINUATION_STOCHRSI_MIN - stoch_k_last) / 100.0 * 2.0, 0.0, 0.8)
+                cont_penalty += clamp(
+                    (self.continuation_stoch_min - stoch_k_last) / 100.0 * 2.0,
+                    0.0,
+                    0.8,
+                )
             if continuation_block and cont_penalty >= FILTER_PENALTY_HARD:
                 ctx_base["continuation_momentum_gate"] = True
                 return self._skip(
@@ -9510,11 +10008,14 @@ class Strategy:
             short_trend_conflict = False
             short_trend_detail: Dict[str, str] = {}
             slope_gate = float(slope_fast)
-            slope_threshold = max(0.0, SHORT_TREND_SLOPE_MIN)
+            slope_threshold = max(0.0, self.short_trend_slope_min)
             if slope_threshold and slope_gate > -slope_threshold:
                 short_trend_conflict = True
                 short_trend_detail["slope_fast"] = f"{slope_gate:+.5f}"
-            if supertrend_gate_enabled and supertrend_dir_last > SHORT_TREND_SUPERTREND_TOL:
+            if (
+                supertrend_gate_enabled
+                and supertrend_dir_last > self.short_trend_supertrend_tol
+            ):
                 short_trend_conflict = True
                 short_trend_detail["supertrend_dir"] = f"{supertrend_dir_last:+.2f}"
             if short_trend_conflict:
@@ -9549,23 +10050,28 @@ class Strategy:
         ctx_base["slope_htf"] = float(slope_htf)
 
         if sig == "BUY":
-            atr_gate = LONG_ATR_PCT_CAP if LONG_ATR_PCT_CAP > 0 else None
+            atr_gate = self.long_overextended_atr_cap
+            if atr_gate <= 0:
+                atr_gate = None
             winner_atr = self._winner_long_atr_threshold()
             if winner_atr and winner_atr > 0:
                 dyn_gate = winner_atr * max(0.1, LONG_ATR_WINNER_MULT)
                 atr_gate = dyn_gate if atr_gate is None else min(atr_gate, dyn_gate)
             if atr_gate is None or atr_gate <= 0:
-                atr_gate = LONG_ATR_PCT_CAP or 0.007
+                fallback_gate = self.long_overextended_atr_cap
+                if fallback_gate <= 0:
+                    fallback_gate = 0.007
+                atr_gate = fallback_gate
             ctx_base["long_atr_gate"] = float(atr_gate)
-            ctx_base["long_rsi_cap"] = float(LONG_OVEREXTENDED_RSI)
+            ctx_base["long_rsi_cap"] = float(self.long_overextended_rsi_cap)
             current_rsi = float(rsi14[-1])
-            if current_rsi > LONG_OVEREXTENDED_RSI or atrp > atr_gate:
+            if current_rsi > self.long_overextended_rsi_cap or atrp > atr_gate:
                 return self._skip(
                     "long_overextended",
                     symbol,
                     {
                         "rsi": f"{current_rsi:.2f}",
-                        "rsi_cap": f"{LONG_OVEREXTENDED_RSI:.2f}",
+                        "rsi_cap": f"{self.long_overextended_rsi_cap:.2f}",
                         "atr_pct": f"{atrp:.4f}",
                         "atr_cap": f"{atr_gate:.4f}",
                     },
@@ -9776,13 +10282,13 @@ class Strategy:
             cont_adx_gate = ctx_base.get("continuation_adx_delta_gate")
             if isinstance(cont_adx_gate, (int, float)):
                 filter_meta["continuation_adx_delta"] = (
-                    f"{float(cont_adx_gate):.2f} (<{CONTINUATION_ADX_DELTA_MIN:.2f})"
+                    f"{float(cont_adx_gate):.2f} (<{self.continuation_adx_delta_min:.2f})"
                 )
 
             cont_stoch_gate = ctx_base.get("continuation_stoch_rsi_gate")
             if isinstance(cont_stoch_gate, (int, float)):
                 filter_meta["continuation_stoch_rsi_k"] = (
-                    f"{float(cont_stoch_gate):.1f} (<{CONTINUATION_STOCHRSI_MIN:.1f})"
+                    f"{float(cont_stoch_gate):.1f} (<{self.continuation_stoch_min:.1f})"
                 )
 
             adx_gate = ctx_base.get("adx_filter")
@@ -11630,6 +12136,7 @@ class Bot:
             )
             try:
                 self._strategy.playbook_manager = self.ai_advisor.playbook_manager
+                self._strategy.apply_playbook_filters()
             except Exception:
                 self._strategy.playbook_manager = None
         else:
@@ -14103,22 +14610,26 @@ class Bot:
             )
 
         sentinel_gate_trigger = False
+        sentinel_gate_threshold = float(self.sentinel_gate_event_risk)
+        sentinel_block_threshold = float(self.sentinel_gate_block_risk)
+        sentinel_gate_floor = float(self.sentinel_gate_min_mult)
+        sentinel_gate_weight = float(self.sentinel_gate_weight)
         if sig in {"BUY", "SELL"}:
             sentinel_gate_trigger = (
                 sentinel_label in {"yellow", "red"}
-                or event_risk >= SENTINEL_SIZE_GATE_EVENT_RISK
+                or event_risk >= sentinel_gate_threshold
             )
             if sentinel_gate_trigger:
-                severity = max(event_risk, SENTINEL_SIZE_GATE_EVENT_RISK)
+                severity = max(event_risk, sentinel_gate_threshold)
                 gate_penalty = clamp(
-                    1.0 - severity * SENTINEL_SIZE_GATE_WEIGHT,
-                    SENTINEL_SIZE_GATE_MIN_MULT,
+                    1.0 - severity * sentinel_gate_weight,
+                    sentinel_gate_floor,
                     1.0,
                 )
                 if sig == "SELL":
                     gate_penalty = clamp(
                         gate_penalty * SENTINEL_SHORT_GATE_PENALTY,
-                        SENTINEL_SIZE_GATE_MIN_MULT,
+                        sentinel_gate_floor,
                         1.0,
                     )
                 sentinel_gate_penalty = float(gate_penalty)
@@ -14126,7 +14637,7 @@ class Bot:
                 ctx["sentinel_gate_triggered"] = True
                 ctx["sentinel_gate_label"] = sentinel_label or ""
                 ctx["sentinel_gate_event_risk"] = float(event_risk)
-                if sentinel_label == "red" or event_risk >= SENTINEL_SIZE_GATE_BLOCK_RISK:
+                if sentinel_label == "red" or event_risk >= sentinel_block_threshold:
                     sentinel_gate_block = True
                     ctx["sentinel_gate_block"] = True
 
@@ -14208,43 +14719,83 @@ class Bot:
                 log.debug(f"context feature inject failed {symbol}: {exc}")
 
         structured_block_reason = ctx.get("playbook_structured_block_reason")
+        structured_block_softened = False
         if ctx.get("playbook_structured_hard_block"):
-            if self.decision_tracker:
-                self.decision_tracker.record_rejection("playbook_structured_block")
-            reason_note = textwrap.shorten(
-                str(structured_block_reason or "playbook risk control"),
-                width=120,
-                placeholder="…",
+            event_risk_val = self._coerce_float(ctx.get("sentinel_event_risk"))
+            can_soften = (
+                self.structured_block_event_risk_cap > 0.0
+                and self.structured_block_soft_multiplier < 0.999
+                and event_risk_val is not None
+                and event_risk_val <= self.structured_block_event_risk_cap
             )
-            log.info(
-                "Skip %s — playbook structured risk control veto (%s).",
-                symbol,
-                reason_note,
-            )
-            if self._playbook_veto_log_allowed(
-                symbol,
-                reason=reason_note,
-                tag="structured",
-            ):
-                self._log_ai_activity(
-                    "decision",
-                    f"Playbook vetoed {symbol}",
-                    body=f"Structured risk control blocked trade: {reason_note}",
-                    data={
-                        "symbol": symbol,
-                        "reason": reason_note,
-                        "event_risk": event_risk,
-                        "hype": hype_score,
-                    },
-                    force=True,
+            if can_soften:
+                soft_mult = clamp(
+                    float(self.structured_block_soft_multiplier),
+                    0.2,
+                    1.0,
                 )
-            if manual_override:
-                self._complete_manual_request(
-                    manual_req,
-                    "failed",
-                    error="Playbook structured risk control forbids trades for this symbol",
+                ctx["playbook_structured_soft_block"] = True
+                ctx["playbook_structured_soft_factor"] = float(soft_mult)
+                if structured_block_reason and not ctx.get(
+                    "playbook_structured_soft_reason"
+                ):
+                    ctx["playbook_structured_soft_reason"] = structured_block_reason
+                ctx["playbook_structured_hard_block_override"] = True
+                ctx.pop("playbook_structured_hard_block", None)
+                size_mult = self._safe_float(
+                    ctx.get("playbook_structured_size_multiplier")
                 )
-            return
+                if size_mult is None:
+                    size_mult = 1.0
+                adjusted = clamp(size_mult * soft_mult, 0.1, 3.5)
+                if abs(adjusted - 1.0) > 1e-4:
+                    ctx["playbook_structured_size_multiplier"] = float(adjusted)
+                structured_block_softened = True
+                log.info(
+                    "Playbook structured block softened for %s — event risk %.2f <= %.2f.",
+                    symbol,
+                    float(event_risk_val),
+                    float(self.structured_block_event_risk_cap),
+                )
+            if not structured_block_softened:
+                if self.decision_tracker:
+                    self.decision_tracker.record_rejection(
+                        "playbook_structured_block"
+                    )
+                reason_note = textwrap.shorten(
+                    str(structured_block_reason or "playbook risk control"),
+                    width=120,
+                    placeholder="…",
+                )
+                log.info(
+                    "Skip %s — playbook structured risk control veto (%s).",
+                    symbol,
+                    reason_note,
+                )
+                if self._playbook_veto_log_allowed(
+                    symbol,
+                    reason=reason_note,
+                    tag="structured",
+                ):
+                    self._log_ai_activity(
+                        "decision",
+                        f"Playbook vetoed {symbol}",
+                        body=f"Structured risk control blocked trade: {reason_note}",
+                        data={
+                            "symbol": symbol,
+                            "reason": reason_note,
+                            "event_risk": event_risk,
+                            "hype": hype_score,
+                        },
+                        force=True,
+                    )
+                if manual_override:
+                    self._complete_manual_request(
+                        manual_req,
+                        "failed",
+                        error="Playbook structured risk control forbids trades for this symbol",
+                    )
+                return
 
         directive_label_raw = str(ctx.get("playbook_symbol_directive") or "").strip().lower()
         try:

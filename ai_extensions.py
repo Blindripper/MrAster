@@ -1143,6 +1143,45 @@ class PlaybookManager:
         "stop trading",
         "no trading",
     )
+    _FILTER_FIELD_SPECS: Dict[str, Dict[str, Tuple[float, float]]] = {
+        "long_overextended": {
+            "rsi_cap": (45.0, 75.0),
+            "atr_pct_cap": (0.002, 0.02),
+        },
+        "trend_extension": {
+            "bars_soft": (6.0, 32.0),
+            "bars_hard": (8.0, 48.0),
+            "adx_min": (12.0, 65.0),
+        },
+        "continuation_pullback": {
+            "stoch_warn": (40.0, 92.0),
+            "stoch_max": (55.0, 98.0),
+            "stoch_min": (5.0, 45.0),
+            "adx_delta_min": (0.0, 15.0),
+        },
+        "spread_tight": {"spread_bps_max": (0.0003, 0.004)},
+        "short_trend_alignment": {
+            "slope_min": (0.0001, 0.0035),
+            "supertrend_tol": (-0.5, 0.5),
+        },
+        "edge_r": {"min_edge_r": (0.03, 0.4)},
+        "no_cross": {
+            "rsi_buy_min": (38.0, 65.0),
+            "rsi_sell_max": (35.0, 65.0),
+        },
+        "wicky": {"wickiness_max": (0.94, 0.9995)},
+        "stoch_rsi_trend_short": {"stoch_min": (5.0, 75.0)},
+        "sentinel_veto": {
+            "event_risk_gate": (0.3, 0.9),
+            "block_risk": (0.45, 0.98),
+            "min_multiplier": (0.1, 0.8),
+            "weight": (0.5, 1.25),
+        },
+        "playbook_structured_block": {
+            "event_risk_max": (0.2, 0.9),
+            "soft_multiplier": (0.25, 1.0),
+        },
+    }
 
     _SIZE_BIAS_DELTA = {"low": -0.08, "mid": 0.0, "high": 0.12, "att": 0.18}
     _RISK_BIAS_DELTA = {"low": -0.08, "mid": 0.0, "high": 0.12, "att": 0.18}
@@ -1572,6 +1611,45 @@ class PlaybookManager:
 
         return strategy or None
 
+    def _normalize_filters(self, payload: Any) -> Optional[Dict[str, Dict[str, float]]]:
+        if not isinstance(payload, dict):
+            return None
+        normalized: Dict[str, Dict[str, float]] = {}
+        for reason, spec in self._FILTER_FIELD_SPECS.items():
+            fields = payload.get(reason)
+            if not isinstance(fields, dict):
+                continue
+            cleaned: Dict[str, float] = {}
+            for field, bounds in spec.items():
+                if field not in fields:
+                    continue
+                value = fields.get(field)
+                try:
+                    numeric = float(value)
+                except (TypeError, ValueError):
+                    continue
+                lower, upper = bounds
+                cleaned[field] = float(max(lower, min(upper, numeric)))
+            if not cleaned:
+                continue
+            if reason == "trend_extension":
+                soft = cleaned.get("bars_soft")
+                hard = cleaned.get("bars_hard")
+                if soft is not None and hard is not None and hard <= soft:
+                    cleaned["bars_hard"] = float(soft + 1.0)
+            if reason == "continuation_pullback":
+                warn = cleaned.get("stoch_warn")
+                maxi = cleaned.get("stoch_max")
+                mini = cleaned.get("stoch_min")
+                if warn is not None and maxi is not None and maxi < warn:
+                    cleaned["stoch_max"] = warn
+                if mini is not None and warn is not None and warn < mini:
+                    cleaned["stoch_warn"] = mini
+                if mini is not None and maxi is not None and maxi < mini:
+                    cleaned["stoch_max"] = mini
+            normalized[reason] = cleaned
+        return normalized or None
+
     def maybe_refresh(self, snapshot: Dict[str, Any]) -> None:
         active = self._state.get("active", {})
         now = time.time()
@@ -1708,6 +1786,19 @@ class PlaybookManager:
                 pref_key = f"playbook_feature_{slug}"
                 if pref_key not in ctx:
                     ctx[pref_key] = numeric
+        filters = active.get("filters")
+        if isinstance(filters, dict) and filters:
+            ctx["playbook_filters"] = filters
+            for reason, values in filters.items():
+                if not isinstance(values, dict):
+                    continue
+                prefix = f"playbook_filter_{reason}"
+                ctx[prefix] = dict(values)
+                for key, value in values.items():
+                    try:
+                        ctx[f"{prefix}_{key}"] = float(value)
+                    except (TypeError, ValueError):
+                        continue
         ctx["playbook_mode"] = active.get("mode", "baseline")
         ctx["playbook_bias"] = active.get("bias", "neutral")
         size_bias_data = active.get("size_bias", {})
@@ -2184,6 +2275,10 @@ class PlaybookManager:
             structured_risk = strategy.get("risk_controls_structured")
             if structured_risk:
                 active["structured_risk_controls"] = structured_risk
+        filter_payload = payload.get("filters") or payload.get("filter_overrides")
+        filters = self._normalize_filters(filter_payload)
+        if filters:
+            active["filters"] = filters
         request_id = payload.get("request_id")
         if isinstance(request_id, str):
             token = request_id.strip()

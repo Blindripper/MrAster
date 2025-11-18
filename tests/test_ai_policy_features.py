@@ -1,4 +1,8 @@
+import os
+import sys
 import time
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from aster_multi_bot import AITradeAdvisor, DailyBudgetTracker
 from ai_extensions import advisor_register_persona

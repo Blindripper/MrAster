@@ -1,4 +1,8 @@
+import os
+import sys
 import time
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from ai_extensions import PlaybookManager
 
