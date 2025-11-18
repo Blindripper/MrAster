@@ -657,6 +657,26 @@ body.pro-mode [data-normal-only] {
   text-align: center;
 }
 
+.hero-post-header {
+  width: 100%;
+  max-width: var(--layout-max-width);
+  margin: clamp(1.8rem, 4vw, 3rem) auto 0;
+  padding-inline: var(--page-inline-padding);
+  display: flex;
+  flex-direction: column;
+  gap: 1.6rem;
+}
+
+.hero-post-header__primary {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+}
+
+.hero-post-header__primary > .card {
+  width: 100%;
+}
+
 .hero-header {
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
@@ -1136,6 +1156,7 @@ body.paper-mode .hero-paper-toggle span {
   gap: 1.4rem;
   align-items: start;
   grid-auto-rows: minmax(0, auto);
+  width: 100%;
 }
 
 .hero-overview-grid > .card {
