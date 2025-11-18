@@ -191,7 +191,11 @@
             </div>
           </dl>
         </section>
+      </div>
+    </header>
 
+    <section class="hero-post-header" aria-label="Bot telemetry overview">
+      <div class="hero-post-header__primary">
         <section
           class="card hero-active-positions"
           aria-label="Active positions overview"
@@ -303,12 +307,13 @@
             </div>
           </div>
         </section>
+      </div>
 
-        <div class="hero-overview-grid">
-          <section class="card status" aria-label="Bot status overview" data-mobile-collapsible>
-            <div class="card-header card-header--simple" data-mobile-collapsible-header>
-              <h2 data-i18n="status.title">Status</h2>
-            </div>
+      <div class="hero-overview-grid">
+        <section class="card status" aria-label="Bot status overview" data-mobile-collapsible>
+          <div class="card-header card-header--simple" data-mobile-collapsible-header>
+            <h2 data-i18n="status.title">Status</h2>
+          </div>
             <div class="card-section-body" data-mobile-collapsible-body>
               <div class="status-grid">
                 <div>
@@ -373,12 +378,12 @@
             </div>
           </section>
 
-          <section
-            class="card hero-credentials"
-            role="group"
-            aria-label="Exchange credentials"
-            data-mobile-collapsible
-          >
+        <section
+          class="card hero-credentials"
+          role="group"
+          aria-label="Exchange credentials"
+          data-mobile-collapsible
+        >
             <div class="card-header card-header--simple" data-mobile-collapsible-header>
               <span class="hero-credentials-title" data-i18n="credentials.title">Exchange credentials</span>
             </div>
@@ -415,12 +420,12 @@
             </div>
           </section>
 
-          <section
-            class="card completed-positions-card hero-overview-card"
-            aria-label="Completed positions"
-            id="completed-positions-panel"
-            data-mobile-collapsible
-          >
+        <section
+          class="card completed-positions-card hero-overview-card"
+          aria-label="Completed positions"
+          id="completed-positions-panel"
+          data-mobile-collapsible
+        >
             <div class="card-header" data-mobile-collapsible-header>
               <div>
                 <h2 data-i18n="trades.completed.title">Completed positions</h2>
@@ -446,12 +451,12 @@
             </div>
           </section>
 
-          <section
-            class="card ai-request-log hero-overview-card"
-            aria-label="AI decision history"
-            data-ai-only
-            data-mobile-collapsible
-          >
+        <section
+          class="card ai-request-log hero-overview-card"
+          aria-label="AI decision history"
+          data-ai-only
+          data-mobile-collapsible
+        >
             <div class="card-header" data-mobile-collapsible-header>
               <div>
                 <h2 data-i18n="ai.requests.title">AI decisions</h2>
@@ -465,9 +470,8 @@
             </div>
           </section>
 
-        </div>
       </div>
-    </header>
+    </section>
 
     <main class="layout">
       <section class="card playbook-overview" data-ai-only id="playbook" data-mobile-collapsible>
