@@ -13820,9 +13820,12 @@ function resolveNearMissComparison(detailPairs) {
   let best = null;
   comparisons.forEach((comparison) => {
     const diff = comparison.metricValue - comparison.gateValue;
-    const percent = Math.abs(comparison.gateValue) > 1e-9
-      ? (diff / comparison.gateValue) * 100
-      : null;
+    let percent = null;
+    if (Math.abs(comparison.gateValue) > 1e-9) {
+      percent = (diff / comparison.gateValue) * 100;
+    } else if (Math.abs(comparison.metricValue) > 1e-9) {
+      percent = (diff / Math.abs(comparison.metricValue)) * 100;
+    }
     const score = Number.isFinite(percent) ? Math.abs(percent) : Math.abs(diff);
     if (!best || score < best.score) {
       best = {
