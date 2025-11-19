@@ -1,0 +1,2358 @@
+{
+  "generated_at": "2025-11-19T20:53:50.058Z",
+  "total_skipped": 26931,
+  "reasons": [
+    {
+      "reason": "quote_volume_cooldown",
+      "label": "Quote volume cooldown",
+      "count": 16603,
+      "events": [
+        {
+          "type": "log",
+          "symbol": "XLMUSDT",
+          "occurred_at": 1763585591.7833145,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped XLMUSDT — Quote volume cooldown active (28 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip XLMUSDT — quote volume cooldown active for 28 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip XLMUSDT — quote volume cooldown active for 28 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "BLESSUSDT",
+          "occurred_at": 1763585591.7831287,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped BLESSUSDT — Quote volume cooldown active (19 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip BLESSUSDT — quote volume cooldown active for 19 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip BLESSUSDT — quote volume cooldown active for 19 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "TRXUSDT",
+          "occurred_at": 1763585591.7830365,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped TRXUSDT — Quote volume cooldown active (25 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip TRXUSDT — quote volume cooldown active for 25 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip TRXUSDT — quote volume cooldown active for 25 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "BANKUSDT",
+          "occurred_at": 1763585591.7828557,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped BANKUSDT — Quote volume cooldown active (21 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip BANKUSDT — quote volume cooldown active for 21 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip BANKUSDT — quote volume cooldown active for 21 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "SAHARAUSDT",
+          "occurred_at": 1763585591.7826529,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped SAHARAUSDT — Quote volume cooldown active (11 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip SAHARAUSDT — quote volume cooldown active for 11 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip SAHARAUSDT — quote volume cooldown active for 11 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "APTUSDT",
+          "occurred_at": 1763585591.7825592,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped APTUSDT — Quote volume cooldown active (11 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip APTUSDT — quote volume cooldown active for 11 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip APTUSDT — quote volume cooldown active for 11 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "RVVUSDT",
+          "occurred_at": 1763585591.7823875,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped RVVUSDT — Quote volume cooldown active (9 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip RVVUSDT — quote volume cooldown active for 9 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip RVVUSDT — quote volume cooldown active for 9 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "LABUSDT",
+          "occurred_at": 1763585591.7821822,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped LABUSDT — Quote volume cooldown active (29 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip LABUSDT — quote volume cooldown active for 29 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip LABUSDT — quote volume cooldown active for 29 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ARBUSDT",
+          "occurred_at": 1763585591.7820964,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped ARBUSDT — Quote volume cooldown active (9 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip ARBUSDT — quote volume cooldown active for 9 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip ARBUSDT — quote volume cooldown active for 9 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "CCUSDT",
+          "occurred_at": 1763585591.7819989,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped CCUSDT — Quote volume cooldown active (19 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip CCUSDT — quote volume cooldown active for 19 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip CCUSDT — quote volume cooldown active for 19 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "1000FLOKIUSDT",
+          "occurred_at": 1763585591.781829,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped 1000FLOKIUSDT — Quote volume cooldown active (23 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip 1000FLOKIUSDT — quote volume cooldown active for 23 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip 1000FLOKIUSDT — quote volume cooldown active for 23 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "METAUSDT",
+          "occurred_at": 1763585591.7816176,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped METAUSDT — Quote volume cooldown active (11 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip METAUSDT — quote volume cooldown active for 11 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip METAUSDT — quote volume cooldown active for 11 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "LINEAUSDT",
+          "occurred_at": 1763585591.7814875,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped LINEAUSDT — Quote volume cooldown active (23 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip LINEAUSDT — quote volume cooldown active for 23 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip LINEAUSDT — quote volume cooldown active for 23 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "TONUSDT",
+          "occurred_at": 1763585591.7812452,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped TONUSDT — Quote volume cooldown active (29 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip TONUSDT — quote volume cooldown active for 29 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip TONUSDT — quote volume cooldown active for 29 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "FORMUSDT",
+          "occurred_at": 1763585591.7811575,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped FORMUSDT — Quote volume cooldown active (9 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip FORMUSDT — quote volume cooldown active for 9 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip FORMUSDT — quote volume cooldown active for 9 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "FFUSDT",
+          "occurred_at": 1763585591.7810745,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped FFUSDT — Quote volume cooldown active (13 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip FFUSDT — quote volume cooldown active for 13 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip FFUSDT — quote volume cooldown active for 13 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "FOLKSUSDT",
+          "occurred_at": 1763585591.7809794,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped FOLKSUSDT — Quote volume cooldown active (7 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip FOLKSUSDT — quote volume cooldown active for 7 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip FOLKSUSDT — quote volume cooldown active for 7 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "TRUSTUSDT",
+          "occurred_at": 1763585591.7808046,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped TRUSTUSDT — Quote volume cooldown active (38 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip TRUSTUSDT — quote volume cooldown active for 38 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip TRUSTUSDT — quote volume cooldown active for 38 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "PENGUUSDT",
+          "occurred_at": 1763585591.7805946,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped PENGUUSDT — Quote volume cooldown active (25 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip PENGUUSDT — quote volume cooldown active for 25 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip PENGUUSDT — quote volume cooldown active for 25 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "INJUSDT",
+          "occurred_at": 1763585591.7804663,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped INJUSDT — Quote volume cooldown active (22 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip INJUSDT — quote volume cooldown active for 22 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip INJUSDT — quote volume cooldown active for 22 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "0GUSDT",
+          "occurred_at": 1763585591.7802248,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped 0GUSDT — Quote volume cooldown active (22 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip 0GUSDT — quote volume cooldown active for 22 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip 0GUSDT — quote volume cooldown active for 22 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "CAKEUSDT",
+          "occurred_at": 1763585591.7801354,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped CAKEUSDT — Quote volume cooldown active (7 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip CAKEUSDT — quote volume cooldown active for 7 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip CAKEUSDT — quote volume cooldown active for 7 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "BASUSDT",
+          "occurred_at": 1763585591.7798944,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped BASUSDT — Quote volume cooldown active (7 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip BASUSDT — quote volume cooldown active for 7 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip BASUSDT — quote volume cooldown active for 7 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "TURTLEUSDT",
+          "occurred_at": 1763585591.7797158,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped TURTLEUSDT — Quote volume cooldown active (13 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip TURTLEUSDT — quote volume cooldown active for 13 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip TURTLEUSDT — quote volume cooldown active for 13 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "AAVEUSDT",
+          "occurred_at": 1763585591.7794738,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped AAVEUSDT — Quote volume cooldown active (7 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip AAVEUSDT — quote volume cooldown active for 7 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip AAVEUSDT — quote volume cooldown active for 7 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "SAPIENUSDT",
+          "occurred_at": 1763585591.7792304,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped SAPIENUSDT — Quote volume cooldown active (18 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip SAPIENUSDT — quote volume cooldown active for 18 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip SAPIENUSDT — quote volume cooldown active for 18 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "STABLEUSDT",
+          "occurred_at": 1763585591.7791388,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped STABLEUSDT — Quote volume cooldown active (7 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip STABLEUSDT — quote volume cooldown active for 7 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip STABLEUSDT — quote volume cooldown active for 7 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "CLANKERUSDT",
+          "occurred_at": 1763585591.7790422,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped CLANKERUSDT — Quote volume cooldown active (6 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip CLANKERUSDT — quote volume cooldown active for 6 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip CLANKERUSDT — quote volume cooldown active for 6 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "GOOGUSDT",
+          "occurred_at": 1763585591.7788675,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped GOOGUSDT — Quote volume cooldown active (7 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip GOOGUSDT — quote volume cooldown active for 7 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip GOOGUSDT — quote volume cooldown active for 7 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "XAUUSDT",
+          "occurred_at": 1763585591.778629,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped XAUUSDT — Quote volume cooldown active (7 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip XAUUSDT — quote volume cooldown active for 7 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip XAUUSDT — quote volume cooldown active for 7 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "JCTUSDT",
+          "occurred_at": 1763585591.7783535,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped JCTUSDT — Quote volume cooldown active (7 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip JCTUSDT — quote volume cooldown active for 7 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip JCTUSDT — quote volume cooldown active for 7 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "TRUMPUSDT",
+          "occurred_at": 1763585591.7782536,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped TRUMPUSDT — Quote volume cooldown active (7 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip TRUMPUSDT — quote volume cooldown active for 7 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip TRUMPUSDT — quote volume cooldown active for 7 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "NEARUSDT",
+          "occurred_at": 1763585591.7780852,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped NEARUSDT — Quote volume cooldown active (7 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip NEARUSDT — quote volume cooldown active for 7 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip NEARUSDT — quote volume cooldown active for 7 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "MMTUSDT",
+          "occurred_at": 1763585591.7778063,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped MMTUSDT — Quote volume cooldown active (5 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip MMTUSDT — quote volume cooldown active for 5 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip MMTUSDT — quote volume cooldown active for 5 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "RIVERUSDT",
+          "occurred_at": 1763585591.7775624,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped RIVERUSDT — Quote volume cooldown active (7 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip RIVERUSDT — quote volume cooldown active for 7 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip RIVERUSDT — quote volume cooldown active for 7 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "FLUXUSDT",
+          "occurred_at": 1763585591.7773275,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped FLUXUSDT — Quote volume cooldown active (22 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip FLUXUSDT — quote volume cooldown active for 22 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip FLUXUSDT — quote volume cooldown active for 22 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ENAUSDT",
+          "occurred_at": 1763585591.7770598,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped ENAUSDT — Quote volume cooldown active (24 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip ENAUSDT — quote volume cooldown active for 24 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip ENAUSDT — quote volume cooldown active for 24 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "NVDAUSDT",
+          "occurred_at": 1763585591.7768488,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped NVDAUSDT — Quote volume cooldown active (7 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ INFO  │ aster │ Skip NVDAUSDT — quote volume cooldown active for 7 more cycles.",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip NVDAUSDT — quote volume cooldown active for 7 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "PROVEUSDT",
+          "occurred_at": 1763585542.5533767,
+          "occurred_at_iso": "2025-11-19 20:52:22",
+          "message": "Skipped PROVEUSDT — Quote volume cooldown active (8 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:52:22 │ INFO  │ aster │ Skip PROVEUSDT — quote volume cooldown active for 8 more cycles.",
+            "timestamp": "2025-11-19 20:52:22",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip PROVEUSDT — quote volume cooldown active for 8 more cycles."
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "XNYUSDT",
+          "occurred_at": 1763585542.553255,
+          "occurred_at_iso": "2025-11-19 20:52:22",
+          "message": "Skipped XNYUSDT — Quote volume cooldown active (8 more cycles).",
+          "detail": null,
+          "parsed": {
+            "raw": "2025-11-19 20:52:22 │ INFO  │ aster │ Skip XNYUSDT — quote volume cooldown active for 8 more cycles.",
+            "timestamp": "2025-11-19 20:52:22",
+            "level": "info",
+            "logger": "aster",
+            "message": "Skip XNYUSDT — quote volume cooldown active for 8 more cycles."
+          },
+          "trade": null
+        }
+      ]
+    },
+    {
+      "reason": "trend_extension",
+      "label": "Trend Extension",
+      "count": 3415,
+      "events": [
+        {
+          "type": "log",
+          "symbol": "ICPUSDT",
+          "occurred_at": 1763585620.4243734,
+          "occurred_at_iso": "2025-11-19 20:53:40",
+          "message": "Skipped ICPUSDT — Trend Extension (Bars 80 • Adx 50.1).",
+          "detail": "Bars 80 • Adx 50.1",
+          "parsed": {
+            "raw": "2025-11-19 20:53:40 │ DEBUG │ aster │ SKIP ICPUSDT: trend_extension {'bars': '80', 'adx': '50.1'}",
+            "timestamp": "2025-11-19 20:53:40",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ICPUSDT: trend_extension {'bars': '80', 'adx': '50.1'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ICPUSDT",
+          "occurred_at": 1763585571.0495365,
+          "occurred_at_iso": "2025-11-19 20:52:51",
+          "message": "Skipped ICPUSDT — Trend Extension (Bars 80 • Adx 50.1).",
+          "detail": "Bars 80 • Adx 50.1",
+          "parsed": {
+            "raw": "2025-11-19 20:52:51 │ DEBUG │ aster │ SKIP ICPUSDT: trend_extension {'bars': '80', 'adx': '50.1'}",
+            "timestamp": "2025-11-19 20:52:51",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ICPUSDT: trend_extension {'bars': '80', 'adx': '50.1'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ICPUSDT",
+          "occurred_at": 1763585521.553878,
+          "occurred_at_iso": "2025-11-19 20:52:01",
+          "message": "Skipped ICPUSDT — Trend Extension (Bars 80 • Adx 50.1).",
+          "detail": "Bars 80 • Adx 50.1",
+          "parsed": {
+            "raw": "2025-11-19 20:52:01 │ DEBUG │ aster │ SKIP ICPUSDT: trend_extension {'bars': '80', 'adx': '50.1'}",
+            "timestamp": "2025-11-19 20:52:01",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ICPUSDT: trend_extension {'bars': '80', 'adx': '50.1'}"
+          },
+          "trade": null
+        }
+      ]
+    },
+    {
+      "reason": "no_cross",
+      "label": "Signal not confirmed",
+      "count": 2250,
+      "events": [
+        {
+          "type": "log",
+          "symbol": "XPLUSDT",
+          "occurred_at": 1763585629.8641346,
+          "occurred_at_iso": "2025-11-19 20:53:49",
+          "message": "Skipped XPLUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:49 │ DEBUG │ aster │ SKIP XPLUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:49",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP XPLUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "UAIUSDT",
+          "occurred_at": 1763585629.2934113,
+          "occurred_at_iso": "2025-11-19 20:53:49",
+          "message": "Skipped UAIUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:49 │ DEBUG │ aster │ SKIP UAIUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:49",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP UAIUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "LTCUSDT",
+          "occurred_at": 1763585628.1598973,
+          "occurred_at_iso": "2025-11-19 20:53:48",
+          "message": "Skipped LTCUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:48 │ DEBUG │ aster │ SKIP LTCUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:48",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP LTCUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "JELLYJELLYUSDT",
+          "occurred_at": 1763585627.6000433,
+          "occurred_at_iso": "2025-11-19 20:53:47",
+          "message": "Skipped JELLYJELLYUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:47 │ DEBUG │ aster │ SKIP JELLYJELLYUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:47",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP JELLYJELLYUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "APRUSDT",
+          "occurred_at": 1763585624.7128773,
+          "occurred_at_iso": "2025-11-19 20:53:44",
+          "message": "Skipped APRUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:44 │ DEBUG │ aster │ SKIP APRUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:44",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP APRUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "SOLUSDT",
+          "occurred_at": 1763585622.8417573,
+          "occurred_at_iso": "2025-11-19 20:53:42",
+          "message": "Skipped SOLUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:42 │ DEBUG │ aster │ SKIP SOLUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:42",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP SOLUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "PUMPUSDT",
+          "occurred_at": 1763585622.260176,
+          "occurred_at_iso": "2025-11-19 20:53:42",
+          "message": "Skipped PUMPUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:42 │ DEBUG │ aster │ SKIP PUMPUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:42",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP PUMPUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "LINKUSDT",
+          "occurred_at": 1763585621.0068684,
+          "occurred_at_iso": "2025-11-19 20:53:41",
+          "message": "Skipped LINKUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:41 │ DEBUG │ aster │ SKIP LINKUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:41",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP LINKUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "HYPEUSDT",
+          "occurred_at": 1763585619.8451385,
+          "occurred_at_iso": "2025-11-19 20:53:39",
+          "message": "Skipped HYPEUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:39 │ DEBUG │ aster │ SKIP HYPEUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:39",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP HYPEUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ETHUSDT",
+          "occurred_at": 1763585618.6964931,
+          "occurred_at_iso": "2025-11-19 20:53:38",
+          "message": "Skipped ETHUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:38 │ DEBUG │ aster │ SKIP ETHUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:38",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ETHUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "DOGEUSDT",
+          "occurred_at": 1763585618.1261547,
+          "occurred_at_iso": "2025-11-19 20:53:38",
+          "message": "Skipped DOGEUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:38 │ DEBUG │ aster │ SKIP DOGEUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:38",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP DOGEUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "DEXEUSDT",
+          "occurred_at": 1763585616.835696,
+          "occurred_at_iso": "2025-11-19 20:53:36",
+          "message": "Skipped DEXEUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:36 │ DEBUG │ aster │ SKIP DEXEUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:36",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP DEXEUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "DASHUSDT",
+          "occurred_at": 1763585616.0360463,
+          "occurred_at_iso": "2025-11-19 20:53:36",
+          "message": "Skipped DASHUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:36 │ DEBUG │ aster │ SKIP DASHUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:36",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP DASHUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "BNBUSDT",
+          "occurred_at": 1763585614.137173,
+          "occurred_at_iso": "2025-11-19 20:53:34",
+          "message": "Skipped BNBUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:34 │ DEBUG │ aster │ SKIP BNBUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:34",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP BNBUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "BCHUSDT",
+          "occurred_at": 1763585612.4563882,
+          "occurred_at_iso": "2025-11-19 20:53:32",
+          "message": "Skipped BCHUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:32 │ DEBUG │ aster │ SKIP BCHUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:32",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP BCHUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "B2USDT",
+          "occurred_at": 1763585611.8663135,
+          "occurred_at_iso": "2025-11-19 20:53:31",
+          "message": "Skipped B2USDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:31 │ DEBUG │ aster │ SKIP B2USDT: no_cross",
+            "timestamp": "2025-11-19 20:53:31",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP B2USDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "4USDT",
+          "occurred_at": 1763585608.4741745,
+          "occurred_at_iso": "2025-11-19 20:53:28",
+          "message": "Skipped 4USDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:28 │ DEBUG │ aster │ SKIP 4USDT: no_cross",
+            "timestamp": "2025-11-19 20:53:28",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP 4USDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "FILUSDT",
+          "occurred_at": 1763585590.485012,
+          "occurred_at_iso": "2025-11-19 20:53:10",
+          "message": "Skipped FILUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:10 │ DEBUG │ aster │ SKIP FILUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:10",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP FILUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ADAUSDT",
+          "occurred_at": 1763585588.8762705,
+          "occurred_at_iso": "2025-11-19 20:53:08",
+          "message": "Skipped ADAUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:08 │ DEBUG │ aster │ SKIP ADAUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:08",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ADAUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ALLOUSDT",
+          "occurred_at": 1763585587.1041994,
+          "occurred_at_iso": "2025-11-19 20:53:07",
+          "message": "Skipped ALLOUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:07 │ DEBUG │ aster │ SKIP ALLOUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:07",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ALLOUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "AVNTUSDT",
+          "occurred_at": 1763585586.5354302,
+          "occurred_at_iso": "2025-11-19 20:53:06",
+          "message": "Skipped AVNTUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:06 │ DEBUG │ aster │ SKIP AVNTUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:06",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP AVNTUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "KITEUSDT",
+          "occurred_at": 1763585585.3821673,
+          "occurred_at_iso": "2025-11-19 20:53:05",
+          "message": "Skipped KITEUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:05 │ DEBUG │ aster │ SKIP KITEUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:05",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP KITEUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "WLFIUSDT",
+          "occurred_at": 1763585584.8173373,
+          "occurred_at_iso": "2025-11-19 20:53:04",
+          "message": "Skipped WLFIUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:04 │ DEBUG │ aster │ SKIP WLFIUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:04",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP WLFIUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "UNIUSDT",
+          "occurred_at": 1763585583.176112,
+          "occurred_at_iso": "2025-11-19 20:53:03",
+          "message": "Skipped UNIUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:03 │ DEBUG │ aster │ SKIP UNIUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:03",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP UNIUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "METUSDT",
+          "occurred_at": 1763585582.6023276,
+          "occurred_at_iso": "2025-11-19 20:53:02",
+          "message": "Skipped METUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:02 │ DEBUG │ aster │ SKIP METUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:02",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP METUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ZENUSDT",
+          "occurred_at": 1763585582.0129728,
+          "occurred_at_iso": "2025-11-19 20:53:02",
+          "message": "Skipped ZENUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:02 │ DEBUG │ aster │ SKIP ZENUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:02",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ZENUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "XPLUSDT",
+          "occurred_at": 1763585580.2645047,
+          "occurred_at_iso": "2025-11-19 20:53:00",
+          "message": "Skipped XPLUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:53:00 │ DEBUG │ aster │ SKIP XPLUSDT: no_cross",
+            "timestamp": "2025-11-19 20:53:00",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP XPLUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "LTCUSDT",
+          "occurred_at": 1763585578.5373297,
+          "occurred_at_iso": "2025-11-19 20:52:58",
+          "message": "Skipped LTCUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:52:58 │ DEBUG │ aster │ SKIP LTCUSDT: no_cross",
+            "timestamp": "2025-11-19 20:52:58",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP LTCUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "JELLYJELLYUSDT",
+          "occurred_at": 1763585577.5188863,
+          "occurred_at_iso": "2025-11-19 20:52:57",
+          "message": "Skipped JELLYJELLYUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:52:57 │ DEBUG │ aster │ SKIP JELLYJELLYUSDT: no_cross",
+            "timestamp": "2025-11-19 20:52:57",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP JELLYJELLYUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "APRUSDT",
+          "occurred_at": 1763585575.0467799,
+          "occurred_at_iso": "2025-11-19 20:52:55",
+          "message": "Skipped APRUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:52:55 │ DEBUG │ aster │ SKIP APRUSDT: no_cross",
+            "timestamp": "2025-11-19 20:52:55",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP APRUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "SOLUSDT",
+          "occurred_at": 1763585572.9252503,
+          "occurred_at_iso": "2025-11-19 20:52:52",
+          "message": "Skipped SOLUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:52:52 │ DEBUG │ aster │ SKIP SOLUSDT: no_cross",
+            "timestamp": "2025-11-19 20:52:52",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP SOLUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "PUMPUSDT",
+          "occurred_at": 1763585572.3745012,
+          "occurred_at_iso": "2025-11-19 20:52:52",
+          "message": "Skipped PUMPUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:52:52 │ DEBUG │ aster │ SKIP PUMPUSDT: no_cross",
+            "timestamp": "2025-11-19 20:52:52",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP PUMPUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "LINKUSDT",
+          "occurred_at": 1763585571.5924275,
+          "occurred_at_iso": "2025-11-19 20:52:51",
+          "message": "Skipped LINKUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:52:51 │ DEBUG │ aster │ SKIP LINKUSDT: no_cross",
+            "timestamp": "2025-11-19 20:52:51",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP LINKUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "HYPEUSDT",
+          "occurred_at": 1763585570.4979134,
+          "occurred_at_iso": "2025-11-19 20:52:50",
+          "message": "Skipped HYPEUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:52:50 │ DEBUG │ aster │ SKIP HYPEUSDT: no_cross",
+            "timestamp": "2025-11-19 20:52:50",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP HYPEUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ETHUSDT",
+          "occurred_at": 1763585568.9388053,
+          "occurred_at_iso": "2025-11-19 20:52:48",
+          "message": "Skipped ETHUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:52:48 │ DEBUG │ aster │ SKIP ETHUSDT: no_cross",
+            "timestamp": "2025-11-19 20:52:48",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ETHUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "DOGEUSDT",
+          "occurred_at": 1763585568.3650002,
+          "occurred_at_iso": "2025-11-19 20:52:48",
+          "message": "Skipped DOGEUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:52:48 │ DEBUG │ aster │ SKIP DOGEUSDT: no_cross",
+            "timestamp": "2025-11-19 20:52:48",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP DOGEUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "DEXEUSDT",
+          "occurred_at": 1763585567.1064272,
+          "occurred_at_iso": "2025-11-19 20:52:47",
+          "message": "Skipped DEXEUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:52:47 │ DEBUG │ aster │ SKIP DEXEUSDT: no_cross",
+            "timestamp": "2025-11-19 20:52:47",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP DEXEUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "DASHUSDT",
+          "occurred_at": 1763585566.3267362,
+          "occurred_at_iso": "2025-11-19 20:52:46",
+          "message": "Skipped DASHUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:52:46 │ DEBUG │ aster │ SKIP DASHUSDT: no_cross",
+            "timestamp": "2025-11-19 20:52:46",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP DASHUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "BNBUSDT",
+          "occurred_at": 1763585565.2131398,
+          "occurred_at_iso": "2025-11-19 20:52:45",
+          "message": "Skipped BNBUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:52:45 │ DEBUG │ aster │ SKIP BNBUSDT: no_cross",
+            "timestamp": "2025-11-19 20:52:45",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP BNBUSDT: no_cross"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "BCHUSDT",
+          "occurred_at": 1763585563.5651517,
+          "occurred_at_iso": "2025-11-19 20:52:43",
+          "message": "Skipped BCHUSDT — Signal not confirmed.",
+          "detail": "",
+          "parsed": {
+            "raw": "2025-11-19 20:52:43 │ DEBUG │ aster │ SKIP BCHUSDT: no_cross",
+            "timestamp": "2025-11-19 20:52:43",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP BCHUSDT: no_cross"
+          },
+          "trade": null
+        }
+      ]
+    },
+    {
+      "reason": "short_trend_alignment",
+      "label": "Short Trend Alignment",
+      "count": 1323,
+      "events": [
+        {
+          "type": "log",
+          "symbol": "XRPUSDT",
+          "occurred_at": 1763585630.420102,
+          "occurred_at_iso": "2025-11-19 20:53:50",
+          "message": "Skipped XRPUSDT — Short Trend Alignment (Slope Fast -0.00035).",
+          "detail": "Slope Fast -0.00035",
+          "parsed": {
+            "raw": "2025-11-19 20:53:50 │ DEBUG │ aster │ SKIP XRPUSDT: short_trend_alignment {'slope_fast': '-0.00035'}",
+            "timestamp": "2025-11-19 20:53:50",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP XRPUSDT: short_trend_alignment {'slope_fast': '-0.00035'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "AVAXUSDT",
+          "occurred_at": 1763585625.2741566,
+          "occurred_at_iso": "2025-11-19 20:53:45",
+          "message": "Skipped AVAXUSDT — Short Trend Alignment (Slope Fast +0.00292 • Supertrend Dir +1.00).",
+          "detail": "Slope Fast +0.00292 • Supertrend Dir +1.00",
+          "parsed": {
+            "raw": "2025-11-19 20:53:45 │ DEBUG │ aster │ SKIP AVAXUSDT: short_trend_alignment {'slope_fast': '+0.00292', 'supertrend_dir': '+1.00'}",
+            "timestamp": "2025-11-19 20:53:45",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP AVAXUSDT: short_trend_alignment {'slope_fast': '+0.00292', 'supertrend_dir': '+1.00'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "AIAUSDT",
+          "occurred_at": 1763585624.0098386,
+          "occurred_at_iso": "2025-11-19 20:53:44",
+          "message": "Skipped AIAUSDT — Short Trend Alignment (Slope Fast +0.00190).",
+          "detail": "Slope Fast +0.00190",
+          "parsed": {
+            "raw": "2025-11-19 20:53:44 │ DEBUG │ aster │ SKIP AIAUSDT: short_trend_alignment {'slope_fast': '+0.00190'}",
+            "timestamp": "2025-11-19 20:53:44",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP AIAUSDT: short_trend_alignment {'slope_fast': '+0.00190'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "SUIUSDT",
+          "occurred_at": 1763585623.4168491,
+          "occurred_at_iso": "2025-11-19 20:53:43",
+          "message": "Skipped SUIUSDT — Short Trend Alignment (Slope Fast +0.00276 • Supertrend Dir +1.00).",
+          "detail": "Slope Fast +0.00276 • Supertrend Dir +1.00",
+          "parsed": {
+            "raw": "2025-11-19 20:53:43 │ DEBUG │ aster │ SKIP SUIUSDT: short_trend_alignment {'slope_fast': '+0.00276', 'supertrend_dir': '+1.00'}",
+            "timestamp": "2025-11-19 20:53:43",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP SUIUSDT: short_trend_alignment {'slope_fast': '+0.00276', 'supertrend_dir': '+1.00'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "GIGGLEUSDT",
+          "occurred_at": 1763585619.2735074,
+          "occurred_at_iso": "2025-11-19 20:53:39",
+          "message": "Skipped GIGGLEUSDT — Short Trend Alignment (Slope Fast +0.00075 • Supertrend Dir +1.00).",
+          "detail": "Slope Fast +0.00075 • Supertrend Dir +1.00",
+          "parsed": {
+            "raw": "2025-11-19 20:53:39 │ DEBUG │ aster │ SKIP GIGGLEUSDT: short_trend_alignment {'slope_fast': '+0.00075', 'supertrend_dir': '+1.00'}",
+            "timestamp": "2025-11-19 20:53:39",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP GIGGLEUSDT: short_trend_alignment {'slope_fast': '+0.00075', 'supertrend_dir': '+1.00'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "BTCUSDT",
+          "occurred_at": 1763585615.4501357,
+          "occurred_at_iso": "2025-11-19 20:53:35",
+          "message": "Skipped BTCUSDT — Short Trend Alignment (Slope Fast +0.00094 • Supertrend Dir +1.00).",
+          "detail": "Slope Fast +0.00094 • Supertrend Dir +1.00",
+          "parsed": {
+            "raw": "2025-11-19 20:53:35 │ DEBUG │ aster │ SKIP BTCUSDT: short_trend_alignment {'slope_fast': '+0.00094', 'supertrend_dir': '+1.00'}",
+            "timestamp": "2025-11-19 20:53:35",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP BTCUSDT: short_trend_alignment {'slope_fast': '+0.00094', 'supertrend_dir': '+1.00'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ASTERUSDT",
+          "occurred_at": 1763585609.434836,
+          "occurred_at_iso": "2025-11-19 20:53:29",
+          "message": "Skipped ASTERUSDT — Short Trend Alignment (Slope Fast +0.00270 • Supertrend Dir +1.00).",
+          "detail": "Slope Fast +0.00270 • Supertrend Dir +1.00",
+          "parsed": {
+            "raw": "2025-11-19 20:53:29 │ DEBUG │ aster │ SKIP ASTERUSDT: short_trend_alignment {'slope_fast': '+0.00270', 'supertrend_dir': '+1.00'}",
+            "timestamp": "2025-11-19 20:53:29",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ASTERUSDT: short_trend_alignment {'slope_fast': '+0.00270', 'supertrend_dir': '+1.00'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ZKUSDT",
+          "occurred_at": 1763585589.4641917,
+          "occurred_at_iso": "2025-11-19 20:53:09",
+          "message": "Skipped ZKUSDT — Short Trend Alignment (Slope Fast +0.00204 • Supertrend Dir +1.00).",
+          "detail": "Slope Fast +0.00204 • Supertrend Dir +1.00",
+          "parsed": {
+            "raw": "2025-11-19 20:53:09 │ DEBUG │ aster │ SKIP ZKUSDT: short_trend_alignment {'slope_fast': '+0.00204', 'supertrend_dir': '+1.00'}",
+            "timestamp": "2025-11-19 20:53:09",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ZKUSDT: short_trend_alignment {'slope_fast': '+0.00204', 'supertrend_dir': '+1.00'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ENSOUSDT",
+          "occurred_at": 1763585588.2978086,
+          "occurred_at_iso": "2025-11-19 20:53:08",
+          "message": "Skipped ENSOUSDT — Short Trend Alignment (Slope Fast -0.00015).",
+          "detail": "Slope Fast -0.00015",
+          "parsed": {
+            "raw": "2025-11-19 20:53:08 │ DEBUG │ aster │ SKIP ENSOUSDT: short_trend_alignment {'slope_fast': '-0.00015'}",
+            "timestamp": "2025-11-19 20:53:08",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ENSOUSDT: short_trend_alignment {'slope_fast': '-0.00015'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "FARTCOINUSDT",
+          "occurred_at": 1763585585.9584203,
+          "occurred_at_iso": "2025-11-19 20:53:05",
+          "message": "Skipped FARTCOINUSDT — Short Trend Alignment (Slope Fast +0.00412 • Supertrend Dir +1.00).",
+          "detail": "Slope Fast +0.00412 • Supertrend Dir +1.00",
+          "parsed": {
+            "raw": "2025-11-19 20:53:05 │ DEBUG │ aster │ SKIP FARTCOINUSDT: short_trend_alignment {'slope_fast': '+0.00412', 'supertrend_dir': '+1.00'}",
+            "timestamp": "2025-11-19 20:53:05",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP FARTCOINUSDT: short_trend_alignment {'slope_fast': '+0.00412', 'supertrend_dir': '+1.00'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "XRPUSDT",
+          "occurred_at": 1763585580.8405116,
+          "occurred_at_iso": "2025-11-19 20:53:00",
+          "message": "Skipped XRPUSDT — Short Trend Alignment (Slope Fast -0.00037).",
+          "detail": "Slope Fast -0.00037",
+          "parsed": {
+            "raw": "2025-11-19 20:53:00 │ DEBUG │ aster │ SKIP XRPUSDT: short_trend_alignment {'slope_fast': '-0.00037'}",
+            "timestamp": "2025-11-19 20:53:00",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP XRPUSDT: short_trend_alignment {'slope_fast': '-0.00037'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "AVAXUSDT",
+          "occurred_at": 1763585576.151312,
+          "occurred_at_iso": "2025-11-19 20:52:56",
+          "message": "Skipped AVAXUSDT — Short Trend Alignment (Slope Fast +0.00278 • Supertrend Dir +1.00).",
+          "detail": "Slope Fast +0.00278 • Supertrend Dir +1.00",
+          "parsed": {
+            "raw": "2025-11-19 20:52:56 │ DEBUG │ aster │ SKIP AVAXUSDT: short_trend_alignment {'slope_fast': '+0.00278', 'supertrend_dir': '+1.00'}",
+            "timestamp": "2025-11-19 20:52:56",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP AVAXUSDT: short_trend_alignment {'slope_fast': '+0.00278', 'supertrend_dir': '+1.00'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "AIAUSDT",
+          "occurred_at": 1763585574.4770699,
+          "occurred_at_iso": "2025-11-19 20:52:54",
+          "message": "Skipped AIAUSDT — Short Trend Alignment (Slope Fast +0.00190).",
+          "detail": "Slope Fast +0.00190",
+          "parsed": {
+            "raw": "2025-11-19 20:52:54 │ DEBUG │ aster │ SKIP AIAUSDT: short_trend_alignment {'slope_fast': '+0.00190'}",
+            "timestamp": "2025-11-19 20:52:54",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP AIAUSDT: short_trend_alignment {'slope_fast': '+0.00190'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "SUIUSDT",
+          "occurred_at": 1763585573.9269822,
+          "occurred_at_iso": "2025-11-19 20:52:53",
+          "message": "Skipped SUIUSDT — Short Trend Alignment (Slope Fast +0.00275 • Supertrend Dir +1.00).",
+          "detail": "Slope Fast +0.00275 • Supertrend Dir +1.00",
+          "parsed": {
+            "raw": "2025-11-19 20:52:53 │ DEBUG │ aster │ SKIP SUIUSDT: short_trend_alignment {'slope_fast': '+0.00275', 'supertrend_dir': '+1.00'}",
+            "timestamp": "2025-11-19 20:52:53",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP SUIUSDT: short_trend_alignment {'slope_fast': '+0.00275', 'supertrend_dir': '+1.00'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "GIGGLEUSDT",
+          "occurred_at": 1763585569.927044,
+          "occurred_at_iso": "2025-11-19 20:52:49",
+          "message": "Skipped GIGGLEUSDT — Short Trend Alignment (Slope Fast +0.00075 • Supertrend Dir +1.00).",
+          "detail": "Slope Fast +0.00075 • Supertrend Dir +1.00",
+          "parsed": {
+            "raw": "2025-11-19 20:52:49 │ DEBUG │ aster │ SKIP GIGGLEUSDT: short_trend_alignment {'slope_fast': '+0.00075', 'supertrend_dir': '+1.00'}",
+            "timestamp": "2025-11-19 20:52:49",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP GIGGLEUSDT: short_trend_alignment {'slope_fast': '+0.00075', 'supertrend_dir': '+1.00'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "BTCUSDT",
+          "occurred_at": 1763585565.757376,
+          "occurred_at_iso": "2025-11-19 20:52:45",
+          "message": "Skipped BTCUSDT — Short Trend Alignment (Slope Fast +0.00093 • Supertrend Dir +1.00).",
+          "detail": "Slope Fast +0.00093 • Supertrend Dir +1.00",
+          "parsed": {
+            "raw": "2025-11-19 20:52:45 │ DEBUG │ aster │ SKIP BTCUSDT: short_trend_alignment {'slope_fast': '+0.00093', 'supertrend_dir': '+1.00'}",
+            "timestamp": "2025-11-19 20:52:45",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP BTCUSDT: short_trend_alignment {'slope_fast': '+0.00093', 'supertrend_dir': '+1.00'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ASTERUSDT",
+          "occurred_at": 1763585561.3611295,
+          "occurred_at_iso": "2025-11-19 20:52:41",
+          "message": "Skipped ASTERUSDT — Short Trend Alignment (Slope Fast +0.00285 • Supertrend Dir +1.00).",
+          "detail": "Slope Fast +0.00285 • Supertrend Dir +1.00",
+          "parsed": {
+            "raw": "2025-11-19 20:52:41 │ DEBUG │ aster │ SKIP ASTERUSDT: short_trend_alignment {'slope_fast': '+0.00285', 'supertrend_dir': '+1.00'}",
+            "timestamp": "2025-11-19 20:52:41",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ASTERUSDT: short_trend_alignment {'slope_fast': '+0.00285', 'supertrend_dir': '+1.00'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ZKUSDT",
+          "occurred_at": 1763585541.406339,
+          "occurred_at_iso": "2025-11-19 20:52:21",
+          "message": "Skipped ZKUSDT — Short Trend Alignment (Slope Fast +0.00146 • Supertrend Dir +1.00).",
+          "detail": "Slope Fast +0.00146 • Supertrend Dir +1.00",
+          "parsed": {
+            "raw": "2025-11-19 20:52:21 │ DEBUG │ aster │ SKIP ZKUSDT: short_trend_alignment {'slope_fast': '+0.00146', 'supertrend_dir': '+1.00'}",
+            "timestamp": "2025-11-19 20:52:21",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ZKUSDT: short_trend_alignment {'slope_fast': '+0.00146', 'supertrend_dir': '+1.00'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ENSOUSDT",
+          "occurred_at": 1763585539.7191591,
+          "occurred_at_iso": "2025-11-19 20:52:19",
+          "message": "Skipped ENSOUSDT — Short Trend Alignment (Slope Fast -0.00015).",
+          "detail": "Slope Fast -0.00015",
+          "parsed": {
+            "raw": "2025-11-19 20:52:19 │ DEBUG │ aster │ SKIP ENSOUSDT: short_trend_alignment {'slope_fast': '-0.00015'}",
+            "timestamp": "2025-11-19 20:52:19",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ENSOUSDT: short_trend_alignment {'slope_fast': '-0.00015'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "FARTCOINUSDT",
+          "occurred_at": 1763585537.4332037,
+          "occurred_at_iso": "2025-11-19 20:52:17",
+          "message": "Skipped FARTCOINUSDT — Short Trend Alignment (Slope Fast +0.00412 • Supertrend Dir +1.00).",
+          "detail": "Slope Fast +0.00412 • Supertrend Dir +1.00",
+          "parsed": {
+            "raw": "2025-11-19 20:52:17 │ DEBUG │ aster │ SKIP FARTCOINUSDT: short_trend_alignment {'slope_fast': '+0.00412', 'supertrend_dir': '+1.00'}",
+            "timestamp": "2025-11-19 20:52:17",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP FARTCOINUSDT: short_trend_alignment {'slope_fast': '+0.00412', 'supertrend_dir': '+1.00'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "AVAXUSDT",
+          "occurred_at": 1763585525.99017,
+          "occurred_at_iso": "2025-11-19 20:52:05",
+          "message": "Skipped AVAXUSDT — Short Trend Alignment (Slope Fast +0.00278 • Supertrend Dir +1.00).",
+          "detail": "Slope Fast +0.00278 • Supertrend Dir +1.00",
+          "parsed": {
+            "raw": "2025-11-19 20:52:05 │ DEBUG │ aster │ SKIP AVAXUSDT: short_trend_alignment {'slope_fast': '+0.00278', 'supertrend_dir': '+1.00'}",
+            "timestamp": "2025-11-19 20:52:05",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP AVAXUSDT: short_trend_alignment {'slope_fast': '+0.00278', 'supertrend_dir': '+1.00'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "SUIUSDT",
+          "occurred_at": 1763585523.7721815,
+          "occurred_at_iso": "2025-11-19 20:52:03",
+          "message": "Skipped SUIUSDT — Short Trend Alignment (Slope Fast +0.00261 • Supertrend Dir +1.00).",
+          "detail": "Slope Fast +0.00261 • Supertrend Dir +1.00",
+          "parsed": {
+            "raw": "2025-11-19 20:52:03 │ DEBUG │ aster │ SKIP SUIUSDT: short_trend_alignment {'slope_fast': '+0.00261', 'supertrend_dir': '+1.00'}",
+            "timestamp": "2025-11-19 20:52:03",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP SUIUSDT: short_trend_alignment {'slope_fast': '+0.00261', 'supertrend_dir': '+1.00'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "GIGGLEUSDT",
+          "occurred_at": 1763585520.4758434,
+          "occurred_at_iso": "2025-11-19 20:52:00",
+          "message": "Skipped GIGGLEUSDT — Short Trend Alignment (Slope Fast +0.00069 • Supertrend Dir +1.00).",
+          "detail": "Slope Fast +0.00069 • Supertrend Dir +1.00",
+          "parsed": {
+            "raw": "2025-11-19 20:52:00 │ DEBUG │ aster │ SKIP GIGGLEUSDT: short_trend_alignment {'slope_fast': '+0.00069', 'supertrend_dir': '+1.00'}",
+            "timestamp": "2025-11-19 20:52:00",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP GIGGLEUSDT: short_trend_alignment {'slope_fast': '+0.00069', 'supertrend_dir': '+1.00'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "BTCUSDT",
+          "occurred_at": 1763585516.5754223,
+          "occurred_at_iso": "2025-11-19 20:51:56",
+          "message": "Skipped BTCUSDT — Short Trend Alignment (Slope Fast +0.00094 • Supertrend Dir +1.00).",
+          "detail": "Slope Fast +0.00094 • Supertrend Dir +1.00",
+          "parsed": {
+            "raw": "2025-11-19 20:51:56 │ DEBUG │ aster │ SKIP BTCUSDT: short_trend_alignment {'slope_fast': '+0.00094', 'supertrend_dir': '+1.00'}",
+            "timestamp": "2025-11-19 20:51:56",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP BTCUSDT: short_trend_alignment {'slope_fast': '+0.00094', 'supertrend_dir': '+1.00'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ASTERUSDT",
+          "occurred_at": 1763585510.0258896,
+          "occurred_at_iso": "2025-11-19 20:51:50",
+          "message": "Skipped ASTERUSDT — Short Trend Alignment (Slope Fast +0.00280 • Supertrend Dir +1.00).",
+          "detail": "Slope Fast +0.00280 • Supertrend Dir +1.00",
+          "parsed": {
+            "raw": "2025-11-19 20:51:50 │ DEBUG │ aster │ SKIP ASTERUSDT: short_trend_alignment {'slope_fast': '+0.00280', 'supertrend_dir': '+1.00'}",
+            "timestamp": "2025-11-19 20:51:50",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ASTERUSDT: short_trend_alignment {'slope_fast': '+0.00280', 'supertrend_dir': '+1.00'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ZKUSDT",
+          "occurred_at": 1763585491.0612724,
+          "occurred_at_iso": "2025-11-19 20:51:31",
+          "message": "Skipped ZKUSDT — Short Trend Alignment (Slope Fast +0.00146 • Supertrend Dir +1.00).",
+          "detail": "Slope Fast +0.00146 • Supertrend Dir +1.00",
+          "parsed": {
+            "raw": "2025-11-19 20:51:31 │ DEBUG │ aster │ SKIP ZKUSDT: short_trend_alignment {'slope_fast': '+0.00146', 'supertrend_dir': '+1.00'}",
+            "timestamp": "2025-11-19 20:51:31",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ZKUSDT: short_trend_alignment {'slope_fast': '+0.00146', 'supertrend_dir': '+1.00'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ENSOUSDT",
+          "occurred_at": 1763585489.9408262,
+          "occurred_at_iso": "2025-11-19 20:51:29",
+          "message": "Skipped ENSOUSDT — Short Trend Alignment (Slope Fast -0.00015).",
+          "detail": "Slope Fast -0.00015",
+          "parsed": {
+            "raw": "2025-11-19 20:51:29 │ DEBUG │ aster │ SKIP ENSOUSDT: short_trend_alignment {'slope_fast': '-0.00015'}",
+            "timestamp": "2025-11-19 20:51:29",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ENSOUSDT: short_trend_alignment {'slope_fast': '-0.00015'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "FARTCOINUSDT",
+          "occurred_at": 1763585486.7190495,
+          "occurred_at_iso": "2025-11-19 20:51:26",
+          "message": "Skipped FARTCOINUSDT — Short Trend Alignment (Slope Fast +0.00397 • Supertrend Dir +1.00).",
+          "detail": "Slope Fast +0.00397 • Supertrend Dir +1.00",
+          "parsed": {
+            "raw": "2025-11-19 20:51:26 │ DEBUG │ aster │ SKIP FARTCOINUSDT: short_trend_alignment {'slope_fast': '+0.00397', 'supertrend_dir': '+1.00'}",
+            "timestamp": "2025-11-19 20:51:26",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP FARTCOINUSDT: short_trend_alignment {'slope_fast': '+0.00397', 'supertrend_dir': '+1.00'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "XRPUSDT",
+          "occurred_at": 1763585480.988779,
+          "occurred_at_iso": "2025-11-19 20:51:20",
+          "message": "Skipped XRPUSDT — Short Trend Alignment (Slope Fast -0.00034).",
+          "detail": "Slope Fast -0.00034",
+          "parsed": {
+            "raw": "2025-11-19 20:51:20 │ DEBUG │ aster │ SKIP XRPUSDT: short_trend_alignment {'slope_fast': '-0.00034'}",
+            "timestamp": "2025-11-19 20:51:20",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP XRPUSDT: short_trend_alignment {'slope_fast': '-0.00034'}"
+          },
+          "trade": null
+        }
+      ]
+    },
+    {
+      "reason": "edge_r",
+      "label": "Expected edge too small",
+      "count": 1281,
+      "events": [
+        {
+          "type": "log",
+          "symbol": "BEATUSDT",
+          "occurred_at": 1763585613.2838829,
+          "occurred_at_iso": "2025-11-19 20:53:33",
+          "message": "Skipped BEATUSDT — Expected edge too small (ExpR 0.030 • MinR 0.049).",
+          "detail": "ExpR 0.030 • MinR 0.049",
+          "parsed": {
+            "raw": "2025-11-19 20:53:33 │ DEBUG │ aster │ SKIP BEATUSDT: edge_r {'expR': '0.030', 'minR': '0.049'}",
+            "timestamp": "2025-11-19 20:53:33",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP BEATUSDT: edge_r {'expR': '0.030', 'minR': '0.049'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ATUSDT",
+          "occurred_at": 1763585610.5480201,
+          "occurred_at_iso": "2025-11-19 20:53:30",
+          "message": "Skipped ATUSDT — Expected edge too small (ExpR 0.012 • MinR 0.049).",
+          "detail": "ExpR 0.012 • MinR 0.049",
+          "parsed": {
+            "raw": "2025-11-19 20:53:30 │ DEBUG │ aster │ SKIP ATUSDT: edge_r {'expR': '0.012', 'minR': '0.049'}",
+            "timestamp": "2025-11-19 20:53:30",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ATUSDT: edge_r {'expR': '0.012', 'minR': '0.049'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "QQQUSDT",
+          "occurred_at": 1763585591.7757134,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped QQQUSDT — Expected edge too small (ExpR 0.002 • MinR 0.049).",
+          "detail": "ExpR 0.002 • MinR 0.049",
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ DEBUG │ aster │ SKIP QQQUSDT: edge_r {'expR': '0.002', 'minR': '0.049'}",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP QQQUSDT: edge_r {'expR': '0.002', 'minR': '0.049'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "TRUTHUSDT",
+          "occurred_at": 1763585587.7147558,
+          "occurred_at_iso": "2025-11-19 20:53:07",
+          "message": "Skipped TRUTHUSDT — Expected edge too small (ExpR 0.045 • MinR 0.049).",
+          "detail": "ExpR 0.045 • MinR 0.049",
+          "parsed": {
+            "raw": "2025-11-19 20:53:07 │ DEBUG │ aster │ SKIP TRUTHUSDT: edge_r {'expR': '0.045', 'minR': '0.049'}",
+            "timestamp": "2025-11-19 20:53:07",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP TRUTHUSDT: edge_r {'expR': '0.045', 'minR': '0.049'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "BEATUSDT",
+          "occurred_at": 1763585564.3854215,
+          "occurred_at_iso": "2025-11-19 20:52:44",
+          "message": "Skipped BEATUSDT — Expected edge too small (ExpR 0.032 • MinR 0.049).",
+          "detail": "ExpR 0.032 • MinR 0.049",
+          "parsed": {
+            "raw": "2025-11-19 20:52:44 │ DEBUG │ aster │ SKIP BEATUSDT: edge_r {'expR': '0.032', 'minR': '0.049'}",
+            "timestamp": "2025-11-19 20:52:44",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP BEATUSDT: edge_r {'expR': '0.032', 'minR': '0.049'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ATUSDT",
+          "occurred_at": 1763585562.1834178,
+          "occurred_at_iso": "2025-11-19 20:52:42",
+          "message": "Skipped ATUSDT — Expected edge too small (ExpR 0.012 • MinR 0.049).",
+          "detail": "ExpR 0.012 • MinR 0.049",
+          "parsed": {
+            "raw": "2025-11-19 20:52:42 │ DEBUG │ aster │ SKIP ATUSDT: edge_r {'expR': '0.012', 'minR': '0.049'}",
+            "timestamp": "2025-11-19 20:52:42",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ATUSDT: edge_r {'expR': '0.012', 'minR': '0.049'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "TRUTHUSDT",
+          "occurred_at": 1763585539.1703415,
+          "occurred_at_iso": "2025-11-19 20:52:19",
+          "message": "Skipped TRUTHUSDT — Expected edge too small (ExpR 0.044 • MinR 0.049).",
+          "detail": "ExpR 0.044 • MinR 0.049",
+          "parsed": {
+            "raw": "2025-11-19 20:52:19 │ DEBUG │ aster │ SKIP TRUTHUSDT: edge_r {'expR': '0.044', 'minR': '0.049'}",
+            "timestamp": "2025-11-19 20:52:19",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP TRUTHUSDT: edge_r {'expR': '0.044', 'minR': '0.049'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "BEATUSDT",
+          "occurred_at": 1763585513.8159015,
+          "occurred_at_iso": "2025-11-19 20:51:53",
+          "message": "Skipped BEATUSDT — Expected edge too small (ExpR 0.032 • MinR 0.049).",
+          "detail": "ExpR 0.032 • MinR 0.049",
+          "parsed": {
+            "raw": "2025-11-19 20:51:53 │ DEBUG │ aster │ SKIP BEATUSDT: edge_r {'expR': '0.032', 'minR': '0.049'}",
+            "timestamp": "2025-11-19 20:51:53",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP BEATUSDT: edge_r {'expR': '0.032', 'minR': '0.049'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ATUSDT",
+          "occurred_at": 1763585511.130481,
+          "occurred_at_iso": "2025-11-19 20:51:51",
+          "message": "Skipped ATUSDT — Expected edge too small (ExpR 0.012 • MinR 0.049).",
+          "detail": "ExpR 0.012 • MinR 0.049",
+          "parsed": {
+            "raw": "2025-11-19 20:51:51 │ DEBUG │ aster │ SKIP ATUSDT: edge_r {'expR': '0.012', 'minR': '0.049'}",
+            "timestamp": "2025-11-19 20:51:51",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ATUSDT: edge_r {'expR': '0.012', 'minR': '0.049'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "TRUTHUSDT",
+          "occurred_at": 1763585488.91322,
+          "occurred_at_iso": "2025-11-19 20:51:28",
+          "message": "Skipped TRUTHUSDT — Expected edge too small (ExpR 0.049 • MinR 0.049).",
+          "detail": "ExpR 0.049 • MinR 0.049",
+          "parsed": {
+            "raw": "2025-11-19 20:51:28 │ DEBUG │ aster │ SKIP TRUTHUSDT: edge_r {'expR': '0.049', 'minR': '0.049'}",
+            "timestamp": "2025-11-19 20:51:28",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP TRUTHUSDT: edge_r {'expR': '0.049', 'minR': '0.049'}"
+          },
+          "trade": null
+        }
+      ]
+    },
+    {
+      "reason": "spread_tight",
+      "label": "Spread Tight",
+      "count": 902,
+      "events": [
+        {
+          "type": "log",
+          "symbol": "PIEVERSEUSDT",
+          "occurred_at": 1763585628.724995,
+          "occurred_at_iso": "2025-11-19 20:53:48",
+          "message": "Skipped PIEVERSEUSDT — Spread Tight (Spread 0.00197 • Max 0.00130).",
+          "detail": "Spread 0.00197 • Max 0.00130",
+          "parsed": {
+            "raw": "2025-11-19 20:53:48 │ DEBUG │ aster │ SKIP PIEVERSEUSDT: spread_tight {'spread': '0.00197', 'max': '0.00130'}",
+            "timestamp": "2025-11-19 20:53:48",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP PIEVERSEUSDT: spread_tight {'spread': '0.00197', 'max': '0.00130'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "COAIUSDT",
+          "occurred_at": 1763585583.7523844,
+          "occurred_at_iso": "2025-11-19 20:53:03",
+          "message": "Skipped COAIUSDT — Spread Tight (Spread 0.00160 • Max 0.00130).",
+          "detail": "Spread 0.00160 • Max 0.00130",
+          "parsed": {
+            "raw": "2025-11-19 20:53:03 │ DEBUG │ aster │ SKIP COAIUSDT: spread_tight {'spread': '0.00160', 'max': '0.00130'}",
+            "timestamp": "2025-11-19 20:53:03",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP COAIUSDT: spread_tight {'spread': '0.00160', 'max': '0.00130'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "UAIUSDT",
+          "occurred_at": 1763585579.6731362,
+          "occurred_at_iso": "2025-11-19 20:52:59",
+          "message": "Skipped UAIUSDT — Spread Tight (Spread 0.00156 • Max 0.00130).",
+          "detail": "Spread 0.00156 • Max 0.00130",
+          "parsed": {
+            "raw": "2025-11-19 20:52:59 │ DEBUG │ aster │ SKIP UAIUSDT: spread_tight {'spread': '0.00156', 'max': '0.00130'}",
+            "timestamp": "2025-11-19 20:52:59",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP UAIUSDT: spread_tight {'spread': '0.00156', 'max': '0.00130'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "PIEVERSEUSDT",
+          "occurred_at": 1763585579.1073365,
+          "occurred_at_iso": "2025-11-19 20:52:59",
+          "message": "Skipped PIEVERSEUSDT — Spread Tight (Spread 0.00164 • Max 0.00130).",
+          "detail": "Spread 0.00164 • Max 0.00130",
+          "parsed": {
+            "raw": "2025-11-19 20:52:59 │ DEBUG │ aster │ SKIP PIEVERSEUSDT: spread_tight {'spread': '0.00164', 'max': '0.00130'}",
+            "timestamp": "2025-11-19 20:52:59",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP PIEVERSEUSDT: spread_tight {'spread': '0.00164', 'max': '0.00130'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "COAIUSDT",
+          "occurred_at": 1763585535.2630131,
+          "occurred_at_iso": "2025-11-19 20:52:15",
+          "message": "Skipped COAIUSDT — Spread Tight (Spread 0.00160 • Max 0.00130).",
+          "detail": "Spread 0.00160 • Max 0.00130",
+          "parsed": {
+            "raw": "2025-11-19 20:52:15 │ DEBUG │ aster │ SKIP COAIUSDT: spread_tight {'spread': '0.00160', 'max': '0.00130'}",
+            "timestamp": "2025-11-19 20:52:15",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP COAIUSDT: spread_tight {'spread': '0.00160', 'max': '0.00130'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "PIEVERSEUSDT",
+          "occurred_at": 1763585529.0964508,
+          "occurred_at_iso": "2025-11-19 20:52:09",
+          "message": "Skipped PIEVERSEUSDT — Spread Tight (Spread 0.00165 • Max 0.00130).",
+          "detail": "Spread 0.00165 • Max 0.00130",
+          "parsed": {
+            "raw": "2025-11-19 20:52:09 │ DEBUG │ aster │ SKIP PIEVERSEUSDT: spread_tight {'spread': '0.00165', 'max': '0.00130'}",
+            "timestamp": "2025-11-19 20:52:09",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP PIEVERSEUSDT: spread_tight {'spread': '0.00165', 'max': '0.00130'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "DASHUSDT",
+          "occurred_at": 1763585517.580684,
+          "occurred_at_iso": "2025-11-19 20:51:57",
+          "message": "Skipped DASHUSDT — Spread Tight (Spread 0.00133 • Max 0.00130).",
+          "detail": "Spread 0.00133 • Max 0.00130",
+          "parsed": {
+            "raw": "2025-11-19 20:51:57 │ DEBUG │ aster │ SKIP DASHUSDT: spread_tight {'spread': '0.00133', 'max': '0.00130'}",
+            "timestamp": "2025-11-19 20:51:57",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP DASHUSDT: spread_tight {'spread': '0.00133', 'max': '0.00130'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "COAIUSDT",
+          "occurred_at": 1763585484.1558244,
+          "occurred_at_iso": "2025-11-19 20:51:24",
+          "message": "Skipped COAIUSDT — Spread Tight (Spread 0.00160 • Max 0.00130).",
+          "detail": "Spread 0.00160 • Max 0.00130",
+          "parsed": {
+            "raw": "2025-11-19 20:51:24 │ DEBUG │ aster │ SKIP COAIUSDT: spread_tight {'spread': '0.00160', 'max': '0.00130'}",
+            "timestamp": "2025-11-19 20:51:24",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP COAIUSDT: spread_tight {'spread': '0.00160', 'max': '0.00130'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "PIEVERSEUSDT",
+          "occurred_at": 1763585478.4567394,
+          "occurred_at_iso": "2025-11-19 20:51:18",
+          "message": "Skipped PIEVERSEUSDT — Spread Tight (Spread 0.00165 • Max 0.00130).",
+          "detail": "Spread 0.00165 • Max 0.00130",
+          "parsed": {
+            "raw": "2025-11-19 20:51:18 │ DEBUG │ aster │ SKIP PIEVERSEUSDT: spread_tight {'spread': '0.00165', 'max': '0.00130'}",
+            "timestamp": "2025-11-19 20:51:18",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP PIEVERSEUSDT: spread_tight {'spread': '0.00165', 'max': '0.00130'}"
+          },
+          "trade": null
+        }
+      ]
+    },
+    {
+      "reason": "stoch_rsi_trend_short",
+      "label": "Stoch Rsi Trend Short",
+      "count": 435,
+      "events": []
+    },
+    {
+      "reason": "long_overextended",
+      "label": "Long Overextended",
+      "count": 287,
+      "events": [
+        {
+          "type": "log",
+          "symbol": "ZECUSDT",
+          "occurred_at": 1763585581.4293253,
+          "occurred_at_iso": "2025-11-19 20:53:01",
+          "message": "Skipped ZECUSDT — Long Overextended (Rsi 59.93 • Rsi Cap 58.00 • Atr Pct 0.0141 • Atr Cap 0.0080).",
+          "detail": "Rsi 59.93 • Rsi Cap 58.00 • Atr Pct 0.0141 • Atr Cap 0.0080",
+          "parsed": {
+            "raw": "2025-11-19 20:53:01 │ DEBUG │ aster │ SKIP ZECUSDT: long_overextended {'rsi': '59.93', 'rsi_cap': '58.00', 'atr_pct': '0.0141', 'atr_cap': '0.0080'}",
+            "timestamp": "2025-11-19 20:53:01",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ZECUSDT: long_overextended {'rsi': '59.93', 'rsi_cap': '58.00', 'atr_pct': '0.0141', 'atr_cap': '0.0080'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ZECUSDT",
+          "occurred_at": 1763585531.9934032,
+          "occurred_at_iso": "2025-11-19 20:52:11",
+          "message": "Skipped ZECUSDT — Long Overextended (Rsi 58.98 • Rsi Cap 58.00 • Atr Pct 0.0141 • Atr Cap 0.0080).",
+          "detail": "Rsi 58.98 • Rsi Cap 58.00 • Atr Pct 0.0141 • Atr Cap 0.0080",
+          "parsed": {
+            "raw": "2025-11-19 20:52:11 │ DEBUG │ aster │ SKIP ZECUSDT: long_overextended {'rsi': '58.98', 'rsi_cap': '58.00', 'atr_pct': '0.0141', 'atr_cap': '0.0080'}",
+            "timestamp": "2025-11-19 20:52:11",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ZECUSDT: long_overextended {'rsi': '58.98', 'rsi_cap': '58.00', 'atr_pct': '0.0141', 'atr_cap': '0.0080'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ZECUSDT",
+          "occurred_at": 1763585481.5565507,
+          "occurred_at_iso": "2025-11-19 20:51:21",
+          "message": "Skipped ZECUSDT — Long Overextended (Rsi 60.60 • Rsi Cap 58.00 • Atr Pct 0.0140 • Atr Cap 0.0080).",
+          "detail": "Rsi 60.60 • Rsi Cap 58.00 • Atr Pct 0.0140 • Atr Cap 0.0080",
+          "parsed": {
+            "raw": "2025-11-19 20:51:21 │ DEBUG │ aster │ SKIP ZECUSDT: long_overextended {'rsi': '60.60', 'rsi_cap': '58.00', 'atr_pct': '0.0140', 'atr_cap': '0.0080'}",
+            "timestamp": "2025-11-19 20:51:21",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ZECUSDT: long_overextended {'rsi': '60.60', 'rsi_cap': '58.00', 'atr_pct': '0.0140', 'atr_cap': '0.0080'}"
+          },
+          "trade": null
+        }
+      ]
+    },
+    {
+      "reason": "non_arb_bias_short",
+      "label": "Non Arb Bias Short",
+      "count": 132,
+      "events": [
+        {
+          "type": "log",
+          "symbol": "HEMIUSDT",
+          "occurred_at": 1763585627.0351303,
+          "occurred_at_iso": "2025-11-19 20:53:47",
+          "message": "Skipped HEMIUSDT — Non Arb Bias Short (Edge -0.000600 • Max -0.000050).",
+          "detail": "Edge -0.000600 • Max -0.000050",
+          "parsed": {
+            "raw": "2025-11-19 20:53:47 │ DEBUG │ aster │ SKIP HEMIUSDT: non_arb_bias_short {'edge': '-0.000600', 'max': '-0.000050'}",
+            "timestamp": "2025-11-19 20:53:47",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP HEMIUSDT: non_arb_bias_short {'edge': '-0.000600', 'max': '-0.000050'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "HEMIUSDT",
+          "occurred_at": 1763585576.9301472,
+          "occurred_at_iso": "2025-11-19 20:52:56",
+          "message": "Skipped HEMIUSDT — Non Arb Bias Short (Edge -0.000600 • Max -0.000050).",
+          "detail": "Edge -0.000600 • Max -0.000050",
+          "parsed": {
+            "raw": "2025-11-19 20:52:56 │ DEBUG │ aster │ SKIP HEMIUSDT: non_arb_bias_short {'edge': '-0.000600', 'max': '-0.000050'}",
+            "timestamp": "2025-11-19 20:52:56",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP HEMIUSDT: non_arb_bias_short {'edge': '-0.000600', 'max': '-0.000050'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "HEMIUSDT",
+          "occurred_at": 1763585527.475775,
+          "occurred_at_iso": "2025-11-19 20:52:07",
+          "message": "Skipped HEMIUSDT — Non Arb Bias Short (Edge -0.000600 • Max -0.000050).",
+          "detail": "Edge -0.000600 • Max -0.000050",
+          "parsed": {
+            "raw": "2025-11-19 20:52:07 │ DEBUG │ aster │ SKIP HEMIUSDT: non_arb_bias_short {'edge': '-0.000600', 'max': '-0.000050'}",
+            "timestamp": "2025-11-19 20:52:07",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP HEMIUSDT: non_arb_bias_short {'edge': '-0.000600', 'max': '-0.000050'}"
+          },
+          "trade": null
+        }
+      ]
+    },
+    {
+      "reason": "arb_gate",
+      "label": "Arb Gate",
+      "count": 97,
+      "events": []
+    },
+    {
+      "reason": "continuation_pullback",
+      "label": "Continuation Pullback",
+      "count": 52,
+      "events": [
+        {
+          "type": "log",
+          "symbol": "ZORAUSDT",
+          "occurred_at": 1763585591.1923985,
+          "occurred_at_iso": "2025-11-19 20:53:11",
+          "message": "Skipped ZORAUSDT — Continuation Pullback (Stoch Rsi K 100.0 • Gate 90.0).",
+          "detail": "Stoch Rsi K 100.0 • Gate 90.0",
+          "parsed": {
+            "raw": "2025-11-19 20:53:11 │ DEBUG │ aster │ SKIP ZORAUSDT: continuation_pullback {'stoch_rsi_k': '100.0', 'gate': '90.0'}",
+            "timestamp": "2025-11-19 20:53:11",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ZORAUSDT: continuation_pullback {'stoch_rsi_k': '100.0', 'gate': '90.0'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ZORAUSDT",
+          "occurred_at": 1763585542.5320082,
+          "occurred_at_iso": "2025-11-19 20:52:22",
+          "message": "Skipped ZORAUSDT — Continuation Pullback (Stoch Rsi K 100.0 • Gate 90.0).",
+          "detail": "Stoch Rsi K 100.0 • Gate 90.0",
+          "parsed": {
+            "raw": "2025-11-19 20:52:22 │ DEBUG │ aster │ SKIP ZORAUSDT: continuation_pullback {'stoch_rsi_k': '100.0', 'gate': '90.0'}",
+            "timestamp": "2025-11-19 20:52:22",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ZORAUSDT: continuation_pullback {'stoch_rsi_k': '100.0', 'gate': '90.0'}"
+          },
+          "trade": null
+        },
+        {
+          "type": "log",
+          "symbol": "ZORAUSDT",
+          "occurred_at": 1763585492.3360283,
+          "occurred_at_iso": "2025-11-19 20:51:32",
+          "message": "Skipped ZORAUSDT — Continuation Pullback (Stoch Rsi K 100.0 • Gate 90.0).",
+          "detail": "Stoch Rsi K 100.0 • Gate 90.0",
+          "parsed": {
+            "raw": "2025-11-19 20:51:32 │ DEBUG │ aster │ SKIP ZORAUSDT: continuation_pullback {'stoch_rsi_k': '100.0', 'gate': '90.0'}",
+            "timestamp": "2025-11-19 20:51:32",
+            "level": "debug",
+            "logger": "aster",
+            "message": "SKIP ZORAUSDT: continuation_pullback {'stoch_rsi_k': '100.0', 'gate': '90.0'}"
+          },
+          "trade": null
+        }
+      ]
+    },
+    {
+      "reason": "quality_gate",
+      "label": "Quality Gate",
+      "count": 51,
+      "events": []
+    },
+    {
+      "reason": "min_qvol",
+      "label": "Min Qvol",
+      "count": 31,
+      "events": []
+    },
+    {
+      "reason": "non_arb_bias_long",
+      "label": "Non Arb Bias Long",
+      "count": 24,
+      "events": []
+    },
+    {
+      "reason": "filtered",
+      "label": "Signal blocked by safety filters",
+      "count": 18,
+      "events": []
+    },
+    {
+      "reason": "stoch_rsi_penalty",
+      "label": "Stoch Rsi Penalty",
+      "count": 17,
+      "events": []
+    },
+    {
+      "reason": "oracle_gap",
+      "label": "Oracle Gap",
+      "count": 13,
+      "events": []
+    }
+  ],
+  "total_taken": 0
+}
