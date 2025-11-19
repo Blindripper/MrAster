@@ -1188,9 +1188,9 @@ class PlaybookManager:
             "atr_pct_cap": (0.002, 0.02),
         },
         "trend_extension": {
-            "bars_soft": (8.0, 36.0),
-            "bars_hard": (10.0, 52.0),
-            "adx_min": (18.0, 65.0),
+            "bars_soft": (6.0, 60.0),
+            "bars_hard": (10.0, 90.0),
+            "adx_min": (20.0, 80.0),
         },
         "continuation_pullback": {
             "stoch_warn": (40.0, 92.0),
