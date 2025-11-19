@@ -691,6 +691,9 @@ MIN_QUOTE_VOL = float(os.getenv("ASTER_MIN_QUOTE_VOL_USDT", "850000"))
 SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.00200"))  # 0.20 %
 SPREAD_BPS_SOFT_CAP = float(os.getenv("ASTER_SPREAD_BPS_SOFT_CAP", "0.00065"))
 WICKINESS_MAX = float(os.getenv("ASTER_WICKINESS_MAX", "0.985"))
+WICKINESS_NEAR_MISS_MARGIN = float(
+    os.getenv("ASTER_WICKINESS_NEAR_MISS_MARGIN", "0.005") or 0.0
+)
 MIN_EDGE_R = float(os.getenv("ASTER_MIN_EDGE_R", "0.035"))
 EXPECTED_R_MIN_FLOOR = float(
     os.getenv("ASTER_EXPECTED_R_MIN_FLOOR", "0.035") or 0.035
@@ -2824,7 +2827,7 @@ class AITradeAdvisor:
                 "trend_extension (bars_soft 8-36, bars_hard 10-52, adx_min 18-65), continuation_pullback (stoch_warn 40-90, "
                 "stoch_max 55-98, stoch_min 5-45, adx_delta_min 0-12), spread_tight (spread_bps_max 0.0003-0.004), short_trend_alignment "
                 "(slope_min 0.0001-0.003, supertrend_tol -0.5 to 0.5), edge_r (min_edge_r 0.03-0.35), no_cross (rsi_buy_min 38-65, "
-                "rsi_sell_max 35-65), wicky (wickiness_max 0.94-0.9995), stoch_rsi_trend_short (stoch_min 5-70), sentinel_veto (event_risk_gate 0.3-0.9, block_risk 0.5-0.98, min_multiplier 0.1-0.8, weight 0.5-1.2), and playbook_structured_block (event_risk_max 0.2-0.9, soft_multiplier 0.25-1.0). Keep output strictly "
+                "rsi_sell_max 35-65), wicky (wickiness_max 0.94-1.0), stoch_rsi_trend_short (stoch_min 5-70), sentinel_veto (event_risk_gate 0.3-0.9, block_risk 0.5-0.98, min_multiplier 0.1-0.8, weight 0.5-1.2), and playbook_structured_block (event_risk_max 0.2-0.9, soft_multiplier 0.25-1.0). Keep output strictly "
                 "valid JSON and omit filters you do not wish to adjust."
             )
             estimate = 0.0018
@@ -7960,6 +7963,7 @@ class Strategy:
         self.min_quote_vol = MIN_QUOTE_VOL
         self.spread_bps_max = SPREAD_BPS_MAX
         self.wickiness_max = WICKINESS_MAX
+        self.wickiness_near_miss_margin = float(max(0.0, WICKINESS_NEAR_MISS_MARGIN))
         self.state = state if isinstance(state, dict) else None
         self._tech_snapshot_dirty = False
         self.playbook_manager: Optional[Any] = None
@@ -8301,8 +8305,10 @@ class Strategy:
             if isinstance(value, (int, float)):
                 numeric = float(value)
                 guarded = self._guarded_filter_value("wickiness_max", numeric, "wicky")
-                self.wickiness_max = float(max(0.5, min(0.9999, guarded)))
+                self.wickiness_max = float(max(0.5, min(1.0, guarded)))
+                gate = self.wickiness_max + self.wickiness_near_miss_margin
                 _record("wicky", "wickiness_max", self.wickiness_max)
+                _record("wicky", "wickiness_gate", gate)
 
         no_cross_override = filters.get("no_cross")
         if isinstance(no_cross_override, dict):
@@ -9897,12 +9903,14 @@ class Strategy:
             wick_hi = highs[-1] - max(closes[-1], float(kl[-1][1]))
             wick_lo = min(closes[-1], float(kl[-1][1])) - lows[-1]
             wickiness = max(wick_hi, wick_lo) / max(1e-9, highs[-1] - lows[-1])
-            if wickiness > self.wickiness_max:
+            wick_gate = self.wickiness_max + self.wickiness_near_miss_margin
+            ctx_base["wickiness_gate"] = float(wick_gate)
+            if wickiness > wick_gate:
                 ctx_base["wickiness"] = float(wickiness)
                 return self._skip(
                     "wicky",
                     symbol,
-                    {"w": f"{wickiness:.2f}"},
+                    {"w": f"{wickiness:.2f}", "gate": f"{wick_gate:.3f}"},
                     ctx=ctx_base,
                     price=mid,
                     atr=atr,
@@ -10149,7 +10157,7 @@ class Strategy:
             cont_penalty = 0.0
             pullback_gate = max(0.0, self.continuation_pullback_max)
             pullback_warn = max(0.0, self.continuation_pullback_warn)
-            if pullback_gate and stoch_k_last >= pullback_gate:
+            if pullback_gate and stoch_k_last > pullback_gate:
                 ctx_base["continuation_pullback_gate"] = float(stoch_k_last)
                 return self._skip(
                     "continuation_pullback",

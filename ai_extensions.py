@@ -1208,7 +1208,7 @@ class PlaybookManager:
             "rsi_buy_min": (38.0, 65.0),
             "rsi_sell_max": (35.0, 65.0),
         },
-        "wicky": {"wickiness_max": (0.94, 0.9995)},
+        "wicky": {"wickiness_max": (0.94, 1.0)},
         "stoch_rsi_trend_short": {"stoch_min": (5.0, 75.0)},
         "sentinel_veto": {
             "event_risk_gate": (0.3, 0.9),

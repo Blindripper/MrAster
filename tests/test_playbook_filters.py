@@ -66,7 +66,7 @@ def test_playbook_manager_normalizes_filters():
     assert filters["trend_extension"]["bars_hard"] > filters["trend_extension"]["bars_soft"]
     edge_bounds = manager._relaxed_filter_bounds(0.03, 0.4)
     assert filters["edge_r"]["min_edge_r"] == pytest.approx(edge_bounds[1])
-    wicky_bounds = manager._relaxed_filter_bounds(0.94, 0.9995)
+    wicky_bounds = manager._relaxed_filter_bounds(0.94, 1.0)
     assert filters["wicky"]["wickiness_max"] == pytest.approx(wicky_bounds[1])
     sent_gate_bounds = manager._relaxed_filter_bounds(0.3, 0.9)
     assert filters["sentinel_veto"]["event_risk_gate"] == pytest.approx(sent_gate_bounds[0])
