@@ -66,6 +66,7 @@ const decisionReasons = document.getElementById('decision-reasons');
 const decisionReasonsContainer = document.getElementById('decision-reasons-container');
 const decisionReasonsToggle = document.getElementById('decision-reasons-toggle');
 const decisionReasonsToggleLabel = document.getElementById('decision-reasons-toggle-label');
+const decisionReasonsDownload = document.getElementById('decision-reasons-download');
 const btnApplyPreset = document.getElementById('btn-apply-preset');
 const tickerContainer = document.getElementById('market-ticker');
 const tickerTrack = document.getElementById('ticker-track');
@@ -671,6 +672,8 @@ const TRANSLATIONS = {
     'status.decisions.noReasonShort': 'Для этой причины ещё нет сделок.',
     'status.decisions.showDetails': 'Показать детали',
     'status.decisions.hideDetails': 'Скрыть детали',
+    'status.decisions.download': 'Скачать',
+    'status.decisions.exportError': 'Не удалось выгрузить пропущенные сделки.',
     'credentials.title': 'Биржевые ключи',
     'credentials.apiKey.label': 'ASTER_API_KEY',
     'credentials.apiKey.placeholder': 'Введите API-ключ',
@@ -964,6 +967,8 @@ const TRANSLATIONS = {
     'status.decisions.noReasonShort': 'Für diesen Grund liegen noch keine Trades vor.',
     'status.decisions.showDetails': 'Details anzeigen',
     'status.decisions.hideDetails': 'Details verbergen',
+    'status.decisions.download': 'Download',
+    'status.decisions.exportError': 'Download der übersprungenen Trades fehlgeschlagen.',
     'credentials.title': 'Börsen-Zugangsdaten',
     'credentials.apiKey.label': 'ASTER_API_KEY',
     'credentials.apiKey.placeholder': 'API-Key eingeben',
@@ -1260,6 +1265,8 @@ const TRANSLATIONS = {
     'status.decisions.noReasonShort': '이 사유로 기록된 거래가 아직 없습니다.',
     'status.decisions.showDetails': '상세 보기',
     'status.decisions.hideDetails': '상세 접기',
+    'status.decisions.download': '다운로드',
+    'status.decisions.exportError': '건너뛴 트레이드를 지금은 다운로드할 수 없습니다.',
     'credentials.title': '거래소 자격 증명',
     'credentials.apiKey.label': 'ASTER_API_KEY',
     'credentials.apiKey.placeholder': 'API 키 입력',
@@ -1556,6 +1563,8 @@ const TRANSLATIONS = {
     'status.decisions.noReasonShort': 'Aucune opération pour ce motif pour l’instant.',
     'status.decisions.showDetails': 'Afficher les détails',
     'status.decisions.hideDetails': 'Masquer les détails',
+    'status.decisions.download': 'Télécharger',
+    'status.decisions.exportError': 'Impossible de télécharger les trades ignorés pour le moment.',
     'credentials.title': 'Identifiants d’exchange',
     'credentials.apiKey.label': 'ASTER_API_KEY',
     'credentials.apiKey.placeholder': 'Saisir la clé API',
@@ -1852,6 +1861,8 @@ const TRANSLATIONS = {
     'status.decisions.noReasonShort': 'Todavía no hay operaciones para este motivo.',
     'status.decisions.showDetails': 'Mostrar detalles',
     'status.decisions.hideDetails': 'Ocultar detalles',
+    'status.decisions.download': 'Descargar',
+    'status.decisions.exportError': 'No se pudieron descargar los trades omitidos en este momento.',
     'credentials.title': 'Credenciales del exchange',
     'credentials.apiKey.label': 'ASTER_API_KEY',
     'credentials.apiKey.placeholder': 'Introduce la clave API',
@@ -2147,6 +2158,8 @@ const TRANSLATIONS = {
     'status.decisions.noReasonShort': 'Bu gerekçeye ait işlem yok.',
     'status.decisions.showDetails': 'Detayları göster',
     'status.decisions.hideDetails': 'Detayları gizle',
+    'status.decisions.download': 'İndir',
+    'status.decisions.exportError': 'Atlanan işlemler şu anda indirilemedi.',
     'credentials.title': 'Borsa anahtarları',
     'credentials.apiKey.label': 'ASTER_API_KEY',
     'credentials.apiKey.placeholder': 'API anahtarını girin',
@@ -2436,6 +2449,8 @@ const TRANSLATIONS = {
     'status.decisions.noReasonShort': '此原因下暂未出现交易。',
     'status.decisions.showDetails': '显示详情',
     'status.decisions.hideDetails': '隐藏详情',
+    'status.decisions.download': '下载',
+    'status.decisions.exportError': '当前无法下载被跳过的交易。',
     'credentials.title': '交易所凭证',
     'credentials.apiKey.label': 'ASTER_API_KEY',
     'credentials.apiKey.placeholder': '输入 API 密钥',
@@ -13454,6 +13469,17 @@ function updateDecisionReasonsVisibility() {
   }
 }
 
+function updateDecisionReasonsDownloadState(enabled) {
+  if (!decisionReasonsDownload) return;
+  if (enabled) {
+    decisionReasonsDownload.removeAttribute('disabled');
+    decisionReasonsDownload.setAttribute('aria-disabled', 'false');
+  } else {
+    decisionReasonsDownload.setAttribute('disabled', 'true');
+    decisionReasonsDownload.setAttribute('aria-disabled', 'true');
+  }
+}
+
 function renderDecisionStats(stats) {
   lastDecisionStats = stats || null;
   if (!decisionSummary || !decisionReasons) return;
@@ -13494,6 +13520,7 @@ function renderDecisionStats(stats) {
     decisionReasonsExpanded = false;
     decisionReasonsAvailable = false;
     updateDecisionReasonsVisibility();
+    updateDecisionReasonsDownloadState(false);
     return;
   }
 
@@ -13523,6 +13550,7 @@ function renderDecisionStats(stats) {
   decisionReasons.replaceChildren(fragment);
   decisionReasonsAvailable = true;
   updateDecisionReasonsVisibility();
+  updateDecisionReasonsDownloadState(true);
 }
 
 function normaliseDecisionReason(reason) {
@@ -13626,6 +13654,84 @@ function collectDecisionEvents(reason) {
   });
 
   return combined;
+}
+
+function buildSkippedTradeExportPayload() {
+  const stats = lastDecisionStats || latestTradesSnapshot?.decision_stats || null;
+  const rejectedCounts = stats?.rejected && typeof stats.rejected === 'object' ? stats.rejected : {};
+  const reasonKeys = new Set(Object.keys(rejectedCounts || {}));
+  if (!reasonKeys.size && decisionReasonEvents.size > 0) {
+    decisionReasonEvents.forEach((_, key) => reasonKeys.add(key));
+  }
+  const decisions = Array.from(reasonKeys).map((reasonKey) => {
+    const events = collectDecisionEvents(reasonKey).map((event) => ({
+      type: event?.type || 'log',
+      symbol: event?.symbol ?? null,
+      occurred_at: Number.isFinite(event?.occurredAt) ? event.occurredAt : null,
+      occurred_at_iso: event?.occurredAtIso ?? null,
+      message: event?.message ?? null,
+      detail: event?.detail ?? null,
+      parsed: event?.parsed ?? null,
+      trade: event?.trade ?? null,
+    }));
+    const countValue = Number(rejectedCounts?.[reasonKey]);
+    return {
+      reason: reasonKey,
+      label: friendlyReason(reasonKey),
+      count: Number.isFinite(countValue) ? countValue : events.length,
+      events,
+    };
+  });
+
+  const filtered = decisions
+    .filter((entry) => (entry.count ?? 0) > 0 || entry.events.length > 0)
+    .sort((a, b) => {
+      if ((b.count ?? 0) !== (a.count ?? 0)) {
+        return (b.count ?? 0) - (a.count ?? 0);
+      }
+      return a.label.localeCompare(b.label);
+    });
+
+  if (!filtered.length) {
+    return null;
+  }
+
+  const totalSkipped = filtered.reduce((sum, entry) => sum + (Number(entry.count) || 0), 0);
+  const payload = {
+    generated_at: new Date().toISOString(),
+    total_skipped: totalSkipped,
+    reasons: filtered,
+  };
+  const taken = Number(stats?.taken);
+  if (Number.isFinite(taken)) {
+    payload.total_taken = taken;
+  }
+  return payload;
+}
+
+function downloadDecisionReasonExport() {
+  try {
+    const payload = buildSkippedTradeExportPayload();
+    if (!payload) {
+      alert(translate('status.decisions.noneSkipped', 'No skipped trades recorded.'));
+      return;
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    link.href = url;
+    link.download = `mraster-skipped-trades-${timestamp}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('Unable to download skipped trades', err);
+    alert(translate('status.decisions.exportError', 'Unable to download skipped trades right now.'));
+  }
 }
 
 function findDecisionReasonItem(element) {
@@ -15579,6 +15685,11 @@ decisionReasonsToggle?.addEventListener('click', () => {
   if (!decisionReasonsAvailable) return;
   decisionReasonsExpanded = !decisionReasonsExpanded;
   updateDecisionReasonsVisibility();
+});
+
+decisionReasonsDownload?.addEventListener('click', () => {
+  if (decisionReasonsDownload.disabled) return;
+  downloadDecisionReasonExport();
 });
 
 updateDecisionReasonsVisibility();
