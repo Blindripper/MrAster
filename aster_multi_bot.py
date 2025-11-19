@@ -713,6 +713,7 @@ NO_CROSS_RELIEF_MAX = float(os.getenv("ASTER_SKIP_NO_CROSS_MAX", "1.6"))
 STOCH_RELIEF_THRESHOLD = float(os.getenv("ASTER_SKIP_STOCH_THRESHOLD", "0.15"))
 STOCH_RELIEF_STRENGTH = float(os.getenv("ASTER_SKIP_STOCH_STRENGTH", "18.0"))
 STOCH_RELIEF_MAX = float(os.getenv("ASTER_SKIP_STOCH_MAX", "3.0"))
+SKIP_PASS_RATE = min(1.0, max(0.0, float(os.getenv("ASTER_SKIP_PASS_RATE", "0.01"))))
 PLAYBOOK_FILTER_TIGHTENING_RULES: Dict[str, Dict[str, float]] = {
     "min_edge_r": {"direction": "increase", "max_abs": 0.01, "max_pct": 0.25},
     "spread_bps_max": {"direction": "decrease", "max_pct": 0.5},
@@ -7989,6 +7990,7 @@ class Strategy:
         self.rsi_sell_max = RSI_SELL_MAX
         self.trend_short_stochrsi_min = TREND_SHORT_STOCHRSI_MIN
         self._skip_relief_snapshot: Dict[str, Any] = {}
+        self._skip_pass_rate = SKIP_PASS_RATE
         self._apply_skip_relief()
         self.long_overextended_rsi_cap = float(LONG_OVEREXTENDED_RSI)
         atr_cap_default = float(LONG_ATR_PCT_CAP or 0.0)
@@ -8084,6 +8086,27 @@ class Strategy:
             counter[key] += 1
         total = sum(counter.values())
         return counter, total
+
+    def _should_bypass_skip(
+        self, reason: str, meta: Optional[Mapping[str, Any]] = None
+    ) -> bool:
+        if self._skip_pass_rate <= 0:
+            return False
+        allowed = random.random() < self._skip_pass_rate
+        if allowed:
+            log.info(
+                "Skip relief triggered for %s (p=%.2f%%).",
+                reason,
+                self._skip_pass_rate * 100,
+            )
+            if isinstance(meta, Mapping):
+                try:
+                    audit = self.state.setdefault("skip_bypass_meta", {})
+                    if isinstance(audit, dict):
+                        audit[reason] = dict(meta)
+                except Exception:
+                    pass
+        return allowed
 
     def _apply_skip_relief(self) -> None:
         counts, total = self._recent_skip_counts(SKIP_RELIEF_WINDOW)
@@ -10481,13 +10504,21 @@ class Strategy:
             detail = {f"filtered_{k}": v for k, v in filter_reasons.items()}
             detail["filter_penalty"] = f"{filter_penalty:.2f}"
             detail["filtered_signal"] = sig
-            return self._skip(
-                "filtered",
+            if not self._should_bypass_skip(
+                "filtered", {"filter_penalty": filter_penalty}
+            ):
+                return self._skip(
+                    "filtered",
+                    symbol,
+                    detail,
+                    ctx=ctx_base,
+                    price=mid,
+                    atr=atr,
+                )
+            log.info(
+                "Bypassing hard filter block for %s (penalty %.2f).",
                 symbol,
-                detail,
-                ctx=ctx_base,
-                price=mid,
-                atr=atr,
+                filter_penalty,
             )
 
         filtered_signal = sig
@@ -14415,29 +14446,37 @@ class Bot:
             except (TypeError, ValueError):
                 resume_cycle = 0
         if resume_cycle and resume_cycle > getattr(self, "_current_cycle", 0):
-            pending_queue = self.state.get("manual_trade_requests")
-            if isinstance(pending_queue, list):
-                for item in pending_queue:
-                    if not isinstance(item, dict):
-                        continue
-                    if str(item.get("symbol") or "").upper() != symbol.upper():
-                        continue
-                    if str(item.get("status") or "pending").lower() != "pending":
-                        continue
-                    self._complete_manual_request(
-                        item,
-                        "failed",
-                        error="Quote volume cooldown active",
-                    )
-            if self.decision_tracker:
-                self.decision_tracker.record_rejection("quote_volume_cooldown")
             remaining = resume_cycle - getattr(self, "_current_cycle", 0)
+            if not self._should_bypass_skip(
+                "quote_volume_cooldown", {"remaining_cycles": remaining}
+            ):
+                pending_queue = self.state.get("manual_trade_requests")
+                if isinstance(pending_queue, list):
+                    for item in pending_queue:
+                        if not isinstance(item, dict):
+                            continue
+                        if str(item.get("symbol") or "").upper() != symbol.upper():
+                            continue
+                        if str(item.get("status") or "pending").lower() != "pending":
+                            continue
+                        self._complete_manual_request(
+                            item,
+                            "failed",
+                            error="Quote volume cooldown active",
+                        )
+                if self.decision_tracker:
+                    self.decision_tracker.record_rejection("quote_volume_cooldown")
+                log.info(
+                    "Skip %s — quote volume cooldown active for %d more cycles.",
+                    symbol,
+                    max(remaining, 0),
+                )
+                return
             log.info(
-                "Skip %s — quote volume cooldown active for %d more cycles.",
+                "Bypassing quote volume cooldown for %s (%d cycles left).",
                 symbol,
                 max(remaining, 0),
             )
-            return
 
         priority_side_hint: Optional[str] = None
         with self._ai_priority_lock:

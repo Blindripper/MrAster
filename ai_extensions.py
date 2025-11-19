@@ -1225,7 +1225,7 @@ class PlaybookManager:
     _SIZE_BIAS_DELTA = {"low": -0.08, "mid": 0.0, "high": 0.12, "att": 0.18}
     _RISK_BIAS_DELTA = {"low": -0.08, "mid": 0.0, "high": 0.12, "att": 0.18}
     _CONFIDENCE_DELTA = {"low": -0.05, "mid": 0.0, "high": 0.05, "att": 0.08}
-    _FILTER_RANGE_RELAXATION = {"low": 0.0, "mid": 0.12, "high": 0.22, "att": 0.32}
+    _FILTER_RANGE_RELAXATION = {"low": 0.0, "mid": 0.06, "high": 0.12, "att": 0.16}
 
     _SELL_DELTA_RATIO = 0.65
 
