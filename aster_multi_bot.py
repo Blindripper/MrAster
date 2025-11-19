@@ -34,9 +34,9 @@ import random
 from pathlib import Path
 from datetime import datetime, timezone, date
 from urllib.parse import urlencode, urlparse
-from typing import Dict, List, Tuple, Optional, Any, Callable, Sequence, Set, Iterable, Mapping
+from typing import Dict, List, Tuple, Optional, Any, Callable, Sequence, Set, Iterable, Mapping, Deque
 
-from collections import Counter, OrderedDict, deque
+from collections import Counter, OrderedDict, defaultdict, deque
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 
 import requests
@@ -7991,6 +7991,10 @@ class Strategy:
         self.trend_short_stochrsi_min = TREND_SHORT_STOCHRSI_MIN
         self._skip_relief_snapshot: Dict[str, Any] = {}
         self._skip_pass_rate = SKIP_PASS_RATE
+        self._near_miss_history: Dict[str, Deque[float]] = defaultdict(
+            lambda: deque(maxlen=500)
+        )
+        self._near_miss_watchlist_limit = 160
         self._apply_skip_relief()
         self.long_overextended_rsi_cap = float(LONG_OVEREXTENDED_RSI)
         atr_cap_default = float(LONG_ATR_PCT_CAP or 0.0)
@@ -8153,6 +8157,133 @@ class Strategy:
             )
         except Exception:
             pass
+
+    def _register_near_miss(
+        self,
+        *,
+        reason: str,
+        symbol: str,
+        gate: float,
+        value: float,
+        gap: float,
+        direction: str,
+        ctx: Optional[Mapping[str, Any]] = None,
+    ) -> None:
+        history = self._near_miss_history[reason]
+        history.append(max(0.0, gap))
+
+        record = {
+            "ts": time.time(),
+            "symbol": symbol,
+            "reason": reason,
+            "gate": float(gate),
+            "value": float(value),
+            "gap": float(gap),
+            "direction": direction,
+        }
+        if isinstance(ctx, Mapping):
+            try:
+                record.update({
+                    "gate_label": ctx.get("gate_label"),
+                    "metric_label": ctx.get("metric_label"),
+                })
+            except Exception:
+                pass
+
+        if isinstance(self.state, dict):
+            lst = self.state.setdefault("near_miss_watchlist", [])
+            if isinstance(lst, list):
+                lst.append(record)
+                if len(lst) > self._near_miss_watchlist_limit:
+                    del lst[: len(lst) - self._near_miss_watchlist_limit]
+
+    def _apply_near_miss_relief(
+        self, reason: str, gate: float, value: float
+    ) -> None:
+        if reason == "wicky":
+            new_gate = min(1.0, max(self.wickiness_max, value))
+            self.wickiness_max = new_gate
+            bucket = self._active_playbook_filters.setdefault("wicky", {})
+            bucket["wickiness_max"] = float(new_gate)
+            bucket["wickiness_gate"] = float(new_gate + self.wickiness_near_miss_margin)
+            return
+
+        if reason == "spread_tight":
+            new_gate = max(self.spread_bps_max, value)
+            self.spread_bps_max = new_gate
+            bucket = self._active_playbook_filters.setdefault("spread_tight", {})
+            bucket["spread_bps_max"] = float(new_gate)
+            return
+
+        if reason == "continuation_pullback":
+            new_gate = max(self.continuation_pullback_max, value)
+            self.continuation_pullback_max = new_gate
+            bucket = self._active_playbook_filters.setdefault("continuation_pullback", {})
+            bucket["stoch_max"] = float(new_gate)
+            bucket["stoch_warn"] = float(self.continuation_pullback_warn)
+            return
+
+    def _should_release_near_miss(
+        self,
+        *,
+        reason: str,
+        symbol: str,
+        gate: float,
+        value: float,
+        direction: str,
+        ctx: Optional[Mapping[str, Any]] = None,
+    ) -> bool:
+        if self._skip_pass_rate <= 0:
+            return False
+        if not math.isfinite(gate) or not math.isfinite(value):
+            return False
+
+        if direction == "above":
+            if value <= gate:
+                return False
+            gap = max(0.0, value - gate)
+        else:
+            if value >= gate:
+                return False
+            gap = max(0.0, gate - value)
+
+        base = max(abs(gate), 1e-9)
+        rel_gap = gap / base
+        info = {"gate_label": None, "metric_label": None}
+        if isinstance(ctx, Mapping):
+            info.update({
+                "gate_label": ctx.get("gate_label"),
+                "metric_label": ctx.get("metric_label"),
+            })
+        self._register_near_miss(
+            reason=reason,
+            symbol=symbol,
+            gate=gate,
+            value=value,
+            gap=rel_gap,
+            direction=direction,
+            ctx=info,
+        )
+
+        history = self._near_miss_history.get(reason)
+        if not history:
+            return False
+
+        sorted_history = sorted(history)
+        cutoff_idx = max(0, int(math.ceil(len(sorted_history) * self._skip_pass_rate)) - 1)
+        cutoff = sorted_history[cutoff_idx]
+        if rel_gap <= cutoff:
+            self._apply_near_miss_relief(reason, gate, value)
+            log.info(
+                "Near-miss relief unlocked for %s (%s gap=%.4f%% gate=%.5f value=%.5f)",
+                symbol,
+                reason,
+                rel_gap * 100.0,
+                gate,
+                value,
+            )
+            return True
+        return False
 
     def _should_bypass_skip(
         self, reason: str, meta: Optional[Mapping[str, Any]] = None
@@ -9957,14 +10088,25 @@ class Strategy:
 
         if spread_bps > self.spread_bps_max:
             ctx_base["spread_limit"] = float(self.spread_bps_max)
-            return self._skip(
-                "spread_tight",
-                symbol,
-                {"spread": f"{spread_bps:.5f}", "max": f"{self.spread_bps_max:.5f}"},
-                ctx=ctx_base,
-                price=mid,
-                atr=atr,
-            )
+            if not self._should_release_near_miss(
+                reason="spread_tight",
+                symbol=symbol,
+                gate=self.spread_bps_max,
+                value=spread_bps,
+                direction="above",
+                ctx={"gate_label": "Max spread", "metric_label": "Spread"},
+            ):
+                return self._skip(
+                    "spread_tight",
+                    symbol,
+                    {
+                        "spread": f"{spread_bps:.5f}",
+                        "max": f"{self.spread_bps_max:.5f}",
+                    },
+                    ctx=ctx_base,
+                    price=mid,
+                    atr=atr,
+                )
 
         dyn_spread_max = max(self.spread_bps_max, 0.5 * atrp)
         if spread_bps > dyn_spread_max:
@@ -10001,14 +10143,22 @@ class Strategy:
             ctx_base["wickiness_gate"] = float(wick_gate)
             if wickiness > wick_gate:
                 ctx_base["wickiness"] = float(wickiness)
-                return self._skip(
-                    "wicky",
-                    symbol,
-                    {"w": f"{wickiness:.2f}", "gate": f"{wick_gate:.3f}"},
-                    ctx=ctx_base,
-                    price=mid,
-                    atr=atr,
-                )
+                if not self._should_release_near_miss(
+                    reason="wicky",
+                    symbol=symbol,
+                    gate=wick_gate,
+                    value=wickiness,
+                    direction="above",
+                    ctx={"gate_label": "Wickiness cap", "metric_label": "W"},
+                ):
+                    return self._skip(
+                        "wicky",
+                        symbol,
+                        {"w": f"{wickiness:.2f}", "gate": f"{wick_gate:.3f}"},
+                        ctx=ctx_base,
+                        price=mid,
+                        atr=atr,
+                    )
             ctx_base["wickiness"] = float(wickiness)
         except Exception:
             pass
@@ -10253,17 +10403,25 @@ class Strategy:
             pullback_warn = max(0.0, self.continuation_pullback_warn)
             if pullback_gate and stoch_k_last > pullback_gate:
                 ctx_base["continuation_pullback_gate"] = float(stoch_k_last)
-                return self._skip(
-                    "continuation_pullback",
-                    symbol,
-                    {
-                        "stoch_rsi_k": f"{stoch_k_last:.1f}",
-                        "gate": f"{pullback_gate:.1f}",
-                    },
-                    ctx=ctx_base,
-                    price=mid,
-                    atr=atr,
-                )
+                if not self._should_release_near_miss(
+                    reason="continuation_pullback",
+                    symbol=symbol,
+                    gate=pullback_gate,
+                    value=stoch_k_last,
+                    direction="above",
+                    ctx={"gate_label": "Stoch RSI gate", "metric_label": "Stoch RSI K"},
+                ):
+                    return self._skip(
+                        "continuation_pullback",
+                        symbol,
+                        {
+                            "stoch_rsi_k": f"{stoch_k_last:.1f}",
+                            "gate": f"{pullback_gate:.1f}",
+                        },
+                        ctx=ctx_base,
+                        price=mid,
+                        atr=atr,
+                    )
             if pullback_warn and stoch_k_last >= pullback_warn:
                 ctx_base["continuation_pullback_warning"] = float(stoch_k_last)
                 overrun = max(0.0, stoch_k_last - pullback_warn)
