@@ -718,8 +718,8 @@ PLAYBOOK_FILTER_TIGHTENING_RULES: Dict[str, Dict[str, float]] = {
     "min_edge_r": {"direction": "increase", "max_abs": 0.01, "max_pct": 0.25},
     "spread_bps_max": {"direction": "decrease", "max_pct": 0.5},
     "wickiness_max": {"direction": "decrease", "max_pct": 0.02, "max_abs": 0.015},
-    "rsi_buy_min": {"direction": "increase", "max_abs": 3.0},
-    "rsi_sell_max": {"direction": "decrease", "max_abs": 3.0},
+    "rsi_buy_min": {"direction": "increase", "max_abs": 1.5},
+    "rsi_sell_max": {"direction": "decrease", "max_abs": 1.5},
     "trend_short_stochrsi_min": {"direction": "increase", "max_abs": 15.0},
     "long_overextended_rsi_cap": {"direction": "decrease", "max_abs": 8.0},
     "long_overextended_atr_cap": {"direction": "decrease", "max_pct": 0.5},
@@ -1107,8 +1107,8 @@ QUOTE_VOLUME_COOLDOWN_CYCLES = max(
 )
 
 # Signalkontrolle (neu, per ENV einstellbar)
-RSI_BUY_MIN = float(os.getenv("ASTER_RSI_BUY_MIN", "47"))
-RSI_SELL_MAX = float(os.getenv("ASTER_RSI_SELL_MAX", "53"))
+RSI_BUY_MIN = float(os.getenv("ASTER_RSI_BUY_MIN", "45"))
+RSI_SELL_MAX = float(os.getenv("ASTER_RSI_SELL_MAX", "55"))
 ALLOW_ALIGN = os.getenv("ASTER_ALLOW_TREND_ALIGN", "false").lower() in ("1", "true", "yes", "on")
 ALIGN_RSI_PAD = float(os.getenv("ASTER_ALIGN_RSI_PAD", "2.5"))
 EARLY_ENTRY_MODE = os.getenv("ASTER_EARLY_ENTRY_MODE", "enabled").strip().lower()
