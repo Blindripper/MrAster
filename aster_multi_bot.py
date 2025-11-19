@@ -691,8 +691,10 @@ MIN_QUOTE_VOL = float(os.getenv("ASTER_MIN_QUOTE_VOL_USDT", "850000"))
 SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.00200"))  # 0.20 %
 SPREAD_BPS_SOFT_CAP = float(os.getenv("ASTER_SPREAD_BPS_SOFT_CAP", "0.00065"))
 WICKINESS_MAX = float(os.getenv("ASTER_WICKINESS_MAX", "0.985"))
-MIN_EDGE_R = float(os.getenv("ASTER_MIN_EDGE_R", "0.04"))
-EXPECTED_R_MIN_FLOOR = float(os.getenv("ASTER_EXPECTED_R_MIN_FLOOR", "0.04") or 0.04)
+MIN_EDGE_R = float(os.getenv("ASTER_MIN_EDGE_R", "0.035"))
+EXPECTED_R_MIN_FLOOR = float(
+    os.getenv("ASTER_EXPECTED_R_MIN_FLOOR", "0.035") or 0.035
+)
 SKIP_HISTORY_LIMIT = max(20, int(os.getenv("ASTER_SKIP_HISTORY_LIMIT", "200") or 200))
 SKIP_RELIEF_WINDOW = max(10, min(SKIP_HISTORY_LIMIT, int(os.getenv("ASTER_SKIP_RELIEF_WINDOW", "80") or 80)))
 EDGE_RELIEF_THRESHOLD = float(os.getenv("ASTER_SKIP_EDGE_THRESHOLD", "0.45"))
@@ -709,17 +711,17 @@ STOCH_RELIEF_THRESHOLD = float(os.getenv("ASTER_SKIP_STOCH_THRESHOLD", "0.15"))
 STOCH_RELIEF_STRENGTH = float(os.getenv("ASTER_SKIP_STOCH_STRENGTH", "18.0"))
 STOCH_RELIEF_MAX = float(os.getenv("ASTER_SKIP_STOCH_MAX", "3.0"))
 PLAYBOOK_FILTER_TIGHTENING_RULES: Dict[str, Dict[str, float]] = {
-    "min_edge_r": {"direction": "increase", "max_abs": 0.025, "max_pct": 0.65},
+    "min_edge_r": {"direction": "increase", "max_abs": 0.01, "max_pct": 0.25},
     "spread_bps_max": {"direction": "decrease", "max_pct": 0.5},
     "wickiness_max": {"direction": "decrease", "max_pct": 0.02, "max_abs": 0.015},
-    "rsi_buy_min": {"direction": "increase", "max_abs": 8.0},
-    "rsi_sell_max": {"direction": "decrease", "max_abs": 8.0},
+    "rsi_buy_min": {"direction": "increase", "max_abs": 3.0},
+    "rsi_sell_max": {"direction": "decrease", "max_abs": 3.0},
     "trend_short_stochrsi_min": {"direction": "increase", "max_abs": 15.0},
     "long_overextended_rsi_cap": {"direction": "decrease", "max_abs": 8.0},
     "long_overextended_atr_cap": {"direction": "decrease", "max_pct": 0.5},
-    "trend_extension_bars": {"direction": "increase", "max_abs": 6.0, "max_pct": 0.4},
-    "trend_extension_bars_hard": {"direction": "increase", "max_abs": 8.0, "max_pct": 0.4},
-    "trend_extension_adx_min": {"direction": "increase", "max_abs": 6.0},
+    "trend_extension_bars": {"direction": "increase", "max_abs": 2.0, "max_pct": 0.2},
+    "trend_extension_bars_hard": {"direction": "increase", "max_abs": 3.0, "max_pct": 0.25},
+    "trend_extension_adx_min": {"direction": "increase", "max_abs": 2.5},
     "continuation_pullback_warn": {"direction": "decrease", "max_abs": 12.0},
     "continuation_pullback_max": {"direction": "decrease", "max_abs": 12.0},
     "continuation_stoch_min": {"direction": "increase", "max_abs": 12.0},
@@ -1101,8 +1103,8 @@ QUOTE_VOLUME_COOLDOWN_CYCLES = max(
 )
 
 # Signalkontrolle (neu, per ENV einstellbar)
-RSI_BUY_MIN = float(os.getenv("ASTER_RSI_BUY_MIN", "49"))
-RSI_SELL_MAX = float(os.getenv("ASTER_RSI_SELL_MAX", "51"))
+RSI_BUY_MIN = float(os.getenv("ASTER_RSI_BUY_MIN", "47"))
+RSI_SELL_MAX = float(os.getenv("ASTER_RSI_SELL_MAX", "53"))
 ALLOW_ALIGN = os.getenv("ASTER_ALLOW_TREND_ALIGN", "false").lower() in ("1", "true", "yes", "on")
 ALIGN_RSI_PAD = float(os.getenv("ASTER_ALIGN_RSI_PAD", "2.5"))
 EARLY_ENTRY_MODE = os.getenv("ASTER_EARLY_ENTRY_MODE", "enabled").strip().lower()
@@ -1112,11 +1114,11 @@ CONTRARIAN = TREND_BIAS in ("against", "att", "contrarian")
 ADX_MIN_THRESHOLD = float(os.getenv("ASTER_ADX_MIN", "23.0"))
 ADX_DELTA_MIN = float(os.getenv("ASTER_ADX_DELTA_MIN", "0.0"))
 CONTINUATION_ADX_DELTA_MIN = max(0.0, float(os.getenv("ASTER_CONT_ADX_DELTA_MIN", "0.0")))
-TREND_EXTENSION_BARS = max(4, int(os.getenv("ASTER_TREND_EXTENSION_BARS", "14")))
+TREND_EXTENSION_BARS = max(4, int(os.getenv("ASTER_TREND_EXTENSION_BARS", "16")))
 TREND_EXTENSION_BARS_HARD = max(
-    TREND_EXTENSION_BARS + 1, int(os.getenv("ASTER_TREND_EXTENSION_BARS_HARD", "22"))
+    TREND_EXTENSION_BARS + 1, int(os.getenv("ASTER_TREND_EXTENSION_BARS_HARD", "26"))
 )
-TREND_EXTENSION_ADX_MIN = float(os.getenv("ASTER_TREND_EXTENSION_ADX_MIN", "40.0"))
+TREND_EXTENSION_ADX_MIN = float(os.getenv("ASTER_TREND_EXTENSION_ADX_MIN", "44.0"))
 TREND_EXTENSION_LOOKBACK = max(
     TREND_EXTENSION_BARS_HARD * 2, int(os.getenv("ASTER_TREND_EXTENSION_LOOKBACK", "80"))
 )
@@ -1290,7 +1292,7 @@ if EARLY_ENTRY_ENABLED:
     early_bb_pad = float(os.getenv("ASTER_EARLY_ENTRY_BB_PAD", "0.05"))
 
     ADX_MIN_THRESHOLD = max(8.0, ADX_MIN_THRESHOLD - early_adx_shift)
-    MIN_EDGE_R = max(0.04, MIN_EDGE_R * early_edge_factor)
+    MIN_EDGE_R = max(EXPECTED_R_MIN_FLOOR, MIN_EDGE_R * early_edge_factor)
     STOCHRSI_LONG_MAX = min(60.0, STOCHRSI_LONG_MAX + early_stoch_pad)
     STOCHRSI_SHORT_MIN = max(30.0, STOCHRSI_SHORT_MIN - early_stoch_pad)
     ALIGN_RSI_PAD = max(ALIGN_RSI_PAD, early_align_pad)
