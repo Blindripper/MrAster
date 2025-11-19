@@ -710,6 +710,10 @@ SPREAD_RELIEF_CAP = float(os.getenv("ASTER_SKIP_SPREAD_CAP", "1.30"))
 NO_CROSS_RELIEF_THRESHOLD = float(os.getenv("ASTER_SKIP_NO_CROSS_THRESHOLD", "0.22"))
 NO_CROSS_RELIEF_STRENGTH = float(os.getenv("ASTER_SKIP_NO_CROSS_STRENGTH", "6.50"))
 NO_CROSS_RELIEF_MAX = float(os.getenv("ASTER_SKIP_NO_CROSS_MAX", "2.25"))
+NO_CROSS_EMA_GAP_MAX = float(os.getenv("ASTER_NO_CROSS_EMA_GAP_MAX", "0.0035"))
+NO_CROSS_RSI_PAD = float(os.getenv("ASTER_NO_CROSS_RSI_PAD", "2.0"))
+NO_CROSS_ADX_PAD = float(os.getenv("ASTER_NO_CROSS_ADX_PAD", "6.0"))
+NO_CROSS_SOFT_PENALTY = float(os.getenv("ASTER_NO_CROSS_SOFT_PENALTY", "0.45"))
 STOCH_RELIEF_THRESHOLD = float(os.getenv("ASTER_SKIP_STOCH_THRESHOLD", "0.15"))
 STOCH_RELIEF_STRENGTH = float(os.getenv("ASTER_SKIP_STOCH_STRENGTH", "18.0"))
 STOCH_RELIEF_MAX = float(os.getenv("ASTER_SKIP_STOCH_MAX", "3.0"))
@@ -10169,6 +10173,7 @@ class Strategy:
         ema_htf = ema(htf_close, 55)
         cross_up = ema_fast[-2] < ema_slow[-2] and ema_fast[-1] > ema_slow[-1]
         cross_dn = ema_fast[-2] > ema_slow[-2] and ema_fast[-1] < ema_slow[-1]
+        ema_gap_pct = abs(ema_fast[-1] - ema_slow[-1]) / max(abs(ema_slow[-1]), 1e-9)
         rsi14 = rsi(closes, 14)
         bb_upper, bb_middle, bb_lower, bb_width = bollinger_bands(closes, 20, 2.0)
         stoch_k, stoch_d = stoch_rsi(closes, 14, 3, 3)
@@ -10188,6 +10193,7 @@ class Strategy:
                 "ema_fast": float(ema_fast[-1]),
                 "ema_slow": float(ema_slow[-1]),
                 "ema_fast_delta": float(ema_fast[-1] - ema_slow[-1]),
+                "ema_gap_pct": float(ema_gap_pct),
                 "ema_htf": float(ema_htf[-1]),
                 "cross_up": float(1.0 if cross_up else 0.0),
                 "cross_down": float(1.0 if cross_dn else 0.0),
@@ -10273,6 +10279,8 @@ class Strategy:
         sig = "NONE"
         continuation_long = False
         chosen_flag: Optional[str] = None
+        soft_confirmation_used = False
+        soft_confirmation_detail: Optional[str] = None
 
         if cross_up and rsi14[-1] > self.rsi_buy_min and htf_trend_up:
             sig = "BUY"
@@ -10298,6 +10306,20 @@ class Strategy:
                     chosen_flag = candidate_flag
                     ctx_base.update(candidate_extras)
                 else:
+                    near_cross_enabled = ema_gap_pct <= NO_CROSS_EMA_GAP_MAX and adx_val >= max(0.0, ADX_MIN_THRESHOLD - NO_CROSS_ADX_PAD)
+                    if near_cross_enabled:
+                        if ema_fast[-1] > ema_slow[-1] and htf_trend_up and rsi14[-1] > (self.rsi_buy_min - NO_CROSS_RSI_PAD):
+                            sig = "BUY"
+                            continuation_long = True
+                            chosen_flag = "setup_trend_follow"
+                            soft_confirmation_used = True
+                            soft_confirmation_detail = f"near-cross buy gap={ema_gap_pct:.5f} rsi={rsi14[-1]:.2f}"
+                        elif ema_fast[-1] < ema_slow[-1] and htf_trend_down and rsi14[-1] < (self.rsi_sell_max + NO_CROSS_RSI_PAD):
+                            sig = "SELL"
+                            chosen_flag = "setup_trend_follow"
+                            soft_confirmation_used = True
+                            soft_confirmation_detail = f"near-cross sell gap={ema_gap_pct:.5f} rsi={rsi14[-1]:.2f}"
+                if sig == "NONE":
                     reason = "no_cross" if not align_checked else "no_cross"
                     return self._skip(reason, symbol, ctx=ctx_base, price=mid, atr=atr)
 
@@ -10329,6 +10351,10 @@ class Strategy:
 
         ctx_base["adx_filter"] = float(adx_val)
         ctx_base["adx_delta_filter"] = float(adx_delta)
+
+        if soft_confirmation_used:
+            ctx_base["signal_soft_confirmed"] = float(1.0 if sig == "BUY" else -1.0)
+            _add_penalty("soft_confirmation", NO_CROSS_SOFT_PENALTY, soft_confirmation_detail)
 
         if chosen_flag in ("setup_trend_follow", "setup_breakout_retest"):
             trend_extension_score = 0.0
