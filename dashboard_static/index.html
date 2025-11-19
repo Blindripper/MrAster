@@ -886,6 +886,29 @@
         </div>
       </section>
 
+      <section
+        class="card logs compact"
+        id="near-miss-watchlist"
+        data-mobile-collapsible
+      >
+        <div class="card-header" data-mobile-collapsible-header>
+          <div>
+            <h2 data-i18n="watchlist.nearMiss.title">Filter near-miss watchlist</h2>
+            <p class="card-subtitle" data-i18n="watchlist.nearMiss.subtitle">
+              Top 10 skipped trades that barely missed their filter gates.
+            </p>
+          </div>
+          <div class="near-miss-meta" id="near-miss-meta"></div>
+        </div>
+        <div class="card-section-body" data-mobile-collapsible-body>
+          <div class="near-miss-list" id="near-miss-list">
+            <div class="near-miss-empty" data-i18n="watchlist.nearMiss.loading">
+              Collecting initial filter misses (5-minute window)…
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section class="card logs compact" id="logs" data-mobile-collapsible>
         <div class="card-header" data-mobile-collapsible-header>
           <div>

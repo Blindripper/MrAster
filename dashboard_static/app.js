@@ -14,6 +14,8 @@ const statusStarted = document.getElementById('status-started');
 const statusUptime = document.getElementById('status-uptime');
 const logStream = document.getElementById('log-stream');
 const compactLogStream = document.getElementById('log-brief');
+const nearMissList = document.getElementById('near-miss-list');
+const nearMissMeta = document.getElementById('near-miss-meta');
 const autoScrollToggles = document.querySelectorAll('input[data-autoscroll]');
 const tradeList = document.getElementById('trade-list');
 const tradeSummary = document.getElementById('trade-summary');
@@ -2773,6 +2775,12 @@ let heroMetricsSnapshot = {
   winRate: 0,
   winRateDisplay: '0.0%',
 };
+const NEAR_MISS_COLLECTION_WINDOW_MS = 5 * 60 * 1000;
+const NEAR_MISS_REFRESH_INTERVAL_MS = 5000;
+let nearMissEntries = [];
+let nearMissReadyAt = Date.now() + NEAR_MISS_COLLECTION_WINDOW_MS;
+let nearMissRenderTimer = null;
+let nearMissLastRenderedAt = null;
 
 function formatTemplate(template, replacements = {}) {
   if (typeof template !== 'string') {
@@ -2839,6 +2847,7 @@ function applyTranslations(lang) {
   updateActivePositionsView();
   renderTradeSummary(lastTradeStats, latestTradesSnapshot?.history_summary);
   renderDecisionStats(lastDecisionStats);
+  renderNearMissList(true);
   renderAiBudget(lastAiBudget);
   if (latestTradesSnapshot) {
     renderHeroMetrics(
@@ -7578,26 +7587,55 @@ function toTitleWords(value) {
     .trim();
 }
 
-function formatExtraDetails(raw) {
-  if (!raw) return '';
+function normaliseDetailKey(key) {
+  return (key || '')
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function parseExtraFieldPairs(raw) {
+  if (!raw) return [];
   const normalized = raw.replace(/[{}]/g, '').trim();
-  const pairs = [];
-  const quotedPairs = normalized.matchAll(/'([^']+)'\s*:\s*'([^']+)'/g);
-  for (const match of quotedPairs) {
-    const [, key, value] = match;
-    pairs.push([key, value]);
+  if (!normalized) return [];
+  const entries = [];
+  const quotedPattern = /'([^']+)'\s*:\s*'([^']+)'/g;
+  let quotedMatch = quotedPattern.exec(normalized);
+  while (quotedMatch) {
+    entries.push({ key: quotedMatch[1], value: quotedMatch[2] });
+    quotedMatch = quotedPattern.exec(normalized);
   }
-  if (!pairs.length) {
-    const simplePairs = normalized.matchAll(/([A-Za-z_]+)=([\d.+-]+)/g);
-    for (const match of simplePairs) {
-      const [, key, value] = match;
-      pairs.push([key, value]);
+  if (!entries.length) {
+    const simplePattern = /([A-Za-z0-9_]+)\s*[=:]\s*([\d.+-]+)/g;
+    let simpleMatch = simplePattern.exec(normalized);
+    while (simpleMatch) {
+      entries.push({ key: simpleMatch[1], value: simpleMatch[2] });
+      simpleMatch = simplePattern.exec(normalized);
     }
   }
-  if (!pairs.length) return '';
-  return pairs
-    .map(([key, value]) => `${toTitleWords(key)} ${value}`)
-    .join(' • ');
+  return entries.map(({ key, value }) => {
+    const textValue = value !== undefined && value !== null ? value.toString() : '';
+    const numericCandidate = Number(textValue);
+    return {
+      key,
+      label: toTitleWords(key),
+      value: textValue,
+      numericValue: Number.isFinite(numericCandidate) ? numericCandidate : null,
+      normalizedKey: normaliseDetailKey(key),
+    };
+  });
+}
+
+function formatDetailEntries(entries) {
+  if (!Array.isArray(entries) || !entries.length) {
+    return '';
+  }
+  return entries.map((entry) => `${entry.label} ${entry.value}`).join(' • ');
+}
+
+function formatExtraDetails(raw) {
+  return formatDetailEntries(parseExtraFieldPairs(raw));
 }
 
 function resolveLogCategory(friendly) {
@@ -7908,7 +7946,8 @@ function humanizeLogLine(line, fallbackLevel = 'info') {
   if (skipMatch) {
     const [, symbol, reason, extraRaw] = skipMatch;
     const reasonKey = reason ? reason.toString().toLowerCase() : '';
-    const detail = formatExtraDetails(extraRaw);
+    const detailPairs = parseExtraFieldPairs(extraRaw);
+    const detail = formatDetailEntries(detailPairs);
     const reasonLabel = friendlyReason(reasonKey || reason);
     text = `Skipped ${symbol} — ${reasonLabel}${detail ? ` (${detail})` : ''}.`;
     label = 'Skipped trade';
@@ -7923,6 +7962,7 @@ function humanizeLogLine(line, fallbackLevel = 'info') {
       reason: reasonKey || reason,
       symbol: symbol ? symbol.toString().toUpperCase() : undefined,
       detail,
+      detailPairs,
     };
   }
 
@@ -13734,6 +13774,303 @@ function downloadDecisionReasonExport() {
   }
 }
 
+const DETAIL_GATE_HINTS = ['gate', 'min', 'max', 'cap', 'threshold', 'limit'];
+
+function isGateDetailEntry(entry) {
+  if (!entry) return false;
+  const normalized = entry.normalizedKey || normaliseDetailKey(entry.key || entry.label || '');
+  if (!normalized) return false;
+  return DETAIL_GATE_HINTS.some((hint) => normalized.includes(hint));
+}
+
+function resolveNearMissComparison(detailPairs) {
+  if (!Array.isArray(detailPairs) || detailPairs.length < 2) {
+    return null;
+  }
+  const entries = detailPairs.map((entry) => ({
+    key: entry.key,
+    label: entry.label,
+    valueText: entry.value,
+    numericValue: Number.isFinite(entry.numericValue)
+      ? entry.numericValue
+      : Number(entry.value),
+    normalizedKey: entry.normalizedKey || normaliseDetailKey(entry.key || entry.label || ''),
+    isGate: isGateDetailEntry(entry),
+  }));
+  const comparisons = [];
+  for (let i = 0; i < entries.length - 1; i += 1) {
+    const current = entries[i];
+    const next = entries[i + 1];
+    if (!current || !next) continue;
+    if (current.isGate || !next.isGate) continue;
+    if (!Number.isFinite(current.numericValue) || !Number.isFinite(next.numericValue)) continue;
+    comparisons.push({
+      metricLabel: current.label,
+      metricValueText: current.valueText,
+      metricValue: current.numericValue,
+      gateLabel: next.label,
+      gateValueText: next.valueText,
+      gateValue: next.numericValue,
+    });
+    i += 1;
+  }
+  if (!comparisons.length) {
+    return null;
+  }
+  let best = null;
+  comparisons.forEach((comparison) => {
+    const diff = comparison.metricValue - comparison.gateValue;
+    const percent = Math.abs(comparison.gateValue) > 1e-9
+      ? (diff / comparison.gateValue) * 100
+      : null;
+    const score = Number.isFinite(percent) ? Math.abs(percent) : Math.abs(diff);
+    if (!best || score < best.score) {
+      best = {
+        metricLabel: comparison.metricLabel,
+        metricValueText: comparison.metricValueText,
+        metricValue: comparison.metricValue,
+        gateLabel: comparison.gateLabel,
+        gateValueText: comparison.gateValueText,
+        gateValue: comparison.gateValue,
+        diff,
+        percentDiff: Number.isFinite(percent) ? percent : null,
+        score,
+      };
+    }
+  });
+  return best;
+}
+
+function pruneNearMissEntries(now = Date.now()) {
+  if (!nearMissEntries.length) return;
+  const cutoff = now - NEAR_MISS_COLLECTION_WINDOW_MS;
+  nearMissEntries = nearMissEntries.filter((entry) => entry.tsMs >= cutoff);
+}
+
+function captureNearMissEvent(friendly, timestampSeconds) {
+  if (!nearMissList || !friendly || !friendly.reason) return;
+  const comparison = resolveNearMissComparison(friendly.detailPairs);
+  if (!comparison) return;
+  const tsMs = Number.isFinite(timestampSeconds) ? timestampSeconds * 1000 : Date.now();
+  const entry = {
+    id: `${friendly.reason || 'skip'}-${friendly.symbol || 'symbol'}-${tsMs}`,
+    tsMs,
+    symbol: friendly.symbol ? friendly.symbol.toUpperCase() : '—',
+    reason: friendly.reason,
+    reasonLabel:
+      friendlyReason(friendly.reason)
+        || friendly.label
+        || translate('watchlist.nearMiss.reasonFallback', 'Filter rule'),
+    metricLabel: comparison.metricLabel,
+    metricValueText: comparison.metricValueText,
+    gateLabel: comparison.gateLabel,
+    gateValueText: comparison.gateValueText,
+    diff: comparison.diff,
+    percentDiff: comparison.percentDiff,
+    score: comparison.score,
+  };
+  nearMissEntries.push(entry);
+  pruneNearMissEntries();
+}
+
+function formatNearMissTimestamp(tsMs) {
+  const date = new Date(tsMs);
+  if (Number.isNaN(date.getTime())) {
+    return '—';
+  }
+  const datePart = date.toLocaleDateString(undefined, { month: 'short', day: '2-digit' });
+  const timePart = date.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  return `${datePart} ${timePart}`;
+}
+
+function formatNearMissMetaTime(tsMs) {
+  const date = new Date(tsMs);
+  if (Number.isNaN(date.getTime())) {
+    return '—';
+  }
+  return date.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
+function formatNearMissCountdown(ms) {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60)
+    .toString()
+    .padStart(2, '0');
+  const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+  return `${minutes}:${seconds}`;
+}
+
+function buildNearMissMetricCell(label, valueText) {
+  const cell = document.createElement('div');
+  cell.className = 'near-miss-cell near-miss-metric';
+  const labelEl = document.createElement('span');
+  labelEl.textContent = label || '—';
+  const valueEl = document.createElement('strong');
+  valueEl.textContent = valueText ?? '—';
+  cell.append(labelEl, valueEl);
+  return cell;
+}
+
+function createNearMissHeaderRow() {
+  const headers = [
+    translate('watchlist.nearMiss.col.rank', 'Rank'),
+    translate('watchlist.nearMiss.col.time', 'Date/Time'),
+    translate('watchlist.nearMiss.col.symbol', 'Symbol'),
+    translate('watchlist.nearMiss.col.reason', 'Reason'),
+    translate('watchlist.nearMiss.col.gate', 'Filter Gate'),
+    translate('watchlist.nearMiss.col.value', 'Filter Value'),
+    translate('watchlist.nearMiss.col.percent', '% diff'),
+  ];
+  const row = document.createElement('div');
+  row.className = 'near-miss-row near-miss-row-header';
+  headers.forEach((text) => {
+    const cell = document.createElement('div');
+    cell.className = 'near-miss-cell';
+    cell.textContent = text;
+    row.append(cell);
+  });
+  return row;
+}
+
+function createNearMissRow(entry, rank) {
+  const row = document.createElement('div');
+  row.className = 'near-miss-row';
+
+  const rankCell = document.createElement('div');
+  rankCell.className = 'near-miss-cell near-miss-rank';
+  rankCell.textContent = rank.toString().padStart(2, '0');
+
+  const timeCell = document.createElement('div');
+  timeCell.className = 'near-miss-cell';
+  timeCell.textContent = formatNearMissTimestamp(entry.tsMs);
+
+  const symbolCell = document.createElement('div');
+  symbolCell.className = 'near-miss-cell near-miss-symbol';
+  symbolCell.textContent = entry.symbol || '—';
+
+  const reasonCell = document.createElement('div');
+  reasonCell.className = 'near-miss-cell near-miss-reason';
+  reasonCell.textContent = entry.reasonLabel || '—';
+
+  const gateCell = buildNearMissMetricCell(entry.gateLabel, entry.gateValueText);
+  const valueCell = buildNearMissMetricCell(entry.metricLabel, entry.metricValueText);
+
+  const percentCell = document.createElement('div');
+  percentCell.className = 'near-miss-cell near-miss-percent';
+  if (Number.isFinite(entry.percentDiff)) {
+    const value = entry.percentDiff;
+    const sign = value > 0 ? '+' : '';
+    const absValue = Math.abs(value);
+    const digits = absValue >= 10 ? 1 : 2;
+    percentCell.textContent = `${sign}${absValue.toFixed(digits)}%`;
+    if (value > 0) {
+      percentCell.classList.add('positive');
+    } else if (value < 0) {
+      percentCell.classList.add('negative');
+    }
+  } else if (Number.isFinite(entry.diff)) {
+    const sign = entry.diff > 0 ? '+' : '';
+    percentCell.textContent = `${sign}${entry.diff.toPrecision(3)}`;
+  } else {
+    percentCell.textContent = '—';
+  }
+
+  row.append(rankCell, timeCell, symbolCell, reasonCell, gateCell, valueCell, percentCell);
+  return row;
+}
+
+function renderNearMissList(force = false) {
+  if (!nearMissList) return;
+  const now = Date.now();
+  pruneNearMissEntries(now);
+  if (now < nearMissReadyAt) {
+    const countdown = formatNearMissCountdown(nearMissReadyAt - now);
+    if (nearMissMeta) {
+      nearMissMeta.textContent = translate(
+        'watchlist.nearMiss.collectingMeta',
+        'Collecting · {{time}} left',
+        { time: countdown },
+      );
+    }
+    if (force || !nearMissLastRenderedAt || now - nearMissLastRenderedAt >= NEAR_MISS_REFRESH_INTERVAL_MS) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'near-miss-empty';
+      placeholder.textContent = translate(
+        'watchlist.nearMiss.collectingBody',
+        'Collecting initial filter misses. Ready in {{time}}.',
+        { time: countdown },
+      );
+      nearMissList.replaceChildren(placeholder);
+      nearMissLastRenderedAt = now;
+    }
+    return;
+  }
+
+  if (!nearMissEntries.length) {
+    if (nearMissMeta) {
+      nearMissMeta.textContent = translate(
+        'watchlist.nearMiss.meta',
+        'Updated {{time}} · Last 5 min',
+        { time: formatNearMissMetaTime(now) },
+      );
+    }
+    const empty = document.createElement('div');
+    empty.className = 'near-miss-empty';
+    empty.textContent = translate(
+      'watchlist.nearMiss.empty',
+      'No skipped trades recorded in the last 5 minutes.',
+    );
+    nearMissList.replaceChildren(empty);
+    nearMissLastRenderedAt = now;
+    return;
+  }
+
+  const ranked = nearMissEntries
+    .slice()
+    .sort((a, b) => {
+      if (a.score !== b.score) return a.score - b.score;
+      if (a.tsMs !== b.tsMs) return b.tsMs - a.tsMs;
+      return (a.symbol || '').localeCompare(b.symbol || '');
+    })
+    .slice(0, 10);
+
+  const fragment = document.createDocumentFragment();
+  fragment.append(createNearMissHeaderRow());
+  ranked.forEach((entry, index) => {
+    fragment.append(createNearMissRow(entry, index + 1));
+  });
+  nearMissList.replaceChildren(fragment);
+  if (nearMissMeta) {
+    nearMissMeta.textContent = translate(
+      'watchlist.nearMiss.meta',
+      'Updated {{time}} · Last 5 min',
+      { time: formatNearMissMetaTime(now) },
+    );
+  }
+  nearMissLastRenderedAt = now;
+}
+
+function startNearMissMonitor() {
+  if (!nearMissList) return;
+  nearMissReadyAt = Date.now() + NEAR_MISS_COLLECTION_WINDOW_MS;
+  pruneNearMissEntries();
+  renderNearMissList(true);
+  if (nearMissRenderTimer) {
+    clearInterval(nearMissRenderTimer);
+  }
+  nearMissRenderTimer = setInterval(() => {
+    renderNearMissList();
+  }, NEAR_MISS_REFRESH_INTERVAL_MS);
+}
+
 function findDecisionReasonItem(element) {
   if (!element) return null;
   if (element instanceof HTMLElement) {
@@ -14219,6 +14556,9 @@ function appendCompactLog({ line, level, ts }) {
       occurredAtIso: friendly.parsed?.timestamp || null,
       parsed: friendly.parsed,
     });
+    if (friendly.detailPairs && friendly.detailPairs.length > 0) {
+      captureNearMissEvent(friendly, timestampSeconds);
+    }
   }
   if (!friendly || !friendly.relevant) return;
 
@@ -16019,6 +16359,10 @@ document.addEventListener('visibilitychange', () => {
     loadMostTradedCoins();
   }
 });
+
+if (nearMissList) {
+  startNearMissMonitor();
+}
 
 async function init() {
   await loadConfig();
