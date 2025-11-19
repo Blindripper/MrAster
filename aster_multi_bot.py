@@ -8360,7 +8360,10 @@ class Strategy:
                 guarded = self._guarded_filter_value(
                     "trend_extension_bars", numeric, "trend_extension"
                 )
-                self.trend_extension_bars = int(max(4, min(40, int(guarded))))
+                # Playbook overrides could previously stretch the trend extension
+                # soft threshold far outside the advisor's comfort zone. Tighten the
+                # clamp so overrides only glide within a narrower corridor.
+                self.trend_extension_bars = int(max(10, min(30, int(guarded))))
                 _record("trend_extension", "bars_soft", float(self.trend_extension_bars))
             bars_hard = trend_override.get("bars_hard")
             if isinstance(bars_hard, (int, float)):
@@ -8368,10 +8371,13 @@ class Strategy:
                 guarded = self._guarded_filter_value(
                     "trend_extension_bars_hard", numeric, "trend_extension"
                 )
+                # Mirror the narrower soft-band range by compressing the hard
+                # ceiling as well. Keep at least one bar of separation from the
+                # soft clamp while preventing runaway extensions.
                 self.trend_extension_bars_hard = int(
                     max(
                         self.trend_extension_bars + 1,
-                        min(60, int(guarded)),
+                        min(45, int(guarded)),
                     )
                 )
                 _record(
@@ -8385,8 +8391,10 @@ class Strategy:
                 guarded = self._guarded_filter_value(
                     "trend_extension_adx_min", numeric, "trend_extension"
                 )
+                # ADX tightening should likewise live in a smaller corridor so the
+                # trend extension gate cannot be pushed to extremes.
                 self.trend_extension_adx_min = float(
-                    max(8.0, min(70.0, guarded))
+                    max(32.0, min(60.0, guarded))
                 )
                 _record(
                     "trend_extension",
