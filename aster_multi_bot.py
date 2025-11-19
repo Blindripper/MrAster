@@ -713,6 +713,9 @@ NO_CROSS_RELIEF_MAX = float(os.getenv("ASTER_SKIP_NO_CROSS_MAX", "2.25"))
 NO_CROSS_EMA_GAP_MAX = float(os.getenv("ASTER_NO_CROSS_EMA_GAP_MAX", "0.0035"))
 NO_CROSS_RSI_PAD = float(os.getenv("ASTER_NO_CROSS_RSI_PAD", "2.0"))
 NO_CROSS_ADX_PAD = float(os.getenv("ASTER_NO_CROSS_ADX_PAD", "6.0"))
+NO_CROSS_MOMENTUM_GAP_MAX = float(os.getenv("ASTER_NO_CROSS_MOMENTUM_GAP_MAX", "0.0065"))
+NO_CROSS_MOMENTUM_RSI_PAD = float(os.getenv("ASTER_NO_CROSS_MOMENTUM_RSI_PAD", "4.0"))
+NO_CROSS_MOMENTUM_ADX_PAD = float(os.getenv("ASTER_NO_CROSS_MOMENTUM_ADX_PAD", "11.0"))
 NO_CROSS_SOFT_PENALTY = float(os.getenv("ASTER_NO_CROSS_SOFT_PENALTY", "0.45"))
 STOCH_RELIEF_THRESHOLD = float(os.getenv("ASTER_SKIP_STOCH_THRESHOLD", "0.15"))
 STOCH_RELIEF_STRENGTH = float(os.getenv("ASTER_SKIP_STOCH_STRENGTH", "18.0"))
@@ -10306,19 +10309,38 @@ class Strategy:
                     chosen_flag = candidate_flag
                     ctx_base.update(candidate_extras)
                 else:
-                    near_cross_enabled = ema_gap_pct <= NO_CROSS_EMA_GAP_MAX and adx_val >= max(0.0, ADX_MIN_THRESHOLD - NO_CROSS_ADX_PAD)
-                    if near_cross_enabled:
+                    near_cross_gap_ok = ema_gap_pct <= NO_CROSS_EMA_GAP_MAX
+                    near_cross_adx_gate = max(0.0, ADX_MIN_THRESHOLD - NO_CROSS_ADX_PAD)
+                    near_cross_enabled = near_cross_gap_ok and adx_val >= near_cross_adx_gate
+
+                    momentum_override = False
+                    momentum_detail: Optional[str] = None
+                    if not near_cross_enabled:
+                        momentum_gap_ok = ema_gap_pct <= NO_CROSS_MOMENTUM_GAP_MAX
+                        momentum_adx_gate = max(0.0, ADX_MIN_THRESHOLD - NO_CROSS_MOMENTUM_ADX_PAD)
+                        strong_bull = htf_trend_up and rsi14[-1] >= self.rsi_buy_min + NO_CROSS_MOMENTUM_RSI_PAD
+                        strong_bear = htf_trend_down and rsi14[-1] <= self.rsi_sell_max - NO_CROSS_MOMENTUM_RSI_PAD
+                        if momentum_gap_ok and adx_val >= momentum_adx_gate and (strong_bull or strong_bear):
+                            momentum_override = True
+                            direction = "buy" if strong_bull else "sell"
+                            momentum_detail = (
+                                f"momentum {direction} gap={ema_gap_pct:.5f} "
+                                f"rsi={rsi14[-1]:.2f} adx={adx_val:.2f}"
+                            )
+
+                    if near_cross_enabled or momentum_override:
+                        detail_prefix = "near-cross" if near_cross_enabled else "momentum-soft"
                         if ema_fast[-1] > ema_slow[-1] and htf_trend_up and rsi14[-1] > (self.rsi_buy_min - NO_CROSS_RSI_PAD):
                             sig = "BUY"
                             continuation_long = True
                             chosen_flag = "setup_trend_follow"
                             soft_confirmation_used = True
-                            soft_confirmation_detail = f"near-cross buy gap={ema_gap_pct:.5f} rsi={rsi14[-1]:.2f}"
+                            soft_confirmation_detail = momentum_detail or f"{detail_prefix} buy gap={ema_gap_pct:.5f} rsi={rsi14[-1]:.2f}"
                         elif ema_fast[-1] < ema_slow[-1] and htf_trend_down and rsi14[-1] < (self.rsi_sell_max + NO_CROSS_RSI_PAD):
                             sig = "SELL"
                             chosen_flag = "setup_trend_follow"
                             soft_confirmation_used = True
-                            soft_confirmation_detail = f"near-cross sell gap={ema_gap_pct:.5f} rsi={rsi14[-1]:.2f}"
+                            soft_confirmation_detail = momentum_detail or f"{detail_prefix} sell gap={ema_gap_pct:.5f} rsi={rsi14[-1]:.2f}"
                 if sig == "NONE":
                     reason = "no_cross" if not align_checked else "no_cross"
                     return self._skip(reason, symbol, ctx=ctx_base, price=mid, atr=atr)
