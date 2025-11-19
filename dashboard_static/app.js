@@ -7607,7 +7607,7 @@ function parseExtraFieldPairs(raw) {
     quotedMatch = quotedPattern.exec(normalized);
   }
   if (!entries.length) {
-    const simplePattern = /([A-Za-z0-9_]+)\s*[=:]\s*([\d.+-]+)/g;
+    const simplePattern = /'?(\w+)'?\s*[=:]\s*'?([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)'?/g;
     let simpleMatch = simplePattern.exec(normalized);
     while (simpleMatch) {
       entries.push({ key: simpleMatch[1], value: simpleMatch[2] });
