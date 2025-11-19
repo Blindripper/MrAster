@@ -12446,6 +12446,48 @@ class Bot:
         except Exception as exc:
             log.debug(f"run metadata persist failed: {exc}")
 
+    def save(self) -> None:
+        if not isinstance(self.state, dict):
+            return
+
+        if self.policy and BANDIT_ENABLED:
+            try:
+                self.state["policy"] = self.policy.to_dict()
+            except Exception as exc:
+                log.debug(f"policy serialize fail: {exc}")
+
+        disk_state: Dict[str, Any] = {}
+        if os.path.exists(STATE_FILE):
+            try:
+                with open(STATE_FILE, "r") as fh:
+                    disk_state = json.load(fh)
+            except Exception:
+                disk_state = {}
+
+        if isinstance(disk_state, dict):
+            disk_queue = disk_state.get("manual_trade_requests")
+            if isinstance(disk_queue, list):
+                mem_queue = self.state.setdefault("manual_trade_requests", [])
+                existing_ids = {
+                    item.get("id")
+                    for item in mem_queue
+                    if isinstance(item, dict) and item.get("id")
+                }
+                for item in disk_queue:
+                    if not isinstance(item, dict):
+                        continue
+                    item_id = item.get("id")
+                    if item_id and item_id not in existing_ids:
+                        mem_queue.append(item)
+
+            self._merge_ai_trade_proposals(disk_state)
+
+        try:
+            with open(STATE_FILE, "w") as fh:
+                json.dump(self.state, fh, indent=2)
+        except Exception as exc:
+            log.warning(f"state save failed: {exc}")
+
     def _apply_policy_tunables(self) -> None:
         policy = getattr(self, "policy", None)
         if not isinstance(policy, BanditPolicy):
