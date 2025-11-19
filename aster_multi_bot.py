@@ -8663,7 +8663,7 @@ class Strategy:
                     "continuation_pullback_max", numeric, "continuation_pullback"
                 )
                 self.continuation_pullback_max = float(
-                    max(self.continuation_pullback_warn, min(99.0, guarded))
+                    max(self.continuation_pullback_warn, min(98.0, guarded))
                 )
                 _record(
                     "continuation_pullback",
