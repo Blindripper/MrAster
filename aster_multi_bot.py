@@ -8012,6 +8012,8 @@ class Strategy:
         self.sentinel_gate_weight = float(SENTINEL_SIZE_GATE_WEIGHT)
         self.structured_block_event_risk_cap = 0.0
         self.structured_block_soft_multiplier = 1.0
+        self._skip_bypass_prob_map: Dict[str, float] = {}
+        self._skip_bypass_excluded: Set[str] = set()
         self._filter_defaults: Dict[str, float] = {
             "min_edge_r": self.min_edge_r,
             "spread_bps_max": self.spread_bps_max,
@@ -8060,6 +8062,7 @@ class Strategy:
                     self._symbol_score_cache = hydrated
         self._winner_long_atr_cache_ts = 0.0
         self._winner_long_atr_cache_value: Optional[float] = None
+        self._prepare_skip_bypass_plan()
 
     def _recent_skip_counts(self, window: int) -> Tuple[Counter, int]:
         if not isinstance(self.state, dict) or window <= 0:
@@ -8087,17 +8090,85 @@ class Strategy:
         total = sum(counter.values())
         return counter, total
 
+    def _prepare_skip_bypass_plan(self) -> None:
+        """
+        Calibrate the skip-bypass probabilities so roughly 1% of
+        non-cooldown skips can pass, with extra emphasis on the
+        dominant blockers from the November snapshot.
+        """
+
+        self._skip_bypass_excluded = {"quote_volume_cooldown"}
+        self._skip_bypass_prob_map = {}
+
+        base_target = max(0.0, min(1.0, SKIP_PASS_RATE))
+        self._skip_pass_rate = base_target
+
+        if not isinstance(self.state, dict):
+            return
+
+        stats = self.state.get("decision_stats")
+        rejected = stats.get("rejected") if isinstance(stats, dict) else None
+        if not isinstance(rejected, dict) or not rejected:
+            return
+
+        eligible_counts = {
+            str(reason).strip().lower(): int(count or 0)
+            for reason, count in rejected.items()
+            if reason and str(reason).strip().lower() not in self._skip_bypass_excluded
+        }
+        eligible_total = sum(eligible_counts.values())
+        if eligible_total <= 0:
+            return
+
+        weight_boosts = {
+            "trend_extension": 1.6,
+            "no_cross": 1.45,
+            "short_trend_alignment": 1.3,
+            "edge_r": 1.25,
+            "spread_tight": 1.15,
+        }
+        weights = {
+            reason: max(1.0, weight_boosts.get(reason, 1.0))
+            for reason in eligible_counts
+        }
+        weighted_total = sum(eligible_counts[r] * weights[r] for r in eligible_counts)
+        if weighted_total <= 0:
+            return
+
+        for reason, count in eligible_counts.items():
+            share_weight = weights.get(reason, 1.0)
+            prob = base_target * eligible_total * share_weight / weighted_total
+            prob = max(0.0, min(0.5, prob))
+            self._skip_bypass_prob_map[reason] = prob
+
+        try:
+            audit = self.state.setdefault("skip_bypass_plan", {})
+            audit.update(
+                {
+                    "target": base_target,
+                    "eligible_total": eligible_total,
+                    "excluded": sorted(self._skip_bypass_excluded),
+                    "probabilities": self._skip_bypass_prob_map,
+                }
+            )
+        except Exception:
+            pass
+
     def _should_bypass_skip(
         self, reason: str, meta: Optional[Mapping[str, Any]] = None
     ) -> bool:
-        if self._skip_pass_rate <= 0:
+        reason_key = str(reason or "").strip().lower()
+        if not reason_key or reason_key in self._skip_bypass_excluded:
             return False
-        allowed = random.random() < self._skip_pass_rate
+        prob = self._skip_bypass_prob_map.get(reason_key, self._skip_pass_rate)
+        if prob <= 0:
+            return False
+        allowed = random.random() < prob
         if allowed:
             log.info(
                 "Skip relief triggered for %s (p=%.2f%%).",
                 reason,
-                self._skip_pass_rate * 100,
+                prob * 100,
             )
             if isinstance(meta, Mapping):
                 try:
