@@ -8461,11 +8461,6 @@ class Strategy:
         base_value = defaults.get(key)
         if base_value is None:
             return raw_value
-        if base_value not in (0, 0.0):
-            max_delta = abs(base_value) * 0.10
-            lower = base_value - max_delta
-            upper = base_value + max_delta
-            raw_value = min(upper, max(lower, raw_value))
         guard = PLAYBOOK_FILTER_TIGHTENING_RULES.get(key)
         if not guard:
             return raw_value
@@ -8480,6 +8475,11 @@ class Strategy:
             tighten = abs(raw_value) > abs(base_value)
         if not tighten:
             return raw_value
+        if base_value not in (0, 0.0):
+            max_delta = abs(base_value) * 0.10
+            lower = base_value - max_delta
+            upper = base_value + max_delta
+            raw_value = min(upper, max(lower, raw_value))
         limit: Optional[float] = guard.get("max_abs")
         pct = guard.get("max_pct")
         if pct and base_value not in (0, 0.0):
