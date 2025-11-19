@@ -687,14 +687,14 @@ def _compute_trade_performance_summary(
     return summary
 
 
-MIN_QUOTE_VOL = float(os.getenv("ASTER_MIN_QUOTE_VOL_USDT", "850000"))
-SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.00200"))  # 0.20 %
+MIN_QUOTE_VOL = float(os.getenv("ASTER_MIN_QUOTE_VOL_USDT", "725000"))
+SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.00230"))  # 0.23 %
 SPREAD_BPS_SOFT_CAP = float(os.getenv("ASTER_SPREAD_BPS_SOFT_CAP", "0.00065"))
 WICKINESS_MAX = float(os.getenv("ASTER_WICKINESS_MAX", "0.985"))
 WICKINESS_NEAR_MISS_MARGIN = float(
     os.getenv("ASTER_WICKINESS_NEAR_MISS_MARGIN", "0.005") or 0.0
 )
-MIN_EDGE_R = float(os.getenv("ASTER_MIN_EDGE_R", "0.035"))
+MIN_EDGE_R = float(os.getenv("ASTER_MIN_EDGE_R", "0.0298"))
 EXPECTED_R_MIN_FLOOR = float(
     os.getenv("ASTER_EXPECTED_R_MIN_FLOOR", "0.035") or 0.035
 )
@@ -1044,7 +1044,7 @@ SYMBOL_DRAWDOWN_PCT = max(0.0, float(os.getenv("ASTER_SYMBOL_DRAWDOWN_PCT", "0.0
 SHORT_SIZE_BIAS = max(0.5, float(os.getenv("ASTER_SHORT_SIZE_BIAS", "1.12") or 1.0))
 
 LONG_OVEREXTENDED_RSI = float(os.getenv("ASTER_LONG_OVEREXTENDED_RSI", "62.0"))
-LONG_ATR_PCT_CAP = max(0.0, float(os.getenv("ASTER_LONG_ATR_PCT_CAP", "0.009") or 0.0))
+LONG_ATR_PCT_CAP = max(0.0, float(os.getenv("ASTER_LONG_ATR_PCT_CAP", "0.0099") or 0.0))
 LONG_ATR_WINNER_MULT = float(os.getenv("ASTER_LONG_ATR_WINNER_MULT", "0.98"))
 WINNER_ATR_LOOKBACK = max(10, int(os.getenv("ASTER_WINNER_ATR_LOOKBACK", "160") or 160))
 
@@ -1114,8 +1114,8 @@ QUOTE_VOLUME_COOLDOWN_CYCLES = max(
 )
 
 # Signalkontrolle (neu, per ENV einstellbar)
-RSI_BUY_MIN = float(os.getenv("ASTER_RSI_BUY_MIN", "42"))
-RSI_SELL_MAX = float(os.getenv("ASTER_RSI_SELL_MAX", "55"))
+RSI_BUY_MIN = float(os.getenv("ASTER_RSI_BUY_MIN", "38"))
+RSI_SELL_MAX = float(os.getenv("ASTER_RSI_SELL_MAX", "60"))
 ALLOW_ALIGN = os.getenv("ASTER_ALLOW_TREND_ALIGN", "false").lower() in ("1", "true", "yes", "on")
 ALIGN_RSI_PAD = float(os.getenv("ASTER_ALIGN_RSI_PAD", "2.5"))
 EARLY_ENTRY_MODE = os.getenv("ASTER_EARLY_ENTRY_MODE", "enabled").strip().lower()
@@ -1182,10 +1182,10 @@ FILTER_BONUS_CAP = float(os.getenv("ASTER_FILTER_BONUS_CAP", "0.8"))
 
 _PRESET_SIGNAL_TUNING: Dict[str, Dict[str, Any]] = {
     "low": {
-        "MIN_QUOTE_VOL": 1_150_000.0,
-        "SPREAD_BPS_MAX": 0.00085,
+        "MIN_QUOTE_VOL": 980_000.0,
+        "SPREAD_BPS_MAX": 0.00098,
         "WICKINESS_MAX": 0.96,
-        "MIN_EDGE_R": 0.20,
+        "MIN_EDGE_R": 0.17,
         "ADX_MIN_THRESHOLD": 25.0,
         "ADX_DELTA_MIN": -10.0,
         "STOCHRSI_LONG_MAX": 28.0,
@@ -1206,10 +1206,10 @@ _PRESET_SIGNAL_TUNING: Dict[str, Dict[str, Any]] = {
         "allow_align": False,
     },
     "mid": {
-        "MIN_QUOTE_VOL": 550_000.0,
-        "SPREAD_BPS_MAX": 0.00145,
+        "MIN_QUOTE_VOL": 470_000.0,
+        "SPREAD_BPS_MAX": 0.00167,
         "WICKINESS_MAX": 0.995,
-        "MIN_EDGE_R": 0.08,
+        "MIN_EDGE_R": 0.068,
         "ADX_MIN_THRESHOLD": 18.0,
         "ADX_DELTA_MIN": -24.0,
         "STOCHRSI_LONG_MAX": 38.0,
@@ -1230,10 +1230,10 @@ _PRESET_SIGNAL_TUNING: Dict[str, Dict[str, Any]] = {
         "allow_align": True,
     },
     "high": {
-        "MIN_QUOTE_VOL": 325_000.0,
-        "SPREAD_BPS_MAX": 0.00170,
+        "MIN_QUOTE_VOL": 276_000.0,
+        "SPREAD_BPS_MAX": 0.00195,
         "WICKINESS_MAX": 0.998,
-        "MIN_EDGE_R": 0.06,
+        "MIN_EDGE_R": 0.051,
         "ADX_MIN_THRESHOLD": 16.0,
         "ADX_DELTA_MIN": -32.0,
         "STOCHRSI_LONG_MAX": 44.0,
@@ -1254,10 +1254,10 @@ _PRESET_SIGNAL_TUNING: Dict[str, Dict[str, Any]] = {
         "allow_align": True,
     },
     "att": {
-        "MIN_QUOTE_VOL": 300_000.0,
-        "SPREAD_BPS_MAX": 0.00195,
+        "MIN_QUOTE_VOL": 255_000.0,
+        "SPREAD_BPS_MAX": 0.00224,
         "WICKINESS_MAX": 0.9985,
-        "MIN_EDGE_R": 0.055,
+        "MIN_EDGE_R": 0.0468,
         "ADX_MIN_THRESHOLD": 14.0,
         "ADX_DELTA_MIN": -34.0,
         "STOCHRSI_LONG_MAX": 46.0,
@@ -8461,6 +8461,11 @@ class Strategy:
         base_value = defaults.get(key)
         if base_value is None:
             return raw_value
+        if base_value not in (0, 0.0):
+            max_delta = abs(base_value) * 0.10
+            lower = base_value - max_delta
+            upper = base_value + max_delta
+            raw_value = min(upper, max(lower, raw_value))
         guard = PLAYBOOK_FILTER_TIGHTENING_RULES.get(key)
         if not guard:
             return raw_value
