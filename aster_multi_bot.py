@@ -12691,6 +12691,14 @@ class Bot:
         self._maybe_emit_ai_debug_state("startup")
         self._persist_run_metadata()
 
+    def __getattr__(self, name: str) -> Any:
+        """Delegate missing attributes to the underlying Strategy instance."""
+
+        strategy = self.__dict__.get("_strategy")
+        if strategy and hasattr(strategy, name):
+            return getattr(strategy, name)
+        raise AttributeError(f"{self.__class__.__name__!s} object has no attribute '{name}'")
+
     def _initialize_run_metadata(self) -> None:
         now = time.time()
         prev_run_id = self.state.get("run_id")
