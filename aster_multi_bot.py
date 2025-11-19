@@ -1114,11 +1114,11 @@ CONTRARIAN = TREND_BIAS in ("against", "att", "contrarian")
 ADX_MIN_THRESHOLD = float(os.getenv("ASTER_ADX_MIN", "23.0"))
 ADX_DELTA_MIN = float(os.getenv("ASTER_ADX_DELTA_MIN", "0.0"))
 CONTINUATION_ADX_DELTA_MIN = max(0.0, float(os.getenv("ASTER_CONT_ADX_DELTA_MIN", "0.0")))
-TREND_EXTENSION_BARS = max(4, int(os.getenv("ASTER_TREND_EXTENSION_BARS", "16")))
+TREND_EXTENSION_BARS = max(4, int(os.getenv("ASTER_TREND_EXTENSION_BARS", "18")))
 TREND_EXTENSION_BARS_HARD = max(
-    TREND_EXTENSION_BARS + 1, int(os.getenv("ASTER_TREND_EXTENSION_BARS_HARD", "26"))
+    TREND_EXTENSION_BARS + 1, int(os.getenv("ASTER_TREND_EXTENSION_BARS_HARD", "30"))
 )
-TREND_EXTENSION_ADX_MIN = float(os.getenv("ASTER_TREND_EXTENSION_ADX_MIN", "44.0"))
+TREND_EXTENSION_ADX_MIN = float(os.getenv("ASTER_TREND_EXTENSION_ADX_MIN", "48.0"))
 TREND_EXTENSION_LOOKBACK = max(
     TREND_EXTENSION_BARS_HARD * 2, int(os.getenv("ASTER_TREND_EXTENSION_LOOKBACK", "80"))
 )
@@ -2821,7 +2821,7 @@ class AITradeAdvisor:
                 "over-trading and under-trading, and include a filters object keyed by the skip IDs long_overextended, trend_extension, "
                 "continuation_pullback, spread_tight, short_trend_alignment, edge_r, no_cross, wicky, stoch_rsi_trend_short, sentinel_veto, and playbook_structured_block. "
                 "Each filters entry may set the following keys: long_overextended (rsi_cap 45-75, atr_pct_cap 0.002-0.02), "
-                "trend_extension (bars_soft 6-30, bars_hard 8-45, adx_min 12-60), continuation_pullback (stoch_warn 40-90, "
+                "trend_extension (bars_soft 8-36, bars_hard 10-52, adx_min 18-65), continuation_pullback (stoch_warn 40-90, "
                 "stoch_max 55-98, stoch_min 5-45, adx_delta_min 0-12), spread_tight (spread_bps_max 0.0003-0.004), short_trend_alignment "
                 "(slope_min 0.0001-0.003, supertrend_tol -0.5 to 0.5), edge_r (min_edge_r 0.03-0.35), no_cross (rsi_buy_min 38-65, "
                 "rsi_sell_max 35-65), wicky (wickiness_max 0.94-0.9995), stoch_rsi_trend_short (stoch_min 5-70), sentinel_veto (event_risk_gate 0.3-0.9, block_risk 0.5-0.98, min_multiplier 0.1-0.8, weight 0.5-1.2), and playbook_structured_block (event_risk_max 0.2-0.9, soft_multiplier 0.25-1.0). Keep output strictly "
