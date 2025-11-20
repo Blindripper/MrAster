@@ -104,25 +104,45 @@ def test_strategy_applies_playbook_filters():
     }
     strategy.playbook_manager = _DummyManager(overrides)
     strategy.apply_playbook_filters()
-    expected_edge = max(EXPECTED_R_MIN_FLOOR, defaults["min_edge_r"] * 0.6)
+    guarded_edge = strategy._guarded_filter_value(
+        "min_edge_r", defaults["min_edge_r"] * 0.6
+    )
+    expected_edge = max(EXPECTED_R_MIN_FLOOR, min(0.05, guarded_edge))
     assert strategy.min_edge_r == pytest.approx(expected_edge)
     assert strategy.long_overextended_rsi_cap == pytest.approx(
         defaults["long_overextended_rsi_cap"] + 4
     )
-    assert strategy.sentinel_gate_event_risk == pytest.approx(
-        max(0.2, min(0.95, defaults["sentinel_gate_event_risk"] + 0.1))
+    expected_event_risk = strategy._guarded_filter_value(
+        "sentinel_gate_event_risk", defaults["sentinel_gate_event_risk"] + 0.1
     )
-    assert strategy.sentinel_gate_block_risk == pytest.approx(
-        max(0.35, min(0.99, defaults["sentinel_gate_block_risk"] - 0.1))
+    expected_event_risk = max(0.2, min(0.95, expected_event_risk))
+    assert strategy.sentinel_gate_event_risk == pytest.approx(expected_event_risk)
+
+    expected_block_risk = strategy._guarded_filter_value(
+        "sentinel_gate_block_risk", defaults["sentinel_gate_block_risk"] - 0.1
     )
-    assert strategy.sentinel_gate_min_mult == pytest.approx(
-        max(0.1, min(0.9, defaults["sentinel_gate_min_mult"] + 0.05))
+    expected_block_risk = max(0.35, min(0.99, expected_block_risk))
+    assert strategy.sentinel_gate_block_risk == pytest.approx(expected_block_risk)
+
+    expected_min_mult = strategy._guarded_filter_value(
+        "sentinel_gate_min_mult", defaults["sentinel_gate_min_mult"] + 0.05
     )
-    assert strategy.sentinel_gate_weight == pytest.approx(
-        max(0.4, min(1.25, defaults["sentinel_gate_weight"] - 0.1))
+    expected_min_mult = max(0.1, min(0.9, expected_min_mult))
+    assert strategy.sentinel_gate_min_mult == pytest.approx(expected_min_mult)
+
+    expected_weight = strategy._guarded_filter_value(
+        "sentinel_gate_weight", defaults["sentinel_gate_weight"] - 0.1
     )
+    expected_weight = max(0.4, min(1.25, expected_weight))
+    assert strategy.sentinel_gate_weight == pytest.approx(expected_weight)
     assert strategy.structured_block_event_risk_cap == pytest.approx(0.55)
-    assert strategy.structured_block_soft_multiplier == pytest.approx(0.65)
+    expected_soft_mult = strategy._guarded_filter_value(
+        "structured_block_soft_multiplier", 0.65
+    )
+    expected_soft_mult = max(0.2, min(1.0, expected_soft_mult))
+    assert strategy.structured_block_soft_multiplier == pytest.approx(
+        expected_soft_mult
+    )
     strategy.playbook_manager = _DummyManager({"filters": {}})
     strategy.apply_playbook_filters()
     assert strategy.min_edge_r == pytest.approx(defaults["min_edge_r"])
@@ -191,5 +211,7 @@ def test_strategy_caps_min_edge_override_to_point_zero_five():
     overrides = {"filters": {"edge_r": {"min_edge_r": 0.25}}}
     strategy.playbook_manager = _DummyManager(overrides)
     strategy.apply_playbook_filters()
-    assert strategy.min_edge_r == pytest.approx(0.05, rel=1e-3)
+    guarded_edge = strategy._guarded_filter_value("min_edge_r", 0.25)
+    expected_edge = max(EXPECTED_R_MIN_FLOOR, min(0.05, guarded_edge))
+    assert strategy.min_edge_r == pytest.approx(expected_edge, rel=1e-3)
     assert strategy.min_edge_r >= EXPECTED_R_MIN_FLOOR
