@@ -716,6 +716,9 @@ NO_CROSS_ADX_PAD = float(os.getenv("ASTER_NO_CROSS_ADX_PAD", "10.0"))
 NO_CROSS_MOMENTUM_GAP_MAX = float(os.getenv("ASTER_NO_CROSS_MOMENTUM_GAP_MAX", "0.0100"))
 NO_CROSS_MOMENTUM_RSI_PAD = float(os.getenv("ASTER_NO_CROSS_MOMENTUM_RSI_PAD", "3.0"))
 NO_CROSS_MOMENTUM_ADX_PAD = float(os.getenv("ASTER_NO_CROSS_MOMENTUM_ADX_PAD", "15.0"))
+NO_CROSS_TREND_GAP_MAX = float(os.getenv("ASTER_NO_CROSS_TREND_GAP_MAX", "0.0175"))
+NO_CROSS_TREND_ADX_BONUS = float(os.getenv("ASTER_NO_CROSS_TREND_ADX_BONUS", "4.0"))
+NO_CROSS_TREND_RSI_PAD = float(os.getenv("ASTER_NO_CROSS_TREND_RSI_PAD", "1.25"))
 NO_CROSS_SOFT_PENALTY = float(os.getenv("ASTER_NO_CROSS_SOFT_PENALTY", "0.30"))
 STOCH_RELIEF_THRESHOLD = float(os.getenv("ASTER_SKIP_STOCH_THRESHOLD", "0.15"))
 STOCH_RELIEF_STRENGTH = float(os.getenv("ASTER_SKIP_STOCH_STRENGTH", "18.0"))
@@ -10363,6 +10366,9 @@ class Strategy:
 
                     momentum_override = False
                     momentum_detail: Optional[str] = None
+                    trend_carry_override = False
+                    trend_detail: Optional[str] = None
+
                     if not near_cross_enabled:
                         momentum_gap_ok = ema_gap_pct <= NO_CROSS_MOMENTUM_GAP_MAX
                         momentum_adx_gate = max(0.0, ADX_MIN_THRESHOLD - NO_CROSS_MOMENTUM_ADX_PAD)
@@ -10376,19 +10382,33 @@ class Strategy:
                                 f"rsi={rsi14[-1]:.2f} adx={adx_val:.2f}"
                             )
 
-                    if near_cross_enabled or momentum_override:
-                        detail_prefix = "near-cross" if near_cross_enabled else "momentum-soft"
+                        if not momentum_override:
+                            trend_gap_ok = ema_gap_pct <= NO_CROSS_TREND_GAP_MAX
+                            strong_adx = adx_val >= ADX_MIN_THRESHOLD + NO_CROSS_TREND_ADX_BONUS
+                            strong_trend_bull = htf_trend_up and rsi14[-1] >= self.rsi_buy_min + NO_CROSS_TREND_RSI_PAD
+                            strong_trend_bear = htf_trend_down and rsi14[-1] <= self.rsi_sell_max - NO_CROSS_TREND_RSI_PAD
+                            if trend_gap_ok and strong_adx and (strong_trend_bull or strong_trend_bear):
+                                trend_carry_override = True
+                                direction = "buy" if strong_trend_bull else "sell"
+                                trend_detail = (
+                                    f"trend-carry {direction} gap={ema_gap_pct:.5f} "
+                                    f"rsi={rsi14[-1]:.2f} adx={adx_val:.2f}"
+                                )
+
+                    if near_cross_enabled or momentum_override or trend_carry_override:
+                        detail_prefix = "near-cross" if near_cross_enabled else "momentum-soft" if momentum_override else "trend-carry"
+                        detail = momentum_detail or trend_detail
                         if ema_fast[-1] > ema_slow[-1] and htf_trend_up and rsi14[-1] > (self.rsi_buy_min - NO_CROSS_RSI_PAD):
                             sig = "BUY"
                             continuation_long = True
                             chosen_flag = "setup_trend_follow"
                             soft_confirmation_used = True
-                            soft_confirmation_detail = momentum_detail or f"{detail_prefix} buy gap={ema_gap_pct:.5f} rsi={rsi14[-1]:.2f}"
+                            soft_confirmation_detail = detail or f"{detail_prefix} buy gap={ema_gap_pct:.5f} rsi={rsi14[-1]:.2f}"
                         elif ema_fast[-1] < ema_slow[-1] and htf_trend_down and rsi14[-1] < (self.rsi_sell_max + NO_CROSS_RSI_PAD):
                             sig = "SELL"
                             chosen_flag = "setup_trend_follow"
                             soft_confirmation_used = True
-                            soft_confirmation_detail = momentum_detail or f"{detail_prefix} sell gap={ema_gap_pct:.5f} rsi={rsi14[-1]:.2f}"
+                            soft_confirmation_detail = detail or f"{detail_prefix} sell gap={ema_gap_pct:.5f} rsi={rsi14[-1]:.2f}"
                 if sig == "NONE":
                     reason = "no_cross" if not align_checked else "no_cross"
                     return self._skip(reason, symbol, ctx=ctx_base, price=mid, atr=atr)
