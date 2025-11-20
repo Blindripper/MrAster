@@ -47,6 +47,31 @@ def test_skip_relief_steps_every_hundred_skips():
     assert strategy._skip_relief_snapshot.get("steps") == 2
 
 
+def test_skip_relief_respects_tightened_rsi_before_first_step():
+    state: dict = {}
+    tracker = DecisionTracker(state)
+    strategy = Strategy(exchange=_DummyExchange(), decision_tracker=tracker, state=state)
+
+    strategy.rsi_buy_min = RSI_BUY_MIN + 3.0
+    strategy.rsi_sell_max = RSI_SELL_MAX - 3.0
+    strategy._refresh_filter_defaults()
+
+    tightened_buy = strategy.rsi_buy_min
+    tightened_sell = strategy.rsi_sell_max
+
+    strategy._skip("no_cross", "BTCUSDT")
+
+    assert strategy.rsi_buy_min == pytest.approx(tightened_buy)
+    assert strategy.rsi_sell_max == pytest.approx(tightened_sell)
+
+    for _ in range(SKIP_RELIEF_STEP_SIZE - 1):
+        strategy._skip("no_cross", "BTCUSDT")
+
+    first_step_pad = min(NO_CROSS_RELIEF_MAX, NO_CROSS_RELIEF_STEP)
+    assert strategy.rsi_buy_min == pytest.approx(max(35.0, tightened_buy - first_step_pad))
+    assert strategy.rsi_sell_max == pytest.approx(min(65.0, tightened_sell + first_step_pad))
+
+
 def test_skip_relief_resets_after_trade():
     state: dict = {}
     tracker = DecisionTracker(state)
