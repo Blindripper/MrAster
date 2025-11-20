@@ -8025,31 +8025,8 @@ class Strategy:
         self.structured_block_soft_multiplier = 1.0
         self._skip_bypass_prob_map: Dict[str, float] = {}
         self._skip_bypass_excluded: Set[str] = set()
-        self._filter_defaults: Dict[str, float] = {
-            "min_edge_r": self.min_edge_r,
-            "spread_bps_max": self.spread_bps_max,
-            "wickiness_max": self.wickiness_max,
-            "rsi_buy_min": self.rsi_buy_min,
-            "rsi_sell_max": self.rsi_sell_max,
-            "trend_short_stochrsi_min": self.trend_short_stochrsi_min,
-            "long_overextended_rsi_cap": self.long_overextended_rsi_cap,
-            "long_overextended_atr_cap": self.long_overextended_atr_cap,
-            "trend_extension_bars": float(self.trend_extension_bars),
-            "trend_extension_bars_hard": float(self.trend_extension_bars_hard),
-            "trend_extension_adx_min": self.trend_extension_adx_min,
-            "continuation_pullback_warn": self.continuation_pullback_warn,
-            "continuation_pullback_max": self.continuation_pullback_max,
-            "continuation_stoch_min": self.continuation_stoch_min,
-            "continuation_adx_delta_min": self.continuation_adx_delta_min,
-            "short_trend_slope_min": self.short_trend_slope_min,
-            "short_trend_supertrend_tol": self.short_trend_supertrend_tol,
-            "sentinel_gate_event_risk": self.sentinel_gate_event_risk,
-            "sentinel_gate_block_risk": self.sentinel_gate_block_risk,
-            "sentinel_gate_min_mult": self.sentinel_gate_min_mult,
-            "sentinel_gate_weight": self.sentinel_gate_weight,
-            "structured_block_event_risk_cap": self.structured_block_event_risk_cap,
-            "structured_block_soft_multiplier": self.structured_block_soft_multiplier,
-        }
+        self._harmonize_filter_bounds()
+        self._refresh_filter_defaults()
         self._active_playbook_filters: Dict[str, Dict[str, float]] = {}
         if self.state:
             scores = self.state.get("universe_scores")
@@ -8385,6 +8362,61 @@ class Strategy:
             )
         else:
             self._skip_relief_snapshot = {"total": total}
+
+    def _harmonize_filter_bounds(self) -> None:
+        """Keep related filter gates from contradicting each other."""
+
+        # RSI window should always leave headroom for confirmations and
+        # overextension caps.
+        if self.rsi_buy_min >= self.rsi_sell_max:
+            midpoint = (self.rsi_buy_min + self.rsi_sell_max) / 2.0
+            self.rsi_buy_min = max(20.0, midpoint - 1.5)
+            self.rsi_sell_max = min(80.0, midpoint + 1.5)
+        self.rsi_buy_min = clamp(self.rsi_buy_min, 20.0, 80.0)
+        self.rsi_sell_max = clamp(self.rsi_sell_max, self.rsi_buy_min + 0.5, 85.0)
+
+        if self.long_overextended_rsi_cap <= self.rsi_buy_min:
+            self.long_overextended_rsi_cap = min(90.0, self.rsi_buy_min + 4.0)
+        self.long_overextended_atr_cap = max(0.0005, float(self.long_overextended_atr_cap or 0.0))
+
+        if self.trend_extension_bars_hard <= self.trend_extension_bars:
+            self.trend_extension_bars_hard = int(self.trend_extension_bars + 2)
+        self.trend_extension_adx_min = clamp(self.trend_extension_adx_min, 1.0, 99.0)
+
+        self.trend_short_stochrsi_min = clamp(
+            self.trend_short_stochrsi_min,
+            STOCHRSI_OVERSOLD + 1.0,
+            99.0,
+        )
+
+        self.min_edge_r = clamp(self.min_edge_r, EXPECTED_R_MIN_FLOOR, 0.95)
+
+    def _refresh_filter_defaults(self) -> None:
+        self._filter_defaults = {
+            "min_edge_r": self.min_edge_r,
+            "spread_bps_max": self.spread_bps_max,
+            "wickiness_max": self.wickiness_max,
+            "rsi_buy_min": self.rsi_buy_min,
+            "rsi_sell_max": self.rsi_sell_max,
+            "trend_short_stochrsi_min": self.trend_short_stochrsi_min,
+            "long_overextended_rsi_cap": self.long_overextended_rsi_cap,
+            "long_overextended_atr_cap": self.long_overextended_atr_cap,
+            "trend_extension_bars": float(self.trend_extension_bars),
+            "trend_extension_bars_hard": float(self.trend_extension_bars_hard),
+            "trend_extension_adx_min": self.trend_extension_adx_min,
+            "continuation_pullback_warn": self.continuation_pullback_warn,
+            "continuation_pullback_max": self.continuation_pullback_max,
+            "continuation_stoch_min": self.continuation_stoch_min,
+            "continuation_adx_delta_min": self.continuation_adx_delta_min,
+            "short_trend_slope_min": self.short_trend_slope_min,
+            "short_trend_supertrend_tol": self.short_trend_supertrend_tol,
+            "sentinel_gate_event_risk": self.sentinel_gate_event_risk,
+            "sentinel_gate_block_risk": self.sentinel_gate_block_risk,
+            "sentinel_gate_min_mult": self.sentinel_gate_min_mult,
+            "sentinel_gate_weight": self.sentinel_gate_weight,
+            "structured_block_event_risk_cap": self.structured_block_event_risk_cap,
+            "structured_block_soft_multiplier": self.structured_block_soft_multiplier,
+        }
 
     def _reset_filter_attributes(self) -> None:
         defaults = getattr(self, "_filter_defaults", {})
@@ -8851,6 +8883,32 @@ class Strategy:
                     "soft_multiplier",
                     self.structured_block_soft_multiplier,
                 )
+
+        self._harmonize_filter_bounds()
+        if applied:
+            applied_updates = {
+                "edge_r": {"min_edge_r": float(self.min_edge_r)},
+                "no_cross": {
+                    "rsi_buy_min": float(self.rsi_buy_min),
+                    "rsi_sell_max": float(self.rsi_sell_max),
+                },
+                "long_overextended": {
+                    "rsi_cap": float(self.long_overextended_rsi_cap),
+                    "atr_pct_cap": float(self.long_overextended_atr_cap),
+                },
+                "trend_extension": {
+                    "bars_soft": float(self.trend_extension_bars),
+                    "bars_hard": float(self.trend_extension_bars_hard),
+                    "adx_min": float(self.trend_extension_adx_min),
+                },
+                "stoch_rsi_trend_short": {
+                    "stoch_min": float(self.trend_short_stochrsi_min)
+                },
+            }
+            for reason, fields in applied_updates.items():
+                if reason in applied:
+                    for key, value in fields.items():
+                        applied[reason][key] = value
 
         self._active_playbook_filters = applied
         if self.state is not None:
