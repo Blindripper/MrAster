@@ -217,3 +217,22 @@ def test_strategy_caps_min_edge_override_to_point_zero_five():
     expected_edge = max(EXPECTED_R_MIN_FLOOR, min(0.05, guarded_edge))
     assert strategy.min_edge_r == pytest.approx(expected_edge, rel=1e-3)
     assert strategy.min_edge_r >= EXPECTED_R_MIN_FLOOR
+
+
+def test_playbook_rsi_window_remains_stable_under_overrides():
+    state: dict = {}
+    strategy = Strategy(exchange=_DummyExchange(), state=state)
+    defaults = dict(strategy._filter_defaults)
+    overrides = {
+        "filters": {
+            "no_cross": {
+                "rsi_buy_min": defaults["rsi_buy_min"] + 5,
+                "rsi_sell_max": defaults["rsi_sell_max"] - 5,
+            }
+        }
+    }
+    strategy.playbook_manager = _DummyManager(overrides)
+    strategy.apply_playbook_filters()
+
+    assert abs(strategy.rsi_buy_min - defaults["rsi_buy_min"]) <= 0.8
+    assert abs(strategy.rsi_sell_max - defaults["rsi_sell_max"]) <= 0.8

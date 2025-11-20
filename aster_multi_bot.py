@@ -730,8 +730,8 @@ PLAYBOOK_FILTER_TIGHTENING_RULES: Dict[str, Dict[str, float]] = {
     "min_edge_r": {"direction": "increase", "max_abs": 0.01, "max_pct": 0.25},
     "spread_bps_max": {"direction": "decrease", "max_pct": 0.5},
     "wickiness_max": {"direction": "decrease", "max_pct": 0.02, "max_abs": 0.015},
-    "rsi_buy_min": {"direction": "increase", "max_abs": 1.5},
-    "rsi_sell_max": {"direction": "decrease", "max_abs": 1.5},
+    "rsi_buy_min": {"direction": "increase", "max_abs": 0.8},
+    "rsi_sell_max": {"direction": "decrease", "max_abs": 0.8},
     "trend_short_stochrsi_min": {"direction": "increase", "max_abs": 15.0},
     "long_overextended_rsi_cap": {"direction": "decrease", "max_abs": 8.0},
     "long_overextended_atr_cap": {"direction": "decrease", "max_pct": 0.5},
@@ -8504,9 +8504,13 @@ class Strategy:
             return raw_value
         if base_value not in (0, 0.0):
             # Allow overrides to drift only slightly from the baked-in defaults so the
-            # playbook cannot meaningfully reshape the advisor's guardrails. Short trend
-            # gates get an even tighter leash to avoid inadvertent re-tightening.
+            # playbook cannot meaningfully reshape the advisor's guardrails. RSI gates
+            # in particular should remain nearly fixed to preserve a stable window, and
+            # short trend gates get an even tighter leash to avoid inadvertent
+            # re-tightening.
             drift_pct = 0.05
+            if key in {"rsi_buy_min", "rsi_sell_max"}:
+                drift_pct = 0.02
             if key in {"short_trend_slope_min", "short_trend_supertrend_tol"}:
                 drift_pct = 0.03
             max_delta = abs(base_value) * drift_pct
