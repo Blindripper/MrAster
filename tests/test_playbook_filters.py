@@ -109,9 +109,11 @@ def test_strategy_applies_playbook_filters():
     )
     expected_edge = max(EXPECTED_R_MIN_FLOOR, min(0.05, guarded_edge))
     assert strategy.min_edge_r == pytest.approx(expected_edge)
-    assert strategy.long_overextended_rsi_cap == pytest.approx(
-        defaults["long_overextended_rsi_cap"] + 4
+    expected_rsi_cap = strategy._guarded_filter_value(
+        "long_overextended_rsi_cap", defaults["long_overextended_rsi_cap"] + 4
     )
+    expected_rsi_cap = max(40.0, min(80.0, expected_rsi_cap))
+    assert strategy.long_overextended_rsi_cap == pytest.approx(expected_rsi_cap)
     expected_event_risk = strategy._guarded_filter_value(
         "sentinel_gate_event_risk", defaults["sentinel_gate_event_risk"] + 0.1
     )

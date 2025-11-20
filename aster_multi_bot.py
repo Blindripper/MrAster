@@ -8494,7 +8494,9 @@ class Strategy:
         if base_value is None:
             return raw_value
         if base_value not in (0, 0.0):
-            max_delta = abs(base_value) * 0.10
+            # Allow overrides to drift only slightly from the baked-in defaults so the
+            # playbook cannot meaningfully reshape the advisor's guardrails.
+            max_delta = abs(base_value) * 0.05
             lower = base_value - max_delta
             upper = base_value + max_delta
             raw_value = min(upper, max(lower, raw_value))
@@ -8517,6 +8519,9 @@ class Strategy:
         if pct and base_value not in (0, 0.0):
             pct_delta = abs(base_value) * float(pct)
             limit = min(limit, pct_delta) if limit is not None else pct_delta
+        if base_value not in (0, 0.0) and limit is not None:
+            # Keep any additional tightening aligned with the narrower drift above.
+            limit = min(limit, abs(base_value) * 0.05)
         if not limit or limit <= 0:
             return raw_value
         capped_delta = math.copysign(min(abs(delta), limit), delta)
