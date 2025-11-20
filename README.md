@@ -191,7 +191,7 @@ Curious about the engines, guardrails, and configuration surface? Expand the sec
 | Variable | Default | Description |
 | --- | --- | --- |
 | `ASTER_INTERVAL` / `ASTER_HTF_INTERVAL` | `5m` / `30m` | Timeframes for signals and confirmation. |
-| `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `49` / `51`* | RSI bounds for long and short entries. |
+| `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `35` / `65`* | RSI bounds for long and short entries. |
 | `ASTER_CONT_PULLBACK_STOCH_WARN` / `ASTER_CONT_PULLBACK_STOCH_MAX` | `70.0` / `90.0` | Soft/hard thresholds for the continuation pullback guard (set to `0` to disable, or raise to loosen the filter). |
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | Enforces trend alignment between timeframes. |
 | `ASTER_TREND_BIAS` | `with` | Trade with or against the trend. |
@@ -227,7 +227,7 @@ Curious about the engines, guardrails, and configuration surface? Expand the sec
 | `ASTER_NON_ARB_EDGE_THRESHOLD` | `0.00005` | Funding edge tolerated before the guard blocks a biased entry. |
 | `ASTER_NON_ARB_SKIP_GAP` | `0.0030` | Absolute mark/oracle gap that forces a skip regardless of direction. |
 
-*When launched from the dashboard, values seed to 51/49 RSI and inherit the selected risk profile (default `aggressive`, i.e. a 0.02 risk share — High preset in AI mode still escalates to 0.10). CLI-only launches fall back to 52/48 and the profile floor until overridden or synced via `dashboard_config.json`.*
+*When launched from the dashboard, values seed to 35/65 RSI and inherit the selected risk profile (default `aggressive`, i.e. a 0.02 risk share — High preset in AI mode still escalates to 0.10). CLI-only launches start from the same defaults until overridden or synced via `dashboard_config.json`.*
 
 *High/ATT presets without a manual `ASTER_LEVERAGE` override now auto-select the lowest leverage rung that still covers the strategy's default notional when AI mode is active, preventing exchange-imposed notional caps from throttling position size.*
 
