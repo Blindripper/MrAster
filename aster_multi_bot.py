@@ -12787,6 +12787,10 @@ class Bot:
         self._maybe_emit_ai_debug_state("startup")
         self._persist_run_metadata()
 
+    def _coerce_float(self, value: Any, default: Optional[float] = None) -> Optional[float]:
+        coerced = _coerce_float(value)
+        return default if coerced is None else coerced
+
     def __getattr__(self, name: str) -> Any:
         """Delegate missing attributes to the underlying Strategy instance."""
 
@@ -16184,13 +16188,26 @@ class Bot:
             skip_reason_raw = ctx.get("skip_reason")
             skip_reason = str(skip_reason_raw or "").strip()
             normalized_skip = skip_reason.lower()
-            if normalized_skip in {"no_cross"} or (normalized_skip and normalized_skip not in {"none"}):
+            ai_skip_blocklist = {
+                "sentinel_veto",
+                "playbook_structured_block",
+                "liquidity_guard",
+                "orderbook_depth",
+            }
+            if normalized_skip in ai_skip_blocklist:
                 log.debug(
                     "Skip %s — base strategy reported %s; avoiding AI trend scan.",
                     symbol,
                     skip_reason,
                 )
                 return
+            if normalized_skip and normalized_skip not in {"none", ""}:
+                log.debug(
+                    "Proceeding with AI trend scan for %s despite base skip: %s",
+                    symbol,
+                    skip_reason,
+                )
+                ctx.setdefault("base_skip_reason", skip_reason)
             if min_qvol > 0 and float(ctx.get("quote_volume", 0.0) or 0.0) < min_qvol:
                 return
             price_for_plan = mid_px if mid_px > 0 else price
