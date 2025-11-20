@@ -14,6 +14,9 @@ const statusStarted = document.getElementById('status-started');
 const statusUptime = document.getElementById('status-uptime');
 const logStream = document.getElementById('log-stream');
 const compactLogStream = document.getElementById('log-brief');
+const noCrossPanel = document.getElementById('no-cross-panel');
+const noCrossList = document.getElementById('no-cross-list');
+const noCrossMeta = document.getElementById('no-cross-meta');
 const nearMissList = document.getElementById('near-miss-list');
 const nearMissMeta = document.getElementById('near-miss-meta');
 const autoScrollToggles = document.querySelectorAll('input[data-autoscroll]');
@@ -2575,6 +2578,7 @@ let automationTargetTimestamp = null;
 let lastModeBeforeStandard = null;
 const decisionReasonEvents = new Map();
 const DECISION_REASON_EVENT_LIMIT = 40;
+const NO_CROSS_DISPLAY_LIMIT = 40;
 let pendingPlaybookResponseCount = 0;
 let lastPlaybookState = null;
 let lastPlaybookActivity = [];
@@ -13394,6 +13398,132 @@ function collectDecisionEvents(reason) {
   return combined;
 }
 
+function formatDecisionEventTime(event) {
+  if (!event) {
+    return { label: '', title: '' };
+  }
+  if (event.occurredAtIso) {
+    const parsed = new Date(event.occurredAtIso);
+    if (!Number.isNaN(parsed.getTime())) {
+      return {
+        label: formatRelativeTime(event.occurredAtIso),
+        title: parsed.toLocaleString(),
+      };
+    }
+  }
+  if (Number.isFinite(event.occurredAt)) {
+    const parsed = new Date(event.occurredAt * 1000);
+    if (!Number.isNaN(parsed.getTime())) {
+      return {
+        label: formatRelativeTime(event.occurredAt),
+        title: parsed.toLocaleString(),
+      };
+    }
+  }
+  return { label: translate('common.timeUnknown', 'Time unavailable'), title: '' };
+}
+
+function renderDecisionDetailPairs(detailPairs = []) {
+  const entries = Array.isArray(detailPairs) ? detailPairs : [];
+  if (entries.length === 0) return null;
+  const dl = document.createElement('dl');
+  dl.className = 'no-cross-detail-grid';
+  entries.forEach((entry) => {
+    const dt = document.createElement('dt');
+    dt.textContent = entry.label || entry.key || 'Detail';
+    const dd = document.createElement('dd');
+    dd.textContent = entry.value ?? '—';
+    dl.append(dt, dd);
+  });
+  return dl;
+}
+
+function renderNoCrossDetails() {
+  if (!noCrossList) return;
+  const events = collectDecisionEvents('no_cross');
+  const entries = events.slice(0, NO_CROSS_DISPLAY_LIMIT);
+  const fragment = document.createDocumentFragment();
+
+  if (entries.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'no-cross-empty';
+    empty.textContent = translate(
+      'logs.noCross.empty',
+      'No skipped “Signal not confirmed” events recorded yet.',
+    );
+    noCrossList.replaceChildren(empty);
+    if (noCrossMeta) {
+      noCrossMeta.textContent = translate('logs.noCross.metaEmpty', 'Awaiting the next unconfirmed signal…');
+    }
+    return;
+  }
+
+  entries.forEach((event) => {
+    const row = document.createElement('div');
+    row.className = 'log-line warning no-cross-entry';
+    applyLogReasonStyles(row, 'no_cross');
+
+    const meta = document.createElement('div');
+    meta.className = 'log-meta';
+
+    const symbol = document.createElement('span');
+    symbol.className = 'no-cross-symbol';
+    symbol.textContent = (event.symbol || '').toString().trim() || '—';
+    meta.append(symbol);
+
+    const label = document.createElement('span');
+    label.className = 'log-level';
+    label.textContent = friendlyReason('no_cross');
+    meta.append(label);
+
+    const { label: timeLabel, title: timeTitle } = formatDecisionEventTime(event);
+    const time = document.createElement('span');
+    time.className = 'log-time';
+    time.textContent = timeLabel;
+    if (timeTitle) {
+      time.title = timeTitle;
+    }
+    meta.append(time);
+
+    const message = document.createElement('div');
+    message.className = 'log-message';
+    message.textContent = event.message || translate('logs.noCross.defaultMessage', 'Skipped trade — Signal not confirmed.');
+
+    row.append(meta, message);
+
+    const detailPairs = Array.isArray(event.detailPairs) ? event.detailPairs : [];
+    if (detailPairs.length > 0) {
+      const detailGrid = renderDecisionDetailPairs(detailPairs);
+      if (detailGrid) {
+        row.append(detailGrid);
+      }
+    } else if (event.detail) {
+      const detail = document.createElement('div');
+      detail.className = 'log-note';
+      detail.textContent = event.detail;
+      row.append(detail);
+    }
+
+    if (event.parsed?.raw && !event.detail && detailPairs.length === 0) {
+      const raw = document.createElement('div');
+      raw.className = 'log-note';
+      raw.textContent = event.parsed.raw;
+      row.append(raw);
+    }
+
+    fragment.append(row);
+  });
+
+  noCrossList.replaceChildren(fragment);
+
+  if (noCrossMeta) {
+    const latestEvent = entries[0];
+    const { label: timeLabel } = formatDecisionEventTime(latestEvent);
+    const windowNote = timeLabel ? ` · Updated ${timeLabel}` : '';
+    noCrossMeta.textContent = `Showing ${entries.length}/${events.length} skips${windowNote}`;
+  }
+}
+
 function buildSkippedTradeExportPayload() {
   const stats = lastDecisionStats || latestTradesSnapshot?.decision_stats || null;
   const rejectedCounts = stats?.rejected && typeof stats.rejected === 'object' ? stats.rejected : {};
@@ -14253,10 +14383,14 @@ function appendCompactLog({ line, level, ts }) {
       symbol: friendly.symbol,
       message: friendly.text,
       detail: friendly.detail,
+      detailPairs: friendly.detailPairs ? friendly.detailPairs.map((entry) => ({ ...entry })) : null,
       occurredAt: Number.isFinite(timestampSeconds) ? timestampSeconds : undefined,
       occurredAtIso: friendly.parsed?.timestamp || null,
       parsed: friendly.parsed,
     });
+    if (normaliseDecisionReason(friendly.reason) === 'no_cross') {
+      renderNoCrossDetails();
+    }
     if (friendly.detailPairs && friendly.detailPairs.length > 0) {
       captureNearMissEvent(friendly, timestampSeconds);
     }
@@ -15505,6 +15639,7 @@ async function loadTrades() {
         snapshot.history_summary,
       );
       renderDecisionStats(snapshot.decision_stats);
+      renderNoCrossDetails();
       renderPnlChart(snapshot.history, snapshot.pnl_series);
       renderAiBudget(snapshot.ai_budget);
       renderAiRequests(snapshot.ai_requests);
