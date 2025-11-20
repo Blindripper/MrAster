@@ -1184,7 +1184,10 @@ _BASE_SIGNAL_TUNING: Dict[str, Any] = {
     "MIN_QUOTE_VOL": 276_000.0,
     "SPREAD_BPS_MAX": 0.00195,
     "WICKINESS_MAX": 0.998,
-    "MIN_EDGE_R": 0.051,
+    # Keep the preset seed aligned with the environment-backed baseline so a default
+    # run (no env overrides) still uses the intended MIN_EDGE_R of 0.0125 instead of
+    # the much higher 0.051 value from earlier presets.
+    "MIN_EDGE_R": MIN_EDGE_R,
     "ADX_MIN_THRESHOLD": 16.0,
     "ADX_DELTA_MIN": -32.0,
     "STOCHRSI_LONG_MAX": 44.0,
