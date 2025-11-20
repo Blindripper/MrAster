@@ -23,6 +23,8 @@ const completedPositionsPanel = document.getElementById('completed-positions-pan
 const completedPositionsList = document.getElementById('completed-positions-list');
 const completedPositionsEmpty = document.getElementById('completed-positions-empty');
 const aiRequestList = document.getElementById('ai-request-list');
+const aiRequestPrev = document.getElementById('ai-requests-prev');
+const aiRequestNext = document.getElementById('ai-requests-next');
 const aiRequestModal = document.getElementById('ai-request-modal');
 const aiRequestModalClose = document.getElementById('ai-request-modal-close');
 const aiRequestModalBody = document.getElementById('ai-request-modal-body');
@@ -11352,6 +11354,46 @@ function buildAiRequestDetailContent(item) {
   return container;
 }
 
+function getAiRequestTimestamp(item) {
+  if (!item || typeof item !== 'object') return 0;
+  const ts = item.updated_at || item.created_at;
+  const time = ts ? new Date(ts).getTime() : 0;
+  return Number.isFinite(time) ? time : 0;
+}
+
+function getAiRequestScrollStep() {
+  if (!aiRequestList) return 0;
+  const firstCard = aiRequestList.querySelector('.ai-request-card');
+  if (!firstCard) return 0;
+  const { gap } = getComputedStyle(aiRequestList);
+  const gapValue = Number.parseFloat(gap) || 0;
+  return firstCard.getBoundingClientRect().width + gapValue;
+}
+
+function updateAiRequestNavButtons() {
+  if (!aiRequestList || !aiRequestPrev || !aiRequestNext) return;
+  const maxScroll = Math.max(aiRequestList.scrollWidth - aiRequestList.clientWidth, 0);
+  if (maxScroll <= 2) {
+    aiRequestPrev.disabled = true;
+    aiRequestNext.disabled = true;
+    return;
+  }
+  aiRequestPrev.disabled = aiRequestList.scrollLeft <= 1;
+  aiRequestNext.disabled = aiRequestList.scrollLeft >= maxScroll - 1;
+}
+
+function scrollAiRequests(direction = 1) {
+  if (!aiRequestList) return;
+  const step = getAiRequestScrollStep() || aiRequestList.clientWidth * 0.9;
+  aiRequestList.scrollBy({ left: step * direction, behavior: 'smooth' });
+}
+
+function resetAiRequestScrollPosition() {
+  if (!aiRequestList) return;
+  aiRequestList.scrollTo({ left: 0, behavior: 'auto' });
+  requestAnimationFrame(updateAiRequestNavButtons);
+}
+
 function renderAiRequests(requests) {
   if (!aiRequestList) return;
   const fragment = document.createDocumentFragment();
@@ -11362,9 +11404,14 @@ function renderAiRequests(requests) {
     disabled.textContent = translate('ai.feed.disabled', 'Enable AI mode to view the activity feed.');
     fragment.append(disabled);
     aiRequestList.replaceChildren(fragment);
+    resetAiRequestScrollPosition();
     return;
   }
-  const items = Array.isArray(requests) ? requests.slice(0, 30) : [];
+  const items = Array.isArray(requests)
+    ? [...requests]
+        .sort((a, b) => getAiRequestTimestamp(b) - getAiRequestTimestamp(a))
+        .slice(0, 30)
+    : [];
   if (items.length === 0) {
     aiRequestsEmptyStreak += 1;
     if (aiRequestList.childElementCount > 0 && aiRequestsEmptyStreak === 1) {
@@ -11379,6 +11426,7 @@ function renderAiRequests(requests) {
     fragment.append(empty);
     aiRequestList.replaceChildren(fragment);
     aiRequestsEmptyStreak = Math.min(Math.max(aiRequestsEmptyStreak, 1), 2);
+    resetAiRequestScrollPosition();
     return;
   }
   aiRequestsEmptyStreak = 0;
@@ -11497,6 +11545,7 @@ function renderAiRequests(requests) {
     fragment.append(card);
   });
   aiRequestList.replaceChildren(fragment);
+  resetAiRequestScrollPosition();
 }
 
 function openAiRequestModal(request, returnTarget) {
@@ -16072,6 +16121,20 @@ if (tradeModal) {
     }
   });
 }
+
+aiRequestList?.addEventListener('scroll', updateAiRequestNavButtons);
+
+aiRequestPrev?.addEventListener('click', () => {
+  scrollAiRequests(-1);
+});
+
+aiRequestNext?.addEventListener('click', () => {
+  scrollAiRequests(1);
+});
+
+window.addEventListener('resize', () => {
+  updateAiRequestNavButtons();
+});
 
 pnlChartModalClose?.addEventListener('click', () => {
   closePnlModal();

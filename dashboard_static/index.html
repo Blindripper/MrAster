@@ -399,7 +399,29 @@
             </div>
           </div>
           <div class="ai-request-history" data-mobile-collapsible-body>
-            <div id="ai-request-list" class="ai-request-list" role="list"></div>
+            <div class="ai-request-carousel" role="group" aria-label="AI decision carousel">
+              <button
+                type="button"
+                class="ai-request-carousel__nav ai-request-carousel__nav--prev"
+                id="ai-requests-prev"
+                aria-label="Scroll to previous AI decisions"
+                disabled
+              >
+                <span aria-hidden="true">&#x2190;</span>
+              </button>
+              <div class="ai-request-carousel__viewport">
+                <div id="ai-request-list" class="ai-request-list" role="list"></div>
+              </div>
+              <button
+                type="button"
+                class="ai-request-carousel__nav ai-request-carousel__nav--next"
+                id="ai-requests-next"
+                aria-label="Scroll to next AI decisions"
+                disabled
+              >
+                <span aria-hidden="true">&#x2192;</span>
+              </button>
+            </div>
           </div>
         </section>
 
