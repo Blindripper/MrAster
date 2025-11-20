@@ -8295,16 +8295,18 @@ class Strategy:
         skips_since_trade = int(progress.get("skips_since_trade", 0) or 0)
         steps = skips_since_trade // SKIP_RELIEF_STEP_SIZE
         pad = min(NO_CROSS_RELIEF_MAX, steps * NO_CROSS_RELIEF_STEP)
-        baseline_buy = self._skip_relief_baseline.get("rsi_buy_min", self.rsi_buy_min)
-        baseline_sell = self._skip_relief_baseline.get("rsi_sell_max", self.rsi_sell_max)
         if pad > 0:
+            baseline_buy = self._skip_relief_baseline.get("rsi_buy_min", self.rsi_buy_min)
+            baseline_sell = self._skip_relief_baseline.get("rsi_sell_max", self.rsi_sell_max)
             self.rsi_buy_min = max(35.0, baseline_buy - pad)
             self.rsi_sell_max = min(65.0, baseline_sell + pad)
             adjustments["rsi_window"] = round(pad, 3)
             progress["current_pad"] = pad
         else:
-            self.rsi_buy_min = baseline_buy
-            self.rsi_sell_max = baseline_sell
+            # Preserve any playbook- or filter-driven RSI overrides while recording the
+            # current thresholds as the new baseline for future relief steps.
+            self._skip_relief_baseline["rsi_buy_min"] = float(self.rsi_buy_min)
+            self._skip_relief_baseline["rsi_sell_max"] = float(self.rsi_sell_max)
             progress["current_pad"] = 0.0
 
         stoch_share = shares.get("stoch_rsi_trend_short", 0.0)
@@ -8418,6 +8420,12 @@ class Strategy:
             "structured_block_event_risk_cap": self.structured_block_event_risk_cap,
             "structured_block_soft_multiplier": self.structured_block_soft_multiplier,
         }
+        self._skip_relief_baseline.update(
+            {
+                "rsi_buy_min": float(self.rsi_buy_min),
+                "rsi_sell_max": float(self.rsi_sell_max),
+            }
+        )
 
     def _reset_filter_attributes(self) -> None:
         defaults = getattr(self, "_filter_defaults", {}) or {}
