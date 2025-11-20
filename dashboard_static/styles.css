@@ -5647,7 +5647,8 @@ body.pro-mode .log-stream {
 .ai-request-carousel__viewport {
   position: relative;
   overflow: hidden;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .ai-request-carousel__nav {
