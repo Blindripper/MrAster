@@ -8595,6 +8595,16 @@ class Strategy:
             if isinstance(value, (int, float)):
                 numeric = float(value)
                 guarded = self._guarded_filter_value("min_edge_r", numeric, "edge_r")
+                baseline = getattr(self, "_filter_defaults", {}) or {}
+                baseline_min_edge = baseline.get("min_edge_r", MIN_EDGE_R)
+                if not isinstance(baseline_min_edge, (int, float)):
+                    baseline_min_edge = MIN_EDGE_R
+                drift_band = abs(baseline_min_edge) * 0.05
+                guarded = clamp(
+                    guarded,
+                    max(EXPECTED_R_MIN_FLOOR, baseline_min_edge - drift_band),
+                    baseline_min_edge + drift_band,
+                )
                 capped = min(0.05, guarded)
                 self.min_edge_r = float(max(EXPECTED_R_MIN_FLOOR, capped))
                 _record("edge_r", "min_edge_r", self.min_edge_r)
