@@ -1174,9 +1174,9 @@ BREAKOUT_SLOPE_MIN = float(os.getenv("ASTER_BREAKOUT_SLOPE_MIN", "0.0035"))
 BREAKOUT_RETEST_BARS = max(2, int(os.getenv("ASTER_BREAKOUT_RETEST_BARS", "3")))
 BREAKOUT_WIDTH_SQUEEZE = float(os.getenv("ASTER_BREAKOUT_WIDTH_SQUEEZE", "0.65"))
 BREAKOUT_EXPECTED_R_MULT = float(os.getenv("ASTER_BREAKOUT_EXPECTED_R_MULT", "1.10"))
-SHORT_TREND_SLOPE_MIN = float(os.getenv("ASTER_SHORT_TREND_SLOPE_MIN", "0.00035") or 0.00035)
+SHORT_TREND_SLOPE_MIN = float(os.getenv("ASTER_SHORT_TREND_SLOPE_MIN", "0.00025") or 0.00025)
 SHORT_TREND_SUPERTREND_TOL = float(
-    os.getenv("ASTER_SHORT_TREND_SUPERTREND_TOL", "0.45") or 0.45
+    os.getenv("ASTER_SHORT_TREND_SUPERTREND_TOL", "0.55") or 0.55
 )
 
 FILTER_PENALTY_HARD = float(os.getenv("ASTER_FILTER_PENALTY_HARD", "1.65"))
@@ -8468,8 +8468,12 @@ class Strategy:
             return raw_value
         if base_value not in (0, 0.0):
             # Allow overrides to drift only slightly from the baked-in defaults so the
-            # playbook cannot meaningfully reshape the advisor's guardrails.
-            max_delta = abs(base_value) * 0.05
+            # playbook cannot meaningfully reshape the advisor's guardrails. Short trend
+            # gates get an even tighter leash to avoid inadvertent re-tightening.
+            drift_pct = 0.05
+            if key in {"short_trend_slope_min", "short_trend_supertrend_tol"}:
+                drift_pct = 0.03
+            max_delta = abs(base_value) * drift_pct
             lower = base_value - max_delta
             upper = base_value + max_delta
             raw_value = min(upper, max(lower, raw_value))
@@ -10681,9 +10685,9 @@ class Strategy:
 
             if short_trend_soft_conflict:
                 short_trend_conflict = slope_excess > max(
-                    slope_threshold * 1.25, 0.00025
+                    slope_threshold * 1.5, 0.00032
                 ) and supertrend_excess > max(
-                    0.25, self.short_trend_supertrend_tol * 0.55
+                    0.3, self.short_trend_supertrend_tol * 0.65
                 )
                 if short_trend_conflict:
                     ctx_base["short_trend_alignment_gate"] = True
@@ -10699,7 +10703,7 @@ class Strategy:
                     )
 
                 soft_penalty = clamp(
-                    slope_excess * 2200.0 + supertrend_excess * 0.65,
+                    slope_excess * 1600.0 + supertrend_excess * 0.5,
                     0.0,
                     FILTER_PENALTY_WARN,
                 )
