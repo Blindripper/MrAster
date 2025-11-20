@@ -10641,30 +10641,53 @@ class Strategy:
                 _add_penalty("supertrend", clamp(abs(supertrend_dir_last) * 0.6 + 0.4, 0.0, FILTER_PENALTY_HARD), f"{supertrend_dir_last:.2f}")
         elif sig == "SELL":
             short_trend_conflict = False
+            short_trend_soft_conflict = False
             short_trend_detail: Dict[str, str] = {}
             slope_gate = float(slope_fast)
             slope_threshold = max(0.0, self.short_trend_slope_min)
+            slope_excess = 0.0
+            supertrend_excess = 0.0
             if slope_threshold and slope_gate > slope_threshold:
-                short_trend_conflict = True
+                short_trend_soft_conflict = True
+                slope_excess = slope_gate - slope_threshold
                 short_trend_detail["slope_fast"] = f"{slope_gate:+.5f}"
             if (
                 supertrend_gate_enabled
                 and supertrend_dir_last > self.short_trend_supertrend_tol
             ):
-                short_trend_conflict = True
+                short_trend_soft_conflict = True
+                supertrend_excess = supertrend_dir_last - self.short_trend_supertrend_tol
                 short_trend_detail["supertrend_dir"] = f"{supertrend_dir_last:+.2f}"
-            if short_trend_conflict:
-                ctx_base["short_trend_alignment_gate"] = True
-                if not short_trend_detail:
-                    short_trend_detail = {"reason": "trend_conflict"}
-                return self._skip(
-                    "short_trend_alignment",
-                    symbol,
-                    short_trend_detail,
-                    ctx=ctx_base,
-                    price=mid,
-                    atr=atr,
+
+            if short_trend_soft_conflict:
+                short_trend_conflict = slope_excess > 0 and supertrend_excess > 0
+                if short_trend_conflict:
+                    ctx_base["short_trend_alignment_gate"] = True
+                    if not short_trend_detail:
+                        short_trend_detail = {"reason": "trend_conflict"}
+                    return self._skip(
+                        "short_trend_alignment",
+                        symbol,
+                        short_trend_detail,
+                        ctx=ctx_base,
+                        price=mid,
+                        atr=atr,
+                    )
+
+                soft_penalty = clamp(
+                    slope_excess * 2400.0 + supertrend_excess * 0.8,
+                    0.0,
+                    FILTER_PENALTY_WARN,
                 )
+                if soft_penalty > 0:
+                    ctx_base["short_trend_alignment_soft"] = True
+                    _add_penalty(
+                        "short_trend_alignment",
+                        soft_penalty,
+                        " · ".join(f"{k} {v}" for k, v in short_trend_detail.items())
+                        if short_trend_detail
+                        else None,
+                    )
             if stoch_d_last <= STOCHRSI_OVERSOLD:
                 ctx_base["stoch_rsi_oversold"] = float(stoch_d_last)
                 _add_penalty("stoch_rsi", clamp((STOCHRSI_OVERSOLD - stoch_d_last) / 100.0 * 3.0 + 0.4, 0.0, FILTER_PENALTY_HARD), f"{stoch_d_last:.1f}")
