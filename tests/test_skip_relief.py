@@ -68,3 +68,22 @@ def test_skip_relief_resets_after_trade():
     assert strategy._skip_relief_snapshot.get("skips_since_trade") == 0
     assert strategy.rsi_buy_min == pytest.approx(RSI_BUY_MIN)
     assert strategy.rsi_sell_max == pytest.approx(RSI_SELL_MAX)
+
+
+def test_skip_relief_rsi_window_can_exceed_old_cap():
+    state: dict = {}
+    tracker = DecisionTracker(state)
+    strategy = Strategy(exchange=_DummyExchange(), decision_tracker=tracker, state=state)
+
+    strategy.rsi_buy_min = 48.0
+    strategy.rsi_sell_max = 52.0
+    strategy._skip_relief_baseline["rsi_buy_min"] = strategy.rsi_buy_min
+    strategy._skip_relief_baseline["rsi_sell_max"] = strategy.rsi_sell_max
+
+    progress = state.setdefault("skip_relief_progress", {})
+    progress["skips_since_trade"] = 10 * SKIP_RELIEF_STEP_SIZE
+
+    strategy._apply_skip_relief()
+
+    assert strategy.rsi_buy_min == pytest.approx(40.5)
+    assert strategy.rsi_sell_max == pytest.approx(59.5)
