@@ -56,8 +56,11 @@ def test_skip_relief_resets_after_trade():
         strategy._skip("no_cross", "ETHUSDT")
 
     assert strategy._skip_relief_snapshot.get("steps") >= 2
-    assert strategy.rsi_buy_min < RSI_BUY_MIN
-    assert strategy.rsi_sell_max > RSI_SELL_MAX
+    pad = min(NO_CROSS_RELIEF_MAX, strategy._skip_relief_snapshot.get("steps", 0) * NO_CROSS_RELIEF_STEP)
+    expected_buy_min = max(35.0, RSI_BUY_MIN - pad)
+    expected_sell_max = min(65.0, RSI_SELL_MAX + pad)
+    assert strategy.rsi_buy_min == pytest.approx(expected_buy_min)
+    assert strategy.rsi_sell_max == pytest.approx(expected_sell_max)
 
     strategy._reset_skip_relief_after_trade()
 
