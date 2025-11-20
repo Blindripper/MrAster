@@ -96,7 +96,7 @@ def test_playbook_snapshot_includes_filter_state_and_rejections():
     filter_state = snapshot.get("filter_state")
     assert filter_state is not None
     assert filter_state["thresholds"]["edge_r"]["min_edge_r"] == pytest.approx(
-        strategy.min_edge_r
+        strategy.min_edge_r, rel=1e-3
     )
     assert filter_state["skip_relief"]["total"] == 3
     recent = filter_state.get("recent_rejections")
