@@ -28,7 +28,7 @@ def _parse_env_float(key: str) -> Optional[float]:
 def _playbook_refresh_interval_seconds() -> float:
     """Resolve the desired refresh interval for AI playbook updates."""
 
-    default_seconds = 10 * 60.0
+    default_seconds = 3 * 60 * 60.0
     seconds = _parse_env_float("ASTER_PLAYBOOK_REFRESH_INTERVAL_SECONDS")
     if seconds is None:
         seconds = _parse_env_float("ASTER_PLAYBOOK_REFRESH_SECONDS")
@@ -40,7 +40,7 @@ def _playbook_refresh_interval_seconds() -> float:
             seconds = minutes * 60.0
     if seconds is None:
         seconds = default_seconds
-    seconds = max(60.0, float(seconds))
+    seconds = max(3 * 60 * 60.0, float(seconds))
     return seconds
 
 
@@ -1846,19 +1846,6 @@ class PlaybookManager:
                 pref_key = f"playbook_feature_{slug}"
                 if pref_key not in ctx:
                     ctx[pref_key] = numeric
-        filters = active.get("filters")
-        if isinstance(filters, dict) and filters:
-            ctx["playbook_filters"] = filters
-            for reason, values in filters.items():
-                if not isinstance(values, dict):
-                    continue
-                prefix = f"playbook_filter_{reason}"
-                ctx[prefix] = dict(values)
-                for key, value in values.items():
-                    try:
-                        ctx[f"{prefix}_{key}"] = float(value)
-                    except (TypeError, ValueError):
-                        continue
         ctx["playbook_mode"] = active.get("mode", "baseline")
         ctx["playbook_bias"] = active.get("bias", "neutral")
         size_bias_data = active.get("size_bias", {})
@@ -2335,10 +2322,6 @@ class PlaybookManager:
             structured_risk = strategy.get("risk_controls_structured")
             if structured_risk:
                 active["structured_risk_controls"] = structured_risk
-        filter_payload = payload.get("filters") or payload.get("filter_overrides")
-        filters = self._normalize_filters(filter_payload)
-        if filters:
-            active["filters"] = filters
         request_id = payload.get("request_id")
         if isinstance(request_id, str):
             token = request_id.strip()
