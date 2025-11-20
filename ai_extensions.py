@@ -1200,8 +1200,8 @@ class PlaybookManager:
         },
         "spread_tight": {"spread_bps_max": (0.0003, 0.004)},
         "short_trend_alignment": {
-            "slope_min": (0.0001, 0.0035),
-            "supertrend_tol": (-0.6, 0.7),
+            "slope_min": (0.0002, 0.0035),
+            "supertrend_tol": (-0.6, 0.85),
         },
         "edge_r": {"min_edge_r": (0.03, 0.4)},
         "no_cross": {
