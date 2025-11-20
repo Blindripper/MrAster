@@ -707,31 +707,10 @@ EDGE_RELIEF_MIN_ABS = float(os.getenv("ASTER_SKIP_EDGE_MIN_ABS", "0.0115"))
 SPREAD_RELIEF_THRESHOLD = float(os.getenv("ASTER_SKIP_SPREAD_THRESHOLD", "0.20"))
 SPREAD_RELIEF_STRENGTH = float(os.getenv("ASTER_SKIP_SPREAD_STRENGTH", "0.40"))
 SPREAD_RELIEF_CAP = float(os.getenv("ASTER_SKIP_SPREAD_CAP", "1.30"))
-NO_CROSS_RELIEF_THRESHOLD = float(os.getenv("ASTER_SKIP_NO_CROSS_THRESHOLD", "0.0"))
-NO_CROSS_RELIEF_STRENGTH = float(os.getenv("ASTER_SKIP_NO_CROSS_STRENGTH", "1.00"))
-_skip_no_cross_max = os.getenv("ASTER_SKIP_NO_CROSS_MAX", "inf")
-try:
-    NO_CROSS_RELIEF_MAX = float(_skip_no_cross_max)
-except ValueError:
-    NO_CROSS_RELIEF_MAX = math.inf
-if NO_CROSS_RELIEF_MAX <= 0:
-    NO_CROSS_RELIEF_MAX = math.inf
-NO_CROSS_RELIEF_STEP = float(os.getenv("ASTER_SKIP_NO_CROSS_STEP", "2.50"))
-NO_CROSS_EMA_GAP_MAX = float(os.getenv("ASTER_NO_CROSS_EMA_GAP_MAX", "1.0000"))
-NO_CROSS_RSI_PAD = float(os.getenv("ASTER_NO_CROSS_RSI_PAD", "18.0"))
-NO_CROSS_ADX_PAD = float(os.getenv("ASTER_NO_CROSS_ADX_PAD", "60.0"))
-NO_CROSS_MOMENTUM_GAP_MAX = float(os.getenv("ASTER_NO_CROSS_MOMENTUM_GAP_MAX", "1.0000"))
-NO_CROSS_MOMENTUM_RSI_PAD = float(os.getenv("ASTER_NO_CROSS_MOMENTUM_RSI_PAD", "0.0"))
-NO_CROSS_MOMENTUM_ADX_PAD = float(os.getenv("ASTER_NO_CROSS_MOMENTUM_ADX_PAD", "60.0"))
-NO_CROSS_TREND_GAP_MAX = float(os.getenv("ASTER_NO_CROSS_TREND_GAP_MAX", "1.0000"))
-NO_CROSS_TREND_ADX_BONUS = float(os.getenv("ASTER_NO_CROSS_TREND_ADX_BONUS", "0.0"))
-NO_CROSS_TREND_RSI_PAD = float(os.getenv("ASTER_NO_CROSS_TREND_RSI_PAD", "0.0"))
-NO_CROSS_SOFT_PENALTY = float(os.getenv("ASTER_NO_CROSS_SOFT_PENALTY", "0.0"))
 STOCH_RELIEF_THRESHOLD = float(os.getenv("ASTER_SKIP_STOCH_THRESHOLD", "0.15"))
 STOCH_RELIEF_STRENGTH = float(os.getenv("ASTER_SKIP_STOCH_STRENGTH", "18.0"))
 STOCH_RELIEF_MAX = float(os.getenv("ASTER_SKIP_STOCH_MAX", "3.0"))
 SKIP_PASS_RATE = min(1.0, max(0.0, float(os.getenv("ASTER_SKIP_PASS_RATE", "0.04"))))
-SKIP_RELIEF_STEP_SIZE = max(1, int(os.getenv("ASTER_SKIP_RELIEF_STEP_SIZE", "100") or 100))
 PLAYBOOK_FILTER_TIGHTENING_RULES: Dict[str, Dict[str, float]] = {
     "min_edge_r": {"direction": "increase", "max_abs": 0.01, "max_pct": 0.25},
     "spread_bps_max": {"direction": "decrease", "max_pct": 0.5},
@@ -2806,12 +2785,11 @@ class AITradeAdvisor:
                 "trend_strength], operator from [>, >=, <, <=, between], value (number) and optional value2 for between). Include "
                 "an optional note per structured item. Calibrate skip filters using the provided decision_stats to avoid both "
                 "over-trading and under-trading, and include a filters object keyed by the skip IDs long_overextended, trend_extension, "
-                "continuation_pullback, spread_tight, short_trend_alignment, edge_r, no_cross, wicky, stoch_rsi_trend_short, sentinel_veto, and playbook_structured_block. "
+                "continuation_pullback, spread_tight, short_trend_alignment, edge_r, wicky, stoch_rsi_trend_short, sentinel_veto, and playbook_structured_block. "
                 "Each filters entry may set the following keys: long_overextended (rsi_cap 45-75, atr_pct_cap 0.002-0.02), "
                 "trend_extension (bars_soft 8-36, bars_hard 10-52, adx_min 18-65), continuation_pullback (stoch_warn 40-90, "
                 "stoch_max 55-98, stoch_min 5-45, adx_delta_min 0-12), spread_tight (spread_bps_max 0.0003-0.004), short_trend_alignment "
-                "(slope_min 0.0001-0.003, supertrend_tol -0.5 to 0.5), edge_r (min_edge_r 0.03-0.35), no_cross (rsi_buy_min 38-65, "
-                "rsi_sell_max 35-65), wicky (wickiness_max 0.94-1.0), stoch_rsi_trend_short (stoch_min 5-70), sentinel_veto (event_risk_gate 0.3-0.9, block_risk 0.5-0.98, min_multiplier 0.1-0.8, weight 0.5-1.2), and playbook_structured_block (event_risk_max 0.2-0.9, soft_multiplier 0.25-1.0). Keep output strictly "
+                "(slope_min 0.0001-0.003, supertrend_tol -0.5 to 0.5), edge_r (min_edge_r 0.03-0.35), wicky (wickiness_max 0.94-1.0), stoch_rsi_trend_short (stoch_min 5-70), sentinel_veto (event_risk_gate 0.3-0.9, block_risk 0.5-0.98, min_multiplier 0.1-0.8, weight 0.5-1.2), and playbook_structured_block (event_risk_max 0.2-0.9, soft_multiplier 0.25-1.0). Keep output strictly "
                 "valid JSON and omit filters you do not wish to adjust."
             )
             estimate = 0.0018
@@ -7978,10 +7956,6 @@ class Strategy:
             lambda: deque(maxlen=500)
         )
         self._near_miss_watchlist_limit = 160
-        self._skip_relief_baseline = {
-            "rsi_buy_min": float(self.rsi_buy_min),
-            "rsi_sell_max": float(self.rsi_sell_max),
-        }
         self._apply_skip_relief()
         self.long_overextended_rsi_cap = float(LONG_OVEREXTENDED_RSI)
         atr_cap_default = float(LONG_ATR_PCT_CAP or 0.0)
@@ -8091,7 +8065,6 @@ class Strategy:
 
         weight_boosts = {
             "trend_extension": 1.6,
-            "no_cross": 1.45,
             "short_trend_alignment": 1.3,
             "edge_r": 1.25,
             "spread_tight": 1.15,
@@ -8300,22 +8273,6 @@ class Strategy:
                 self.spread_bps_max *= 1.0 + bonus
                 adjustments["spread_bps_max"] = round(self.spread_bps_max, 6)
 
-        progress = self.state.setdefault("skip_relief_progress", {}) if isinstance(self.state, dict) else {}
-        skips_since_trade = int(progress.get("skips_since_trade", 0) or 0)
-        steps = skips_since_trade // SKIP_RELIEF_STEP_SIZE
-        pad = min(NO_CROSS_RELIEF_MAX, steps * NO_CROSS_RELIEF_STEP)
-        baseline_buy = self._skip_relief_baseline.get("rsi_buy_min", self.rsi_buy_min)
-        baseline_sell = self._skip_relief_baseline.get("rsi_sell_max", self.rsi_sell_max)
-        if pad > 0:
-            self.rsi_buy_min = max(35.0, baseline_buy - pad)
-            self.rsi_sell_max = min(65.0, baseline_sell + pad)
-            adjustments["rsi_window"] = round(pad, 3)
-            progress["current_pad"] = pad
-        else:
-            self.rsi_buy_min = baseline_buy
-            self.rsi_sell_max = baseline_sell
-            progress["current_pad"] = 0.0
-
         stoch_share = shares.get("stoch_rsi_trend_short", 0.0)
         if stoch_share > STOCH_RELIEF_THRESHOLD:
             stoch_pad = min(
@@ -8331,46 +8288,26 @@ class Strategy:
 
         if adjustments:
             self._skip_relief_snapshot = {
-                "total": max(skips_since_trade, total_window),
+                "total": total_window,
                 "edge_r_pct": round(edge_share * 100.0, 2),
                 "spread_tight_pct": round(spread_share * 100.0, 2),
-                "skips_since_trade": skips_since_trade,
                 "stoch_rsi_trend_short_pct": round(stoch_share * 100.0, 2),
-                "steps": int(steps),
                 "adjustments": adjustments,
             }
             log.info(
-                "Skip relief after %d skips since last trade (%d windowed) → %s",
-                skips_since_trade,
+                "Skip relief after %d windowed skips → %s",
                 total_window,
                 json.dumps(adjustments, sort_keys=True),
             )
         else:
-            self._skip_relief_snapshot = {
-                "total": max(skips_since_trade, total_window),
-                "skips_since_trade": skips_since_trade,
-                "steps": int(steps),
-            }
+            self._skip_relief_snapshot = {"total": total_window}
 
     def _advance_skip_relief(self) -> None:
-        if not isinstance(self.state, dict):
-            return
-        progress = self.state.setdefault("skip_relief_progress", {})
-        progress["skips_since_trade"] = int(progress.get("skips_since_trade", 0) or 0) + 1
         self._apply_skip_relief()
 
     def _reset_skip_relief_after_trade(self) -> None:
-        if not isinstance(self.state, dict):
-            return
-        progress = self.state.setdefault("skip_relief_progress", {})
-        progress["skips_since_trade"] = 0
-        progress["current_pad"] = 0.0
-        baseline_buy = self._skip_relief_baseline.get("rsi_buy_min", self.rsi_buy_min)
-        baseline_sell = self._skip_relief_baseline.get("rsi_sell_max", self.rsi_sell_max)
-        self.rsi_buy_min = baseline_buy
-        self.rsi_sell_max = baseline_sell
-        self._skip_relief_snapshot = {"total": 0, "skips_since_trade": 0, "steps": 0}
-        self._harmonize_filter_bounds()
+        self._skip_relief_snapshot = {}
+        self._apply_skip_relief()
         self._refresh_filter_defaults()
 
     def _harmonize_filter_bounds(self) -> None:
@@ -8570,21 +8507,65 @@ class Strategy:
         self, filters: Optional[Dict[str, Dict[str, Any]]]
     ) -> None:
         self._reset_filter_attributes()
-        # Ignore playbook filter override updates while preserving other
-        # playbook functionality. Reset any previously applied overrides and
-        # keep state clean so no updates are logged or tracked.
         self._active_playbook_filters = {}
-        if self.state is not None:
-            self.state["playbook_filter_overrides"] = {}
+        if not filters:
+            if isinstance(self.state, dict):
+                self.state["playbook_filter_overrides"] = {}
+            return
+
+        field_map = {
+            ("edge_r", "min_edge_r"): "min_edge_r",
+            ("spread_tight", "spread_bps_max"): "spread_bps_max",
+            ("wicky", "wickiness_max"): "wickiness_max",
+            ("stoch_rsi_trend_short", "stoch_min"): "trend_short_stochrsi_min",
+            ("long_overextended", "rsi_cap"): "long_overextended_rsi_cap",
+            ("long_overextended", "atr_pct_cap"): "long_overextended_atr_cap",
+            ("trend_extension", "bars_soft"): "trend_extension_bars",
+            ("trend_extension", "bars_hard"): "trend_extension_bars_hard",
+            ("trend_extension", "adx_min"): "trend_extension_adx_min",
+            ("continuation_pullback", "stoch_warn"): "continuation_pullback_warn",
+            ("continuation_pullback", "stoch_max"): "continuation_pullback_max",
+            ("continuation_pullback", "stoch_min"): "continuation_stoch_min",
+            ("continuation_pullback", "adx_delta_min"): "continuation_adx_delta_min",
+            ("short_trend_alignment", "slope_min"): "short_trend_slope_min",
+            ("short_trend_alignment", "supertrend_tol"): "short_trend_supertrend_tol",
+            ("sentinel_veto", "event_risk_gate"): "sentinel_gate_event_risk",
+            ("sentinel_veto", "block_risk"): "sentinel_gate_block_risk",
+            ("sentinel_veto", "min_multiplier"): "sentinel_gate_min_mult",
+            ("sentinel_veto", "weight"): "sentinel_gate_weight",
+            ("playbook_structured_block", "event_risk_max"): "structured_block_event_risk_cap",
+            ("playbook_structured_block", "soft_multiplier"): "structured_block_soft_multiplier",
+        }
+
+        applied: Dict[str, Dict[str, float]] = {}
+        for reason, updates in filters.items():
+            if not isinstance(updates, dict):
+                continue
+            applied_reason: Dict[str, float] = {}
+            for field, raw_value in updates.items():
+                target = field_map.get((reason, field))
+                if not target:
+                    continue
+                try:
+                    numeric_value = float(raw_value)
+                except (TypeError, ValueError):
+                    continue
+                guarded = self._guarded_filter_value(target, numeric_value, reason)
+                setattr(self, target, guarded)
+                applied_reason[field] = float(guarded)
+            if applied_reason:
+                applied[reason] = applied_reason
+
+        self._harmonize_filter_bounds()
+        self._refresh_filter_defaults()
+        self._active_playbook_filters = applied
+        if isinstance(self.state, dict):
+            self.state["playbook_filter_overrides"] = applied
 
     def _playbook_filter_snapshot(self) -> Optional[Dict[str, Any]]:
         thresholds: Dict[str, Dict[str, float]] = {
             "edge_r": {"min_edge_r": round(float(self.min_edge_r), 5)},
             "spread_tight": {"spread_bps_max": round(float(self.spread_bps_max), 6)},
-            "no_cross": {
-                "rsi_buy_min": round(float(self.rsi_buy_min), 3),
-                "rsi_sell_max": round(float(self.rsi_sell_max), 3),
-            },
             "stoch_rsi_trend_short": {
                 "stoch_min": round(float(self.trend_short_stochrsi_min), 3)
             },
@@ -10030,59 +10011,8 @@ class Strategy:
                     sig, candidate_flag, candidate_extras = candidate
                     chosen_flag = candidate_flag
                     ctx_base.update(candidate_extras)
-                else:
-                    near_cross_gap_ok = ema_gap_pct <= NO_CROSS_EMA_GAP_MAX
-                    near_cross_adx_gate = max(0.0, ADX_MIN_THRESHOLD - NO_CROSS_ADX_PAD)
-                    near_cross_enabled = near_cross_gap_ok and adx_val >= near_cross_adx_gate
-
-                    momentum_override = False
-                    momentum_detail: Optional[str] = None
-                    trend_carry_override = False
-                    trend_detail: Optional[str] = None
-
-                    if not near_cross_enabled:
-                        momentum_gap_ok = ema_gap_pct <= NO_CROSS_MOMENTUM_GAP_MAX
-                        momentum_adx_gate = max(0.0, ADX_MIN_THRESHOLD - NO_CROSS_MOMENTUM_ADX_PAD)
-                        strong_bull = htf_trend_up and rsi14[-1] >= self.rsi_buy_min + NO_CROSS_MOMENTUM_RSI_PAD
-                        strong_bear = htf_trend_down and rsi14[-1] <= self.rsi_sell_max - NO_CROSS_MOMENTUM_RSI_PAD
-                        if momentum_gap_ok and adx_val >= momentum_adx_gate and (strong_bull or strong_bear):
-                            momentum_override = True
-                            direction = "buy" if strong_bull else "sell"
-                            momentum_detail = (
-                                f"momentum {direction} gap={ema_gap_pct:.5f} "
-                                f"rsi={rsi14[-1]:.2f} adx={adx_val:.2f}"
-                            )
-
-                        if not momentum_override:
-                            trend_gap_ok = ema_gap_pct <= NO_CROSS_TREND_GAP_MAX
-                            strong_adx = adx_val >= ADX_MIN_THRESHOLD + NO_CROSS_TREND_ADX_BONUS
-                            strong_trend_bull = htf_trend_up and rsi14[-1] >= self.rsi_buy_min + NO_CROSS_TREND_RSI_PAD
-                            strong_trend_bear = htf_trend_down and rsi14[-1] <= self.rsi_sell_max - NO_CROSS_TREND_RSI_PAD
-                            if trend_gap_ok and strong_adx and (strong_trend_bull or strong_trend_bear):
-                                trend_carry_override = True
-                                direction = "buy" if strong_trend_bull else "sell"
-                                trend_detail = (
-                                    f"trend-carry {direction} gap={ema_gap_pct:.5f} "
-                                    f"rsi={rsi14[-1]:.2f} adx={adx_val:.2f}"
-                                )
-
-                    if near_cross_enabled or momentum_override or trend_carry_override:
-                        detail_prefix = "near-cross" if near_cross_enabled else "momentum-soft" if momentum_override else "trend-carry"
-                        detail = momentum_detail or trend_detail
-                        if ema_fast[-1] > ema_slow[-1] and htf_trend_up and rsi14[-1] > (self.rsi_buy_min - NO_CROSS_RSI_PAD):
-                            sig = "BUY"
-                            continuation_long = True
-                            chosen_flag = "setup_trend_follow"
-                            soft_confirmation_used = True
-                            soft_confirmation_detail = detail or f"{detail_prefix} buy gap={ema_gap_pct:.5f} rsi={rsi14[-1]:.2f}"
-                        elif ema_fast[-1] < ema_slow[-1] and htf_trend_down and rsi14[-1] < (self.rsi_sell_max + NO_CROSS_RSI_PAD):
-                            sig = "SELL"
-                            chosen_flag = "setup_trend_follow"
-                            soft_confirmation_used = True
-                            soft_confirmation_detail = detail or f"{detail_prefix} sell gap={ema_gap_pct:.5f} rsi={rsi14[-1]:.2f}"
-                if sig == "NONE":
-                    reason = "no_cross" if not align_checked else "no_cross"
-                    return self._skip(reason, symbol, ctx=ctx_base, price=mid, atr=atr)
+            if sig == "NONE":
+                return self._skip("no_signal", symbol, ctx=ctx_base, price=mid, atr=atr)
 
         if chosen_flag:
             setup_flags[chosen_flag] = 1.0
@@ -10112,10 +10042,6 @@ class Strategy:
 
         ctx_base["adx_filter"] = float(adx_val)
         ctx_base["adx_delta_filter"] = float(adx_delta)
-
-        if soft_confirmation_used:
-            ctx_base["signal_soft_confirmed"] = float(1.0 if sig == "BUY" else -1.0)
-            _add_penalty("soft_confirmation", NO_CROSS_SOFT_PENALTY, soft_confirmation_detail)
 
         if chosen_flag in ("setup_trend_follow", "setup_breakout_retest"):
             trend_extension_score = 0.0
@@ -15902,7 +15828,7 @@ class Bot:
             skip_reason_raw = ctx.get("skip_reason")
             skip_reason = str(skip_reason_raw or "").strip()
             normalized_skip = skip_reason.lower()
-            if normalized_skip in {"no_cross"} or (normalized_skip and normalized_skip not in {"none"}):
+            if normalized_skip and normalized_skip not in {"none"}:
                 log.debug(
                     "Skip %s — base strategy reported %s; avoiding AI trend scan.",
                     symbol,
