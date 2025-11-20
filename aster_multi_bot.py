@@ -694,7 +694,7 @@ WICKINESS_MAX = float(os.getenv("ASTER_WICKINESS_MAX", "0.985"))
 WICKINESS_NEAR_MISS_MARGIN = float(
     os.getenv("ASTER_WICKINESS_NEAR_MISS_MARGIN", "0.005") or 0.0
 )
-MIN_EDGE_R = float(os.getenv("ASTER_MIN_EDGE_R", "0.0125"))
+MIN_EDGE_R = float(os.getenv("ASTER_MIN_EDGE_R", "0.010"))
 EXPECTED_R_MIN_FLOOR = float(
     os.getenv("ASTER_EXPECTED_R_MIN_FLOOR", "0.010") or 0.010
 )
@@ -752,8 +752,8 @@ PLAYBOOK_BULL_SHORT_BLOCK_ENABLED = (
 )
 PLAYBOOK_LONG_FLOOR = float(os.getenv("ASTER_PLAYBOOK_LONG_SHARE_FLOOR", "0.4") or 0.4)
 PLAYBOOK_SIDE_MIN_SAMPLE = int(os.getenv("ASTER_PLAYBOOK_SIDE_MIN_SAMPLE", "4") or 4)
-TREND_SHORT_STOCHRSI_MIN = float(os.getenv("ASTER_TREND_SHORT_STOCHRSI_MIN", "15.0") or 15.0)
-STOCH_SHORT_PENALTY_BLOCK = float(os.getenv("ASTER_STOCH_SHORT_PENALTY_BLOCK", "0.55") or 0.55)
+TREND_SHORT_STOCHRSI_MIN = float(os.getenv("ASTER_TREND_SHORT_STOCHRSI_MIN", "5.0") or 5.0)
+STOCH_SHORT_PENALTY_BLOCK = float(os.getenv("ASTER_STOCH_SHORT_PENALTY_BLOCK", "0.75") or 0.75)
 ATR_ADVERSE_EXIT_MULT = float(os.getenv("ASTER_ATR_ADVERSE_EXIT_MULT", "0.5") or 0.5)
 EXPECTED_R_RATIO_WINDOW = int(os.getenv("ASTER_EXPECTED_R_ALERT_WINDOW", "16") or 16)
 EXPECTED_R_ALERT_THRESHOLD = float(os.getenv("ASTER_EXPECTED_R_ALERT_THRESHOLD", "0.5") or 0.5)
@@ -1089,7 +1089,7 @@ FUNDING_MAX_SHORT = float(os.getenv("ASTER_FUNDING_MAX_SHORT", "0.0010"))  # 0.1
 
 NON_ARB_FILTER_ENABLED = os.getenv("ASTER_NON_ARB_FILTER_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 NON_ARB_CLAMP_BPS = abs(float(os.getenv("ASTER_NON_ARB_CLAMP_BPS", "0.00065"))) or 0.00065
-NON_ARB_EDGE_THRESHOLD = abs(float(os.getenv("ASTER_NON_ARB_EDGE_THRESHOLD", "0.00005")))
+NON_ARB_EDGE_THRESHOLD = abs(float(os.getenv("ASTER_NON_ARB_EDGE_THRESHOLD", "0.00035")))
 NON_ARB_SKIP_GAP = abs(
     float(os.getenv("ASTER_NON_ARB_SKIP_GAP", str(max(NON_ARB_CLAMP_BPS * 3.5, 0.003))))
 )
@@ -1125,11 +1125,11 @@ CONTRARIAN = TREND_BIAS in ("against", "att", "contrarian")
 ADX_MIN_THRESHOLD = float(os.getenv("ASTER_ADX_MIN", "23.0"))
 ADX_DELTA_MIN = float(os.getenv("ASTER_ADX_DELTA_MIN", "0.0"))
 CONTINUATION_ADX_DELTA_MIN = max(0.0, float(os.getenv("ASTER_CONT_ADX_DELTA_MIN", "0.0")))
-TREND_EXTENSION_BARS = max(4, int(os.getenv("ASTER_TREND_EXTENSION_BARS", "60")))
+TREND_EXTENSION_BARS = max(4, int(os.getenv("ASTER_TREND_EXTENSION_BARS", "80")))
 TREND_EXTENSION_BARS_HARD = max(
-    TREND_EXTENSION_BARS + 1, int(os.getenv("ASTER_TREND_EXTENSION_BARS_HARD", "100"))
+    TREND_EXTENSION_BARS + 1, int(os.getenv("ASTER_TREND_EXTENSION_BARS_HARD", "140"))
 )
-TREND_EXTENSION_ADX_MIN = float(os.getenv("ASTER_TREND_EXTENSION_ADX_MIN", "50.0"))
+TREND_EXTENSION_ADX_MIN = float(os.getenv("ASTER_TREND_EXTENSION_ADX_MIN", "60.0"))
 TREND_EXTENSION_LOOKBACK = max(
     TREND_EXTENSION_BARS_HARD * 2, int(os.getenv("ASTER_TREND_EXTENSION_LOOKBACK", "80"))
 )
@@ -1171,9 +1171,9 @@ BREAKOUT_SLOPE_MIN = float(os.getenv("ASTER_BREAKOUT_SLOPE_MIN", "0.0035"))
 BREAKOUT_RETEST_BARS = max(2, int(os.getenv("ASTER_BREAKOUT_RETEST_BARS", "3")))
 BREAKOUT_WIDTH_SQUEEZE = float(os.getenv("ASTER_BREAKOUT_WIDTH_SQUEEZE", "0.65"))
 BREAKOUT_EXPECTED_R_MULT = float(os.getenv("ASTER_BREAKOUT_EXPECTED_R_MULT", "1.10"))
-SHORT_TREND_SLOPE_MIN = float(os.getenv("ASTER_SHORT_TREND_SLOPE_MIN", "0.00015") or 0.00015)
+SHORT_TREND_SLOPE_MIN = float(os.getenv("ASTER_SHORT_TREND_SLOPE_MIN", "0.00035") or 0.00035)
 SHORT_TREND_SUPERTREND_TOL = float(
-    os.getenv("ASTER_SHORT_TREND_SUPERTREND_TOL", "0.25") or 0.25
+    os.getenv("ASTER_SHORT_TREND_SUPERTREND_TOL", "0.45") or 0.45
 )
 
 FILTER_PENALTY_HARD = float(os.getenv("ASTER_FILTER_PENALTY_HARD", "1.65"))
@@ -10644,7 +10644,7 @@ class Strategy:
             short_trend_detail: Dict[str, str] = {}
             slope_gate = float(slope_fast)
             slope_threshold = max(0.0, self.short_trend_slope_min)
-            if slope_threshold and slope_gate > -slope_threshold:
+            if slope_threshold and slope_gate > slope_threshold:
                 short_trend_conflict = True
                 short_trend_detail["slope_fast"] = f"{slope_gate:+.5f}"
             if (
@@ -12786,6 +12786,10 @@ class Bot:
             self._strategy.playbook_manager = None
         self._maybe_emit_ai_debug_state("startup")
         self._persist_run_metadata()
+
+    def _coerce_float(self, value: Any, default: Optional[float] = None) -> Optional[float]:
+        coerced = _coerce_float(value)
+        return default if coerced is None else coerced
 
     def __getattr__(self, name: str) -> Any:
         """Delegate missing attributes to the underlying Strategy instance."""
@@ -16184,13 +16188,26 @@ class Bot:
             skip_reason_raw = ctx.get("skip_reason")
             skip_reason = str(skip_reason_raw or "").strip()
             normalized_skip = skip_reason.lower()
-            if normalized_skip in {"no_cross"} or (normalized_skip and normalized_skip not in {"none"}):
+            ai_skip_blocklist = {
+                "sentinel_veto",
+                "playbook_structured_block",
+                "liquidity_guard",
+                "orderbook_depth",
+            }
+            if normalized_skip in ai_skip_blocklist:
                 log.debug(
                     "Skip %s — base strategy reported %s; avoiding AI trend scan.",
                     symbol,
                     skip_reason,
                 )
                 return
+            if normalized_skip and normalized_skip not in {"none", ""}:
+                log.debug(
+                    "Proceeding with AI trend scan for %s despite base skip: %s",
+                    symbol,
+                    skip_reason,
+                )
+                ctx.setdefault("base_skip_reason", skip_reason)
             if min_qvol > 0 and float(ctx.get("quote_volume", 0.0) or 0.0) < min_qvol:
                 return
             price_for_plan = mid_px if mid_px > 0 else price
