@@ -8419,7 +8419,10 @@ class Strategy:
         }
 
     def _reset_filter_attributes(self) -> None:
-        defaults = getattr(self, "_filter_defaults", {})
+        defaults = getattr(self, "_filter_defaults", {}) or {}
+        if not defaults:
+            self._refresh_filter_defaults()
+            defaults = getattr(self, "_filter_defaults", {}) or {}
         if not defaults:
             return
         self.min_edge_r = defaults.get("min_edge_r", self.min_edge_r)
@@ -8489,9 +8492,14 @@ class Strategy:
     def _guarded_filter_value(
         self, key: str, raw_value: float, reason: Optional[str] = None
     ) -> float:
-        defaults = getattr(self, "_filter_defaults", {})
+        defaults = getattr(self, "_filter_defaults", {}) or {}
+        if not defaults:
+            self._refresh_filter_defaults()
+            defaults = getattr(self, "_filter_defaults", {}) or {}
         base_value = defaults.get(key)
         if base_value is None:
+            base_value = getattr(self, key, None)
+        if not isinstance(base_value, (int, float)):
             return raw_value
         if base_value not in (0, 0.0):
             # Allow overrides to drift only slightly from the baked-in defaults so the
