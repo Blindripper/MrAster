@@ -751,6 +751,9 @@ PLAYBOOK_FILTER_TIGHTENING_RULES: Dict[str, Dict[str, float]] = {
     "structured_block_event_risk_cap": {"direction": "decrease", "max_abs": 0.25},
     "structured_block_soft_multiplier": {"direction": "decrease", "max_abs": 0.35},
 }
+PLAYBOOK_FILTER_DAMPING = float(
+    os.getenv("ASTER_PLAYBOOK_FILTER_DAMPING", "0.45") or 0.45
+)
 PLAYBOOK_BULL_SHORT_BLOCK_ENABLED = (
     os.getenv("ASTER_PLAYBOOK_BULL_SHORT_BLOCK", "true").lower()
     in ("1", "true", "yes", "on")
@@ -8503,16 +8506,19 @@ class Strategy:
         if not isinstance(base_value, (int, float)):
             return raw_value
         if base_value not in (0, 0.0):
+            # Soften overrides toward the baseline before applying the hard guardrails
+            # to keep playbook filter changes incremental.
+            raw_value = base_value + (raw_value - base_value) * PLAYBOOK_FILTER_DAMPING
             # Allow overrides to drift only slightly from the baked-in defaults so the
             # playbook cannot meaningfully reshape the advisor's guardrails. RSI gates
             # in particular should remain nearly fixed to preserve a stable window, and
             # short trend gates get an even tighter leash to avoid inadvertent
             # re-tightening.
-            drift_pct = 0.05
+            drift_pct = 0.03
             if key in {"rsi_buy_min", "rsi_sell_max"}:
-                drift_pct = 0.02
+                drift_pct = 0.015
             if key in {"short_trend_slope_min", "short_trend_supertrend_tol"}:
-                drift_pct = 0.03
+                drift_pct = 0.02
             max_delta = abs(base_value) * drift_pct
             lower = base_value - max_delta
             upper = base_value + max_delta
