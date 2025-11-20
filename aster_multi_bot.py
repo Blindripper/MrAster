@@ -10660,7 +10660,11 @@ class Strategy:
                 short_trend_detail["supertrend_dir"] = f"{supertrend_dir_last:+.2f}"
 
             if short_trend_soft_conflict:
-                short_trend_conflict = slope_excess > 0 and supertrend_excess > 0
+                short_trend_conflict = slope_excess > max(
+                    slope_threshold * 1.25, 0.00025
+                ) and supertrend_excess > max(
+                    0.25, self.short_trend_supertrend_tol * 0.55
+                )
                 if short_trend_conflict:
                     ctx_base["short_trend_alignment_gate"] = True
                     if not short_trend_detail:
@@ -10675,7 +10679,7 @@ class Strategy:
                     )
 
                 soft_penalty = clamp(
-                    slope_excess * 2400.0 + supertrend_excess * 0.8,
+                    slope_excess * 2200.0 + supertrend_excess * 0.65,
                     0.0,
                     FILTER_PENALTY_WARN,
                 )
