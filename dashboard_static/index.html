@@ -960,6 +960,21 @@
           <div class="no-cross-meta" id="no-cross-meta"></div>
         </div>
         <div class="card-section-body" data-mobile-collapsible-body>
+          <div class="no-cross-legend">
+            <strong>Wie der Bot entscheidet</strong>
+            <p>
+              Ein no_cross-Skip entsteht in der Trend-Follow-Phase, wenn weder ein echter
+              EMA‑21/EMA‑55‑Crossover mit RSI/HTF‑Trend-Bestätigung noch ein erlaubter Fallback
+              (Trend-Align, Breakout/Range-Kandidat oder Near-Cross/Momentum/Trend-Carry-Soft-Confirm)
+              einen gültigen BUY/SELL liefert.
+            </p>
+            <p>
+              Primäre Gatekeeper: ein Cross‑Up benötigt EMA21&gt;EMA55 nach vorherigem Unterkreuzen,
+              RSI &gt; rsi_buy_min (Default 35) und steigenden 55er‑EMA im HTF; analog für SELL mit RSI
+              &lt; rsi_sell_max (Default 65). Ohne diese Bedingungen greift optional der
+              Trend-Align-Fallback mit RSI-Puffer ALIGN_RSI_PAD (Default 6).
+            </p>
+          </div>
           <div id="no-cross-list" class="log-stream compact no-cross-list">
             <div class="no-cross-empty">Waiting for skipped signal details…</div>
           </div>

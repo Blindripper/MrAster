@@ -13438,6 +13438,127 @@ function renderDecisionDetailPairs(detailPairs = []) {
   return dl;
 }
 
+function deriveGateFamilyKey(normalizedKey) {
+  if (!normalizedKey) return '';
+  return normalizedKey.replace(/(min|max|gate|threshold|limit|cap|pad)$/i, '');
+}
+
+function buildGateComparisonPairs(detailPairs = []) {
+  if (!Array.isArray(detailPairs) || detailPairs.length === 0) return [];
+  const metrics = [];
+  const gates = [];
+
+  detailPairs.forEach((entry) => {
+    if (!entry) return;
+    const normalizedKey = entry.normalizedKey || normaliseDetailKey(entry.key || entry.label || '');
+    const numericCandidate = Number(entry.numericValue ?? entry.value);
+    const enriched = {
+      ...entry,
+      normalizedKey,
+      numericValue: Number.isFinite(numericCandidate) ? numericCandidate : null,
+      valueText: entry.value ?? entry.valueText ?? '—',
+      family: deriveGateFamilyKey(normalizedKey),
+    };
+    if (isGateDetailEntry(enriched)) {
+      gates.push(enriched);
+    } else {
+      metrics.push(enriched);
+    }
+  });
+
+  const gateBuckets = new Map();
+  gates.forEach((gate) => {
+    const family = gate.family || gate.normalizedKey;
+    const existing = gateBuckets.get(family) || [];
+    existing.push(gate);
+    gateBuckets.set(family, existing);
+  });
+
+  const pairs = metrics.map((metric) => {
+    const family = metric.family || metric.normalizedKey;
+    const bucket = gateBuckets.get(family) || gateBuckets.get(metric.normalizedKey) || [];
+    const gate = bucket.shift();
+    if (!bucket.length) {
+      gateBuckets.delete(family);
+    } else {
+      gateBuckets.set(family, bucket);
+    }
+    return { metric, gate: gate || null };
+  });
+
+  gateBuckets.forEach((bucket) => {
+    bucket.forEach((gate) => pairs.push({ metric: null, gate }));
+  });
+
+  return pairs.filter((pair) => pair.metric || pair.gate);
+}
+
+function describeGateDelta(metric, gate) {
+  if (!metric || !gate) return '';
+  if (!Number.isFinite(metric.numericValue) || !Number.isFinite(gate.numericValue)) {
+    return '';
+  }
+  const delta = metric.numericValue - gate.numericValue;
+  const percent = Math.abs(gate.numericValue) > 1e-9 ? (delta / gate.numericValue) * 100 : null;
+  const parts = [];
+  parts.push(`${delta >= 0 ? '+' : ''}${formatNumber(delta, 4)}`);
+  if (Number.isFinite(percent)) {
+    parts.push(`${percent >= 0 ? '+' : ''}${percent.toFixed(1)}%`);
+  }
+  return parts.join(' · ');
+}
+
+function renderGateComparisonGrid(detailPairs = []) {
+  const pairs = buildGateComparisonPairs(detailPairs);
+  if (!pairs.length) return null;
+
+  const container = document.createElement('div');
+  container.className = 'no-cross-compare';
+
+  const header = document.createElement('div');
+  header.className = 'no-cross-compare-row no-cross-compare-header';
+  ['Signal-Input', 'Gate', 'Δ vs Gate'].forEach((label) => {
+    const cell = document.createElement('div');
+    cell.className = 'no-cross-compare-cell';
+    cell.textContent = label;
+    header.append(cell);
+  });
+  container.append(header);
+
+  pairs.forEach(({ metric, gate }) => {
+    const row = document.createElement('div');
+    row.className = 'no-cross-compare-row';
+
+    const metricCell = document.createElement('div');
+    metricCell.className = 'no-cross-compare-cell';
+    const metricLabel = document.createElement('span');
+    metricLabel.className = 'no-cross-compare-label';
+    metricLabel.textContent = metric?.label || metric?.key || translate('logs.noCross.metricFallback', 'Signalwert');
+    const metricValue = document.createElement('strong');
+    metricValue.textContent = metric?.valueText ?? '—';
+    metricCell.append(metricLabel, metricValue);
+
+    const gateCell = document.createElement('div');
+    gateCell.className = 'no-cross-compare-cell gate-cell';
+    const gateLabel = document.createElement('span');
+    gateLabel.className = 'no-cross-compare-label';
+    gateLabel.textContent = gate?.label || gate?.key || translate('logs.noCross.gateFallback', 'Gate');
+    const gateValue = document.createElement('strong');
+    gateValue.textContent = gate?.valueText ?? '—';
+    gateCell.append(gateLabel, gateValue);
+
+    const deltaCell = document.createElement('div');
+    deltaCell.className = 'no-cross-compare-cell delta-cell';
+    const deltaText = describeGateDelta(metric, gate);
+    deltaCell.textContent = deltaText || translate('logs.noCross.deltaFallback', '—');
+
+    row.append(metricCell, gateCell, deltaCell);
+    container.append(row);
+  });
+
+  return container;
+}
+
 function renderNoCrossDetails() {
   if (!noCrossList) return;
   const events = collectDecisionEvents('no_cross');
@@ -13493,6 +13614,10 @@ function renderNoCrossDetails() {
 
     const detailPairs = Array.isArray(event.detailPairs) ? event.detailPairs : [];
     if (detailPairs.length > 0) {
+      const comparisonGrid = renderGateComparisonGrid(detailPairs);
+      if (comparisonGrid) {
+        row.append(comparisonGrid);
+      }
       const detailGrid = renderDecisionDetailPairs(detailPairs);
       if (detailGrid) {
         row.append(detailGrid);
