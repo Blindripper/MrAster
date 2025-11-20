@@ -709,7 +709,13 @@ SPREAD_RELIEF_STRENGTH = float(os.getenv("ASTER_SKIP_SPREAD_STRENGTH", "0.40"))
 SPREAD_RELIEF_CAP = float(os.getenv("ASTER_SKIP_SPREAD_CAP", "1.30"))
 NO_CROSS_RELIEF_THRESHOLD = float(os.getenv("ASTER_SKIP_NO_CROSS_THRESHOLD", "0.14"))
 NO_CROSS_RELIEF_STRENGTH = float(os.getenv("ASTER_SKIP_NO_CROSS_STRENGTH", "6.50"))
-NO_CROSS_RELIEF_MAX = float(os.getenv("ASTER_SKIP_NO_CROSS_MAX", "2.25"))
+_skip_no_cross_max = os.getenv("ASTER_SKIP_NO_CROSS_MAX", "inf")
+try:
+    NO_CROSS_RELIEF_MAX = float(_skip_no_cross_max)
+except ValueError:
+    NO_CROSS_RELIEF_MAX = math.inf
+if NO_CROSS_RELIEF_MAX <= 0:
+    NO_CROSS_RELIEF_MAX = math.inf
 NO_CROSS_RELIEF_STEP = float(os.getenv("ASTER_SKIP_NO_CROSS_STEP", "0.75"))
 NO_CROSS_EMA_GAP_MAX = float(os.getenv("ASTER_NO_CROSS_EMA_GAP_MAX", "0.0185"))
 NO_CROSS_RSI_PAD = float(os.getenv("ASTER_NO_CROSS_RSI_PAD", "9.0"))
