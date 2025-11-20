@@ -1279,10 +1279,39 @@ _PRESET_SIGNAL_TUNING: Dict[str, Dict[str, Any]] = {
     },
 }
 
+# Preserve any user-specified overrides for preset-controlled filters so that
+# environment variables always win over the dashboard presets.
+_PRESET_ENV_GUARDS: Dict[str, str] = {
+    "MIN_QUOTE_VOL": "ASTER_MIN_QUOTE_VOL_USDT",
+    "SPREAD_BPS_MAX": "ASTER_SPREAD_BPS_MAX",
+    "WICKINESS_MAX": "ASTER_WICKINESS_MAX",
+    "MIN_EDGE_R": "ASTER_MIN_EDGE_R",
+    "ADX_MIN_THRESHOLD": "ASTER_ADX_MIN",
+    "ADX_DELTA_MIN": "ASTER_ADX_DELTA_MIN",
+    "STOCHRSI_LONG_MAX": "ASTER_STOCHRSI_LONG_MAX",
+    "STOCHRSI_SHORT_MIN": "ASTER_STOCHRSI_SHORT_MIN",
+    "STOCHRSI_OVERBOUGHT": "ASTER_STOCHRSI_OVERBOUGHT",
+    "STOCHRSI_OVERSOLD": "ASTER_STOCHRSI_OVERSOLD",
+    "LONG_RSI_MAX": "ASTER_LONG_RSI_MAX",
+    "SHORT_RSI_MIN": "ASTER_SHORT_RSI_MIN",
+    "BB_LONG_MIN": "ASTER_BB_LONG_MIN",
+    "BB_LONG_MAX": "ASTER_BB_LONG_MAX",
+    "BB_SHORT_MAX": "ASTER_BB_SHORT_MAX",
+    "ORDERBOOK_BIAS_CONFLICT": "ASTER_ORDERBOOK_BIAS_CONFLICT",
+    "ORDERBOOK_BIAS_BUY_MIN": "ASTER_ORDERBOOK_BIAS_BUY_MIN",
+    "ORDERBOOK_BIAS_SELL_MAX": "ASTER_ORDERBOOK_BIAS_SELL_MAX",
+    "SL_ATR_MULT": "ASTER_SL_ATR_MULT",
+    "TP_ATR_MULT": "ASTER_TP_ATR_MULT",
+    "QUOTE_VOLUME_COOLDOWN_CYCLES": "ASTER_QUOTE_VOLUME_COOLDOWN_CYCLES",
+}
+
 _preset_tuning = _PRESET_SIGNAL_TUNING.get(PRESET_MODE, {})
+_preset_guards = {_key for _key, _env in _PRESET_ENV_GUARDS.items() if _env in os.environ}
 if _preset_tuning:
     for _key, _value in _preset_tuning.items():
         if _key == "allow_align":
+            continue
+        if _key in _preset_guards:
             continue
         if _key in globals():
             _current = globals()[_key]
