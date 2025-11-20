@@ -5635,6 +5635,9 @@ body.pro-mode .log-stream {
   flex-direction: column;
   gap: 1.1rem;
   padding-top: 0.4rem;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .ai-request-carousel {
@@ -5649,7 +5652,7 @@ body.pro-mode .log-stream {
 .ai-request-carousel__viewport {
   position: relative;
   overflow: hidden;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
   width: 100%;
 }
@@ -5746,7 +5749,7 @@ body.pro-mode .log-stream {
   appearance: none;
   box-shadow: 0 22px 46px rgba(5, 7, 18, 0.55);
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
-  min-width: min(420px, 78vw);
+  min-width: clamp(280px, 32vw, 360px);
   scroll-snap-align: start;
 }
 
