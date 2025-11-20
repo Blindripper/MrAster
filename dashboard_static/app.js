@@ -3836,7 +3836,7 @@ const DECISION_REASON_LABELS = {
   fallback_rules: 'Fallback rules triggered',
   plan_pending: 'AI plan pending',
   plan_timeout: 'AI plan timeout',
-  trend_pending: 'Trend scan pending',
+  trend_pending: 'Trend scan pending (waiting for AI response)',
   trend_timeout: 'Trend scan timeout',
   ai_trend_skip: 'AI declined trend setup',
   ai_trend_invalid: 'AI returned invalid trend setup',

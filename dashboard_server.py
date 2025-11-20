@@ -4468,7 +4468,7 @@ def _friendly_decision_reason(reason: Optional[str]) -> Optional[str]:
         "plan_timeout": "AI plan timeout",
         "plan_pending": "AI plan pending",
         "trend_timeout": "Trend scan timeout",
-        "trend_pending": "Trend scan pending",
+        "trend_pending": "Trend scan pending (waiting for AI response)",
         "ai_trend_skip": "AI declined trend setup",
         "ai_trend_invalid": "AI returned invalid trend setup",
     }
