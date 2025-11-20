@@ -710,6 +710,7 @@ SPREAD_RELIEF_CAP = float(os.getenv("ASTER_SKIP_SPREAD_CAP", "1.30"))
 NO_CROSS_RELIEF_THRESHOLD = float(os.getenv("ASTER_SKIP_NO_CROSS_THRESHOLD", "0.14"))
 NO_CROSS_RELIEF_STRENGTH = float(os.getenv("ASTER_SKIP_NO_CROSS_STRENGTH", "6.50"))
 NO_CROSS_RELIEF_MAX = float(os.getenv("ASTER_SKIP_NO_CROSS_MAX", "2.25"))
+NO_CROSS_RELIEF_STEP = float(os.getenv("ASTER_SKIP_NO_CROSS_STEP", "0.75"))
 NO_CROSS_EMA_GAP_MAX = float(os.getenv("ASTER_NO_CROSS_EMA_GAP_MAX", "0.0095"))
 NO_CROSS_RSI_PAD = float(os.getenv("ASTER_NO_CROSS_RSI_PAD", "3.5"))
 NO_CROSS_ADX_PAD = float(os.getenv("ASTER_NO_CROSS_ADX_PAD", "10.0"))
@@ -724,6 +725,7 @@ STOCH_RELIEF_THRESHOLD = float(os.getenv("ASTER_SKIP_STOCH_THRESHOLD", "0.15"))
 STOCH_RELIEF_STRENGTH = float(os.getenv("ASTER_SKIP_STOCH_STRENGTH", "18.0"))
 STOCH_RELIEF_MAX = float(os.getenv("ASTER_SKIP_STOCH_MAX", "3.0"))
 SKIP_PASS_RATE = min(1.0, max(0.0, float(os.getenv("ASTER_SKIP_PASS_RATE", "0.04"))))
+SKIP_RELIEF_STEP_SIZE = max(1, int(os.getenv("ASTER_SKIP_RELIEF_STEP_SIZE", "100") or 100))
 PLAYBOOK_FILTER_TIGHTENING_RULES: Dict[str, Dict[str, float]] = {
     "min_edge_r": {"direction": "increase", "max_abs": 0.01, "max_pct": 0.25},
     "spread_bps_max": {"direction": "decrease", "max_pct": 0.5},
@@ -7967,6 +7969,10 @@ class Strategy:
             lambda: deque(maxlen=500)
         )
         self._near_miss_watchlist_limit = 160
+        self._skip_relief_baseline = {
+            "rsi_buy_min": float(self.rsi_buy_min),
+            "rsi_sell_max": float(self.rsi_sell_max),
+        }
         self._apply_skip_relief()
         self.long_overextended_rsi_cap = float(LONG_OVEREXTENDED_RSI)
         atr_cap_default = float(LONG_ATR_PCT_CAP or 0.0)
@@ -7990,7 +7996,8 @@ class Strategy:
         self.structured_block_soft_multiplier = 1.0
         self._skip_bypass_prob_map: Dict[str, float] = {}
         self._skip_bypass_excluded: Set[str] = set()
-        self._harmonize_filter_bounds()
+        if hasattr(self, "long_overextended_rsi_cap"):
+            self._harmonize_filter_bounds()
         self._refresh_filter_defaults()
         self._active_playbook_filters: Dict[str, Dict[str, float]] = {}
         if self.state:
@@ -8260,10 +8267,8 @@ class Strategy:
         return allowed
 
     def _apply_skip_relief(self) -> None:
-        counts, total = self._recent_skip_counts(SKIP_RELIEF_WINDOW)
-        if total <= 0:
-            return
-        shares = {reason: counts.get(reason, 0) / total for reason in counts}
+        counts, total_window = self._recent_skip_counts(SKIP_RELIEF_WINDOW)
+        shares = {reason: counts.get(reason, 0) / max(total_window, 1) for reason in counts}
         adjustments: Dict[str, float] = {}
 
         edge_share = shares.get("edge_r", 0.0)
@@ -8286,47 +8291,78 @@ class Strategy:
                 self.spread_bps_max *= 1.0 + bonus
                 adjustments["spread_bps_max"] = round(self.spread_bps_max, 6)
 
-        no_cross_share = shares.get("no_cross", 0.0)
-        if no_cross_share > NO_CROSS_RELIEF_THRESHOLD:
-            pad = min(
-                NO_CROSS_RELIEF_MAX,
-                max(0.0, no_cross_share - NO_CROSS_RELIEF_THRESHOLD) * NO_CROSS_RELIEF_STRENGTH,
-            )
-            if pad > 0:
-                self.rsi_buy_min = max(35.0, self.rsi_buy_min - pad)
-                self.rsi_sell_max = min(65.0, self.rsi_sell_max + pad)
-                adjustments["rsi_window"] = round(pad, 3)
+        progress = self.state.setdefault("skip_relief_progress", {}) if isinstance(self.state, dict) else {}
+        skips_since_trade = int(progress.get("skips_since_trade", 0) or 0)
+        steps = skips_since_trade // SKIP_RELIEF_STEP_SIZE
+        pad = min(NO_CROSS_RELIEF_MAX, steps * NO_CROSS_RELIEF_STEP)
+        baseline_buy = self._skip_relief_baseline.get("rsi_buy_min", self.rsi_buy_min)
+        baseline_sell = self._skip_relief_baseline.get("rsi_sell_max", self.rsi_sell_max)
+        if pad > 0:
+            self.rsi_buy_min = max(35.0, baseline_buy - pad)
+            self.rsi_sell_max = min(65.0, baseline_sell + pad)
+            adjustments["rsi_window"] = round(pad, 3)
+            progress["current_pad"] = pad
+        else:
+            self.rsi_buy_min = baseline_buy
+            self.rsi_sell_max = baseline_sell
+            progress["current_pad"] = 0.0
 
         stoch_share = shares.get("stoch_rsi_trend_short", 0.0)
         if stoch_share > STOCH_RELIEF_THRESHOLD:
-            pad = min(
+            stoch_pad = min(
                 STOCH_RELIEF_MAX,
                 max(0.0, stoch_share - STOCH_RELIEF_THRESHOLD) * STOCH_RELIEF_STRENGTH,
             )
-            if pad > 0:
-                self.trend_short_stochrsi_min = max(10.0, self.trend_short_stochrsi_min - pad)
+            if stoch_pad > 0:
+                self.trend_short_stochrsi_min = max(10.0, self.trend_short_stochrsi_min - stoch_pad)
                 adjustments["trend_stoch_min"] = round(self.trend_short_stochrsi_min, 2)
+
+        if hasattr(self, "long_overextended_rsi_cap"):
+            self._harmonize_filter_bounds()
 
         if adjustments:
             self._skip_relief_snapshot = {
-                "total": total,
+                "total": max(skips_since_trade, total_window),
                 "edge_r_pct": round(edge_share * 100.0, 2),
                 "spread_tight_pct": round(spread_share * 100.0, 2),
-                "no_cross_pct": round(no_cross_share * 100.0, 2),
+                "skips_since_trade": skips_since_trade,
                 "stoch_rsi_trend_short_pct": round(stoch_share * 100.0, 2),
+                "steps": int(steps),
                 "adjustments": adjustments,
             }
             log.info(
-                "Adaptive skip relief from %d recent skips — edge_r=%.1f%% no_cross=%.1f%% spread_tight=%.1f%% stoch_rsi_trend_short=%.1f%% → %s",
-                total,
-                edge_share * 100.0,
-                no_cross_share * 100.0,
-                spread_share * 100.0,
-                stoch_share * 100.0,
+                "Skip relief after %d skips since last trade (%d windowed) → %s",
+                skips_since_trade,
+                total_window,
                 json.dumps(adjustments, sort_keys=True),
             )
         else:
-            self._skip_relief_snapshot = {"total": total}
+            self._skip_relief_snapshot = {
+                "total": max(skips_since_trade, total_window),
+                "skips_since_trade": skips_since_trade,
+                "steps": int(steps),
+            }
+
+    def _advance_skip_relief(self) -> None:
+        if not isinstance(self.state, dict):
+            return
+        progress = self.state.setdefault("skip_relief_progress", {})
+        progress["skips_since_trade"] = int(progress.get("skips_since_trade", 0) or 0) + 1
+        self._apply_skip_relief()
+
+    def _reset_skip_relief_after_trade(self) -> None:
+        if not isinstance(self.state, dict):
+            return
+        progress = self.state.setdefault("skip_relief_progress", {})
+        progress["skips_since_trade"] = 0
+        progress["current_pad"] = 0.0
+        baseline_buy = self._skip_relief_baseline.get("rsi_buy_min", self.rsi_buy_min)
+        baseline_sell = self._skip_relief_baseline.get("rsi_sell_max", self.rsi_sell_max)
+        self.rsi_buy_min = baseline_buy
+        self.rsi_sell_max = baseline_sell
+        self._skip_relief_snapshot = {"total": 0, "skips_since_trade": 0, "steps": 0}
+        self._harmonize_filter_bounds()
+        self._refresh_filter_defaults()
 
     def _harmonize_filter_bounds(self) -> None:
         """Keep related filter gates from contradicting each other."""
@@ -9892,6 +9928,7 @@ class Strategy:
             log.debug(f"SKIP {symbol}: {reason}")
         if self.decision_tracker:
             self.decision_tracker.record_rejection(reason)
+        self._advance_skip_relief()
         payload: Dict[str, Any] = {}
         if ctx:
             try:
@@ -16877,6 +16914,7 @@ class Bot:
                 log.warning(f"Bracket orders for {symbol} could not be fully created.")
             if self.decision_tracker and not manual_override:
                 self.decision_tracker.record_acceptance(bucket, persist=False)
+                self._reset_skip_relief_after_trade()
             self.trade_mgr.note_entry(symbol, px, sl, tp, sig, float(q_str), ctx, bucket, atr_abs, meta=ai_meta)
             final_order: Optional[Dict[str, Any]] = None
             order_trades: List[Dict[str, Any]] = []
