@@ -1204,10 +1204,6 @@ class PlaybookManager:
             "supertrend_tol": (-0.6, 0.85),
         },
         "edge_r": {"min_edge_r": (0.03, 0.4)},
-        "no_cross": {
-            "rsi_buy_min": (38.0, 65.0),
-            "rsi_sell_max": (35.0, 65.0),
-        },
         "wicky": {"wickiness_max": (0.94, 1.0)},
         "stoch_rsi_trend_short": {"stoch_min": (5.0, 75.0)},
         "sentinel_veto": {
@@ -2301,6 +2297,9 @@ class PlaybookManager:
             "notes": notes if isinstance(notes, str) else "",
             "refreshed": now,
         }
+        normalized_filters = self._normalize_filters(payload.get("filters") or payload.get("skip_filters"))
+        if normalized_filters:
+            active["filters"] = normalized_filters
         if feature_aliases:
             active["feature_aliases"] = feature_aliases
         risk_bias = self._derive_risk_bias(payload)

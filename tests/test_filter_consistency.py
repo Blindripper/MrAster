@@ -3,13 +3,7 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from aster_multi_bot import (
-    EXPECTED_R_MIN_FLOOR,
-    RSI_BUY_MIN,
-    RSI_SELL_MAX,
-    STOCHRSI_OVERSOLD,
-    Strategy,
-)
+from aster_multi_bot import EXPECTED_R_MIN_FLOOR, STOCHRSI_OVERSOLD, Strategy
 
 
 class _DummyExchange:
@@ -23,14 +17,6 @@ def test_long_overextended_window_allows_buys():
     assert strategy.rsi_buy_min < strategy.long_overextended_rsi_cap
     # ATR cap should be positive to avoid blocking everything.
     assert strategy.long_overextended_atr_cap > 0
-
-
-def test_no_cross_thresholds_are_compatible():
-    strategy = Strategy(exchange=_DummyExchange())
-    # Buy and sell RSI guards should leave a valid confirmation band.
-    assert RSI_BUY_MIN < RSI_SELL_MAX
-    # Soft confirmation needs room before the long overextension cap.
-    assert strategy.rsi_buy_min < strategy.long_overextended_rsi_cap
 
 
 def test_trend_extension_has_soft_and_hard_gates():
