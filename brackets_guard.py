@@ -482,6 +482,13 @@ class BracketGuard:
         stop, tp = self._classify_orders(orders)
         ref = entry_price if entry_price is not None else self._ref_price(symbol)
 
+        def _is_invalid_against_ref(kind: str, price: Optional[float]) -> bool:
+            if price is None or ref is None or ref <= 0:
+                return False
+            if side == "BUY":
+                return price >= ref if kind == "STOP" else price <= ref
+            return price <= ref if kind == "STOP" else price >= ref
+
         # Falls SL/TP fehlen → heuristisch ergänzen
         if (sl_price is None or tp_price is None) and entry_price is not None:
             tp_mult = _envf("ASTER_TP_ATR_MULT", 1.6)
@@ -493,6 +500,8 @@ class BracketGuard:
             if tp_price is None:
                 tp_price = entry_price + risk_abs * ratio if side == "BUY" else entry_price - risk_abs * ratio
 
+        raw_sl_price, raw_tp_price = sl_price, tp_price
+
         # Runden & Sicherheitsabstand
         if sl_price is not None:
             sl_price = self._round_trigger(symbol, side, "STOP", float(sl_price), ref, safety_ticks=3)
@@ -502,6 +511,26 @@ class BracketGuard:
         position_side = self._position_side_param(symbol, side)
 
         ok = True
+        if _is_invalid_against_ref("STOP", raw_sl_price):
+            self.log.debug(
+                "ensure_after_entry STOP skipped %s: price %s not on %s side of ref %s",
+                symbol,
+                raw_sl_price,
+                side,
+                ref,
+            )
+            sl_price = None
+            ok = False
+        if _is_invalid_against_ref("TP", raw_tp_price):
+            self.log.debug(
+                "ensure_after_entry TP skipped %s: price %s not on %s side of ref %s",
+                symbol,
+                raw_tp_price,
+                side,
+                ref,
+            )
+            tp_price = None
+            ok = False
         try:
             if not stop and sl_price is not None:
                 self._place_with_retry(
