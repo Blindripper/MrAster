@@ -6280,6 +6280,9 @@ function buildCompletedPositionCard(entry) {
   if (pnlTone && pnlTone !== 'neutral') {
     card.dataset.pnl = pnlTone;
   }
+  const flare = document.createElement('div');
+  flare.className = 'completed-position-card__flare';
+  card.append(flare);
 
   const header = document.createElement('div');
   header.className = 'completed-position-card__header';
@@ -6307,19 +6310,50 @@ function buildCompletedPositionCard(entry) {
 
   const meta = document.createElement('div');
   meta.className = 'completed-position-card__meta';
-  if (relativeTime) {
+  const reason = document.createElement('span');
+  reason.className = 'completed-position-card__reason-chip';
+  reason.textContent = reasonLabel;
+  meta.append(reason);
+  if (absoluteTimeLabel || relativeTime) {
     const time = document.createElement('span');
-    time.textContent = relativeTime;
-    if (absoluteTimeLabel && absoluteTimeLabel !== '–') {
-      time.title = absoluteTimeLabel;
+    time.className = 'completed-position-card__timestamp';
+    time.textContent = absoluteTimeLabel || relativeTime;
+    if (absoluteTimeLabel && relativeTime) {
+      time.title = `${relativeTime} · ${absoluteTimeLabel}`;
     }
     meta.append(time);
   }
-  const reason = document.createElement('span');
-  reason.className = 'completed-position-card__reason';
-  reason.textContent = reasonLabel;
-  meta.append(reason);
   card.append(meta);
+
+  if (absoluteTimeLabel || relativeTime) {
+    const timeline = document.createElement('div');
+    timeline.className = 'completed-position-card__timeline';
+    if (absoluteTimeLabel) {
+      const closedAt = document.createElement('div');
+      closedAt.className = 'completed-position-card__timeline-item';
+      const label = document.createElement('span');
+      label.className = 'completed-position-card__timeline-label';
+      label.textContent = translate('trades.completed.closedAt', 'Closed');
+      const value = document.createElement('span');
+      value.className = 'completed-position-card__timeline-value';
+      value.textContent = absoluteTimeLabel;
+      closedAt.append(label, value);
+      timeline.append(closedAt);
+    }
+    if (relativeTime) {
+      const ago = document.createElement('div');
+      ago.className = 'completed-position-card__timeline-item';
+      const label = document.createElement('span');
+      label.className = 'completed-position-card__timeline-label';
+      label.textContent = translate('trades.completed.elapsed', 'Ago');
+      const value = document.createElement('span');
+      value.className = 'completed-position-card__timeline-value';
+      value.textContent = relativeTime;
+      ago.append(label, value);
+      timeline.append(ago);
+    }
+    card.append(timeline);
+  }
 
   const metrics = document.createElement('div');
   metrics.className = 'completed-position-card__metrics';
@@ -6846,26 +6880,21 @@ function syncExchangeCompletedPositions(entries = []) {
 }
 
 function hydrateCompletedPositions(historyEntries, exchangeEntries, summary) {
-  const history = Array.isArray(historyEntries) ? historyEntries : [];
-  const exchangePositions = Array.isArray(exchangeEntries) ? exchangeEntries : [];
-  const hasHistory = history.length > 0;
+  const exportHistory = Array.isArray(latestExportedHistory) ? latestExportedHistory : [];
+  const historySource = Array.isArray(historyEntries) ? historyEntries : [];
+  const fallbackHistory = exportHistory.length > 0 ? exportHistory : historySource;
+  const filteredHistory = fallbackHistory.filter((entry) => entry && !entry.synthetic);
 
-  if (hasHistory) {
+  if (filteredHistory.length > 0) {
     syncCompletedPositionsStats(summary);
-    syncCompletedPositionsFromTrades(history);
-    if (exchangePositions.length > 0) {
-      rememberCompletedPositions(exchangePositions, {
-        countTowardsStats: false,
-        skipSummaryRefresh: true,
-        timestampResolver: (entry) => getPositionClosedTimestamp(entry),
-      });
-    }
+    syncCompletedPositionsFromTrades(filteredHistory);
     return;
   }
 
   completedPositionsIndex.clear();
   completedPositionsStatsTotals = { ...COMPLETED_POSITIONS_STATS_DEFAULTS };
 
+  const exchangePositions = Array.isArray(exchangeEntries) ? exchangeEntries : [];
   if (exchangePositions.length > 0) {
     rememberCompletedPositions(exchangePositions, {
       countTowardsStats: true,

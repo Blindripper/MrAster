@@ -5632,7 +5632,8 @@ body.pro-mode .log-stream {
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-left: 4px solid var(--completed-position-accent);
   border-radius: 1rem;
-  background: rgba(9, 11, 22, 0.72);
+  background: radial-gradient(circle at 10% 20%, rgba(148, 163, 184, 0.22), transparent 32%),
+    rgba(9, 11, 22, 0.82);
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -5641,7 +5642,10 @@ body.pro-mode .log-stream {
   cursor: pointer;
   color: inherit;
   font: inherit;
-  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
 }
 
 .completed-position-card[data-pnl='profit'] {
@@ -5655,8 +5659,9 @@ body.pro-mode .log-stream {
 .completed-position-card:hover,
 .completed-position-card:focus-visible {
   border-color: var(--completed-position-accent);
-  background: rgba(15, 23, 42, 0.85);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(12, 18, 36, 0.92));
   transform: translateY(-1px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36);
 }
 
 .completed-position-card:focus-visible {
@@ -5664,11 +5669,22 @@ body.pro-mode .log-stream {
   outline-offset: 3px;
 }
 
+.completed-position-card__flare {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 80% 20%, rgba(244, 114, 182, 0.08), transparent 40%),
+    radial-gradient(circle at 10% 90%, rgba(94, 234, 212, 0.08), transparent 36%);
+  pointer-events: none;
+  z-index: 0;
+}
+
 .completed-position-card__header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 1rem;
+  position: relative;
+  z-index: 1;
 }
 
 .completed-position-card__title {
@@ -5695,11 +5711,54 @@ body.pro-mode .log-stream {
   gap: 0.45rem 1rem;
   font-size: 0.9rem;
   color: var(--text-subtle);
+  position: relative;
+  z-index: 1;
 }
 
-.completed-position-card__reason {
+.completed-position-card__reason-chip {
+  color: #0b1628;
+  background: linear-gradient(135deg, #fbcfe8, #f5c46b);
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  box-shadow: 0 6px 20px rgba(245, 196, 107, 0.3);
+}
+
+.completed-position-card__timestamp {
   color: var(--text);
   font-weight: 500;
+  opacity: 0.9;
+}
+
+.completed-position-card__timeline {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.45rem 0.75rem;
+  background: rgba(15, 23, 42, 0.78);
+  border-radius: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  position: relative;
+  z-index: 1;
+}
+
+.completed-position-card__timeline-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.completed-position-card__timeline-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+
+.completed-position-card__timeline-value {
+  font-weight: 600;
+  color: var(--text);
 }
 
 .completed-position-card__metrics {
@@ -5719,11 +5778,15 @@ body.pro-mode .log-stream {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-subtle);
+  position: relative;
+  z-index: 1;
 }
 
 .completed-position-card__metric-value {
   font-weight: 600;
   color: var(--text);
+  position: relative;
+  z-index: 1;
 }
 
 .completed-position-card__postmortem {

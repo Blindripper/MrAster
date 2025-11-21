@@ -2734,11 +2734,53 @@ def _prepare_display_history(history: Sequence[Dict[str, Any]]) -> List[Dict[str
     ISO-formatted strings expected by the frontend.
     """
 
+    exit_reason_keys = (
+        "management_exit_reason",
+        "exit_reason",
+        "exitReason",
+        "last_exit_reason",
+        "lastExitReason",
+        "last_reason",
+        "lastReason",
+        "reason",
+    )
+
+    def _extract_exit_reason(candidate: Optional[Dict[str, Any]]) -> Optional[str]:
+        if not isinstance(candidate, dict):
+            return None
+
+        for key in exit_reason_keys:
+            value = candidate.get(key)
+            if value:
+                return str(value)
+
+        management = candidate.get("management")
+        if isinstance(management, dict):
+            for key in exit_reason_keys:
+                value = management.get(key)
+                if value:
+                    return str(value)
+
+        events = candidate.get("management_events") or candidate.get("managementEvents")
+        if isinstance(events, list):
+            for event in reversed(events):
+                if not isinstance(event, dict):
+                    continue
+                derived = _extract_exit_reason(event)
+                if derived:
+                    return derived
+
+        return None
+
     prepared: List[Dict[str, Any]] = []
     for entry in history:
         if not isinstance(entry, dict):
             continue
         normalized = dict(entry)
+        exit_reason = _extract_exit_reason(normalized)
+        if exit_reason:
+            normalized.setdefault("management_exit_reason", exit_reason)
+            normalized.setdefault("exit_reason", exit_reason)
         normalized["opened_at_iso"] = _format_ts(_safe_float(entry.get("opened_at")))
         normalized["closed_at_iso"] = _format_ts(_safe_float(entry.get("closed_at")))
         prepared.append(normalized)
