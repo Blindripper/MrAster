@@ -8199,9 +8199,12 @@ def _build_trade_export_payload(snapshot: Dict[str, Any]) -> Dict[str, Any]:
 
     generated_at = snapshot.get("generated_at") or datetime.now(timezone.utc).isoformat()
 
+    history_entries = _as_list(snapshot.get("history"))
+    prepared_history = _prepare_display_history(history_entries) if history_entries else []
+
     return {
         "generated_at": generated_at,
-        "history": _as_list(snapshot.get("history")),
+        "history": prepared_history,
         "stats": _as_dict(snapshot.get("stats")),
         "decision_stats": _as_dict(snapshot.get("decision_stats")),
         "cumulative_stats": _as_dict(snapshot.get("cumulative_stats")),
