@@ -11878,7 +11878,7 @@ class TradeManager:
             last_trade_id = rec.get("last_trade_id")
             start_time = None
             opened_at = rec.get("opened_at")
-            if isinstance(opened_at, (int, float)) and opened_at > 0:
+            if last_trade_id is None and isinstance(opened_at, (int, float)) and opened_at > 0:
                 start_time = int(max(0, opened_at - 5) * 1000)
             fetch_failed = False
             try:
