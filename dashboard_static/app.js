@@ -12501,9 +12501,33 @@ function renderHeroMetrics(
   }
   const openPositionsCount = normalizedOpenPositions.length;
 
+  const exchangePositions = Array.isArray(exportPayload?.exchange_positions)
+    ? exportPayload.exchange_positions
+    : Array.isArray(exportPayload?.exchangePositions)
+      ? exportPayload.exchangePositions
+      : [];
+  const exchangeTradeCount = (() => {
+    if (!exchangePositions.length) return null;
+    let total = 0;
+    for (const position of exchangePositions) {
+      if (!position || typeof position !== 'object') continue;
+      const tradeCount = parsePositiveInteger(
+        position.trade_count ?? position.tradeCount ?? position.trades ?? position.count,
+      );
+      if (tradeCount != null) {
+        total += tradeCount;
+        continue;
+      }
+      const tradesList = Array.isArray(position.trades) ? position.trades.length : 0;
+      total += tradesList;
+    }
+    return total > 0 ? total : null;
+  })();
+
   const serverTotalTrades = resolveNumericField(serverMetrics, ['total_trades', 'totalTrades']);
   const historyTradeCount = historyList.length > 0 ? countHistoryPositions(historyList) : null;
   const tradeCountCandidates = [
+    exchangeTradeCount,
     serverTotalTrades != null ? parsePositiveInteger(serverTotalTrades) : null,
     historyTradeCount,
     parsePositiveInteger(fallback.count ?? fallback.total_trades ?? fallback.totalTrades),
