@@ -4621,6 +4621,11 @@ const ACTIVE_POSITION_NOTIONAL_KEYS = [
   'sizeUsd',
 ];
 
+// Anything smaller than this absolute size is considered dust and treated as a closed
+// position when the rest of the payload doesn't explicitly mark it as open. This helps
+// filter out tiny residuals left after an exchange closes a position.
+const MIN_OPEN_POSITION_SIZE = 1e-5;
+
 const TAKE_PROFIT_FIELD_KEYS = [
   'tp',
   'take',
@@ -5099,7 +5104,7 @@ function inspectPositionSize(position) {
     const considerNumeric = (value) => {
       const numeric = toNumeric(value);
       if (!Number.isFinite(numeric)) return;
-      if (Math.abs(numeric) < 1e-9) {
+      if (Math.abs(numeric) < MIN_OPEN_POSITION_SIZE) {
         info.hasZero = true;
       } else {
         info.hasNonZero = true;
