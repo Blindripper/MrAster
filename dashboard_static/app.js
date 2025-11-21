@@ -12622,6 +12622,11 @@ function renderHeroMetrics(
     parsePositiveInteger(totals.total_trades ?? totals.count),
   ];
   let totalTrades = tradeCountCandidates.find((value) => value != null) ?? 0;
+  const hasTradeEvidence =
+    exchangePositions.length > 0 || historyList.length > 0 || normalizedOpenPositions.length > 0;
+  if (!hasTradeEvidence) {
+    totalTrades = 0;
+  }
   if (openPositionsCount > 0) {
     totalTrades += openPositionsCount;
   }
