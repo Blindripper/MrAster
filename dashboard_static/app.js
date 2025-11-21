@@ -12202,6 +12202,34 @@ function summarizeHistoryWinLoss(historyEntries) {
   return { wins, losses, draws, total };
 }
 
+function deriveHistoryPnlSummary(historyEntries) {
+  if (!Array.isArray(historyEntries) || historyEntries.length === 0) {
+    return null;
+  }
+
+  let totalPnl = 0;
+  let pnlSamples = 0;
+  historyEntries.forEach((trade) => {
+    const pnlValue = resolveTradePnlValue(trade);
+    if (Number.isFinite(pnlValue)) {
+      totalPnl += pnlValue;
+      pnlSamples += 1;
+    }
+  });
+
+  const winLoss = summarizeHistoryWinLoss(historyEntries);
+  const tradeCount = countHistoryPositions(historyEntries);
+
+  return {
+    trades: tradeCount > 0 ? tradeCount : null,
+    total_pnl: pnlSamples > 0 ? totalPnl : null,
+    win_rate: winLoss && winLoss.total > 0 ? winLoss.wins / winLoss.total : null,
+    wins: winLoss?.wins ?? null,
+    losses: winLoss?.losses ?? null,
+    draws: winLoss?.draws ?? null,
+  };
+}
+
 function isSyntheticTradeHistoryEntry(trade) {
   if (!trade || typeof trade !== 'object') {
     return false;
@@ -15749,6 +15777,47 @@ async function fetchLatestTradeExportSnapshot() {
       throw new Error('Trade export payload is invalid');
     }
     const exportHistory = Array.isArray(payload.history) ? payload.history : null;
+    const derivedSummary = deriveHistoryPnlSummary(exportHistory);
+    if (derivedSummary) {
+      const historySummary =
+        payload.history_summary && typeof payload.history_summary === 'object'
+          ? { ...payload.history_summary }
+          : {};
+      const stats = payload.stats && typeof payload.stats === 'object' ? { ...payload.stats } : {};
+
+      const applyDerived = (target, key, value, { allowZero = true } = {}) => {
+        if (value == null) return;
+        const numeric = Number(value);
+        const existing = Number(target[key]);
+        if (!Number.isFinite(numeric)) return;
+        if (!allowZero && numeric === 0) return;
+        if (!Number.isFinite(existing) || (!allowZero && existing === 0)) {
+          target[key] = numeric;
+        }
+      };
+
+      applyDerived(historySummary, 'trades', derivedSummary.trades, { allowZero: false });
+      applyDerived(historySummary, 'total_pnl', derivedSummary.total_pnl);
+      applyDerived(historySummary, 'win_rate', derivedSummary.win_rate);
+      applyDerived(historySummary, 'wins', derivedSummary.wins);
+      applyDerived(historySummary, 'losses', derivedSummary.losses);
+      applyDerived(historySummary, 'draws', derivedSummary.draws);
+
+      const summaryTrades = Number(historySummary.trades);
+      if (Number.isFinite(summaryTrades)) {
+        applyDerived(stats, 'count', summaryTrades, { allowZero: false });
+        applyDerived(stats, 'trades', summaryTrades, { allowZero: false });
+      }
+
+      const summaryTotalPnl = Number(historySummary.total_pnl);
+      if (Number.isFinite(summaryTotalPnl)) {
+        applyDerived(stats, 'total_pnl', summaryTotalPnl);
+        applyDerived(stats, 'totalPnl', summaryTotalPnl);
+      }
+
+      payload.history_summary = historySummary;
+      payload.stats = stats;
+    }
     latestExportedHistory = exportHistory ?? latestExportedHistory;
     latestExportSnapshot = payload;
     return payload;
