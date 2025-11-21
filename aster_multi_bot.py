@@ -13032,6 +13032,42 @@ class Bot:
         cap = self._symbol_leverage_cap(symbol)
         return clamp(numeric, 1.0, cap if math.isfinite(cap) else numeric)
 
+    def _is_supported_symbol(self, symbol: str) -> bool:
+        normalized = str(symbol or "").upper().strip()
+        if not normalized:
+            return False
+
+        try:
+            filters = getattr(self, "risk", None)
+            if filters and isinstance(filters.symbol_filters, dict):
+                if filters.symbol_filters:
+                    return normalized in filters.symbol_filters
+                try:
+                    filters.load_filters()
+                except Exception:
+                    pass
+                else:
+                    if filters.symbol_filters:
+                        return normalized in filters.symbol_filters
+        except Exception:
+            pass
+
+        try:
+            snapshot = getattr(self.universe, "_universe_snapshot", None)
+            if isinstance(snapshot, list) and snapshot:
+                return normalized in snapshot
+            if hasattr(self, "universe") and hasattr(self.universe, "refresh"):
+                try:
+                    refreshed = self.universe.refresh()
+                except Exception:
+                    refreshed = []
+                if refreshed:
+                    return normalized in refreshed
+        except Exception:
+            pass
+
+        return False
+
     def _banned_map(self) -> Dict[str, Dict[str, Any]]:
         banned = self.state.get("banned_symbols")
         if not isinstance(banned, dict):
@@ -14413,6 +14449,25 @@ class Bot:
         if symbol in banned_map:
             if self.decision_tracker:
                 self.decision_tracker.record_rejection("banned_symbol")
+            return
+        if not self._is_supported_symbol(symbol):
+            pending_queue = self.state.get("manual_trade_requests")
+            if isinstance(pending_queue, list):
+                for item in pending_queue:
+                    if not isinstance(item, dict):
+                        continue
+                    if str(item.get("symbol") or "").upper() != symbol.upper():
+                        continue
+                    if str(item.get("status") or "pending").lower() != "pending":
+                        continue
+                    self._complete_manual_request(
+                        item,
+                        "failed",
+                        error="Symbol not supported by exchange",
+                    )
+            if self.decision_tracker:
+                self.decision_tracker.record_rejection("unsupported_symbol")
+            log.info("Skip %s — symbol not supported by exchange info.", symbol)
             return
         fail_until = self.state.setdefault("fail_skip_until", {}).get(symbol)
         if fail_until and time.time() < fail_until:
