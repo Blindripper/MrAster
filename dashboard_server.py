@@ -3785,6 +3785,7 @@ runner = BotRunner(loghub)
 
 @asynccontextmanager
 async def dashboard_lifespan(_: FastAPI):
+    _reset_trade_export_file()
     position_stream.start()
     try:
         yield
@@ -8113,6 +8114,25 @@ class AIChatEngine:
 
 
 chat_engine = AIChatEngine(CONFIG)
+
+
+def _reset_trade_export_file() -> None:
+    """Ensure the latest trade export file starts fresh on each run."""
+
+    export_dir = Path(os.getenv("ASTER_TRADES_EXPORT_DIR", ROOT_DIR))
+    filename = os.getenv("ASTER_TRADES_EXPORT_FILENAME", "mraster-trades-latest.json")
+    export_path = export_dir / filename
+
+    try:
+        export_dir.mkdir(parents=True, exist_ok=True)
+        if export_path.exists():
+            export_path.unlink()
+
+        payload = _build_trade_export_payload({})
+        with export_path.open("w", encoding="utf-8") as fp:
+            json.dump(payload, fp, indent=2, ensure_ascii=False)
+    except Exception as exc:  # pragma: no cover - defensive reset
+        logger.debug("failed to reset trade export file: %s", exc)
 
 
 def _build_trade_export_payload(snapshot: Dict[str, Any]) -> Dict[str, Any]:
