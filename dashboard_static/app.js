@@ -15616,6 +15616,19 @@ async function downloadTradeHistory() {
   }
 }
 
+async function loadTradesFromExport() {
+  try {
+    const res = await fetch('/mraster-trades-latest.json', { cache: 'no-cache' });
+    if (!res.ok) {
+      throw new Error('Unable to fetch exported trades snapshot');
+    }
+    return await res.json();
+  } catch (err) {
+    console.warn('Failed to load mraster-trades-latest.json', err);
+    return null;
+  }
+}
+
 async function loadTrades() {
   if (tradesRefreshInFlight) {
     return tradesRefreshInFlight;
@@ -15625,10 +15638,14 @@ async function loadTrades() {
 
   const refreshPromise = (async () => {
     try {
-      const res = await fetch('/api/trades');
-      if (!res.ok) throw new Error('Unable to load trades');
-      const data = await res.json();
-      const snapshot = hydrateTradesSnapshot(data, { mergeWithPrevious: true });
+      const exportSnapshot = await loadTradesFromExport();
+      const snapshotPayload = exportSnapshot || (await (async () => {
+        const res = await fetch('/api/trades');
+        if (!res.ok) throw new Error('Unable to load trades');
+        return res.json();
+      })());
+
+      const snapshot = hydrateTradesSnapshot(snapshotPayload, { mergeWithPrevious: true });
       return snapshot;
     } catch (err) {
       console.warn('Failed to refresh dashboard data', err);
