@@ -3,6 +3,7 @@ import { derivePositionMarkPrice } from './position_math.js';
 const envContainer = document.getElementById('env-settings');
 const envPanel = document.getElementById('env-config-panel');
 const btnToggleEnv = document.getElementById('btn-toggle-env');
+const btnResetEnv = document.getElementById('btn-reset-env');
 const btnSaveConfig = document.getElementById('btn-save-config');
 const btnSaveCredentials = document.getElementById('btn-save-credentials');
 const btnStart = document.getElementById('btn-start');
@@ -303,6 +304,7 @@ if (mobileCollapsibleCards.length) {
 }
 
 if (btnSaveConfig) btnSaveConfig.dataset.state = 'idle';
+if (btnResetEnv) btnResetEnv.dataset.state = 'idle';
 if (btnSaveCredentials) btnSaveCredentials.dataset.state = 'idle';
 if (btnSaveAi) btnSaveAi.dataset.state = 'idle';
 if (btnApplyPreset) btnApplyPreset.dataset.state = 'idle';
@@ -699,6 +701,9 @@ const TRANSLATIONS = {
     'env.saving': 'Сохранение…',
     'env.saved': 'Сохранено ✓',
     'env.error': 'Ошибка',
+    'env.reset': 'Сбросить по умолчанию',
+    'env.resetting': 'Сброс…',
+    'env.resetDone': 'Сброшено ✓',
     'env.subtitle': 'Изменяйте любые параметры <code>ASTER_*</code> без перезапуска сервиса. Изменения сохраняются автоматически.',
     'logs.activity.title': 'Лента активности',
     'logs.activity.subtitle': 'Ключевые сделки, предупреждения и события высокого сигнала.',
@@ -995,6 +1000,9 @@ const TRANSLATIONS = {
     'env.saving': 'Speichere…',
     'env.saved': 'Gespeichert ✓',
     'env.error': 'Fehler',
+    'env.reset': 'Auf Standard zurücksetzen',
+    'env.resetting': 'Setze zurück…',
+    'env.resetDone': 'Zurückgesetzt ✓',
     'env.subtitle':
       'Ändere beliebige <code>ASTER_*</code>-Parameter ohne Neustart des Dienstes. Anpassungen werden automatisch gespeichert.',
     'logs.activity.title': 'Aktivitätsfeed',
@@ -1294,6 +1302,9 @@ const TRANSLATIONS = {
     'env.saving': '저장 중…',
     'env.saved': '저장 완료 ✓',
     'env.error': '오류',
+    'env.reset': '기본값으로 초기화',
+    'env.resetting': '초기화 중…',
+    'env.resetDone': '초기화 완료 ✓',
     'env.subtitle':
       '서비스를 재시작하지 않고도 모든 <code>ASTER_*</code> 파라미터를 변경하세요. 변경 사항은 자동으로 저장됩니다.',
     'logs.activity.title': '활동 피드',
@@ -1593,6 +1604,9 @@ const TRANSLATIONS = {
     'env.saving': 'Enregistrement…',
     'env.saved': 'Enregistré ✓',
     'env.error': 'Erreur',
+    'env.reset': 'Restaurer les valeurs par défaut',
+    'env.resetting': 'Restauration…',
+    'env.resetDone': 'Valeurs restaurées ✓',
     'env.subtitle':
       'Modifiez n’importe quel paramètre <code>ASTER_*</code> sans redémarrer le service. Les changements sont enregistrés automatiquement.',
     'logs.activity.title': 'Flux d’activité',
@@ -1892,6 +1906,9 @@ const TRANSLATIONS = {
     'env.saving': 'Guardando…',
     'env.saved': 'Guardado ✓',
     'env.error': 'Error',
+    'env.reset': 'Restablecer valores predeterminados',
+    'env.resetting': 'Restableciendo…',
+    'env.resetDone': 'Restablecido ✓',
     'env.subtitle':
       'Modifica cualquier parámetro <code>ASTER_*</code> sin reiniciar el servicio. Los cambios se guardan automáticamente.',
     'logs.activity.title': 'Feed de actividad',
@@ -2184,6 +2201,9 @@ const TRANSLATIONS = {
     'env.saving': 'Kaydediliyor…',
     'env.saved': 'Kaydedildi ✓',
     'env.error': 'Hata',
+    'env.reset': 'Varsayılanlara sıfırla',
+    'env.resetting': 'Sıfırlanıyor…',
+    'env.resetDone': 'Sıfırlandı ✓',
     'env.subtitle': 'Servisi yeniden başlatmadan herhangi bir <code>ASTER_*</code> parametresini değiştirin. Değişiklikler otomatik kaydedilir.',
     'logs.activity.title': 'Aktivite akışı',
     'logs.activity.subtitle': 'Kilit işlemler, uyarılar ve yüksek sinyal olayları.',
@@ -2478,6 +2498,9 @@ const TRANSLATIONS = {
     'env.saving': '正在保存…',
     'env.saved': '已保存 ✓',
     'env.error': '错误',
+    'env.reset': '重置为默认值',
+    'env.resetting': '正在重置…',
+    'env.resetDone': '已重置 ✓',
     'env.subtitle': '无需重启服务即可修改任意 <code>ASTER_*</code> 参数。更改会自动保存。',
     'logs.activity.title': '活动信息流',
     'logs.activity.subtitle': '关键交易、预警和高信号事件。',
@@ -2712,6 +2735,18 @@ function applyTranslations(lang) {
       btnSaveConfig.textContent = translate('common.error', 'Error');
     } else {
       btnSaveConfig.textContent = translate('env.save', 'Save');
+    }
+  }
+  if (btnResetEnv) {
+    const state = btnResetEnv.dataset.state || 'idle';
+    if (state === 'resetting') {
+      btnResetEnv.textContent = translate('env.resetting', 'Resetting…');
+    } else if (state === 'done') {
+      btnResetEnv.textContent = translate('env.resetDone', 'Defaults restored ✓');
+    } else if (state === 'error') {
+      btnResetEnv.textContent = translate('common.error', 'Error');
+    } else {
+      btnResetEnv.textContent = translate('env.reset', 'Reset defaults');
     }
   }
   if (btnSaveCredentials) {
@@ -3942,6 +3977,42 @@ async function saveConfig() {
     }, 2000);
   } finally {
     btnSaveConfig.disabled = false;
+  }
+}
+
+async function resetConfigToDefaults() {
+  if (!btnResetEnv) return;
+  btnResetEnv.disabled = true;
+  btnResetEnv.dataset.state = 'resetting';
+  btnResetEnv.textContent = translate('env.resetting', 'Resetting…');
+  try {
+    const res = await fetch('/api/config/reset', { method: 'POST' });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || 'Unable to reset configuration');
+    }
+    currentConfig = await res.json();
+    renderConfig(currentConfig.env);
+    renderCredentials(currentConfig.env);
+    syncQuickSetupFromEnv(currentConfig.env);
+    syncPaperModeFromEnv(currentConfig.env);
+    await syncModeFromEnv(currentConfig.env);
+    btnResetEnv.dataset.state = 'done';
+    btnResetEnv.textContent = translate('env.resetDone', 'Defaults restored ✓');
+    setTimeout(() => {
+      btnResetEnv.dataset.state = 'idle';
+      btnResetEnv.textContent = translate('env.reset', 'Reset defaults');
+    }, 1500);
+  } catch (err) {
+    btnResetEnv.dataset.state = 'error';
+    btnResetEnv.textContent = translate('common.error', 'Error');
+    alert(err.message);
+    setTimeout(() => {
+      btnResetEnv.dataset.state = 'idle';
+      btnResetEnv.textContent = translate('env.reset', 'Reset defaults');
+    }, 2000);
+  } finally {
+    btnResetEnv.disabled = false;
   }
 }
 
@@ -16556,6 +16627,7 @@ async function stopBot() {
 }
 
 btnSaveConfig.addEventListener('click', saveConfig);
+btnResetEnv?.addEventListener('click', resetConfigToDefaults);
 btnSaveCredentials?.addEventListener('click', saveCredentials);
 btnStart.addEventListener('click', startBot);
 btnStop.addEventListener('click', stopBot);

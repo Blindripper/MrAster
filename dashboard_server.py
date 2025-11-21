@@ -3889,6 +3889,14 @@ async def update_config(update: ConfigUpdate) -> Dict[str, Any]:
     return CONFIG
 
 
+@app.post("/api/config/reset")
+async def reset_config() -> Dict[str, Any]:
+    CONFIG["env"] = {k: str(v) for k, v in ENV_DEFAULTS.items()}
+    _save_config(CONFIG)
+    await loghub.push("Configuration reset to defaults", level="system")
+    return CONFIG
+
+
 @app.post("/api/bot/start")
 async def start_bot() -> Dict[str, Any]:
     try:
