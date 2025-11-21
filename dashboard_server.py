@@ -2312,6 +2312,52 @@ def _extract_trade_position_identifier(trade: Dict[str, Any]) -> Tuple[Optional[
     return None, None
 
 
+def _extract_exit_reason_field(candidate: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Return the first recorded exit reason from a trade or management block."""
+
+    if not isinstance(candidate, dict):
+        return None
+
+    exit_reason_keys = (
+        "management_exit_reason",
+        "exit_reason",
+        "exitReason",
+        "last_exit_reason",
+        "lastExitReason",
+        "last_reason",
+        "lastReason",
+        "reason",
+    )
+
+    for key in exit_reason_keys:
+        value = candidate.get(key)
+        if value:
+            return str(value)
+
+    management = candidate.get("management")
+    if isinstance(management, dict):
+        for key in exit_reason_keys:
+            value = management.get(key)
+            if value:
+                return str(value)
+
+    events = candidate.get("management_events") or candidate.get("managementEvents")
+    if isinstance(events, list):
+        for event in reversed(events):
+            derived = _extract_exit_reason_field(event)
+            if derived:
+                return derived
+
+    context = candidate.get("context")
+    if isinstance(context, dict):
+        for key in exit_reason_keys:
+            value = context.get(key)
+            if value:
+                return str(value)
+
+    return None
+
+
 def _fetch_user_trades_for_symbol(
     env: Dict[str, Any],
     symbol: str,
@@ -2397,6 +2443,7 @@ def _compute_run_realized_from_exchange(
     env_cfg: Dict[str, Any],
     run_started_at: Optional[float] = None,
     *,
+    history: Optional[Sequence[Dict[str, Any]]] = None,
     fetcher: Optional[
         Any
     ] = None,
@@ -2421,6 +2468,37 @@ def _compute_run_realized_from_exchange(
         return {}
 
     fetch_fn = fetcher or _fetch_user_trades_for_symbol
+    history_reason_index: Dict[str, str] = {}
+
+    def _remember_history_reason(record: Dict[str, Any]) -> None:
+        reason = _extract_exit_reason_field(record)
+        if not reason:
+            return
+        key_name, key_value = _extract_trade_position_identifier(record)
+        if key_name and key_value:
+            history_reason_index.setdefault(f"{key_name}:{key_value}", reason)
+        for key in (
+            "position_hash",
+            "positionKey",
+            "position_key",
+        ):
+            hint = _clean_string(record.get(key))
+            if hint:
+                history_reason_index.setdefault(hint, reason)
+        symbol_hint = _clean_string(record.get("symbol"))
+        ts_hint = _safe_float(record.get("closed_at"))
+        if ts_hint is None:
+            ts_hint = _safe_float(record.get("opened_at"))
+        if ts_hint is None:
+            ts_hint = _safe_float(record.get("ts"))
+        if symbol_hint and ts_hint is not None:
+            history_reason_index.setdefault(f"{symbol_hint}|ts:{int(ts_hint)}", reason)
+
+    if isinstance(history, Sequence):
+        for record in history:
+            if isinstance(record, dict):
+                _remember_history_reason(record)
+
     realized_total = 0.0
     trade_samples = 0
     aggregated_trades: List[Dict[str, Any]] = []
@@ -2452,11 +2530,6 @@ def _compute_run_realized_from_exchange(
             for ctx_key in ("buyer", "maker", "orderId", "id", "tradeId"):
                 if trade.get(ctx_key) is not None:
                     record["context"][ctx_key] = trade.get(ctx_key)
-            if not math.isclose(pnl_val, 0.0):
-                realized_total += pnl_val
-                trade_samples += 1
-                aggregated_trades.append(record)
-
             key_name, key_value = _extract_trade_position_identifier(trade)
             if key_name and key_value:
                 position_key = f"{key_name}:{key_value}"
@@ -2467,6 +2540,23 @@ def _compute_run_realized_from_exchange(
                     fallback_parts.append(f"order:{order_ref}")
                 fallback_parts.append(f"ts:{int(ts_val)}")
                 position_key = "|".join(str(part) for part in fallback_parts if part)
+
+            record_reason = _extract_exit_reason_field(trade)
+            symbol_ts_key = f"{sym.upper()}|ts:{int(ts_val)}"
+            if not record_reason:
+                record_reason = history_reason_index.get(position_key)
+            if not record_reason:
+                record_reason = history_reason_index.get(symbol_ts_key)
+            if not record_reason:
+                record_reason = history_reason_index.get(str(sym).upper())
+
+            if record_reason:
+                record["management_exit_reason"] = record_reason
+                record.setdefault("exit_reason", record_reason)
+
+            realized_total += pnl_val
+            trade_samples += 1
+            aggregated_trades.append(record)
 
             group = position_groups.get(position_key)
             if not group:
@@ -2495,6 +2585,10 @@ def _compute_run_realized_from_exchange(
             if ts_val > group.get("closed_at", 0.0):
                 group["closed_at"] = float(ts_val)
                 group["closed_at_iso"] = datetime.fromtimestamp(ts_val, tz=timezone.utc).isoformat()
+
+            if record_reason and "management_exit_reason" not in group:
+                group["management_exit_reason"] = record_reason
+                group.setdefault("exit_reason", record_reason)
 
     if trade_samples == 0 and not position_groups:
         return {}
@@ -2734,50 +2828,12 @@ def _prepare_display_history(history: Sequence[Dict[str, Any]]) -> List[Dict[str
     ISO-formatted strings expected by the frontend.
     """
 
-    exit_reason_keys = (
-        "management_exit_reason",
-        "exit_reason",
-        "exitReason",
-        "last_exit_reason",
-        "lastExitReason",
-        "last_reason",
-        "lastReason",
-        "reason",
-    )
-
-    def _extract_exit_reason(candidate: Optional[Dict[str, Any]]) -> Optional[str]:
-        if not isinstance(candidate, dict):
-            return None
-
-        for key in exit_reason_keys:
-            value = candidate.get(key)
-            if value:
-                return str(value)
-
-        management = candidate.get("management")
-        if isinstance(management, dict):
-            for key in exit_reason_keys:
-                value = management.get(key)
-                if value:
-                    return str(value)
-
-        events = candidate.get("management_events") or candidate.get("managementEvents")
-        if isinstance(events, list):
-            for event in reversed(events):
-                if not isinstance(event, dict):
-                    continue
-                derived = _extract_exit_reason(event)
-                if derived:
-                    return derived
-
-        return None
-
     prepared: List[Dict[str, Any]] = []
     for entry in history:
         if not isinstance(entry, dict):
             continue
         normalized = dict(entry)
-        exit_reason = _extract_exit_reason(normalized)
+        exit_reason = _extract_exit_reason_field(normalized)
         if exit_reason:
             normalized.setdefault("management_exit_reason", exit_reason)
             normalized.setdefault("exit_reason", exit_reason)
@@ -8399,6 +8455,7 @@ async def trades() -> Dict[str, Any]:
                 state,
                 env_cfg,
                 run_started_at,
+                history=history_with_memory,
             )
         except Exception as exc:  # pragma: no cover - defensive guard
             logger.debug("run exchange metrics failed: %s", exc)
