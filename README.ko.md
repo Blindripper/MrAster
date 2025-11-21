@@ -112,7 +112,7 @@
 | `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `49` / `51`* | 롱/숏 진입 RSI 기준. |
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | 타임프레임 간 추세 정렬을 강제합니다. |
 | `ASTER_TREND_BIAS` | `with` | 추세와 함께 혹은 역추세로 매매. |
-| `ASTER_MIN_QUOTE_VOL_USDT` | `800000` | 거래 가능한 최소 거래대금. |
+| `ASTER_MIN_QUOTE_VOL_USDT` | `900000` | 거래 가능한 최소 거래대금. |
 | `ASTER_SPREAD_BPS_MAX` | `0.0020` | 허용 최대 스프레드(bps). |
 | `ASTER_WICKINESS_MAX` | `0.97` | 과도한 심지의 캔들을 필터링. |
 | `ASTER_MIN_EDGE_R` | `0.04` | 트레이드를 승인하기 위한 최소 엣지(R). |
