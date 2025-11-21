@@ -12685,12 +12685,14 @@ function renderHeroMetrics(
     return total > 0 ? total : null;
   })();
 
+  const summaryTradeCount = parsePositiveInteger(summaryStats?.trades ?? summaryStats?.count);
   const serverTotalTrades = resolveNumericField(serverMetrics, ['total_trades', 'totalTrades']);
   const historyTradeCount = historyList.length > 0 ? countHistoryPositions(historyList) : null;
   const tradeCountCandidates = [
+    historyTradeCount,
+    summaryTradeCount,
     exchangeTradeCount,
     serverTotalTrades != null ? parsePositiveInteger(serverTotalTrades) : null,
-    historyTradeCount,
     parsePositiveInteger(fallback.count ?? fallback.total_trades ?? fallback.totalTrades),
     parsePositiveInteger(totals.total_trades ?? totals.count),
   ];
@@ -12863,12 +12865,13 @@ function renderHeroMetrics(
     return Math.min(1, historyWinLossSummary.wins / historyWinLossSummary.total);
   })();
 
+  const summaryWinRate = normalizeWinRate(summaryStats?.win_rate ?? summaryStats?.winRate);
   const fallbackWinRate = normalizeWinRate(fallback.win_rate ?? fallback.winRate);
   const totalsWinRate = normalizeWinRate(totals.win_rate ?? totals.winRate);
   const serverWinRate = normalizeWinRate(resolveNumericField(serverMetrics, ['win_rate', 'winRate']));
-  const winsRaw = Number(totals.wins ?? fallback.wins ?? 0);
-  const lossesRaw = Number(totals.losses ?? fallback.losses ?? 0);
-  const drawsRaw = Number(totals.draws ?? fallback.draws ?? 0);
+  const winsRaw = Number(summaryStats?.wins ?? totals.wins ?? fallback.wins ?? 0);
+  const lossesRaw = Number(summaryStats?.losses ?? totals.losses ?? fallback.losses ?? 0);
+  const drawsRaw = Number(summaryStats?.draws ?? totals.draws ?? fallback.draws ?? 0);
   const denominator = totalTrades > 0 ? totalTrades : winsRaw + lossesRaw + drawsRaw;
   const derivedTotalsWinRate =
     denominator > 0 && Number.isFinite(winsRaw)
@@ -12876,6 +12879,7 @@ function renderHeroMetrics(
       : null;
   const computedWinRate =
     historyWinRate ??
+    summaryWinRate ??
     serverWinRate ??
     totalsWinRate ??
     derivedTotalsWinRate ??
@@ -12901,6 +12905,12 @@ function renderHeroMetrics(
   if (historyWinLossSummary) {
     winsCount = historyWinLossSummary.wins;
     lossesCount = historyWinLossSummary.losses;
+  } else if (
+    summaryStats &&
+    (Number.isFinite(Number(summaryStats.wins)) || Number.isFinite(Number(summaryStats.losses)))
+  ) {
+    winsCount = parseTradeCount(summaryStats.wins);
+    lossesCount = parseTradeCount(summaryStats.losses);
   } else {
     winsCount = parseTradeCount(
       resolveNumericField(serverMetrics, ['wins']),
