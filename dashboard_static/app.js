@@ -6888,7 +6888,10 @@ function registerCompletedPosition(position, options = {}) {
       ? closedTs
       : Number.isFinite(openedTs) && openedTs >= 0
         ? openedTs
-        : Date.now() / 1000;
+        : null;
+  if (!Number.isFinite(resolvedTimestamp)) {
+    return false;
+  }
   const existing = completedPositionsIndex.get(key);
   if (existing) {
     const { changed } = mergeCompletedPositionPayload(existing.position, position);
