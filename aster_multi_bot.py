@@ -1066,6 +1066,13 @@ FAST_TP_ENABLED = os.getenv("FAST_TP_ENABLED", "true").lower() in ("1", "true", 
 FASTTP_MIN_R = float(os.getenv("FASTTP_MIN_R", "0.10"))
 FAST_TP_RET1 = float(os.getenv("FAST_TP_RET1", "0.06"))
 FAST_TP_RET3 = float(os.getenv("FAST_TP_RET3", "0.18"))
+FASTTP_MIN_HOLD_SECONDS = max(
+    0.0, float(os.getenv("ASTER_FASTTP_MIN_HOLD_SECONDS", "90") or 0.0)
+)
+
+MANAGEMENT_MIN_AGE_SECONDS = max(
+    0.0, float(os.getenv("ASTER_MANAGEMENT_MIN_AGE_SECONDS", "45") or 0.0)
+)
 FASTTP_SNAP_ATR = float(os.getenv("FASTTP_SNAP_ATR", "0.25"))
 FASTTP_COOLDOWN_S = int(os.getenv("FASTTP_COOLDOWN_S", "15"))
 ACTIVE_POSITION_MONITOR_ENABLED = os.getenv(
@@ -12147,6 +12154,14 @@ class FastTP:
         enabled = FAST_TP_ENABLED if overrides is None else bool(overrides.get("enabled", True))
         if not enabled or abs(pos_amt) < 1e-12 or atr_abs <= 0.0:
             return False
+        opened_ts = 0.0
+        try:
+            opened_ts = float(rec.get("opened_at", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            opened_ts = 0.0
+        if FASTTP_MIN_HOLD_SECONDS > 0 and opened_ts > 0:
+            if time.time() - opened_ts < FASTTP_MIN_HOLD_SECONDS:
+                return False
         cd_until = self.state.setdefault("fast_tp_cooldown", {}).get(symbol, 0.0)
         if time.time() < cd_until:
             return False
@@ -12674,6 +12689,12 @@ class Bot:
             opened_ts = 0.0
         now_ts = time.time()
         elapsed = max(0.0, now_ts - opened_ts) if opened_ts > 0 else 0.0
+        if (
+            MANAGEMENT_MIN_AGE_SECONDS > 0
+            and opened_ts > 0
+            and elapsed < MANAGEMENT_MIN_AGE_SECONDS
+        ):
+            return
         side = str(rec.get("side") or ("BUY" if amount > 0 else "SELL")).upper()
         qty_abs = abs(amount)
         if qty_abs <= 1e-12:
