@@ -5104,7 +5104,10 @@ function inspectPositionSize(position) {
     const considerNumeric = (value) => {
       const numeric = toNumeric(value);
       if (!Number.isFinite(numeric)) return;
-      if (Math.abs(numeric) < MIN_OPEN_POSITION_SIZE) {
+
+      // Treat dust-sized remainders as effectively zero so positions that have
+      // been closed (but still report tiny quantities) are not shown as open.
+      if (Math.abs(numeric) <= MIN_OPEN_POSITION_SIZE) {
         info.hasZero = true;
       } else {
         info.hasNonZero = true;
