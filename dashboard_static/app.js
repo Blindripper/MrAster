@@ -7234,8 +7234,10 @@ function updateActivePositionsView(options = {}) {
   if (activePositionsCard) {
     if (hasRows) {
       activePositionsCard.removeAttribute('data-empty');
+      activePositionsCard.removeAttribute('hidden');
     } else {
       activePositionsCard.setAttribute('data-empty', 'true');
+      activePositionsCard.setAttribute('hidden', 'true');
     }
   }
 
