@@ -1,0 +1,406 @@
+{
+  "generated_at": "2025-11-21T05:45:27.238Z",
+  "history": [],
+  "stats": {
+    "count": 0,
+    "total_pnl": 0,
+    "total_r": 0,
+    "win_rate": 0,
+    "best_trade": null,
+    "worst_trade": null,
+    "ai_hint": "",
+    "wins": 0,
+    "losses": 0,
+    "draws": 0
+  },
+  "decision_stats": {
+    "taken": 2,
+    "taken_by_bucket": {
+      "S": 2
+    },
+    "rejected": {
+      "stoch_rsi_trend_short": 52,
+      "playbook_structured_block": 90,
+      "orderbook_bias": 5,
+      "non_arb_bias_short": 25,
+      "long_overextended": 10,
+      "no_signal": 26,
+      "playbook_directive_block": 5,
+      "edge_r": 69,
+      "late_trend_liquidity": 71,
+      "quality_gate": 37,
+      "spread_tight": 5,
+      "filtered": 15,
+      "ai_decision": 2,
+      "stoch_rsi_penalty": 1,
+      "trend_extension": 8,
+      "quote_volume_cooldown": 230,
+      "arb_gate": 7,
+      "continuation_pullback": 3,
+      "short_cluster_limit": 1
+    },
+    "rejected_total": 662,
+    "last_updated": 1763703903.0137684
+  },
+  "cumulative_stats": {
+    "total_trades": 2,
+    "total_pnl": -0.6992240000000001,
+    "wins": 0,
+    "losses": 2,
+    "draws": 0,
+    "total_volume": 0,
+    "realized_pnl": -0.6176,
+    "ai_budget_spent": 0.081624,
+    "alpha_confidence": 0.003012048192762294
+  },
+  "history_summary": {
+    "trades": 0,
+    "realized_pnl": 0,
+    "total_r": 0,
+    "avg_r": 0,
+    "win_rate": 0,
+    "wins": 0,
+    "losses": 0,
+    "draws": 0
+  },
+  "hero_metrics": {
+    "total_trades": 2,
+    "total_pnl": -0.6992240000000001,
+    "realized_pnl": -0.6176,
+    "ai_budget_spent": 0.081624,
+    "win_rate": 0,
+    "wins": 0,
+    "losses": 2,
+    "draws": 0,
+    "run_trade_samples": 2,
+    "run_metrics_source": "exchange_trades"
+  },
+  "ai_budget": {
+    "date": "2025-11-21",
+    "spent": 0.081624,
+    "history": [
+      {
+        "ts": 1763693657.2415986,
+        "cost": 0.02943,
+        "meta": {
+          "kind": "playbook",
+          "model": "gpt-4.1",
+          "usage": {
+            "prompt_tokens": 4575,
+            "completion_tokens": 1745,
+            "total_tokens": 6320,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          }
+        }
+      },
+      {
+        "ts": 1763703480.997008,
+        "cost": 0.030243,
+        "meta": {
+          "kind": "playbook",
+          "model": "gpt-4.1",
+          "usage": {
+            "prompt_tokens": 4786,
+            "completion_tokens": 1765,
+            "total_tokens": 6551,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          }
+        }
+      },
+      {
+        "ts": 1763703536.4025996,
+        "cost": 0.004176,
+        "meta": {
+          "kind": "plan",
+          "model": "gpt-4.1",
+          "usage": {
+            "prompt_tokens": 684,
+            "completion_tokens": 236,
+            "total_tokens": 920,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          }
+        }
+      },
+      {
+        "ts": 1763703657.4370646,
+        "cost": 0.004602,
+        "meta": {
+          "kind": "plan",
+          "model": "gpt-4.1",
+          "usage": {
+            "prompt_tokens": 688,
+            "completion_tokens": 282,
+            "total_tokens": 970,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          }
+        }
+      },
+      {
+        "ts": 1763703686.456272,
+        "cost": 0.004686,
+        "meta": {
+          "kind": "plan",
+          "model": "gpt-4.1",
+          "usage": {
+            "prompt_tokens": 671,
+            "completion_tokens": 297,
+            "total_tokens": 968,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          }
+        }
+      },
+      {
+        "ts": 1763703727.3678892,
+        "cost": 0.004071,
+        "meta": {
+          "kind": "plan",
+          "model": "gpt-4.1",
+          "usage": {
+            "prompt_tokens": 700,
+            "completion_tokens": 219,
+            "total_tokens": 919,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          }
+        }
+      },
+      {
+        "ts": 1763703811.8551302,
+        "cost": 0.004416,
+        "meta": {
+          "kind": "plan",
+          "model": "gpt-4.1",
+          "usage": {
+            "prompt_tokens": 698,
+            "completion_tokens": 258,
+            "total_tokens": 956,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          }
+        }
+      }
+    ],
+    "stats": {
+      "gpt-4.1::playbook": {
+        "avg": 0.029836500000000002,
+        "n": 2,
+        "last": 0.030243,
+        "updated": 1763703480.9970374
+      },
+      "gpt-4.1::*": {
+        "avg": 0.011660571428571428,
+        "n": 7,
+        "last": 0.004416,
+        "updated": 1763703811.8551474
+      },
+      "*::playbook": {
+        "avg": 0.029836500000000002,
+        "n": 2,
+        "last": 0.030243,
+        "updated": 1763703480.9970572
+      },
+      "*::*": {
+        "avg": 0.011660571428571428,
+        "n": 7,
+        "last": 0.004416,
+        "updated": 1763703811.855154
+      },
+      "gpt-4.1::plan": {
+        "avg": 0.0043902,
+        "n": 5,
+        "last": 0.004416,
+        "updated": 1763703811.8551424
+      },
+      "*::plan": {
+        "avg": 0.0043902,
+        "n": 5,
+        "last": 0.004416,
+        "updated": 1763703811.855151
+      }
+    },
+    "count": 7
+  },
+  "open": [
+    {
+      "symbol": "XRPUSDT",
+      "positionAmt": -443.4,
+      "entryPrice": 1.9791,
+      "markPrice": 1.9808,
+      "unRealizedProfit": -0.753779999999917,
+      "liquidationPrice": "24.14370732",
+      "leverage": 2,
+      "maxNotionalValue": "160000000",
+      "marginType": "cross",
+      "isolatedMargin": "0.00000000",
+      "isAutoAddMargin": "false",
+      "positionSide": "BOTH",
+      "notional": -878.28672,
+      "isolatedWallet": "0",
+      "updateTime": 1763703814809,
+      "entry": 1.9791,
+      "entry_price": 1.9791,
+      "mark": 1.9808,
+      "mark_price": 1.9808,
+      "notional_usdt": -878.28672,
+      "notionalUsd": -878.28672,
+      "positionNotional": -878.28672,
+      "size_usdt": -878.28672,
+      "margin": 439.14336,
+      "positionMargin": 439.14336,
+      "initialMargin": 439.14336,
+      "computedPnl": -0.753779999999917,
+      "computed_pnl": -0.753779999999917,
+      "pnl": -0.753779999999917,
+      "pnl_usd": -0.753779999999917,
+      "pnl_usdt": -0.753779999999917,
+      "pnl_unrealized": -0.753779999999917,
+      "unrealized": -0.753779999999917,
+      "unrealizedProfit": -0.753779999999917,
+      "roe_percent": -0.17164781906298596,
+      "roe": -0.17164781906298596,
+      "roe_pct": -0.17164781906298596,
+      "side": "SELL"
+    },
+    {
+      "symbol": "KITEUSDT",
+      "positionAmt": -6002,
+      "entryPrice": 0.0861782522493,
+      "markPrice": 0.08581,
+      "unRealizedProfit": 2.2102500002985805,
+      "liquidationPrice": "1.60402723",
+      "leverage": 5,
+      "maxNotionalValue": "100000",
+      "marginType": "cross",
+      "isolatedMargin": "0.00000000",
+      "isAutoAddMargin": "false",
+      "positionSide": "BOTH",
+      "notional": -515.03162,
+      "isolatedWallet": "0",
+      "updateTime": 1763703372328,
+      "entry": 0.0861782522493,
+      "entry_price": 0.0861782522493,
+      "mark": 0.08581,
+      "mark_price": 0.08581,
+      "notional_usdt": -515.03162,
+      "notionalUsd": -515.03162,
+      "positionNotional": -515.03162,
+      "size_usdt": -515.03162,
+      "margin": 103.00632399999999,
+      "positionMargin": 103.00632399999999,
+      "initialMargin": 103.00632399999999,
+      "computedPnl": 2.2102500002985805,
+      "computed_pnl": 2.2102500002985805,
+      "pnl": 2.2102500002985805,
+      "pnl_usd": 2.2102500002985805,
+      "pnl_usdt": 2.2102500002985805,
+      "pnl_unrealized": 2.2102500002985805,
+      "unrealized": 2.2102500002985805,
+      "unrealizedProfit": 2.2102500002985805,
+      "roe_percent": 2.145742042302743,
+      "roe": 2.145742042302743,
+      "roe_pct": 2.145742042302743,
+      "side": "SELL"
+    },
+    {
+      "symbol": "BTCUSDT",
+      "positionAmt": -0.005,
+      "entryPrice": 85892.7,
+      "markPrice": 85980.5,
+      "unRealizedProfit": -0.43900000000001455,
+      "liquidationPrice": "2080821.05120793",
+      "leverage": 2,
+      "maxNotionalValue": "250000000",
+      "marginType": "cross",
+      "isolatedMargin": "0.00000000",
+      "isAutoAddMargin": "false",
+      "positionSide": "BOTH",
+      "notional": -429.9025,
+      "isolatedWallet": "0",
+      "updateTime": 1763703840564,
+      "entry": 85892.7,
+      "entry_price": 85892.7,
+      "mark": 85980.5,
+      "mark_price": 85980.5,
+      "notional_usdt": -429.9025,
+      "notionalUsd": -429.9025,
+      "positionNotional": -429.9025,
+      "size_usdt": -429.9025,
+      "margin": 214.95125,
+      "positionMargin": 214.95125,
+      "initialMargin": 214.95125,
+      "computedPnl": -0.43900000000001455,
+      "computed_pnl": -0.43900000000001455,
+      "pnl": -0.43900000000001455,
+      "pnl_usd": -0.43900000000001455,
+      "pnl_usdt": -0.43900000000001455,
+      "pnl_unrealized": -0.43900000000001455,
+      "unrealized": -0.43900000000001455,
+      "unrealizedProfit": -0.43900000000001455,
+      "roe_percent": -0.20423235501073594,
+      "roe": -0.20423235501073594,
+      "roe_pct": -0.20423235501073594,
+      "side": "SELL"
+    }
+  ]
+}
