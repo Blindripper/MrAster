@@ -6854,6 +6854,24 @@ function findExistingCompletedPositionKey(position, fallbackKey = '') {
   if (!position || typeof position !== 'object') {
     return resolvedFallback;
   }
+  const hasMatchingIdentifier = (existingPosition) => {
+    if (!existingPosition || typeof existingPosition !== 'object') {
+      return false;
+    }
+    return COMPLETED_POSITION_IDENTIFIER_KEYS.some((key) => {
+      if (!(key in position) || !(key in existingPosition)) {
+        return false;
+      }
+      const currentRaw = unwrapPositionValue(position[key]);
+      const existingRaw = unwrapPositionValue(existingPosition[key]);
+      if (currentRaw === undefined || currentRaw === null) return false;
+      if (existingRaw === undefined || existingRaw === null) return false;
+      const currentText = currentRaw.toString().trim();
+      const existingText = existingRaw.toString().trim();
+      if (!currentText || !existingText) return false;
+      return currentText === existingText;
+    });
+  };
   const symbol = (getPositionSymbol(position) || '').trim().toUpperCase();
   const closedTs = getPositionClosedTimestamp(position);
   const openedTs = getPositionTimestamp(position);
@@ -6865,6 +6883,9 @@ function findExistingCompletedPositionKey(position, fallbackKey = '') {
   for (const [existingKey, entry] of completedPositionsIndex.entries()) {
     if (existingKey === resolvedFallback) {
       return resolvedFallback;
+    }
+    if (hasMatchingIdentifier(entry.position)) {
+      return existingKey;
     }
     const existingSymbol = (getPositionSymbol(entry.position) || '').trim().toUpperCase();
     if (!existingSymbol || existingSymbol !== symbol) {
