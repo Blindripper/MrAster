@@ -92,3 +92,39 @@ def test_alpha_policy_blocks_trades_after_warmup():
     assert extras_final["alpha_ready"] is True
     assert extras_final["alpha_prob"] < policy.alpha_threshold
     assert decision_final == "SKIP"
+
+
+def test_note_exit_uses_cached_context_and_bucket_for_learning():
+    policy = BanditPolicy()
+    ctx = {"adx": 1.0}
+    gate_calls = {}
+    size_calls = {}
+
+    policy.gate.learn = lambda x, r: gate_calls.setdefault("call", (x, r))
+    policy.size.learn = lambda x, r: size_calls.setdefault("call", (x, r))
+
+    policy.note_entry("sym", ctx=ctx, size_bucket="M")
+    policy.note_exit("sym", pnl_r=0.25)
+
+    assert gate_calls["call"][1] == 0.25
+    assert size_calls["call"][1] == 0.25
+
+    gate_vec = gate_calls["call"][0]
+    size_vec = size_calls["call"][0]
+    assert gate_vec.shape == size_vec.shape
+    assert (size_vec == gate_vec * policy.size_multipliers["M"]).all()
+
+
+def test_note_exit_trains_alpha_model_when_enabled():
+    policy = BanditPolicy(alpha_enabled=True, alpha_warmup=0)
+    ctx = {"adx": 0.3}
+    alpha_calls = {}
+
+    policy.alpha.learn = lambda context, reward: alpha_calls.setdefault("call", (context, reward))
+    policy.gate.learn = lambda x, r: None
+    policy.size.learn = lambda x, r: None
+
+    policy.note_exit("sym", ctx=ctx, size_bucket="S", pnl_r=-0.4)
+
+    assert alpha_calls["call"][0]["adx"] == 0.3
+    assert alpha_calls["call"][1] == -0.4
