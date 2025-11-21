@@ -7926,6 +7926,58 @@ class AIChatEngine:
 chat_engine = AIChatEngine(CONFIG)
 
 
+def _build_trade_export_payload(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize a trade snapshot so it can be written to disk and reused."""
+
+    def _as_list(value: Any) -> List[Any]:
+        if isinstance(value, list):
+            return value
+        if isinstance(value, tuple):
+            return list(value)
+        return []
+
+    def _as_dict(value: Any) -> Dict[str, Any]:
+        return dict(value) if isinstance(value, dict) else {}
+
+    generated_at = snapshot.get("generated_at") or datetime.now(timezone.utc).isoformat()
+
+    return {
+        "generated_at": generated_at,
+        "history": _as_list(snapshot.get("history")),
+        "stats": _as_dict(snapshot.get("stats")),
+        "decision_stats": _as_dict(snapshot.get("decision_stats")),
+        "cumulative_stats": _as_dict(snapshot.get("cumulative_stats")),
+        "history_summary": snapshot.get("history_summary"),
+        "hero_metrics": snapshot.get("hero_metrics"),
+        "ai_budget": snapshot.get("ai_budget"),
+        "open": snapshot.get("open") or {},
+        "ai_requests": _as_list(snapshot.get("ai_requests")),
+        "pnl_series": _as_list(snapshot.get("pnl_series")),
+        "exchange_positions": _as_list(snapshot.get("exchange_positions")),
+        "playbook": snapshot.get("playbook"),
+        "playbook_activity": _as_list(snapshot.get("playbook_activity")),
+        "playbook_process": snapshot.get("playbook_process"),
+        "playbook_market_overview": snapshot.get("playbook_market_overview"),
+        "ai_trade_proposals": _as_list(snapshot.get("ai_trade_proposals")),
+    }
+
+
+def _persist_trade_export_snapshot(snapshot: Dict[str, Any]) -> None:
+    """Write a normalized trade snapshot to disk for dashboard reuse."""
+
+    export_dir = Path(os.getenv("ASTER_TRADES_EXPORT_DIR", ROOT_DIR))
+    filename = os.getenv("ASTER_TRADES_EXPORT_FILENAME", "mraster-trades-latest.json")
+
+    try:
+        export_dir.mkdir(parents=True, exist_ok=True)
+        export_path = export_dir / filename
+        export_payload = _build_trade_export_payload(snapshot)
+        with export_path.open("w", encoding="utf-8") as fp:
+            json.dump(export_payload, fp, indent=2, ensure_ascii=False)
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logger.debug("failed to persist trade snapshot: %s", exc)
+
+
 def _load_exported_trades_from_disk() -> Optional[Dict[str, Any]]:
     """Return the most recent trade-export snapshot if one exists on disk."""
 
@@ -7946,6 +7998,7 @@ def _load_exported_trades_from_disk() -> Optional[Dict[str, Any]]:
             if not isinstance(payload, dict):
                 continue
 
+            payload.setdefault("generated_at", None)
             payload.setdefault("history", [])
             payload.setdefault("stats", {})
             payload.setdefault("decision_stats", {})
@@ -8057,121 +8110,132 @@ async def _resolve_history_with_realized(
 @app.get("/api/trades")
 async def trades() -> Dict[str, Any]:
     export_snapshot = _load_exported_trades_from_disk()
-    if export_snapshot:
-        return export_snapshot
 
-    state = _read_state()
-    env_cfg = CONFIG.get("env", {}) if isinstance(CONFIG, dict) else {}
-    history_source = await _resolve_history_with_realized(state, env_cfg)
-    history_totals = _summarize_history_totals(history_source)
-    run_started_at = _resolve_run_started_at(state)
-    filtered_history = _filter_history_for_run(history_source, run_started_at)
     try:
-        run_exchange_metrics = await asyncio.to_thread(
-            _compute_run_realized_from_exchange,
-            state,
-            env_cfg,
-            run_started_at,
+        state = _read_state()
+        env_cfg = CONFIG.get("env", {}) if isinstance(CONFIG, dict) else {}
+        history_source = await _resolve_history_with_realized(state, env_cfg)
+        history_totals = _summarize_history_totals(history_source)
+        run_started_at = _resolve_run_started_at(state)
+        filtered_history = _filter_history_for_run(history_source, run_started_at)
+        try:
+            run_exchange_metrics = await asyncio.to_thread(
+                _compute_run_realized_from_exchange,
+                state,
+                env_cfg,
+                run_started_at,
+            )
+        except Exception as exc:  # pragma: no cover - defensive guard
+            logger.debug("run exchange metrics failed: %s", exc)
+            run_exchange_metrics = {}
+        run_history_totals = run_exchange_metrics.get("history_totals")
+        if isinstance(run_history_totals, dict) and run_history_totals.get("total_trades"):
+            history_totals = run_history_totals
+        history_window: List[Dict[str, Any]] = [dict(entry) for entry in filtered_history[-200:]]
+
+        stats_history: List[Dict[str, Any]] = history_window
+        display_history = _prepare_display_history(stats_history)
+        pnl_series = run_exchange_metrics.get("pnl_series")
+        if not pnl_series:
+            pnl_series = _build_pnl_series(history_source)
+
+        open_trades = state.get("live_trades", {})
+        try:
+            enriched_open = await asyncio.to_thread(
+                enrich_open_positions, open_trades, env_cfg
+            )
+        except Exception as exc:
+            logger.debug("active position enrichment failed: %s", exc)
+            enriched_open = open_trades
+        stats = _compute_stats(stats_history)
+        decision_stats = _decision_summary(state)
+        ai_budget = _normalize_ai_budget(state.get("ai_budget", {}))
+        ai_activity_raw = state.get("ai_activity", [])
+        if isinstance(ai_activity_raw, list):
+            # Preserve chronological ordering so analysis entries appear before
+            # subsequent execution events in the feed. Only the most recent
+            # window is returned to keep the payload compact.
+            ai_activity = list(ai_activity_raw[-120:])
+        else:
+            ai_activity = []
+        ai_requests = _summarize_ai_requests(ai_activity)
+        playbook_activity = _collect_playbook_activity(ai_activity)
+        playbook_state = _resolve_playbook_state(
+            state.get("ai_playbook"), playbook_activity
         )
-    except Exception as exc:  # pragma: no cover - defensive guard
-        logger.debug("run exchange metrics failed: %s", exc)
-        run_exchange_metrics = {}
-    run_history_totals = run_exchange_metrics.get("history_totals")
-    if isinstance(run_history_totals, dict) and run_history_totals.get("total_trades"):
-        history_totals = run_history_totals
-    history_window: List[Dict[str, Any]] = [dict(entry) for entry in filtered_history[-200:]]
+        playbook_process = _build_playbook_process(playbook_activity)
+        market_overview = _extract_playbook_market_overview(state)
+        proposals: List[Dict[str, Any]] = []
+        raw_proposals = state.get("ai_trade_proposals")
+        if isinstance(raw_proposals, list):
+            for entry in raw_proposals[-40:]:
+                if not isinstance(entry, dict):
+                    continue
+                payload = entry.get("payload")
+                if not isinstance(payload, dict):
+                    continue
+                record = dict(payload)
+                record["id"] = entry.get("id")
+                record["status"] = entry.get("status")
+                record["ts"] = entry.get("ts")
+                if entry.get("queued_at") is not None:
+                    record["queued_at"] = entry.get("queued_at")
+                proposals.append(record)
+        cumulative_summary = _cumulative_summary(
+            state,
+            stats=stats,
+            ai_budget=ai_budget,
+            history_totals=history_totals,
+        )
+        history_summary = _build_history_summary(stats)
+        hero_metrics = _build_hero_metrics(
+            cumulative_summary,
+            stats,
+            history_count=history_totals.get("total_trades", len(display_history)),
+        )
+        if run_exchange_metrics:
+            realized_override = _safe_float(run_exchange_metrics.get("realized_pnl"))
+            if realized_override is not None:
+                hero_metrics["realized_pnl"] = float(realized_override)
+                ai_spent = _safe_float(hero_metrics.get("ai_budget_spent")) or 0.0
+                hero_metrics["total_pnl"] = float(realized_override) - float(ai_spent)
+            trade_samples = run_exchange_metrics.get("trade_samples")
+            if isinstance(trade_samples, (int, float)) and math.isfinite(trade_samples):
+                hero_metrics["run_trade_samples"] = int(trade_samples)
+            source_label = run_exchange_metrics.get("source")
+            if source_label:
+                hero_metrics["run_metrics_source"] = source_label
+            exchange_positions = run_exchange_metrics.get("position_groups") or []
+        else:
+            exchange_positions = []
 
-    stats_history: List[Dict[str, Any]] = history_window
-    display_history = _prepare_display_history(stats_history)
-    pnl_series = run_exchange_metrics.get("pnl_series")
-    if not pnl_series:
-        pnl_series = _build_pnl_series(history_source)
-
-    open_trades = state.get("live_trades", {})
-    try:
-        enriched_open = await asyncio.to_thread(enrich_open_positions, open_trades, env_cfg)
-    except Exception as exc:
-        logger.debug("active position enrichment failed: %s", exc)
-        enriched_open = open_trades
-    stats = _compute_stats(stats_history)
-    decision_stats = _decision_summary(state)
-    ai_budget = _normalize_ai_budget(state.get("ai_budget", {}))
-    ai_activity_raw = state.get("ai_activity", [])
-    if isinstance(ai_activity_raw, list):
-        # Preserve chronological ordering so analysis entries appear before
-        # subsequent execution events in the feed. Only the most recent
-        # window is returned to keep the payload compact.
-        ai_activity = list(ai_activity_raw[-120:])
-    else:
-        ai_activity = []
-    ai_requests = _summarize_ai_requests(ai_activity)
-    playbook_activity = _collect_playbook_activity(ai_activity)
-    playbook_state = _resolve_playbook_state(state.get("ai_playbook"), playbook_activity)
-    playbook_process = _build_playbook_process(playbook_activity)
-    market_overview = _extract_playbook_market_overview(state)
-    proposals: List[Dict[str, Any]] = []
-    raw_proposals = state.get("ai_trade_proposals")
-    if isinstance(raw_proposals, list):
-        for entry in raw_proposals[-40:]:
-            if not isinstance(entry, dict):
-                continue
-            payload = entry.get("payload")
-            if not isinstance(payload, dict):
-                continue
-            record = dict(payload)
-            record["id"] = entry.get("id")
-            record["status"] = entry.get("status")
-            record["ts"] = entry.get("ts")
-            if entry.get("queued_at") is not None:
-                record["queued_at"] = entry.get("queued_at")
-            proposals.append(record)
-    cumulative_summary = _cumulative_summary(
-        state,
-        stats=stats,
-        ai_budget=ai_budget,
-        history_totals=history_totals,
-    )
-    history_summary = _build_history_summary(stats)
-    hero_metrics = _build_hero_metrics(
-        cumulative_summary,
-        stats,
-        history_count=history_totals.get("total_trades", len(display_history)),
-    )
-    if run_exchange_metrics:
-        realized_override = _safe_float(run_exchange_metrics.get("realized_pnl"))
-        if realized_override is not None:
-            hero_metrics["realized_pnl"] = float(realized_override)
-            ai_spent = _safe_float(hero_metrics.get("ai_budget_spent")) or 0.0
-            hero_metrics["total_pnl"] = float(realized_override) - float(ai_spent)
-        trade_samples = run_exchange_metrics.get("trade_samples")
-        if isinstance(trade_samples, (int, float)) and math.isfinite(trade_samples):
-            hero_metrics["run_trade_samples"] = int(trade_samples)
-        source_label = run_exchange_metrics.get("source")
-        if source_label:
-            hero_metrics["run_metrics_source"] = source_label
-        exchange_positions = run_exchange_metrics.get("position_groups") or []
-    else:
-        exchange_positions = []
-
-    return {
-        "open": enriched_open,
-        "history": display_history[::-1],
-        "pnl_series": pnl_series,
-        "stats": stats.dict(),
-        "decision_stats": decision_stats,
-        "cumulative_stats": cumulative_summary,
-        "history_summary": history_summary,
-        "hero_metrics": hero_metrics,
-        "ai_budget": ai_budget,
-        "ai_activity": ai_activity,
-        "ai_requests": ai_requests,
-        "playbook": playbook_state,
-        "playbook_activity": playbook_activity,
-        "playbook_process": playbook_process,
-        "playbook_market_overview": market_overview,
-        "ai_trade_proposals": proposals,
-        "exchange_positions": exchange_positions,
-    }
+        payload = {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "open": enriched_open,
+            "history": display_history[::-1],
+            "pnl_series": pnl_series,
+            "stats": stats.dict(),
+            "decision_stats": decision_stats,
+            "cumulative_stats": cumulative_summary,
+            "history_summary": history_summary,
+            "hero_metrics": hero_metrics,
+            "ai_budget": ai_budget,
+            "ai_activity": ai_activity,
+            "ai_requests": ai_requests,
+            "playbook": playbook_state,
+            "playbook_activity": playbook_activity,
+            "playbook_process": playbook_process,
+            "playbook_market_overview": market_overview,
+            "ai_trade_proposals": proposals,
+            "exchange_positions": exchange_positions,
+        }
+        _persist_trade_export_snapshot(payload)
+        return payload
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        logger.debug("failed to build trade snapshot, using export if present: %s", exc)
+        if export_snapshot:
+            return export_snapshot
+        raise
 
 
 @app.post("/api/ai/chat")
