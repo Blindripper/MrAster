@@ -314,6 +314,7 @@ const COMPACT_SKIP_AGGREGATION_WINDOW = 600; // seconds
 const MAX_MANAGEMENT_EVENTS = 50;
 const POSITION_NOTIFICATIONS_REFRESH_INTERVAL_MS = 2_000;
 const COMPLETED_POSITIONS_HISTORY_LIMIT = 12;
+const COMPLETED_POSITION_TS_MATCH_TOLERANCE = 10; // seconds
 const COMPLETED_POSITION_IDENTIFIER_BASE_KEYS = [
   'position_id',
   'positionId',
@@ -6673,11 +6674,48 @@ function getCompletedPositionKey(position) {
   return '';
 }
 
+function findExistingCompletedPositionKey(position, fallbackKey = '') {
+  const resolvedFallback = typeof fallbackKey === 'string' ? fallbackKey : '';
+  if (!position || typeof position !== 'object') {
+    return resolvedFallback;
+  }
+  const symbol = (getPositionSymbol(position) || '').trim().toUpperCase();
+  const closedTs = getPositionClosedTimestamp(position);
+  const openedTs = getPositionTimestamp(position);
+  const tsCandidate = Number.isFinite(closedTs) && closedTs >= 0 ? closedTs : openedTs;
+  if (!symbol || !Number.isFinite(tsCandidate) || tsCandidate < 0) {
+    return resolvedFallback;
+  }
+
+  for (const [existingKey, entry] of completedPositionsIndex.entries()) {
+    if (existingKey === resolvedFallback) {
+      return resolvedFallback;
+    }
+    const existingSymbol = (getPositionSymbol(entry.position) || '').trim().toUpperCase();
+    if (!existingSymbol || existingSymbol !== symbol) {
+      continue;
+    }
+    const existingClosed = getPositionClosedTimestamp(entry.position);
+    const existingOpened = getPositionTimestamp(entry.position);
+    const existingTs = Number.isFinite(existingClosed) && existingClosed >= 0 ? existingClosed : existingOpened;
+    if (!Number.isFinite(existingTs) || existingTs < 0) {
+      continue;
+    }
+    const delta = Math.abs(existingTs - tsCandidate);
+    if (delta <= COMPLETED_POSITION_TS_MATCH_TOLERANCE) {
+      return existingKey;
+    }
+  }
+
+  return resolvedFallback;
+}
+
 function registerCompletedPosition(position, options = {}) {
   if (!position || typeof position !== 'object') {
     return false;
   }
-  const key = getCompletedPositionKey(position);
+  const rawKey = getCompletedPositionKey(position);
+  const key = findExistingCompletedPositionKey(position, rawKey);
   if (!key) {
     return false;
   }
