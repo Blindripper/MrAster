@@ -7179,7 +7179,7 @@ function updateActivePositionsView(options = {}) {
 
   if (activePositionsModeLabel) {
     activePositionsModeLabel.classList.remove('tone-profit', 'tone-loss');
-    activePositionsModeLabel.textContent = totalPnlInfo.text;
+    activePositionsModeLabel.textContent = hasRows ? totalPnlInfo.text : '—';
     if (totalPnlInfo.tone === 'profit') {
       activePositionsModeLabel.classList.add('tone-profit');
     } else if (totalPnlInfo.tone === 'loss') {
@@ -7187,7 +7187,11 @@ function updateActivePositionsView(options = {}) {
     }
   }
   if (activePositionsWrapper) {
-    activePositionsWrapper.removeAttribute('hidden');
+    if (hasRows) {
+      activePositionsWrapper.removeAttribute('hidden');
+    } else {
+      activePositionsWrapper.setAttribute('hidden', 'true');
+    }
   }
   if (activePositionsCard) {
     if (hasRows) {
