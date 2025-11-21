@@ -7485,7 +7485,7 @@ function updateActivePositionsView(options = {}) {
   const limitedNotifications = sortedNotifications.slice(0, 5);
   rememberPositionNotifications(limitedNotifications);
   let notificationsToRender = limitedNotifications.filter((element) => element instanceof HTMLElement);
-  if (!notificationsToRender.length) {
+  if (!notificationsToRender.length && sorted.length === 0) {
     notificationsToRender = buildHistoricalNotifications(5);
   }
 
