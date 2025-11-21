@@ -2536,6 +2536,7 @@ let activePositionSymbols = new Set();
 let tradeHistoryEmptyStreak = 0;
 let aiRequestsEmptyStreak = 0;
 const POSITION_NOTIFICATION_HISTORY_LIMIT = 15;
+const POSITION_NOTIFICATION_STALE_AFTER_SECONDS = 15 * 60;
 const MANAGEMENT_EXIT_REASON_KEYS = [
   'management_exit_reason',
   'managementExitReason',
@@ -6078,14 +6079,23 @@ function getNotificationElementSymbol(element) {
   return normalizeSymbolValue(symbolValue);
 }
 
+function isPositionNotificationStale(entry, nowSeconds) {
+  if (!entry || !Number.isFinite(entry.ts)) return false;
+  const nowValue = Number.isFinite(nowSeconds) ? nowSeconds : Date.now() / 1000;
+  return nowValue - entry.ts > POSITION_NOTIFICATION_STALE_AFTER_SECONDS;
+}
+
 function prunePositionNotificationHistory() {
   if (!Array.isArray(positionNotificationHistory) || !positionNotificationHistory.length) {
     positionNotificationHistory = [];
     return;
   }
+  const nowSeconds = Date.now() / 1000;
   positionNotificationHistory = positionNotificationHistory.filter((entry) => {
     const normalizedSymbol = normalizeSymbolValue(entry?.symbol);
-    return Boolean(normalizedSymbol);
+    if (!normalizedSymbol) return false;
+    if (isPositionNotificationStale(entry, nowSeconds)) return false;
+    return true;
   });
 }
 
@@ -6093,6 +6103,7 @@ function rememberPositionNotifications(notifications) {
   if (!Array.isArray(notifications) || notifications.length === 0) {
     return;
   }
+  const nowSeconds = Date.now() / 1000;
   const entries = notifications
     .map((element) => {
       if (!(element instanceof HTMLElement)) return null;
@@ -6102,7 +6113,7 @@ function rememberPositionNotifications(notifications) {
       }
       const rawTs = element.dataset?.timestamp;
       const parsedTs = rawTs ? Number(rawTs) : Number.NaN;
-      const ts = Number.isFinite(parsedTs) ? parsedTs : Date.now() / 1000;
+      const ts = Number.isFinite(parsedTs) ? parsedTs : nowSeconds;
       const symbolText = element
         .querySelector('.active-position-management-symbol')
         ?.textContent?.trim();
@@ -6120,13 +6131,15 @@ function rememberPositionNotifications(notifications) {
       }
       return { ts, signature, template, symbol: normalizedSymbol };
     })
-    .filter((entry) => entry && entry.template);
+    .filter((entry) => entry && entry.template && !isPositionNotificationStale(entry, nowSeconds));
 
   if (!entries.length) {
     return;
   }
 
-  const merged = [...entries, ...positionNotificationHistory];
+  const merged = [...entries, ...positionNotificationHistory].filter(
+    (entry) => entry && !isPositionNotificationStale(entry, nowSeconds),
+  );
   const seen = new Set();
   positionNotificationHistory = merged.filter((entry) => {
     const symbol = normalizeSymbolValue(entry?.symbol);
@@ -6147,10 +6160,14 @@ function buildHistoricalNotifications(limit = 5) {
   if (!positionNotificationHistory.length) {
     return [];
   }
+  const nowSeconds = Date.now() / 1000;
   const nodes = [];
   positionNotificationHistory.slice(0, limit).forEach((entry) => {
     const normalizedSymbol = normalizeSymbolValue(entry?.symbol);
     if (!normalizedSymbol) {
+      return;
+    }
+    if (isPositionNotificationStale(entry, nowSeconds)) {
       return;
     }
     const template = entry?.template;
@@ -6956,6 +6973,7 @@ function hydrateCompletedPositions(historyEntries, exchangeEntries, summary) {
 }
 
 function refreshPositionUpdatesFromHistory() {
+  prunePositionNotificationHistory();
   refreshRenderedPositionNotifications();
   if (activePositionsNotifications && activePositionsNotifications.children.length > 0) {
     setPositionNotificationsEmptyState(false);
