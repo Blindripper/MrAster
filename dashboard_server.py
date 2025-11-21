@@ -7926,6 +7926,87 @@ class AIChatEngine:
 chat_engine = AIChatEngine(CONFIG)
 
 
+def _load_exported_trades_from_disk() -> Optional[Dict[str, Any]]:
+    """Return the most recent trade-export snapshot if one exists on disk."""
+
+    export_dir = Path(os.getenv("ASTER_TRADES_EXPORT_DIR", ROOT_DIR))
+    pattern = os.getenv("ASTER_TRADES_EXPORT_PATTERN", "mraster-trades-*.json")
+    if not export_dir.exists():
+        return None
+
+    candidates = sorted(
+        export_dir.glob(pattern), key=lambda path: path.stat().st_mtime, reverse=True
+    )
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+        try:
+            with candidate.open("r", encoding="utf-8") as fp:
+                payload = json.load(fp)
+            if not isinstance(payload, dict):
+                continue
+
+            payload.setdefault("history", [])
+            payload.setdefault("stats", {})
+            payload.setdefault("decision_stats", {})
+            payload.setdefault("cumulative_stats", {})
+            payload.setdefault(
+                "history_summary", payload.get("historySummary") or None
+            )
+            payload.setdefault("hero_metrics", payload.get("heroMetrics") or None)
+            payload.setdefault("ai_budget", payload.get("aiBudget") or None)
+            payload.setdefault(
+                "open",
+                payload.get("open_positions")
+                or payload.get("openPositions")
+                or payload.get("open_trades")
+                or {},
+            )
+            payload.setdefault("ai_requests", payload.get("aiRequests") or [])
+            payload.setdefault("pnl_series", payload.get("pnlSeries") or [])
+            payload.setdefault(
+                "exchange_positions", payload.get("exchangePositions") or []
+            )
+            payload.setdefault("playbook", payload.get("playbook"))
+            payload.setdefault(
+                "playbook_activity", payload.get("playbookActivity") or []
+            )
+            payload.setdefault("playbook_process", payload.get("playbookProcess"))
+            payload.setdefault(
+                "playbook_market_overview", payload.get("playbookMarketOverview")
+            )
+            payload.setdefault(
+                "ai_trade_proposals", payload.get("aiTradeProposals") or []
+            )
+
+            if not payload.get("history_summary"):
+                stats = payload.get("stats") if isinstance(payload.get("stats"), dict) else {}
+                payload["history_summary"] = {
+                    "trades": stats.get("count") or len(payload["history"]),
+                    "total_pnl": stats.get("total_pnl")
+                    if stats.get("total_pnl") is not None
+                    else stats.get("totalPnl")
+                    or 0,
+                    "win_rate": stats.get("win_rate")
+                    if stats.get("win_rate") is not None
+                    else stats.get("winRate")
+                    or 0,
+                    "wins": stats.get("wins") or 0,
+                    "losses": stats.get("losses") or 0,
+                    "draws": stats.get("draws") or 0,
+                    "total_r": stats.get("total_r")
+                    if stats.get("total_r") is not None
+                    else stats.get("totalR")
+                    or 0,
+                }
+
+            return payload
+        except Exception as exc:  # pragma: no cover - defensive parsing
+            logger.debug("failed to load trade export %s: %s", candidate, exc)
+
+    return None
+
+
 @app.post("/api/ai/analyze")
 async def ai_analyze() -> Dict[str, Any]:
     return chat_engine.analyze_market()
@@ -7975,6 +8056,10 @@ async def _resolve_history_with_realized(
 
 @app.get("/api/trades")
 async def trades() -> Dict[str, Any]:
+    export_snapshot = _load_exported_trades_from_disk()
+    if export_snapshot:
+        return export_snapshot
+
     state = _read_state()
     env_cfg = CONFIG.get("env", {}) if isinstance(CONFIG, dict) else {}
     history_source = await _resolve_history_with_realized(state, env_cfg)
