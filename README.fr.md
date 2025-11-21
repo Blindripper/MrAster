@@ -112,7 +112,7 @@ Envie d’en savoir plus sur les moteurs, les garde-fous et la configuration ? D
 | `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `49` / `51`* | Seuils RSI pour entrées long / short. |
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | Force l’alignement des tendances entre horizons. |
 | `ASTER_TREND_BIAS` | `with` | Trade dans / contre la tendance. |
-| `ASTER_MIN_QUOTE_VOL_USDT` | `150000` | Volume minimal des symboles. |
+| `ASTER_MIN_QUOTE_VOL_USDT` | `800000` | Volume minimal des symboles. |
 | `ASTER_SPREAD_BPS_MAX` | `0.0020` | Spread bid/ask maximal (bps). |
 | `ASTER_WICKINESS_MAX` | `0.97` | Filtre des chandeliers trop volatils. |
 | `ASTER_MIN_EDGE_R` | `0.04` | Edge minimal (en R) pour valider un trade. |

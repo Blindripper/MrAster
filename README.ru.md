@@ -112,7 +112,7 @@
 | `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `49` / `51`* | Пороги RSI для входа в лонг/шорт. |
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | Требует согласования трендов таймфреймов. |
 | `ASTER_TREND_BIAS` | `with` | Торговля по/против тренда. |
-| `ASTER_MIN_QUOTE_VOL_USDT` | `150000` | Минимальный объём для символов. |
+| `ASTER_MIN_QUOTE_VOL_USDT` | `800000` | Минимальный объём для символов. |
 | `ASTER_SPREAD_BPS_MAX` | `0.0020` | Максимальный спред (bps). |
 | `ASTER_WICKINESS_MAX` | `0.97` | Фильтр сверхволатильных свечей. |
 | `ASTER_MIN_EDGE_R` | `0.04` | Минимальное преимущество (в R) для сделки. |

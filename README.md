@@ -195,7 +195,7 @@ Curious about the engines, guardrails, and configuration surface? Expand the sec
 | `ASTER_CONT_PULLBACK_STOCH_WARN` / `ASTER_CONT_PULLBACK_STOCH_MAX` | `70.0` / `90.0` | Soft/hard thresholds for the continuation pullback guard (set to `0` to disable, or raise to loosen the filter). |
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | Enforces trend alignment between timeframes. |
 | `ASTER_TREND_BIAS` | `with` | Trade with or against the trend. |
-| `ASTER_MIN_QUOTE_VOL_USDT` | `150000` | Minimum volume for tradable symbols. |
+| `ASTER_MIN_QUOTE_VOL_USDT` | `800000` | Minimum volume for tradable symbols. |
 | `ASTER_SPREAD_BPS_MAX` | `0.0020` | Maximum tolerated bid/ask spread (bps). |
 | `ASTER_WICKINESS_MAX` | `0.97` | Filter against overly volatile candles. |
 | `ASTER_MIN_EDGE_R` | `0.04` | Minimum edge (in R) required to approve a trade. |
