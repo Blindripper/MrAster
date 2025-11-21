@@ -1,4 +1,4 @@
-"""Aster Bot Dashboard server providing web UI for configuration, monitoring and history."""
+"""Aster Bot Dashboard server providing web UI for configuration, monitoring and history.""" 
 from __future__ import annotations
 
 import asyncio
