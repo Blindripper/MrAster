@@ -6282,6 +6282,15 @@ function buildCompletedPositionCard(entry) {
     ? `${formatNumber(Math.abs(notionalField.numeric), 2)} USDT`
     : null;
   const signedSizeField = pickNumericField(position, ACTIVE_POSITION_SIGNED_SIZE_KEYS || []);
+  const sizeDisplay = Number.isFinite(signedSizeField.numeric) ? formatNumber(signedSizeField.numeric, 4) : null;
+  const leverageField = pickNumericField(position, ACTIVE_POSITION_ALIASES.leverage || []);
+  const leverageDisplay = Number.isFinite(leverageField.numeric) ? formatLeverage(leverageField.numeric) : null;
+  const marginField = pickNumericField(position, ACTIVE_POSITION_ALIASES.margin || []);
+  const marginDisplay = Number.isFinite(marginField.numeric)
+    ? `${formatNumber(Math.abs(marginField.numeric), 2)} USDT`
+    : extractFieldStringSource(marginField);
+  const entryField = pickNumericField(position, TRADE_ENTRY_KEYS);
+  const exitField = pickNumericField(position, TRADE_EXIT_KEYS);
   const side = extractPositionSide(position, notionalField, signedSizeField);
   const reasonCode = extractPositionManagementExitReason(position);
   const reasonLabel = reasonCode
@@ -6292,6 +6301,7 @@ function buildCompletedPositionCard(entry) {
   const absoluteTimeLabel = Number.isFinite(referenceTimestamp)
     ? formatTimestamp(new Date(referenceTimestamp * 1000).toISOString())
     : null;
+  const aiRequests = collectAiRequestsForPosition(position, { limit: 3 });
 
   const card = document.createElement('button');
   card.type = 'button';
@@ -6396,6 +6406,14 @@ function buildCompletedPositionCard(entry) {
       label: 'ROE',
       value: roeDisplay,
     },
+    {
+      label: 'Entry',
+      value: Number.isFinite(entryField.numeric) ? formatNumber(entryField.numeric, 4) : null,
+    },
+    {
+      label: 'Exit',
+      value: Number.isFinite(exitField.numeric) ? formatNumber(exitField.numeric, 4) : null,
+    },
   ].filter((metric) => metric.value);
   metricEntries.forEach((metric) => {
     const item = document.createElement('div');
@@ -6414,6 +6432,45 @@ function buildCompletedPositionCard(entry) {
   });
   if (metrics.childElementCount > 0) {
     card.append(metrics);
+  }
+
+  const detailPairs = [
+    { label: 'Size', value: sizeDisplay },
+    { label: 'Leverage', value: leverageDisplay },
+    { label: 'Margin', value: marginDisplay },
+    { label: translate('trades.completed.reason', 'Exit reason'), value: reasonLabel },
+  ].filter((entry) => entry.value);
+  if (detailPairs.length > 0) {
+    const details = document.createElement('dl');
+    details.className = 'completed-position-card__details';
+    detailPairs.forEach((detail) => {
+      const dt = document.createElement('dt');
+      dt.textContent = detail.label;
+      const dd = document.createElement('dd');
+      dd.textContent = detail.value;
+      details.append(dt, dd);
+    });
+    card.append(details);
+  }
+
+  if (aiRequests.length > 0) {
+    const aiRow = document.createElement('div');
+    aiRow.className = 'completed-position-card__ai';
+    const title = document.createElement('span');
+    title.className = 'completed-position-card__ai-label';
+    title.textContent = translate('ai.requests.title', 'AI requests');
+    aiRow.append(title);
+    const chipRow = document.createElement('div');
+    chipRow.className = 'completed-position-card__ai-chips';
+    aiRequests.forEach((request) => {
+      const statusKey = (request?.status || 'pending').toString().toLowerCase();
+      const chip = document.createElement('span');
+      chip.className = `completed-position-card__ai-chip status-${statusKey}`;
+      chip.textContent = getAiRequestStatusLabel(statusKey) || 'AI';
+      chipRow.append(chip);
+    });
+    aiRow.append(chipRow);
+    card.append(aiRow);
   }
 
   if (postmortemSummary) {
@@ -8735,6 +8792,58 @@ function buildTradeDetailContent(trade) {
   return container;
 }
 
+function parseTimestampMs(value) {
+  if (value === null || value === undefined) return NaN;
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    return Number.isFinite(ms) ? ms : NaN;
+  }
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) {
+    return numeric > 1e12 ? numeric : numeric * 1000;
+  }
+  const parsed = new Date(value);
+  const ms = parsed.getTime();
+  return Number.isNaN(ms) ? NaN : ms;
+}
+
+function collectAiRequestsForPosition(position, { limit = 6 } = {}) {
+  const history = Array.isArray(latestTradesSnapshot?.ai_requests)
+    ? latestTradesSnapshot.ai_requests
+    : [];
+  const symbol = (getPositionSymbol(position) || '').toString().toUpperCase();
+  const side = extractPositionSide(position, null, null);
+  const normalizedSide = side ? side.toString().toUpperCase() : null;
+  const openedTs = getPositionTimestamp(position);
+  const closedTs = getPositionClosedTimestamp(position);
+  const openedMs = Number.isFinite(openedTs) ? openedTs * 1000 : null;
+  const closedMs = Number.isFinite(closedTs) ? closedTs * 1000 : null;
+  const windowEnd = Number.isFinite(closedMs) ? closedMs + 15 * 60 * 1000 : null;
+  const windowStart = Number.isFinite(openedMs) ? openedMs - 15 * 60 * 1000 : null;
+
+  const matchesWindow = (tsMs) => {
+    if (!Number.isFinite(tsMs)) return true;
+    if (windowStart !== null && tsMs < windowStart) return false;
+    if (windowEnd !== null && tsMs > windowEnd) return false;
+    return true;
+  };
+
+  return history
+    .filter((request) => {
+      if (!request || typeof request !== 'object') return false;
+      const requestSymbol = (request.symbol || '').toString().toUpperCase();
+      if (symbol && requestSymbol && requestSymbol !== symbol) return false;
+      if (normalizedSide) {
+        const requestSide = (request.side || '').toString().toUpperCase();
+        if (requestSide && requestSide !== normalizedSide) return false;
+      }
+      const ts = parseTimestampMs(request.updated_at || request.created_at);
+      return matchesWindow(ts);
+    })
+    .sort((a, b) => parseTimestampMs(b?.updated_at || b?.created_at) - parseTimestampMs(a?.updated_at || a?.created_at))
+    .slice(0, Math.max(0, limit));
+}
+
 function buildCompletedPositionDetailContent(position) {
   const createPositionFieldLabel = (key) => {
     if (!key) return '—';
@@ -8762,6 +8871,125 @@ function buildCompletedPositionDetailContent(position) {
     } catch (err) {
       return value.toString();
     }
+  };
+
+  const buildPositionAiRequestList = () => {
+    const requests = collectAiRequestsForPosition(position);
+    const wrapper = document.createElement('div');
+    wrapper.className = 'position-ai-request-wrapper';
+    const heading = document.createElement('div');
+    heading.className = 'position-ai-request__heading';
+    const title = document.createElement('h4');
+    title.textContent = 'AI decision history';
+    heading.append(title);
+    wrapper.append(heading);
+
+    if (!requests.length) {
+      const empty = document.createElement('p');
+      empty.className = 'position-ai-request__empty';
+      empty.textContent = translate('ai.requests.modal.empty', 'No additional details available.');
+      wrapper.append(empty);
+      return wrapper;
+    }
+
+    const list = document.createElement('ul');
+    list.className = 'position-ai-request-list';
+
+    requests.forEach((request) => {
+      const safeRequest = request && typeof request === 'object' ? request : {};
+      const statusKey = (safeRequest.status || 'pending').toString().toLowerCase();
+      const statusLabel = getAiRequestStatusLabel(statusKey);
+      const symbolLabel = (safeRequest.symbol || '').toString().toUpperCase();
+      const sideLabel = formatSideLabel(safeRequest.side || '');
+      const detailData = collectAiRequestDetailData(safeRequest);
+      const timestamp = safeRequest.updated_at || safeRequest.created_at;
+      const timestampLabel = formatTimestamp(timestamp);
+
+      const item = document.createElement('li');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'position-ai-request';
+      button.dataset.status = statusKey;
+
+      const header = document.createElement('div');
+      header.className = 'position-ai-request__header';
+
+      const titleGroup = document.createElement('div');
+      titleGroup.className = 'position-ai-request__title';
+      const symbolEl = document.createElement('span');
+      symbolEl.className = 'position-ai-request__symbol';
+      symbolEl.textContent = symbolLabel || '—';
+      titleGroup.append(symbolEl);
+      if (sideLabel && sideLabel !== '—') {
+        const sideEl = document.createElement('span');
+        sideEl.className = 'position-ai-request__side';
+        sideEl.textContent = sideLabel;
+        titleGroup.append(sideEl);
+      }
+      header.append(titleGroup);
+
+      if (statusLabel) {
+        const statusEl = document.createElement('span');
+        statusEl.className = `position-ai-request__status status-${statusKey}`;
+        statusEl.textContent = statusLabel;
+        header.append(statusEl);
+      }
+      button.append(header);
+
+      const meta = document.createElement('div');
+      meta.className = 'position-ai-request__meta';
+      if (timestampLabel && timestampLabel !== '–') {
+        const timeEl = document.createElement('span');
+        timeEl.className = 'position-ai-request__time';
+        timeEl.textContent = timestampLabel;
+        meta.append(timeEl);
+      }
+      const decisionMetric = detailData.metricsParts.find((text) => text.startsWith('Decision:'));
+      if (decisionMetric) {
+        const decisionEl = document.createElement('span');
+        decisionEl.className = 'position-ai-request__decision';
+        decisionEl.textContent = decisionMetric.replace(/^Decision:\s*/, '');
+        meta.append(decisionEl);
+      }
+      if (meta.children.length > 0) {
+        button.append(meta);
+      }
+
+      if (detailData.metricsParts.length > 0) {
+        const chips = document.createElement('div');
+        chips.className = 'position-ai-request__chips';
+        detailData.metricsParts.slice(0, 4).forEach((text) => {
+          const chip = document.createElement('span');
+          chip.textContent = text;
+          chips.append(chip);
+        });
+        button.append(chips);
+      }
+
+      const notePreviewText = detailData.noteCandidates[0];
+      if (notePreviewText) {
+        const note = document.createElement('p');
+        note.className = 'position-ai-request__note';
+        note.textContent =
+          notePreviewText.length > 140 ? `${notePreviewText.slice(0, 137).trimEnd()}…` : notePreviewText;
+        button.append(note);
+      }
+
+      button.addEventListener('click', () => openAiRequestModal(safeRequest, button));
+      const accessibleParts = [statusLabel, timestampLabel].filter(Boolean);
+      button.setAttribute(
+        'aria-label',
+        `${translate('ai.requests.modal.title', 'AI decision')}${
+          accessibleParts.length ? ` (${accessibleParts.join(' · ')})` : ''
+        }`,
+      );
+
+      item.append(button);
+      list.append(item);
+    });
+
+    wrapper.append(list);
+    return wrapper;
   };
 
   const pnlField = pickNumericField(position, COMPLETED_POSITION_PNL_KEYS);
@@ -8795,8 +9023,14 @@ function buildCompletedPositionDetailContent(position) {
   const leverageDisplay = Number.isFinite(leverageField.numeric)
     ? formatLeverage(leverageField.numeric)
     : null;
+  const marginField = pickNumericField(position, ACTIVE_POSITION_ALIASES.margin || []);
+  const marginDisplay = Number.isFinite(marginField.numeric)
+    ? `${formatNumber(Math.abs(marginField.numeric), 2)} USDT`
+    : extractFieldStringSource(marginField);
   const entryField = pickNumericField(position, TRADE_ENTRY_KEYS);
   const exitField = pickNumericField(position, TRADE_EXIT_KEYS);
+  const sizeField = pickNumericField(position, ACTIVE_POSITION_SIGNED_SIZE_KEYS || []);
+  const sizeDisplay = Number.isFinite(sizeField.numeric) ? formatNumber(sizeField.numeric, 4) : null;
   const openedTs = getPositionTimestamp(position);
   const closedTs = getPositionClosedTimestamp(position);
   const openedLabel = Number.isFinite(openedTs)
@@ -8836,8 +9070,14 @@ function buildCompletedPositionDetailContent(position) {
   if (notionalDisplay) {
     metrics.push(createMetric('Notional', notionalDisplay));
   }
+  if (sizeDisplay) {
+    metrics.push(createMetric('Size', sizeDisplay));
+  }
   if (leverageDisplay) {
     metrics.push(createMetric('Leverage', leverageDisplay));
+  }
+  if (marginDisplay) {
+    metrics.push(createMetric('Margin', marginDisplay));
   }
   if (Number.isFinite(entryField.numeric)) {
     metrics.push(createMetric('Entry', formatNumber(entryField.numeric, 4)));
@@ -8874,6 +9114,8 @@ function buildCompletedPositionDetailContent(position) {
     container.append(postSection);
   }
 
+  const aiRequestSection = buildPositionAiRequestList();
+
   const detailWrapper = document.createElement('div');
   detailWrapper.className = 'position-details-wrapper';
   const detailHeading = document.createElement('h4');
@@ -8884,6 +9126,10 @@ function buildCompletedPositionDetailContent(position) {
   Object.keys(position || {})
     .sort()
     .forEach((key) => {
+      const normalizedKey = key.toString().toLowerCase();
+      if (['closed_at_iso', 'opened_at_iso', 'context'].includes(normalizedKey)) {
+        return;
+      }
       const label = createPositionFieldLabel(key);
       const rawValue = position[key];
       const dt = document.createElement('dt');
@@ -8900,6 +9146,10 @@ function buildCompletedPositionDetailContent(position) {
       }
       detailList.append(dt, dd);
     });
+
+  if (aiRequestSection) {
+    container.append(aiRequestSection);
+  }
 
   if (detailList.childElementCount > 0) {
     detailWrapper.append(detailHeading, detailList);
