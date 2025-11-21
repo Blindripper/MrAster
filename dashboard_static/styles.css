@@ -2283,6 +2283,12 @@ button:focus-visible {
   gap: 1rem;
 }
 
+.card-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .card-header--simple {
   align-items: center;
 }

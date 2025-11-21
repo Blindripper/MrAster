@@ -915,9 +915,9 @@
         data-pro-only
         data-mobile-collapsible
       >
-        <div class="card-header" data-mobile-collapsible-header>
-          <div class="card-header-main">
-            <h2 data-i18n="env.title">Environment configuration</h2>
+          <div class="card-header" data-mobile-collapsible-header>
+            <div class="card-header-main">
+              <h2 data-i18n="env.title">Environment configuration</h2>
             <button
               id="btn-toggle-env"
               class="ghost collapse-toggle"
@@ -933,8 +933,11 @@
               <span class="collapse-toggle__icon" aria-hidden="true"></span>
               <span class="collapse-toggle__label" data-collapse-label data-i18n="env.expand">Expand</span>
             </button>
+            </div>
+          <div class="card-actions">
+            <button id="btn-reset-env" class="ghost" data-i18n="env.reset">Reset defaults</button>
+            <button id="btn-save-config" class="primary subtle" data-i18n="env.save">Save</button>
           </div>
-          <button id="btn-save-config" class="primary subtle" data-i18n="env.save">Save</button>
         </div>
         <div class="card-section-body" data-mobile-collapsible-body>
           <p class="card-subtitle" data-i18n="env.subtitle">
