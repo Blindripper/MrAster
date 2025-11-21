@@ -4207,7 +4207,8 @@ function normalizeTradeSnapshotPayload(snapshotPayload) {
   payload.stats = payload.stats && typeof payload.stats === 'object' ? payload.stats : null;
   payload.history_summary = payload.history_summary ?? payload.historySummary ?? null;
   payload.cumulative_stats = payload.cumulative_stats ?? payload.cumulativeStats ?? null;
-  payload.hero_metrics = payload.hero_metrics ?? payload.heroMetrics ?? null;
+  payload.hero_metrics =
+    payload.hero_metrics ?? payload.hero_metrice ?? payload.heroMetrics ?? payload.heroMetrice ?? null;
   payload.decision_stats = payload.decision_stats ?? payload.decisionStats ?? null;
   payload.ai_budget = payload.ai_budget ?? payload.aiBudget ?? null;
   payload.ai_requests = Array.isArray(payload.ai_requests ?? payload.aiRequests)
@@ -12988,10 +12989,11 @@ function buildCompletedPositionsFromHistoryEntries(historyEntries = []) {
   const entries = Array.from(buckets.values())
     .filter((entry) => {
       const exitReason = extractPositionManagementExitReason(entry.position);
-      if (typeof exitReason === 'string') {
-        return exitReason.trim().length > 0;
+      const hasExitReason = typeof exitReason === 'string' ? exitReason.trim().length > 0 : Boolean(exitReason);
+      if (hasExitReason) {
+        return true;
       }
-      return Boolean(exitReason);
+      return hasMeaningfulPositionFields(entry.position) || hasPositionManagementContext(entry.position);
     })
     .map((entry) => ({
     key: entry.key,
@@ -15089,6 +15091,45 @@ function formatPnlSeriesLabel(rawLabel, fallbackIndex) {
   return `Trade ${labelIndex + 1}`;
 }
 
+function derivePnlSeriesFromHeroMetrics(heroMetrics) {
+  if (!heroMetrics) return null;
+
+  const candidates = Array.isArray(heroMetrics)
+    ? heroMetrics
+    : Array.isArray(heroMetrics.history)
+      ? heroMetrics.history
+      : Array.isArray(heroMetrics.timeline)
+        ? heroMetrics.timeline
+        : Array.isArray(heroMetrics.series)
+          ? heroMetrics.series
+          : null;
+
+  if (!candidates || candidates.length === 0) {
+    return null;
+  }
+
+  const labels = [];
+  const values = [];
+
+  candidates.forEach((entry, index) => {
+    if (!entry || typeof entry !== 'object') return;
+    const pnlValue = entry.total_pnl ?? entry.totalPnl ?? entry.realized_pnl ?? entry.realizedPnl;
+    const numeric = Number(pnlValue);
+    if (!Number.isFinite(numeric)) return;
+
+    const tsCandidate =
+      entry.ts ?? entry.timestamp ?? entry.created_at ?? entry.createdAt ?? entry.at ?? entry.time ?? entry.date;
+    labels.push(formatPnlSeriesLabel(tsCandidate, labels.length > 0 ? labels.length : index));
+    values.push(numeric);
+  });
+
+  if (values.length === 0) {
+    return null;
+  }
+
+  return { labels, values };
+}
+
 function prepareServerPnlSeries(seriesPayload) {
   if (!seriesPayload || typeof seriesPayload !== 'object') return null;
   const rawValues = Array.isArray(seriesPayload.values) ? seriesPayload.values : [];
@@ -16510,6 +16551,10 @@ async function fetchLatestTradeExportSnapshot() {
       payload.stats = stats;
     }
 
+    const heroMetricsSource =
+      payload.hero_metrics ?? payload.hero_metrice ?? payload.heroMetrics ?? payload.heroMetrice ?? null;
+    const heroMetricsSeries = derivePnlSeriesFromHeroMetrics(heroMetricsSource);
+
     const hasServerPnlSeries = (() => {
       const series = payload.pnl_series ?? payload.pnlSeries;
       if (!series || typeof series !== 'object') return false;
@@ -16518,10 +16563,12 @@ async function fetchLatestTradeExportSnapshot() {
     })();
 
     if (!hasServerPnlSeries) {
-      const derivedSeries = buildHistoryPnlSeries(exportHistory);
+      const derivedSeries = heroMetricsSeries || buildHistoryPnlSeries(exportHistory);
       if (derivedSeries) {
         payload.pnl_series = derivedSeries;
       }
+    } else if (!payload.pnl_series && heroMetricsSeries) {
+      payload.pnl_series = heroMetricsSeries;
     }
     latestExportedHistory = exportHistory ?? latestExportedHistory;
     latestExportSnapshot = payload;
