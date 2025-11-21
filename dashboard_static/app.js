@@ -4125,8 +4125,9 @@ function mergeTradeSnapshot(previous, next) {
 
 function normalizeTradeSnapshotPayload(snapshotPayload) {
   const payload = snapshotPayload && typeof snapshotPayload === 'object' ? { ...snapshotPayload } : {};
-  payload.history = Array.isArray(payload.history) ? payload.history : [];
-  payload.stats = payload.stats && typeof payload.stats === 'object' ? payload.stats : {};
+  const hasHistory = Array.isArray(payload.history);
+  payload.history = hasHistory ? payload.history : null;
+  payload.stats = payload.stats && typeof payload.stats === 'object' ? payload.stats : null;
   payload.history_summary = payload.history_summary ?? payload.historySummary ?? null;
   payload.cumulative_stats = payload.cumulative_stats ?? payload.cumulativeStats ?? null;
   payload.hero_metrics = payload.hero_metrics ?? payload.heroMetrics ?? null;
