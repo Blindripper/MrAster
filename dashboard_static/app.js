@@ -6111,7 +6111,27 @@ function resolveLatestManagementEvent(position) {
     cacheLatestManagementEvent(position, latest);
     return latest;
   }
-  return recallCachedManagementEvent(position);
+  const cached = recallCachedManagementEvent(position);
+  if (cached) {
+    return cached;
+  }
+
+  const fallbackReason = extractPositionManagementExitReason(position);
+  if (!fallbackReason) {
+    return null;
+  }
+
+  const openedTs = getPositionTimestamp(position);
+  const fallbackTs = Number.isFinite(openedTs) && openedTs > 0 ? openedTs : Date.now() / 1000;
+  const syntheticEvent = {
+    action: fallbackReason.toString().toLowerCase(),
+    rawAction: fallbackReason,
+    ts: fallbackTs,
+    data: { reason: fallbackReason },
+  };
+
+  cacheLatestManagementEvent(position, syntheticEvent);
+  return syntheticEvent;
 }
 
 function formatManagementRelativeTime(ts) {
