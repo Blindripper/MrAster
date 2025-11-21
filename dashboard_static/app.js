@@ -8612,6 +8612,34 @@ function buildTradeDetailContent(trade) {
 }
 
 function buildCompletedPositionDetailContent(position) {
+  const createPositionFieldLabel = (key) => {
+    if (!key) return '—';
+    return key
+      .toString()
+      .replace(/[_-]/g, ' ')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
+  const formatPositionFieldValue = (value) => {
+    if (value === undefined || value === null) return '—';
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return value.toString();
+    }
+    if (typeof value === 'string') {
+      return value.trim() || '—';
+    }
+    if (Array.isArray(value) && value.every((entry) => entry === null || typeof entry !== 'object')) {
+      return value.length ? value.join(', ') : '—';
+    }
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch (err) {
+      return value.toString();
+    }
+  };
+
   const pnlField = pickNumericField(position, COMPLETED_POSITION_PNL_KEYS);
   const pnlNumeric = Number.isFinite(pnlField.numeric) ? pnlField.numeric : null;
   const pnlTone = pnlNumeric > 0 ? 'profit' : pnlNumeric < 0 ? 'loss' : 'neutral';
@@ -8720,6 +8748,38 @@ function buildCompletedPositionDetailContent(position) {
     summary.textContent = postmortem.analysis;
     postSection.append(heading, summary);
     container.append(postSection);
+  }
+
+  const detailWrapper = document.createElement('div');
+  detailWrapper.className = 'position-details-wrapper';
+  const detailHeading = document.createElement('h4');
+  detailHeading.textContent = translate('trades.completed.fullDetails', 'All position data');
+  const detailList = document.createElement('dl');
+  detailList.className = 'position-details-grid';
+
+  Object.keys(position || {})
+    .sort()
+    .forEach((key) => {
+      const label = createPositionFieldLabel(key);
+      const rawValue = position[key];
+      const dt = document.createElement('dt');
+      dt.textContent = label;
+      const dd = document.createElement('dd');
+      const formatted = formatPositionFieldValue(rawValue);
+      if (rawValue && typeof rawValue === 'object') {
+        const pre = document.createElement('pre');
+        pre.className = 'position-field-json';
+        pre.textContent = formatted;
+        dd.append(pre);
+      } else {
+        dd.textContent = formatted;
+      }
+      detailList.append(dt, dd);
+    });
+
+  if (detailList.childElementCount > 0) {
+    detailWrapper.append(detailHeading, detailList);
+    container.append(detailWrapper);
   }
 
   return container;
