@@ -6981,6 +6981,11 @@ function registerCompletedPosition(position, options = {}) {
   if (!position || typeof position !== 'object') {
     return false;
   }
+  const exitReason = extractPositionManagementExitReason(position);
+  const hasExitReason = typeof exitReason === 'string' ? exitReason.trim().length > 0 : Boolean(exitReason);
+  if (!hasExitReason) {
+    return false;
+  }
   if (!isPositionLikelyClosed(position)) {
     return false;
   }
@@ -12913,7 +12918,15 @@ function buildCompletedPositionsFromHistoryEntries(historyEntries = []) {
       }
     }
   });
-  const entries = Array.from(buckets.values()).map((entry) => ({
+  const entries = Array.from(buckets.values())
+    .filter((entry) => {
+      const exitReason = extractPositionManagementExitReason(entry.position);
+      if (typeof exitReason === 'string') {
+        return exitReason.trim().length > 0;
+      }
+      return Boolean(exitReason);
+    })
+    .map((entry) => ({
     key: entry.key,
     position: entry.position,
     ts: Number.isFinite(entry.ts) ? entry.ts : Number.NEGATIVE_INFINITY,
