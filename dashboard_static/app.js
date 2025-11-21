@@ -348,8 +348,14 @@ const TRADE_POSITION_IDENTIFIER_KEYS = [
   'orderId',
 ];
 
+const EXCHANGE_POSITION_IDENTIFIER_KEYS = ['exchange_position_key', 'exchangePositionKey'];
+
 const COMPLETED_POSITION_IDENTIFIER_KEYS = Array.from(
-  new Set([...COMPLETED_POSITION_IDENTIFIER_BASE_KEYS, ...TRADE_POSITION_IDENTIFIER_KEYS])
+  new Set([
+    ...COMPLETED_POSITION_IDENTIFIER_BASE_KEYS,
+    ...TRADE_POSITION_IDENTIFIER_KEYS,
+    ...EXCHANGE_POSITION_IDENTIFIER_KEYS,
+  ])
 );
 
 const TRADE_POSITION_CONTAINER_KEYS = [
@@ -4173,9 +4179,10 @@ function hydrateTradesSnapshot(
   tradesHydrated = true;
   setTradeDataStale(false);
 
+  const exchangePositions = Array.isArray(snapshot.exchange_positions) ? snapshot.exchange_positions : [];
+
   renderTradeHistory(snapshot.history);
-  syncCompletedPositionsStats(snapshot.history_summary || snapshot.stats);
-  syncCompletedPositionsFromTrades(snapshot.history);
+  hydrateCompletedPositions(snapshot.history, exchangePositions, snapshot.history_summary || snapshot.stats);
   setTradeSummaryOverride(null);
   renderTradeSummary(snapshot.stats, snapshot.history_summary);
   renderHeroMetrics(
@@ -4198,8 +4205,6 @@ function hydrateTradesSnapshot(
     snapshot.playbook_process,
     snapshot.playbook_market_overview,
   );
-
-  const exchangePositions = Array.isArray(snapshot.exchange_positions) ? snapshot.exchange_positions : [];
 
   applyActivePositionsPayload(snapshot.open, { syncSnapshot: false });
 
@@ -6800,6 +6805,40 @@ function syncExchangeCompletedPositions(entries = []) {
     skipSummaryRefresh: true,
     timestampResolver: (entry) => getPositionClosedTimestamp(entry),
   });
+}
+
+function hydrateCompletedPositions(historyEntries, exchangeEntries, summary) {
+  const history = Array.isArray(historyEntries) ? historyEntries : [];
+  const exchangePositions = Array.isArray(exchangeEntries) ? exchangeEntries : [];
+  const hasHistory = history.length > 0;
+
+  if (hasHistory) {
+    syncCompletedPositionsStats(summary);
+    syncCompletedPositionsFromTrades(history);
+    if (exchangePositions.length > 0) {
+      rememberCompletedPositions(exchangePositions, {
+        countTowardsStats: false,
+        skipSummaryRefresh: true,
+        timestampResolver: (entry) => getPositionClosedTimestamp(entry),
+      });
+    }
+    return;
+  }
+
+  completedPositionsIndex.clear();
+  completedPositionsStatsTotals = { ...COMPLETED_POSITIONS_STATS_DEFAULTS };
+
+  if (exchangePositions.length > 0) {
+    rememberCompletedPositions(exchangePositions, {
+      countTowardsStats: true,
+      skipSummaryRefresh: false,
+      timestampResolver: (entry) => getPositionClosedTimestamp(entry),
+    });
+    return;
+  }
+
+  renderCompletedPositionsHistory();
+  refreshTradeSummaryFromCompletedPositions();
 }
 
 function refreshPositionUpdatesFromHistory() {
