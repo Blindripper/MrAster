@@ -16616,6 +16616,29 @@ class Bot:
             )
         except Exception as e:
             log.debug(f"entry fail {symbol}: {e}")
+            activity_data: Dict[str, Any] = {
+                "symbol": symbol,
+                "side": sig,
+                "qty": q_str,
+                "entry": float(px),
+                "sl": float(sl),
+                "tp": float(tp),
+            }
+            plan_req_id = None
+            if isinstance(plan, dict):
+                plan_req_id = plan.get("request_id")
+            if plan_req_id:
+                try:
+                    activity_data["request_id"] = str(plan_req_id).strip()
+                except Exception:
+                    activity_data["request_id"] = plan_req_id
+            self._log_ai_activity(
+                "decision",
+                f"Entry failed for {symbol}",
+                body=f"{sig} qty={q_str} @≈{px:.6f} (SL {sl:.6f} · TP {tp:.6f}) — error: {e}",
+                data=activity_data,
+                force=True,
+            )
             if self.decision_tracker and not manual_override:
                 self.decision_tracker.record_rejection("order_failed", force=True)
             if manual_override:
