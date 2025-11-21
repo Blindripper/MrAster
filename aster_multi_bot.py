@@ -12504,6 +12504,11 @@ class Bot:
         except Exception as exc:
             log.warning(f"state save failed: {exc}")
 
+    def _coerce_float(self, value: Any, default: Optional[float] = None) -> Optional[float]:
+        """Coerce a value to float, matching the module-level helper signature."""
+
+        return _coerce_float(value, default)
+
     def _apply_policy_tunables(self) -> None:
         policy = getattr(self, "policy", None)
         if not isinstance(policy, BanditPolicy):
