@@ -6703,6 +6703,59 @@ body.pro-mode .log-stream {
   font-variant-numeric: tabular-nums;
 }
 
+.position-details-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: rgba(12, 16, 28, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  border-radius: 0.95rem;
+  padding: 1rem 1.2rem;
+}
+
+.position-details-wrapper h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.position-details-grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.65rem 1.3rem;
+}
+
+.position-details-grid dt {
+  margin: 0;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.position-details-grid dd {
+  margin: 0;
+  font-weight: 500;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.position-field-json {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 0.65rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  color: var(--text-subtle);
+}
+
 @media (max-width: 900px) {
   .trade-card-top {
     flex-direction: column;
