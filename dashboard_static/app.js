@@ -22,6 +22,8 @@ const tradeSummary = document.getElementById('trade-summary');
 const completedPositionsPanel = document.getElementById('completed-positions-panel');
 const completedPositionsList = document.getElementById('completed-positions-list');
 const completedPositionsEmpty = document.getElementById('completed-positions-empty');
+const completedPositionsPrev = document.getElementById('completed-positions-prev');
+const completedPositionsNext = document.getElementById('completed-positions-next');
 const aiRequestList = document.getElementById('ai-request-list');
 const aiRequestPrev = document.getElementById('ai-requests-prev');
 const aiRequestNext = document.getElementById('ai-requests-next');
@@ -6557,6 +6559,7 @@ function renderCompletedPositionsHistory() {
     if (completedPositionsPanel) {
       completedPositionsPanel.setAttribute('data-empty', 'true');
     }
+    disableCompletedPositionsNav();
     return;
   }
   completedPositionsEmpty.setAttribute('hidden', '');
@@ -6571,6 +6574,49 @@ function renderCompletedPositionsHistory() {
     }
   });
   completedPositionsList.replaceChildren(fragment);
+  resetCompletedPositionsScrollPosition();
+}
+
+function getCompletedPositionsScrollStep() {
+  if (!completedPositionsList) return 0;
+  const firstCard = completedPositionsList.querySelector('.completed-position-card');
+  if (!firstCard) return 0;
+  const { gap } = getComputedStyle(completedPositionsList);
+  const gapValue = Number.parseFloat(gap) || 0;
+  return firstCard.getBoundingClientRect().width + gapValue;
+}
+
+function updateCompletedPositionsNavButtons() {
+  if (!completedPositionsList || !completedPositionsPrev || !completedPositionsNext) return;
+  const maxScroll = Math.max(completedPositionsList.scrollWidth - completedPositionsList.clientWidth, 0);
+  if (maxScroll <= 2) {
+    completedPositionsPrev.disabled = true;
+    completedPositionsNext.disabled = true;
+    return;
+  }
+  completedPositionsPrev.disabled = completedPositionsList.scrollLeft <= 1;
+  completedPositionsNext.disabled = completedPositionsList.scrollLeft >= maxScroll - 1;
+}
+
+function scrollCompletedPositions(direction = 1) {
+  if (!completedPositionsList) return;
+  const step = getCompletedPositionsScrollStep() || completedPositionsList.clientWidth * 0.9;
+  completedPositionsList.scrollBy({ left: step * direction, behavior: 'smooth' });
+}
+
+function resetCompletedPositionsScrollPosition() {
+  if (!completedPositionsList) return;
+  completedPositionsList.scrollTo({ left: 0, behavior: 'auto' });
+  requestAnimationFrame(updateCompletedPositionsNavButtons);
+}
+
+function disableCompletedPositionsNav() {
+  if (completedPositionsPrev) {
+    completedPositionsPrev.disabled = true;
+  }
+  if (completedPositionsNext) {
+    completedPositionsNext.disabled = true;
+  }
 }
 
 function isPlainObject(value) {
@@ -16291,7 +16337,16 @@ if (tradeModal) {
   });
 }
 
+completedPositionsList?.addEventListener('scroll', updateCompletedPositionsNavButtons);
 aiRequestList?.addEventListener('scroll', updateAiRequestNavButtons);
+
+completedPositionsPrev?.addEventListener('click', () => {
+  scrollCompletedPositions(-1);
+});
+
+completedPositionsNext?.addEventListener('click', () => {
+  scrollCompletedPositions(1);
+});
 
 aiRequestPrev?.addEventListener('click', () => {
   scrollAiRequests(-1);
@@ -16302,6 +16357,7 @@ aiRequestNext?.addEventListener('click', () => {
 });
 
 window.addEventListener('resize', () => {
+  updateCompletedPositionsNavButtons();
   updateAiRequestNavButtons();
 });
 

@@ -505,11 +505,37 @@
                 Closed positions will appear once the bot exits a trade.
               </p>
               <div
-                class="completed-positions-list"
-                id="completed-positions-list"
-                role="list"
-                aria-live="polite"
-              ></div>
+                class="completed-positions-carousel"
+                role="group"
+                aria-label="Completed positions carousel"
+              >
+                <button
+                  type="button"
+                  class="completed-positions-carousel__nav completed-positions-carousel__nav--prev"
+                  id="completed-positions-prev"
+                  aria-label="Scroll to previous completed positions"
+                  disabled
+                >
+                  <span aria-hidden="true">&#x2190;</span>
+                </button>
+                <div class="completed-positions-carousel__viewport">
+                  <div
+                    class="completed-positions-list"
+                    id="completed-positions-list"
+                    role="list"
+                    aria-live="polite"
+                  ></div>
+                </div>
+                <button
+                  type="button"
+                  class="completed-positions-carousel__nav completed-positions-carousel__nav--next"
+                  id="completed-positions-next"
+                  aria-label="Scroll to next completed positions"
+                  disabled
+                >
+                  <span aria-hidden="true">&#x2192;</span>
+                </button>
+              </div>
             </div>
           </section>
 
