@@ -15906,30 +15906,57 @@ async function loadTrades() {
 
   const refreshPromise = (async () => {
     try {
-      const exportPromise = fetchLatestTradeExportSnapshot();
-      const res = await fetch('/api/trades');
-      if (!res.ok) throw new Error('Unable to load trades');
-      const data = await res.json();
-      const exportSnapshot = await exportPromise;
-      const exportHistory = Array.isArray(exportSnapshot?.history)
-        ? exportSnapshot.history
-        : latestExportedHistory;
+    const exportPromise = fetchLatestTradeExportSnapshot();
+    const res = await fetch('/api/trades');
+    if (!res.ok) throw new Error('Unable to load trades');
+    const data = await res.json();
+    const exportSnapshot = await exportPromise;
+    const hasExport = exportSnapshot && typeof exportSnapshot === 'object';
+    const exportHistory = Array.isArray(exportSnapshot?.history)
+      ? exportSnapshot.history
+      : latestExportedHistory;
 
-      const exportPnlSeries = exportSnapshot?.pnl_series ?? exportSnapshot?.pnlSeries ?? null;
-      const snapshotPayload = { ...data };
+    const exportPnlSeries = exportSnapshot?.pnl_series ?? exportSnapshot?.pnlSeries ?? null;
 
-      if ((!snapshotPayload.history || snapshotPayload.history.length === 0) && exportHistory) {
-        snapshotPayload.history = exportHistory;
-      }
+    const snapshotPayload = hasExport ? { ...exportSnapshot } : { ...data };
 
-      if (exportPnlSeries && (!Array.isArray(exportPnlSeries) || exportPnlSeries.length > 0)) {
-        snapshotPayload.pnl_series = exportPnlSeries;
-      }
+    if (!hasExport && (!snapshotPayload.history || snapshotPayload.history.length === 0) && exportHistory) {
+      snapshotPayload.history = exportHistory;
+    }
 
-      const snapshot = hydrateTradesSnapshot(snapshotPayload, {
-        mergeWithPrevious: true,
-        exportHistory,
+    if (exportPnlSeries && (!Array.isArray(exportPnlSeries) || exportPnlSeries.length > 0)) {
+      snapshotPayload.pnl_series = exportPnlSeries;
+    }
+
+    if (hasExport && data && typeof data === 'object') {
+      const fallbackFields = [
+        'open',
+        'open_positions',
+        'exchange_positions',
+        'position_memory',
+        'ai_budget',
+        'ai_activity',
+        'ai_requests',
+        'playbook',
+        'playbook_activity',
+        'playbook_process',
+        'playbook_market_overview',
+        'ai_trade_proposals',
+      ];
+
+      fallbackFields.forEach((field) => {
+        const hasSnapshotValue = snapshotPayload[field] !== undefined && snapshotPayload[field] !== null;
+        const liveValue = data[field];
+        if (!hasSnapshotValue && liveValue !== undefined && liveValue !== null) {
+          snapshotPayload[field] = liveValue;
+        }
       });
+    }
+
+    const snapshot = hydrateTradesSnapshot(snapshotPayload, {
+      mergeWithPrevious: true,
+      exportHistory,
+    });
       return snapshot;
     } catch (err) {
       console.warn('Failed to refresh dashboard data', err);
