@@ -6096,6 +6096,10 @@ function prunePositionNotificationHistory() {
   positionNotificationHistory = positionNotificationHistory.filter((entry) => {
     const normalizedSymbol = normalizeSymbolValue(entry?.symbol);
     if (!normalizedSymbol) return false;
+    if (activePositionSymbols instanceof Set) {
+      if (activePositionSymbols.size === 0) return false;
+      if (!activePositionSymbols.has(normalizedSymbol)) return false;
+    }
     if (isPositionNotificationStale(entry, nowSeconds)) return false;
     return true;
   });
@@ -6111,6 +6115,9 @@ function rememberPositionNotifications(notifications) {
       if (!(element instanceof HTMLElement)) return null;
       const normalizedSymbol = getNotificationElementSymbol(element);
       if (!normalizedSymbol) {
+        return null;
+      }
+      if (activePositionSymbols instanceof Set && !activePositionSymbols.has(normalizedSymbol)) {
         return null;
       }
       const rawTs = element.dataset?.timestamp;
@@ -6169,6 +6176,9 @@ function buildHistoricalNotifications(limit = 5) {
     if (!normalizedSymbol) {
       return;
     }
+    if (activePositionSymbols instanceof Set && !activePositionSymbols.has(normalizedSymbol)) {
+      return;
+    }
     if (isPositionNotificationStale(entry, nowSeconds)) {
       return;
     }
@@ -6202,7 +6212,15 @@ function refreshRenderedPositionNotifications() {
 
 function renderPositionNotifications(notifications) {
   const relevantNotifications = Array.isArray(notifications)
-    ? notifications.filter((notification) => notification instanceof HTMLElement)
+    ? notifications.filter((notification) => {
+        if (!(notification instanceof HTMLElement)) return false;
+        const symbol = getNotificationElementSymbol(notification);
+        if (!symbol) return false;
+        if (activePositionSymbols instanceof Set && activePositionSymbols.size > 0) {
+          return activePositionSymbols.has(symbol);
+        }
+        return true;
+      })
     : [];
   const hasNotifications = relevantNotifications.length > 0;
 
@@ -7038,6 +7056,11 @@ function hydrateCompletedPositions(historyEntries, exchangeEntries, summary) {
 }
 
 function refreshPositionUpdatesFromHistory() {
+  if (activePositionSymbols instanceof Set && activePositionSymbols.size === 0) {
+    renderPositionNotifications([]);
+    setPositionNotificationsEmptyState(true);
+    return;
+  }
   prunePositionNotificationHistory();
   refreshRenderedPositionNotifications();
   if (activePositionsNotifications && activePositionsNotifications.children.length > 0) {
@@ -7653,6 +7676,11 @@ function renderActivePositions(openPositions) {
   activePositions = nextPositions;
   activePositionSymbols = nextSymbols;
   prunePositionNotificationHistory();
+  if (nextPositions.length === 0) {
+    positionNotificationHistory = [];
+    renderPositionNotifications([]);
+    setPositionNotificationsEmptyState(true);
+  }
   updateActivePositionsView({ closedPositions });
   refreshTradeProposalPlacementAvailability();
 }
