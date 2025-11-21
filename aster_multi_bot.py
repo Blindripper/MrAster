@@ -10762,13 +10762,16 @@ class Strategy:
                 atr=atr,
             )
 
-        arb_gate_pass = False
+        arb_data_available = (funding_edge is not None) or (non_arb_region != 0.0)
+        arb_gate_pass = not arb_data_available
         if non_arb_region >= 1.0:
             arb_gate_pass = True
             ctx_base["arb_gate_source"] = "non_arb"
         elif funding_edge is not None and funding_edge >= FUNDING_EDGE_MIN:
             arb_gate_pass = True
             ctx_base["arb_gate_source"] = "funding_edge"
+        elif not arb_data_available:
+            ctx_base["arb_gate_source"] = "missing_premium_index"
 
         if not arb_gate_pass:
             quality_gate_pass = False
