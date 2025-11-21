@@ -425,6 +425,7 @@ const TRANSLATIONS = {
     'hero.description':
       'Запускайте криптоботов за секунды, транслируйте телеметрию в реальном времени и перенастраивайте стратегии с помощью ИИ-ассистентов, которые сохраняют полную прозрачность исполнения в режимах Standard, Pro и AI.',
     'hero.launch': 'Открыть Aster',
+    'hero.upload': 'Импортировать сделки',
     'hero.download': 'Скачать сделки',
     'hero.share': 'Опубликовать в X',
     'hero.metrics.trades': 'Всего сделок',
@@ -720,6 +721,7 @@ const TRANSLATIONS = {
     'hero.heading': 'Nutze jeden Marktimpuls mit KI-gestützter Automatisierung.',
     'hero.description': 'Starte Kryptobots in Sekunden, streame Live-Telemetrie und kalibriere Strategien neu – mit KI-Copiloten, die in den Modi Standard, Pro und AI für volle Transparenz sorgen.',
     'hero.launch': 'Aster öffnen',
+    'hero.upload': 'Trades importieren',
     'hero.download': 'Trades herunterladen',
     'hero.share': 'Auf X teilen',
     'hero.metrics.trades': 'Anzahl Trades',
@@ -1018,6 +1020,7 @@ const TRANSLATIONS = {
     'hero.description':
       '몇 초 만에 크립토 봇을 배포하고, 실시간 텔레메트리를 스트리밍하며, Standard·Pro·AI 모드 전반에서 모든 실행을 투명하게 유지하는 AI 코파일럿과 함께 전략을 재조정하세요.',
     'hero.launch': 'Aster 실행하기',
+    'hero.upload': '거래 불러오기',
     'hero.download': '거래 내보내기',
     'hero.share': 'X에 공유',
     'hero.metrics.trades': '총 거래 수',
@@ -1316,6 +1319,7 @@ const TRANSLATIONS = {
     'hero.description':
       'Déployez des bots crypto en quelques secondes, diffusez la télémétrie en direct et recalibrez vos stratégies avec des copilotes IA qui garantissent une transparence totale en modes Standard, Pro et AI.',
     'hero.launch': 'Ouvrir Aster',
+    'hero.upload': 'Importer les trades',
     'hero.download': 'Télécharger les trades',
     'hero.share': 'Publier sur X',
     'hero.metrics.trades': 'Total des trades',
@@ -1614,6 +1618,7 @@ const TRANSLATIONS = {
     'hero.description':
       'Despliega bots cripto en segundos, transmite telemetría en vivo y recalibra estrategias con copilotos de IA que mantienen una transparencia absoluta en los modos Standard, Pro y AI.',
     'hero.launch': 'Abrir Aster',
+    'hero.upload': 'Importar operaciones',
     'hero.download': 'Descargar operaciones',
     'hero.share': 'Publicar en X',
     'hero.metrics.trades': 'Operaciones totales',
@@ -1911,6 +1916,7 @@ const TRANSLATIONS = {
     'hero.heading': 'Yapay zekâ destekli otomasyonla her hareketi yakalayın.',
     'hero.description': 'Saniyeler içinde kripto botları çalıştırın, canlı telemetri yayınlayın ve Standard, Pro ve AI modlarında her işlemi şeffaf tutan yapay zekâ yardımcılarıyla stratejileri yeniden ayarlayın.',
     'hero.launch': 'Aster’ı aç',
+    'hero.upload': 'İşlemleri içe aktar',
     'hero.download': 'İşlemleri indir',
     'hero.share': 'X’te paylaş',
     'hero.metrics.trades': 'Toplam işlem',
@@ -2202,6 +2208,7 @@ const TRANSLATIONS = {
     'hero.description':
       '几秒内部署加密货币机器人，实时串流遥测，并依靠 AI 副驾在 Standard、Pro 和 AI 模式下保持每一次执行的全程透明。',
     'hero.launch': '启动 Aster',
+    'hero.upload': '导入成交记录',
     'hero.download': '下载成交记录',
     'hero.share': '在 X 上分享',
     'hero.metrics.trades': '总成交数',
@@ -4101,6 +4108,96 @@ function mergeTradeSnapshot(previous, next) {
       ? previous.ai_trade_proposals
       : [];
   }
+
+  return snapshot;
+}
+
+function normalizeTradeSnapshotPayload(snapshotPayload) {
+  const payload = snapshotPayload && typeof snapshotPayload === 'object' ? { ...snapshotPayload } : {};
+  payload.history = Array.isArray(payload.history) ? payload.history : [];
+  payload.stats = payload.stats && typeof payload.stats === 'object' ? payload.stats : {};
+  payload.history_summary = payload.history_summary ?? payload.historySummary ?? null;
+  payload.cumulative_stats = payload.cumulative_stats ?? payload.cumulativeStats ?? null;
+  payload.hero_metrics = payload.hero_metrics ?? payload.heroMetrics ?? null;
+  payload.decision_stats = payload.decision_stats ?? payload.decisionStats ?? null;
+  payload.ai_budget = payload.ai_budget ?? payload.aiBudget ?? null;
+  payload.ai_requests = Array.isArray(payload.ai_requests ?? payload.aiRequests)
+    ? payload.ai_requests ?? payload.aiRequests
+    : [];
+  payload.pnl_series = payload.pnl_series ?? payload.pnlSeries ?? null;
+  payload.open = payload.open ?? payload.open_positions ?? payload.openPositions ?? null;
+  payload.exchange_positions = Array.isArray(payload.exchange_positions ?? payload.exchangePositions)
+    ? payload.exchange_positions ?? payload.exchangePositions
+    : [];
+  payload.playbook = payload.playbook ?? null;
+  payload.playbook_activity = payload.playbook_activity ?? payload.playbookActivity ?? null;
+  payload.playbook_process = payload.playbook_process ?? payload.playbookProcess ?? null;
+  payload.playbook_market_overview =
+    payload.playbook_market_overview ?? payload.playbookMarketOverview ?? null;
+  payload.ai_trade_proposals = Array.isArray(payload.ai_trade_proposals ?? payload.aiTradeProposals)
+    ? payload.ai_trade_proposals ?? payload.aiTradeProposals
+    : [];
+
+  if (!payload.history_summary && payload.stats && typeof payload.stats === 'object') {
+    const { count, trades, total_pnl, totalPnl, win_rate, winRate, wins, losses, draws, total_r, totalR } =
+      payload.stats;
+    payload.history_summary = {
+      trades: trades ?? count ?? 0,
+      total_pnl: total_pnl ?? totalPnl ?? 0,
+      win_rate: win_rate ?? winRate ?? 0,
+      wins: wins ?? 0,
+      losses: losses ?? 0,
+      draws: draws ?? 0,
+      total_r: total_r ?? totalR ?? 0,
+    };
+  }
+
+  return payload;
+}
+
+function hydrateTradesSnapshot(snapshotPayload, { mergeWithPrevious = false } = {}) {
+  const normalizedPayload = normalizeTradeSnapshotPayload(snapshotPayload);
+  const snapshot = mergeWithPrevious
+    ? mergeTradeSnapshot(latestTradesSnapshot, normalizedPayload)
+    : normalizedPayload;
+
+  latestTradesSnapshot = snapshot;
+  tradesHydrated = true;
+  setTradeDataStale(false);
+
+  renderTradeHistory(snapshot.history);
+  syncCompletedPositionsStats(snapshot.history_summary || snapshot.stats);
+  setTradeSummaryOverride(null);
+  renderTradeSummary(snapshot.stats, snapshot.history_summary);
+  renderHeroMetrics(
+    snapshot.cumulative_stats,
+    snapshot.stats,
+    snapshot.history,
+    snapshot.hero_metrics,
+    snapshot.open ?? snapshot.open_positions ?? null,
+    snapshot.history_summary,
+  );
+  renderDecisionStats(snapshot.decision_stats);
+  renderPnlChart(snapshot.history, snapshot.pnl_series);
+  renderAiBudget(snapshot.ai_budget);
+  renderAiRequests(snapshot.ai_requests);
+  renderPlaybookOverview(
+    snapshot.playbook,
+    snapshot.playbook_activity,
+    snapshot.playbook_process,
+    snapshot.playbook_market_overview,
+  );
+
+  const exchangePositions = Array.isArray(snapshot.exchange_positions) ? snapshot.exchange_positions : [];
+  if (exchangePositions.length > 0) {
+    syncExchangeCompletedPositions(exchangePositions);
+  }
+
+  applyActivePositionsPayload(snapshot.open, { syncSnapshot: false });
+
+  const proposals = Array.isArray(snapshot.ai_trade_proposals) ? snapshot.ai_trade_proposals : [];
+  proposals.forEach((proposal) => appendTradeProposalCard(proposal));
+  pruneTradeProposalRegistry(proposals);
 
   return snapshot;
 }
@@ -15531,46 +15628,7 @@ async function loadTrades() {
       const res = await fetch('/api/trades');
       if (!res.ok) throw new Error('Unable to load trades');
       const data = await res.json();
-      const snapshot = mergeTradeSnapshot(previousSnapshot, data);
-      latestTradesSnapshot = snapshot;
-      tradesHydrated = true;
-      setTradeDataStale(false);
-      renderTradeHistory(snapshot.history);
-      renderTradeSummary(snapshot.stats, snapshot.history_summary);
-      if (!completedPositionsHistory.length) {
-        syncCompletedPositionsStats(snapshot.history_summary || snapshot.stats);
-        setTradeSummaryOverride(null);
-      }
-      renderHeroMetrics(
-        snapshot.cumulative_stats,
-        snapshot.stats,
-        snapshot.history,
-        snapshot.hero_metrics,
-        snapshot.open ?? snapshot.open_positions ?? null,
-        snapshot.history_summary,
-      );
-      renderDecisionStats(snapshot.decision_stats);
-      renderPnlChart(snapshot.history, snapshot.pnl_series);
-      renderAiBudget(snapshot.ai_budget);
-      renderAiRequests(snapshot.ai_requests);
-      renderPlaybookOverview(
-        snapshot.playbook,
-        snapshot.playbook_activity,
-        snapshot.playbook_process,
-        snapshot.playbook_market_overview,
-      );
-      const exchangePositions = Array.isArray(snapshot.exchange_positions)
-        ? snapshot.exchange_positions
-        : [];
-      if (exchangePositions.length > 0) {
-        syncExchangeCompletedPositions(exchangePositions);
-      }
-      applyActivePositionsPayload(snapshot.open, { syncSnapshot: false });
-      const proposals = Array.isArray(snapshot.ai_trade_proposals)
-        ? snapshot.ai_trade_proposals
-        : [];
-      proposals.forEach((proposal) => appendTradeProposalCard(proposal));
-      pruneTradeProposalRegistry(proposals);
+      const snapshot = hydrateTradesSnapshot(data, { mergeWithPrevious: true });
       return snapshot;
     } catch (err) {
       console.warn('Failed to refresh dashboard data', err);
