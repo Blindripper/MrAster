@@ -3630,6 +3630,14 @@ async def index() -> FileResponse:
     return FileResponse(index_file)
 
 
+@app.get("/mraster-trades-latest.json")
+async def latest_trade_export() -> Dict[str, Any]:
+    snapshot = _load_exported_trades_from_disk()
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Trade export not found")
+    return snapshot
+
+
 @app.get("/share/{variant}")
 async def get_share_image(variant: str) -> FileResponse:
     key = (variant or "").strip().lower()

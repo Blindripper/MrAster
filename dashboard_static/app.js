@@ -2512,6 +2512,7 @@ let mostTradedTimer = null;
 let lastAiBudget = null;
 let lastMostTradedAssets = [];
 let latestTradesSnapshot = null;
+let latestExportedHistory = null;
 let lastTradeStats = null;
 let lastBotStatus = { ...DEFAULT_BOT_STATUS };
 let statusHydrated = false;
@@ -2684,6 +2685,7 @@ function applyTranslations(lang) {
       latestTradesSnapshot.hero_metrics,
       latestTradesSnapshot.open ?? latestTradesSnapshot.open_positions ?? null,
       latestTradesSnapshot.history_summary,
+      latestExportedHistory,
     );
   }
   if (btnSaveConfig) {
@@ -4155,13 +4157,17 @@ function normalizeTradeSnapshotPayload(snapshotPayload) {
   return payload;
 }
 
-function hydrateTradesSnapshot(snapshotPayload, { mergeWithPrevious = false } = {}) {
+function hydrateTradesSnapshot(
+  snapshotPayload,
+  { mergeWithPrevious = false, exportHistory = null } = {},
+) {
   const normalizedPayload = normalizeTradeSnapshotPayload(snapshotPayload);
   const snapshot = mergeWithPrevious
     ? mergeTradeSnapshot(latestTradesSnapshot, normalizedPayload)
     : normalizedPayload;
 
   latestTradesSnapshot = snapshot;
+  latestExportedHistory = Array.isArray(exportHistory) ? exportHistory : latestExportedHistory;
   tradesHydrated = true;
   setTradeDataStale(false);
 
@@ -4177,6 +4183,7 @@ function hydrateTradesSnapshot(snapshotPayload, { mergeWithPrevious = false } = 
     snapshot.hero_metrics,
     snapshot.open ?? snapshot.open_positions ?? null,
     snapshot.history_summary,
+    latestExportedHistory,
   );
   renderDecisionStats(snapshot.decision_stats);
   renderPnlChart(snapshot.history, snapshot.pnl_series);
@@ -12336,12 +12343,14 @@ function renderHeroMetrics(
   preparedMetrics = null,
   openPositions = null,
   historySummary = null,
+  exportHistoryEntries = null,
 ) {
   if (!heroTotalTrades || !heroTotalPnl || !heroTotalWinRate) return;
 
   const totals = cumulativeStats && typeof cumulativeStats === 'object' ? cumulativeStats : {};
   const fallback = sessionStats && typeof sessionStats === 'object' ? sessionStats : {};
   const historyList = Array.isArray(historyEntries) ? historyEntries : [];
+  const exportHistoryList = Array.isArray(exportHistoryEntries) ? exportHistoryEntries : [];
   const summaryStats = historySummary && typeof historySummary === 'object' ? historySummary : null;
   const serverMetrics = preparedMetrics && typeof preparedMetrics === 'object' ? preparedMetrics : null;
 
@@ -12565,7 +12574,8 @@ function renderHeroMetrics(
     return numeric;
   };
 
-  const historyWinLossSummary = summarizeHistoryWinLoss(historyList);
+  const winLossSource = exportHistoryList.length > 0 ? exportHistoryList : historyList;
+  const historyWinLossSummary = summarizeHistoryWinLoss(winLossSource);
 
   const historyWinRate = (() => {
     if (!historyWinLossSummary) return null;
@@ -15612,6 +15622,30 @@ async function downloadTradeHistory() {
   }
 }
 
+async function fetchLatestTradeExportSnapshot() {
+  const existingHistory = latestExportedHistory;
+
+  try {
+    const res = await fetch('/mraster-trades-latest.json', { cache: 'no-store' });
+    if (!res.ok) {
+      throw new Error('Unable to load trade export snapshot');
+    }
+    const payload = await res.json();
+    if (!payload || typeof payload !== 'object') {
+      throw new Error('Trade export payload is invalid');
+    }
+    const exportHistory = Array.isArray(payload.history) ? payload.history : null;
+    latestExportedHistory = exportHistory;
+    return payload;
+  } catch (err) {
+    console.warn('Failed to load trade export snapshot', err);
+    if (existingHistory) {
+      return { history: existingHistory };
+    }
+    return null;
+  }
+}
+
 async function loadTrades() {
   if (tradesRefreshInFlight) {
     return tradesRefreshInFlight;
@@ -15621,10 +15655,15 @@ async function loadTrades() {
 
   const refreshPromise = (async () => {
     try {
+      const exportPromise = fetchLatestTradeExportSnapshot();
       const res = await fetch('/api/trades');
       if (!res.ok) throw new Error('Unable to load trades');
       const data = await res.json();
-      const snapshot = hydrateTradesSnapshot(data, { mergeWithPrevious: true });
+      const exportSnapshot = await exportPromise;
+      const exportHistory = Array.isArray(exportSnapshot?.history)
+        ? exportSnapshot.history
+        : latestExportedHistory;
+      const snapshot = hydrateTradesSnapshot(data, { mergeWithPrevious: true, exportHistory });
       return snapshot;
     } catch (err) {
       console.warn('Failed to refresh dashboard data', err);
