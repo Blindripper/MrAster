@@ -2841,6 +2841,107 @@ def _extract_trade_identifier(trade: Dict[str, Any]) -> str:
     return symbol or ""
 
 
+def _derive_trade_memory_key(trade: Dict[str, Any]) -> str:
+    """Return a stable identifier for tracking a trade across snapshots."""
+
+    identifier = _extract_trade_identifier(trade)
+    if identifier:
+        return identifier
+
+    symbol = _clean_string(
+        trade.get("symbol")
+        or trade.get("s")
+        or trade.get("pair")
+        or trade.get("instrument")
+        or trade.get("asset")
+        or trade.get("base")
+    )
+
+    timestamp_candidates = (
+        _parse_timestamp_value(_lookup_trade_identifier_value(trade, "closed_at")),
+        _parse_timestamp_value(_lookup_trade_identifier_value(trade, "opened_at")),
+        _parse_timestamp_value(_lookup_trade_identifier_value(trade, "ts")),
+    )
+
+    for ts_value in timestamp_candidates:
+        if ts_value is None:
+            continue
+        ts_label = f"{ts_value:.3f}"
+        if symbol:
+            return f"{symbol}:{ts_label}"
+        return f"ts:{ts_label}"
+
+    pnl_value = _extract_trade_pnl(trade)
+    if pnl_value is not None and math.isfinite(pnl_value):
+        return f"{symbol or 'pnl'}:{pnl_value:.8f}"
+
+    return symbol or ""
+
+
+def _apply_position_memory(
+    history: List[Dict[str, Any]],
+    snapshot: Optional[Dict[str, Any]] = None,
+) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
+    """Ensure trades share stable position identifiers across exports."""
+
+    memory: Dict[str, str] = {}
+
+    if isinstance(snapshot, dict):
+        stored = snapshot.get("position_memory") or snapshot.get("positionMemory")
+        if isinstance(stored, dict):
+            for key, value in stored.items():
+                key_text = _clean_string(key)
+                value_text = _clean_string(value)
+                if key_text and value_text:
+                    memory[key_text] = value_text
+
+        remembered_history = snapshot.get("history")
+        if isinstance(remembered_history, list):
+            for trade in remembered_history:
+                if not isinstance(trade, dict):
+                    continue
+                mem_key = _derive_trade_memory_key(trade)
+                if not mem_key:
+                    continue
+                position_hint = _extract_trade_identifier(trade)
+                if not position_hint:
+                    position_hint = _clean_string(
+                        trade.get("position_hash")
+                        or trade.get("positionHash")
+                        or trade.get("position_key")
+                        or trade.get("positionKey")
+                    )
+                if position_hint:
+                    memory.setdefault(mem_key, position_hint)
+
+    normalized: List[Dict[str, Any]] = []
+
+    for entry in history or []:
+        if not isinstance(entry, dict):
+            continue
+
+        record = dict(entry)
+        memory_key = _derive_trade_memory_key(record)
+        identifier = _extract_trade_identifier(record)
+
+        position_key = memory.get(memory_key) if memory_key else None
+        if not position_key and identifier:
+            position_key = identifier
+
+        if memory_key and position_key:
+            memory.setdefault(memory_key, position_key)
+        elif memory_key and not position_key:
+            position_key = memory.setdefault(memory_key, f"memory:{memory_key}")
+
+        if position_key:
+            record.setdefault("position_hash", position_key)
+            record.setdefault("positionKey", position_key)
+
+        normalized.append(record)
+
+    return normalized, memory
+
+
 def _looks_like_position_record(candidate: Dict[str, Any]) -> bool:
     if not isinstance(candidate, dict):
         return False
@@ -8047,6 +8148,7 @@ def _build_trade_export_payload(snapshot: Dict[str, Any]) -> Dict[str, Any]:
         "playbook_process": snapshot.get("playbook_process"),
         "playbook_market_overview": snapshot.get("playbook_market_overview"),
         "ai_trade_proposals": _as_list(snapshot.get("ai_trade_proposals")),
+        "position_memory": _as_dict(snapshot.get("position_memory")),
     }
 
 
@@ -8119,6 +8221,7 @@ def _load_exported_trades_from_disk() -> Optional[Dict[str, Any]]:
             payload.setdefault(
                 "ai_trade_proposals", payload.get("aiTradeProposals") or []
             )
+            payload.setdefault("position_memory", payload.get("positionMemory") or {})
 
             if not payload.get("history_summary"):
                 stats = payload.get("stats") if isinstance(payload.get("stats"), dict) else {}
@@ -8221,6 +8324,10 @@ async def trades() -> Dict[str, Any]:
             history_totals = run_history_totals
         history_window: List[Dict[str, Any]] = [dict(entry) for entry in filtered_history[-200:]]
 
+        history_window, position_memory = _apply_position_memory(
+            history_window, export_snapshot
+        )
+
         stats_history: List[Dict[str, Any]] = history_window
         display_history = _prepare_display_history(stats_history)
         pnl_series = run_exchange_metrics.get("pnl_series")
@@ -8316,6 +8423,7 @@ async def trades() -> Dict[str, Any]:
             "playbook_market_overview": market_overview,
             "ai_trade_proposals": proposals,
             "exchange_positions": exchange_positions,
+            "position_memory": position_memory,
         }
         _persist_trade_export_snapshot(payload)
         return payload

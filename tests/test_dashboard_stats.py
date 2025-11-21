@@ -6,6 +6,7 @@ from dashboard_server import (
     _build_history_summary,
     _compute_stats,
     _cumulative_summary,
+    _apply_position_memory,
     _summarize_history_totals,
 )
 
@@ -217,6 +218,33 @@ def test_cumulative_summary_prefers_position_count_over_trade_samples() -> None:
     summary = _cumulative_summary(state, stats=stats)
 
     assert summary["total_trades"] == 1
+
+
+def test_apply_position_memory_reuses_snapshot_mapping() -> None:
+    history = [
+        {"symbol": "BTCUSDT", "pnl": 6.0, "closed_at": 123.0},
+        {"symbol": "BTCUSDT", "pnl": -1.5, "closed_at": 123.0},
+    ]
+
+    normalized, memory = _apply_position_memory(
+        history, {"position_memory": {"BTCUSDT:123.000": "pos-abc"}}
+    )
+
+    assert memory["BTCUSDT:123.000"] == "pos-abc"
+    assert {entry.get("position_hash") for entry in normalized} == {"pos-abc"}
+
+
+def test_apply_position_memory_generates_stable_identifier() -> None:
+    history = [
+        {"symbol": "ETHUSDT", "pnl": 3.5, "closed_at": 321.5},
+        {"symbol": "ETHUSDT", "pnl": 1.5, "closed_at": 321.5},
+    ]
+
+    normalized, memory = _apply_position_memory(history)
+
+    assert len({entry.get("position_hash") for entry in normalized}) == 1
+    key = next(iter(memory))
+    assert memory[key] == normalized[0].get("position_hash")
 
 
 def test_hero_metrics_ignore_trade_samples_when_history_available() -> None:
