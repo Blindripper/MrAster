@@ -4407,13 +4407,29 @@ def _summarize_ai_requests(
 def _extract_trade_pnl(trade: Dict[str, Any]) -> float:
     if not isinstance(trade, dict):
         return 0.0
-    for key in ("realized_pnl", "realizedPnl", "pnl"):
-        value = trade.get(key)
-        if value is None:
-            continue
-        numeric = _safe_float(value)
-        if numeric is not None:
-            return numeric
+
+    candidate_keys: Tuple[str, ...] = (
+        "realized_pnl",
+        "realizedPnl",
+        "pnl",
+        "pnl_usd",
+        "pnl_usdt",
+        "pnlUsd",
+        "pnlUsdt",
+        "pnl_realized",
+        "pnlRealized",
+        "net_pnl",
+        "netPnl",
+        "pnl_net",
+    )
+
+    for key in candidate_keys:
+        for container in (trade, trade.get("extra"), trade.get("context")):
+            if not isinstance(container, dict):
+                continue
+            numeric = _safe_float(container.get(key))
+            if numeric is not None:
+                return numeric
     return 0.0
 
 
