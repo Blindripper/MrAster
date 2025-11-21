@@ -3314,6 +3314,86 @@ class LogHub:
             await self.unregister(ws)
 
 
+def _position_likely_closed(record: Any) -> bool:
+    if not isinstance(record, dict):
+        return False
+
+    size_keys = {
+        "positionAmt",
+        "position_amt",
+        "position_amount",
+        "qty",
+        "quantity",
+        "size",
+        "notional",
+        "notional_usdt",
+        "notionalUsd",
+        "positionMargin",
+    }
+    has_non_zero = False
+    has_zero = False
+    for key in size_keys:
+        if key not in record:
+            continue
+        numeric = _safe_float(record.get(key))
+        if numeric is None:
+            continue
+        if abs(numeric) < 1e-9:
+            has_zero = True
+        else:
+            has_non_zero = True
+
+    closed_flag_keys = {"closed", "is_closed", "isClosed", "is_close"}
+    for key in closed_flag_keys:
+        value = record.get(key)
+        if value is None:
+            continue
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"true", "yes", "y", "closed"}:
+                return not has_non_zero
+            if normalized in {"false", "no", "n", "open"}:
+                return False
+        if bool(value):
+            return not has_non_zero
+
+    status_tokens = str(record.get("status") or "").strip().lower()
+    if status_tokens:
+        if any(token in status_tokens for token in ("closed", "closing", "exit")):
+            return not has_non_zero
+        if any(token in status_tokens for token in ("open", "active", "running")):
+            return False
+
+    timestamp_keys = {
+        "closed_at",
+        "closedAt",
+        "closed_ts",
+        "closeTime",
+        "close_time",
+        "closed_at_iso",
+    }
+    for key in timestamp_keys:
+        if key not in record:
+            continue
+        if record.get(key) not in (None, "", 0, "0"):
+            return not has_non_zero
+
+    if has_zero and not has_non_zero:
+        return True
+
+    return False
+
+
+def _filter_open_positions(payload: Any) -> Any:
+    """Remove closed positions from the live trade payload."""
+
+    if isinstance(payload, dict):
+        return {k: v for k, v in payload.items() if not _position_likely_closed(v)}
+    if isinstance(payload, list):
+        return [item for item in payload if not _position_likely_closed(item)]
+    return payload
+
+
 class PositionStream:
     """Broadcast real-time active position updates to connected clients."""
 
@@ -3366,7 +3446,7 @@ class PositionStream:
 
     async def _refresh(self) -> None:
         state = _read_state()
-        open_payload = state.get("live_trades", {})
+        open_payload = _filter_open_positions(state.get("live_trades", {}))
         signature = self._hash_payload(open_payload)
         if signature == self._last_signature:
             return
@@ -8147,7 +8227,7 @@ async def trades() -> Dict[str, Any]:
         if not pnl_series:
             pnl_series = _build_pnl_series(history_source)
 
-        open_trades = state.get("live_trades", {})
+        open_trades = _filter_open_positions(state.get("live_trades", {}))
         try:
             enriched_open = await asyncio.to_thread(
                 enrich_open_positions, open_trades, env_cfg
