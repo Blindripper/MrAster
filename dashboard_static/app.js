@@ -2720,6 +2720,7 @@ function applyTranslations(lang) {
       latestTradesSnapshot.history,
       latestTradesSnapshot.hero_metrics,
       latestTradesSnapshot.open ?? latestTradesSnapshot.open_positions ?? null,
+      latestTradesSnapshot.exchange_positions ?? null,
       latestTradesSnapshot.history_summary,
       latestExportedHistory,
       latestExportSnapshot,
@@ -4269,6 +4270,7 @@ function hydrateTradesSnapshot(
     snapshot.history,
     snapshot.hero_metrics,
     snapshot.open ?? snapshot.open_positions ?? null,
+    snapshot.exchange_positions ?? null,
     snapshot.history_summary,
     latestExportedHistory,
     latestExportSnapshot,
@@ -12840,6 +12842,51 @@ function deriveHistoryPnlSummary(historyEntries) {
   };
 }
 
+function summarizeExchangePositions(positions) {
+  if (!Array.isArray(positions) || positions.length === 0) {
+    return null;
+  }
+
+  let trades = 0;
+  let wins = 0;
+  let losses = 0;
+  let draws = 0;
+  let totalPnl = 0;
+
+  positions.forEach((position) => {
+    const pnlField = pickNumericField(position, COMPLETED_POSITION_PNL_KEYS);
+    if (!Number.isFinite(pnlField.numeric)) {
+      return;
+    }
+
+    const pnlValue = pnlField.numeric;
+    totalPnl += pnlValue;
+    trades += 1;
+    if (pnlValue > 0) {
+      wins += 1;
+    } else if (pnlValue < 0) {
+      losses += 1;
+    } else {
+      draws += 1;
+    }
+  });
+
+  if (trades === 0) {
+    return null;
+  }
+
+  const totalSamples = wins + losses + draws;
+
+  return {
+    trades,
+    total_pnl: totalPnl,
+    wins,
+    losses,
+    draws,
+    win_rate: totalSamples > 0 ? wins / totalSamples : null,
+  };
+}
+
 function isSyntheticTradeHistoryEntry(trade) {
   if (!trade || typeof trade !== 'object') {
     return false;
@@ -13043,6 +13090,7 @@ function renderHeroMetrics(
   historyEntries = null,
   preparedMetrics = null,
   openPositions = null,
+  exchangePositions = null,
   historySummary = null,
   exportHistoryEntries = null,
   exportSnapshot = null,
@@ -13084,10 +13132,20 @@ function renderHeroMetrics(
       : Array.isArray(historyEntries)
         ? historyEntries
         : [];
+  const exchangePositionList = (() => {
+    if (Array.isArray(exportPayload?.exchange_positions)) {
+      return exportPayload.exchange_positions;
+    }
+    if (Array.isArray(exchangePositions)) {
+      return exchangePositions;
+    }
+    return [];
+  })();
   const summaryStats = exportHistorySummary ?? (historySummary && typeof historySummary === 'object' ? historySummary : null);
   const serverMetrics =
     (exportHeroMetrics && typeof exportHeroMetrics === 'object' ? exportHeroMetrics : null) ||
     (preparedMetrics && typeof preparedMetrics === 'object' ? preparedMetrics : null);
+  const exchangeSummary = summarizeExchangePositions(exchangePositionList);
 
   const positionMemory = (() => {
     const sources = [
@@ -13132,6 +13190,7 @@ function renderHeroMetrics(
       historyList.length > 0 ? countHistoryPositions(historyList, positionMemory) : null;
 
     const closedCandidates = [
+      exchangeSummary?.trades ?? (Array.isArray(exchangePositionList) ? exchangePositionList.length : null),
       completedPositionsStatsTotals?.trades,
       historyTradeCount,
       summaryStats?.trades ?? summaryStats?.count,
@@ -13161,6 +13220,7 @@ function renderHeroMetrics(
   const aiBudgetSpent = Number.isFinite(aiBudgetSpentRaw) ? Math.max(aiBudgetSpentRaw, 0) : 0;
 
   const summaryRealizedPnl = pickFirstFinite(
+    exchangeSummary?.total_pnl,
     resolveNumericField(summaryStats, ['realized_pnl', 'realizedPnl']),
     resolveNumericField(summaryStats, ['total_pnl', 'totalPnl']),
     resolveNumericField(summaryStats, ['realized']),
@@ -13168,6 +13228,7 @@ function renderHeroMetrics(
 
   const realizedPnlRaw = pickFirstFinite(
     summaryRealizedPnl,
+    exchangeSummary?.total_pnl,
     resolveNumericField(sessionStats, ['realized_pnl', 'realizedPnl']),
     resolveNumericField(sessionStats, ['total_pnl', 'totalPnl']),
     resolveNumericField(serverMetrics, ['realized_pnl', 'realizedPnl']),
@@ -13301,7 +13362,19 @@ function renderHeroMetrics(
   };
 
   const winLossSource = exportHistoryList.length > 0 ? exportHistoryList : historyList;
-  const historyWinLossSummary = summarizeHistoryWinLoss(winLossSource);
+  const historyWinLossSummary =
+    summarizeHistoryWinLoss(winLossSource) ??
+    (exchangeSummary
+      ? {
+          wins: exchangeSummary.wins ?? 0,
+          losses: exchangeSummary.losses ?? 0,
+          draws: exchangeSummary.draws ?? 0,
+          total:
+            (exchangeSummary.wins ?? 0) +
+            (exchangeSummary.losses ?? 0) +
+            (exchangeSummary.draws ?? 0),
+        }
+      : null);
 
   const historyWinRate = (() => {
     if (!historyWinLossSummary) return null;
@@ -13314,6 +13387,7 @@ function renderHeroMetrics(
   const fallbackWinRate = normalizeWinRate(fallback.win_rate ?? fallback.winRate);
   const totalsWinRate = normalizeWinRate(totals.win_rate ?? totals.winRate);
   const serverWinRate = normalizeWinRate(resolveNumericField(serverMetrics, ['win_rate', 'winRate']));
+  const exchangeWinRate = normalizeWinRate(exchangeSummary?.win_rate);
   const winsRaw = Number(summaryStats?.wins ?? totals.wins ?? fallback.wins ?? 0);
   const lossesRaw = Number(summaryStats?.losses ?? totals.losses ?? fallback.losses ?? 0);
   const drawsRaw = Number(summaryStats?.draws ?? totals.draws ?? fallback.draws ?? 0);
@@ -13324,6 +13398,7 @@ function renderHeroMetrics(
       : null;
   const computedWinRate =
     historyWinRate ??
+    exchangeWinRate ??
     summaryWinRate ??
     serverWinRate ??
     totalsWinRate ??
@@ -13350,6 +13425,9 @@ function renderHeroMetrics(
   if (historyWinLossSummary) {
     winsCount = historyWinLossSummary.wins;
     lossesCount = historyWinLossSummary.losses;
+  } else if (exchangeSummary) {
+    winsCount = exchangeSummary.wins ?? null;
+    lossesCount = exchangeSummary.losses ?? null;
   } else if (
     summaryStats &&
     (Number.isFinite(Number(summaryStats.wins)) || Number.isFinite(Number(summaryStats.losses)))
