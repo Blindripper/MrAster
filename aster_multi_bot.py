@@ -1181,7 +1181,7 @@ FILTER_PENALTY_WARN = float(os.getenv("ASTER_FILTER_PENALTY_WARN", "1.05"))
 FILTER_BONUS_CAP = float(os.getenv("ASTER_FILTER_BONUS_CAP", "0.8"))
 
 _BASE_SIGNAL_TUNING: Dict[str, Any] = {
-    "MIN_QUOTE_VOL": 800_000.0,
+    "MIN_QUOTE_VOL": MIN_QUOTE_VOL,
     "SPREAD_BPS_MAX": 0.00195,
     "WICKINESS_MAX": 0.998,
     # Keep the preset seed aligned with the environment-backed baseline so a default
