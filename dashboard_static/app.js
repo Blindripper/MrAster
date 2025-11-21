@@ -16411,6 +16411,20 @@ async function fetchLatestTradeExportSnapshot() {
       payload.history_summary = historySummary;
       payload.stats = stats;
     }
+
+    const hasServerPnlSeries = (() => {
+      const series = payload.pnl_series ?? payload.pnlSeries;
+      if (!series || typeof series !== 'object') return false;
+      const values = Array.isArray(series.values) ? series.values : [];
+      return values.length > 0 && values.some((value) => Number.isFinite(Number(value)));
+    })();
+
+    if (!hasServerPnlSeries) {
+      const derivedSeries = buildHistoryPnlSeries(exportHistory);
+      if (derivedSeries) {
+        payload.pnl_series = derivedSeries;
+      }
+    }
     latestExportedHistory = exportHistory ?? latestExportedHistory;
     latestExportSnapshot = payload;
     return payload;
