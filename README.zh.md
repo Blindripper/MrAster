@@ -112,7 +112,7 @@
 | `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `49` / `51`* | 多/空入场 RSI 阈值。 |
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | 强制不同周期趋势同向。 |
 | `ASTER_TREND_BIAS` | `with` | 顺势或逆势操作。 |
-| `ASTER_MIN_QUOTE_VOL_USDT` | `800000` | 可交易品种的最低成交额。 |
+| `ASTER_MIN_QUOTE_VOL_USDT` | `900000` | 可交易品种的最低成交额。 |
 | `ASTER_SPREAD_BPS_MAX` | `0.0020` | 最大允许点差（bps）。 |
 | `ASTER_WICKINESS_MAX` | `0.97` | 过滤影线过长的 K 线。 |
 | `ASTER_MIN_EDGE_R` | `0.04` | 批准交易的最小 Edge（以 R 计）。 |

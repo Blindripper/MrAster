@@ -112,7 +112,7 @@ Motorları, korumaları ve konfigürasyonu merak mı ediyorsun? Aşağıdaki bö
 | `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `49` / `51`* | Long/short girişleri için RSI eşikleri. |
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | Zaman dilimleri arasında trend hizası zorunlu. |
 | `ASTER_TREND_BIAS` | `with` | Trendle veya trende karşı işlem. |
-| `ASTER_MIN_QUOTE_VOL_USDT` | `800000` | İşlem yapılabilir minimum hacim. |
+| `ASTER_MIN_QUOTE_VOL_USDT` | `900000` | İşlem yapılabilir minimum hacim. |
 | `ASTER_SPREAD_BPS_MAX` | `0.0020` | Maksimum bid/ask spread’i (bps). |
 | `ASTER_WICKINESS_MAX` | `0.97` | Aşırı oynak mumları filtreler. |
 | `ASTER_MIN_EDGE_R` | `0.04` | İşlemi onaylamak için gereken minimum edge (R cinsinden). |
