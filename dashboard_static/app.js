@@ -6812,6 +6812,9 @@ function registerCompletedPosition(position, options = {}) {
   if (!position || typeof position !== 'object') {
     return false;
   }
+  if (!isPositionLikelyClosed(position)) {
+    return false;
+  }
   const rawKey = getCompletedPositionKey(position);
   const key = findExistingCompletedPositionKey(position, rawKey);
   if (!key) {
