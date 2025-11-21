@@ -7500,17 +7500,6 @@ function updateActivePositionsView(options = {}) {
     rowsFragment.append(row);
   });
 
-  closedPositions.forEach((position) => {
-    const symbolValue = getPositionSymbol(position);
-    const closedNotification = buildClosedPositionNotification(position, {
-      includeSymbol: true,
-      symbolText: symbolValue,
-    });
-    if (closedNotification) {
-      managementNotifications.push(closedNotification);
-    }
-  });
-
   closedPositions.forEach((position) => clearCachedManagementEvent(position));
   if (closedPositions.length > 0) {
     scheduleTradesRefresh(500);
@@ -7531,10 +7520,7 @@ function updateActivePositionsView(options = {}) {
 
   const limitedNotifications = sortedNotifications.slice(0, 5);
   rememberPositionNotifications(limitedNotifications);
-  let notificationsToRender = limitedNotifications.filter((element) => element instanceof HTMLElement);
-  if (!notificationsToRender.length && sorted.length === 0) {
-    notificationsToRender = buildHistoricalNotifications(5);
-  }
+  const notificationsToRender = limitedNotifications.filter((element) => element instanceof HTMLElement);
 
   renderPositionNotifications(notificationsToRender);
   ensurePositionUpdatesRefreshTimer();
