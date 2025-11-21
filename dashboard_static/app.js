@@ -340,6 +340,8 @@ const TRADE_POSITION_IDENTIFIER_KEYS = [
   'positionHash',
   'position_key',
   'positionKey',
+  'position_memory',
+  'positionMemory',
   'strategy_position_id',
   'strategyPositionId',
   'hash',
@@ -12309,14 +12311,57 @@ function extractTradePositionKey(trade) {
   return '';
 }
 
-function countHistoryPositions(historyEntries) {
+function deriveTradeMemoryKey(trade) {
+  if (!trade || typeof trade !== 'object') {
+    return '';
+  }
+
+  const existing = extractTradePositionKey(trade);
+  if (existing) {
+    return existing;
+  }
+
+  const symbolCandidates = [trade.symbol, trade.s, trade.pair, trade.instrument, trade.asset, trade.base];
+  const symbol = symbolCandidates
+    .map((candidate) => (candidate === null || candidate === undefined ? '' : candidate.toString().trim().toUpperCase()))
+    .find((candidate) => candidate) || '';
+
+  for (const key of TRADE_TIMESTAMP_IDENTIFIER_KEYS) {
+    const candidate = lookupTradeValue(trade, key);
+    if (candidate === null || candidate === undefined) {
+      continue;
+    }
+    const parsed = parseTradeTimestamp(candidate);
+    if (Number.isFinite(parsed)) {
+      const tsLabel = parsed.toFixed(3);
+      return symbol ? `${symbol}:${tsLabel}` : `ts:${tsLabel}`;
+    }
+  }
+
+  const pnlValue = resolveTradePnlValue(trade);
+  if (Number.isFinite(pnlValue)) {
+    return symbol ? `${symbol}:pnl:${pnlValue.toFixed(4)}` : `pnl:${pnlValue.toFixed(4)}`;
+  }
+
+  return symbol;
+}
+
+function countHistoryPositions(historyEntries, positionMemory = null) {
   if (!Array.isArray(historyEntries) || historyEntries.length === 0) {
     return 0;
   }
   const identifiers = new Set();
   let fallback = 0;
   historyEntries.forEach((trade) => {
-    const key = extractTradePositionKey(trade);
+    let key = extractTradePositionKey(trade);
+
+    if (!key && positionMemory && typeof positionMemory === 'object') {
+      const memoryKey = deriveTradeMemoryKey(trade);
+      if (memoryKey) {
+        key = positionMemory[memoryKey] || `memory:${memoryKey}`;
+      }
+    }
+
     if (key) {
       identifiers.add(key);
     } else {
@@ -12655,6 +12700,21 @@ function renderHeroMetrics(
     (exportHeroMetrics && typeof exportHeroMetrics === 'object' ? exportHeroMetrics : null) ||
     (preparedMetrics && typeof preparedMetrics === 'object' ? preparedMetrics : null);
 
+  const positionMemory = (() => {
+    const sources = [
+      exportPayload?.position_memory,
+      exportPayload?.positionMemory,
+      serverMetrics?.position_memory,
+      serverMetrics?.positionMemory,
+    ];
+    for (const candidate of sources) {
+      if (candidate && typeof candidate === 'object') {
+        return candidate;
+      }
+    }
+    return null;
+  })();
+
   const resolveNumericField = (source, keys) => {
     if (!source) return null;
     for (const key of keys) {
@@ -12738,7 +12798,7 @@ function renderHeroMetrics(
 
   const summaryTradeCount = parsePositiveInteger(summaryStats?.trades ?? summaryStats?.count);
   const serverTotalTrades = resolveNumericField(serverMetrics, ['total_trades', 'totalTrades']);
-  const historyTradeCount = historyList.length > 0 ? countHistoryPositions(historyList) : null;
+  const historyTradeCount = historyList.length > 0 ? countHistoryPositions(historyList, positionMemory) : null;
   const tradeCountCandidates = [
     historyTradeCount,
     summaryTradeCount,
