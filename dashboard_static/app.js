@@ -2513,6 +2513,7 @@ let lastAiBudget = null;
 let lastMostTradedAssets = [];
 let latestTradesSnapshot = null;
 let latestExportedHistory = null;
+let latestExportSnapshot = null;
 let lastTradeStats = null;
 let lastBotStatus = { ...DEFAULT_BOT_STATUS };
 let statusHydrated = false;
@@ -2686,6 +2687,7 @@ function applyTranslations(lang) {
       latestTradesSnapshot.open ?? latestTradesSnapshot.open_positions ?? null,
       latestTradesSnapshot.history_summary,
       latestExportedHistory,
+      latestExportSnapshot,
     );
   }
   if (btnSaveConfig) {
@@ -4184,6 +4186,7 @@ function hydrateTradesSnapshot(
     snapshot.open ?? snapshot.open_positions ?? null,
     snapshot.history_summary,
     latestExportedHistory,
+    latestExportSnapshot,
   );
   renderDecisionStats(snapshot.decision_stats);
   renderPnlChart(snapshot.history, snapshot.pnl_series);
@@ -12344,15 +12347,49 @@ function renderHeroMetrics(
   openPositions = null,
   historySummary = null,
   exportHistoryEntries = null,
+  exportSnapshot = null,
 ) {
   if (!heroTotalTrades || !heroTotalPnl || !heroTotalWinRate) return;
 
-  const totals = cumulativeStats && typeof cumulativeStats === 'object' ? cumulativeStats : {};
-  const fallback = sessionStats && typeof sessionStats === 'object' ? sessionStats : {};
-  const historyList = Array.isArray(historyEntries) ? historyEntries : [];
-  const exportHistoryList = Array.isArray(exportHistoryEntries) ? exportHistoryEntries : [];
-  const summaryStats = historySummary && typeof historySummary === 'object' ? historySummary : null;
-  const serverMetrics = preparedMetrics && typeof preparedMetrics === 'object' ? preparedMetrics : null;
+  const exportPayload = exportSnapshot && typeof exportSnapshot === 'object' ? exportSnapshot : null;
+  const exportStats = exportPayload?.stats && typeof exportPayload.stats === 'object' ? exportPayload.stats : null;
+  const exportCumulativeStats =
+    exportPayload?.cumulative_stats && typeof exportPayload.cumulative_stats === 'object'
+      ? exportPayload.cumulative_stats
+      : null;
+  const exportHeroMetrics =
+    exportPayload?.hero_metrics && typeof exportPayload.hero_metrics === 'object'
+      ? exportPayload.hero_metrics
+      : exportPayload?.heroMetrics && typeof exportPayload.heroMetrics === 'object'
+        ? exportPayload.heroMetrics
+        : null;
+  const exportHistoryList = Array.isArray(exportPayload?.history)
+    ? exportPayload.history
+    : Array.isArray(exportHistoryEntries)
+      ? exportHistoryEntries
+      : [];
+  const exportHistorySummary = (() => {
+    const summary = exportPayload?.history_summary ?? exportPayload?.historySummary ?? null;
+    return summary && typeof summary === 'object' ? summary : null;
+  })();
+
+  const totals =
+    (exportCumulativeStats && typeof exportCumulativeStats === 'object'
+      ? exportCumulativeStats
+      : null) || (cumulativeStats && typeof cumulativeStats === 'object' ? cumulativeStats : {});
+  const fallback =
+    (exportStats && typeof exportStats === 'object' ? exportStats : null) ||
+    (sessionStats && typeof sessionStats === 'object' ? sessionStats : {});
+  const historyList =
+    exportHistoryList.length > 0
+      ? exportHistoryList
+      : Array.isArray(historyEntries)
+        ? historyEntries
+        : [];
+  const summaryStats = exportHistorySummary ?? (historySummary && typeof historySummary === 'object' ? historySummary : null);
+  const serverMetrics =
+    (exportHeroMetrics && typeof exportHeroMetrics === 'object' ? exportHeroMetrics : null) ||
+    (preparedMetrics && typeof preparedMetrics === 'object' ? preparedMetrics : null);
 
   const resolveNumericField = (source, keys) => {
     if (!source) return null;
@@ -15624,6 +15661,7 @@ async function downloadTradeHistory() {
 
 async function fetchLatestTradeExportSnapshot() {
   const existingHistory = latestExportedHistory;
+  const existingSnapshot = latestExportSnapshot;
 
   try {
     const res = await fetch('/mraster-trades-latest.json', { cache: 'no-store' });
@@ -15635,10 +15673,18 @@ async function fetchLatestTradeExportSnapshot() {
       throw new Error('Trade export payload is invalid');
     }
     const exportHistory = Array.isArray(payload.history) ? payload.history : null;
-    latestExportedHistory = exportHistory;
+    latestExportedHistory = exportHistory ?? latestExportedHistory;
+    latestExportSnapshot = payload;
     return payload;
   } catch (err) {
     console.warn('Failed to load trade export snapshot', err);
+    if (existingSnapshot) {
+      if (!existingSnapshot.history && existingHistory) {
+        existingSnapshot.history = existingHistory;
+      }
+      latestExportSnapshot = existingSnapshot;
+      return existingSnapshot;
+    }
     if (existingHistory) {
       return { history: existingHistory };
     }
