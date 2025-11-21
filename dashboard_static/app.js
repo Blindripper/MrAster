@@ -11183,7 +11183,12 @@ function renderAiRequests(requests) {
   items.forEach((rawItem) => {
     if (!rawItem || typeof rawItem !== 'object') return;
     const item = rawItem;
-    const statusKey = (item.status || 'pending').toString().toLowerCase();
+    const takeValue = typeof item.take === 'boolean' ? item.take : null;
+    const statusKey = takeValue === true
+      ? 'accepted'
+      : takeValue === false
+        ? 'rejected'
+        : (item.status || 'pending').toString().toLowerCase();
     const statusLabel = getAiRequestStatusLabel(statusKey);
     const symbol = (item.symbol || '').toString().toUpperCase();
     const sideLabel = formatSideLabel(item.side || '');
