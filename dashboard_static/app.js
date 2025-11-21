@@ -15854,7 +15854,22 @@ async function loadTrades() {
       const exportHistory = Array.isArray(exportSnapshot?.history)
         ? exportSnapshot.history
         : latestExportedHistory;
-      const snapshot = hydrateTradesSnapshot(data, { mergeWithPrevious: true, exportHistory });
+
+      const exportPnlSeries = exportSnapshot?.pnl_series ?? exportSnapshot?.pnlSeries ?? null;
+      const snapshotPayload = { ...data };
+
+      if ((!snapshotPayload.history || snapshotPayload.history.length === 0) && exportHistory) {
+        snapshotPayload.history = exportHistory;
+      }
+
+      if (exportPnlSeries && (!Array.isArray(exportPnlSeries) || exportPnlSeries.length > 0)) {
+        snapshotPayload.pnl_series = exportPnlSeries;
+      }
+
+      const snapshot = hydrateTradesSnapshot(snapshotPayload, {
+        mergeWithPrevious: true,
+        exportHistory,
+      });
       return snapshot;
     } catch (err) {
       console.warn('Failed to refresh dashboard data', err);
