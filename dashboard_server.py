@@ -3751,6 +3751,7 @@ class BotRunner:
             env.update(env_cfg)
             command = _resolve_bot_command(env_cfg)
             env.setdefault("ASTER_LOGLEVEL", "DEBUG")
+            _clear_live_state()
             try:
                 await self.loghub.push(
                     "Launching bot: "
@@ -3922,6 +3923,25 @@ def _read_state() -> Dict[str, Any]:
         except Exception:
             return {}
     return {}
+
+
+def _clear_live_state() -> None:
+    """Remove stale live trade data so fresh runs start with a clean slate."""
+
+    state = _read_state()
+    cleared = False
+    for key in ("live_trades", "live_positions", "position_memory"):
+        if key in state:
+            state.pop(key, None)
+            cleared = True
+
+    if not cleared:
+        return
+
+    try:
+        STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True))
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logger.debug("failed to clear live state: %s", exc)
 
 
 def _resolve_run_started_at(state: Dict[str, Any]) -> Optional[float]:
