@@ -4167,6 +4167,7 @@ function hydrateTradesSnapshot(snapshotPayload, { mergeWithPrevious = false } = 
 
   renderTradeHistory(snapshot.history);
   syncCompletedPositionsStats(snapshot.history_summary || snapshot.stats);
+  syncCompletedPositionsFromTrades(snapshot.history);
   setTradeSummaryOverride(null);
   renderTradeSummary(snapshot.stats, snapshot.history_summary);
   renderHeroMetrics(
@@ -4189,9 +4190,6 @@ function hydrateTradesSnapshot(snapshotPayload, { mergeWithPrevious = false } = 
   );
 
   const exchangePositions = Array.isArray(snapshot.exchange_positions) ? snapshot.exchange_positions : [];
-  if (exchangePositions.length > 0) {
-    syncExchangeCompletedPositions(exchangePositions);
-  }
 
   applyActivePositionsPayload(snapshot.open, { syncSnapshot: false });
 
@@ -7337,7 +7335,6 @@ function updateActivePositionsView(options = {}) {
   });
 
   closedPositions.forEach((position) => clearCachedManagementEvent(position));
-  rememberCompletedPositions(closedPositions);
   if (closedPositions.length > 0) {
     scheduleTradesRefresh(500);
   }
@@ -8955,7 +8952,6 @@ function renderTradeHistory(history) {
   tradeList.replaceChildren(fragment);
 
   requestTradeListViewportSync();
-  syncCompletedPositionsFromTrades(sortedHistory);
 }
 
 function handleTradeModalKeydown(event) {
