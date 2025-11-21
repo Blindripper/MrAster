@@ -7589,41 +7589,12 @@ class AIChatEngine:
         if ai_meta:
             record["ai"] = ai_meta
 
-        live_trades = state.get("live_trades")
-        if not isinstance(live_trades, dict):
-            live_trades = {}
-
-        existing = live_trades.get(symbol)
-        if isinstance(existing, dict):
-            merged_record = {**existing, **record}
-            existing_ctx = existing.get("ctx") if isinstance(existing.get("ctx"), dict) else None
-            record_ctx = record.get("ctx") if isinstance(record.get("ctx"), dict) else None
-            if existing_ctx or record_ctx:
-                merged_ctx: Dict[str, Any] = {}
-                if existing_ctx:
-                    merged_ctx.update(existing_ctx)
-                if record_ctx:
-                    merged_ctx.update(record_ctx)
-                merged_record["ctx"] = merged_ctx
-            existing_ai = existing.get("ai") if isinstance(existing.get("ai"), dict) else None
-            record_ai = record.get("ai") if isinstance(record.get("ai"), dict) else None
-            if existing_ai or record_ai:
-                merged_ai: Dict[str, Any] = {}
-                if existing_ai:
-                    merged_ai.update(existing_ai)
-                if record_ai:
-                    merged_ai.update(record_ai)
-                merged_record["ai"] = merged_ai
-        else:
-            merged_record = record
-
-        try:
-            sanitized = json.loads(json.dumps(merged_record, default=lambda o: str(o)))
-        except Exception:
-            sanitized = merged_record
-
-        live_trades[symbol] = sanitized
-        state["live_trades"] = live_trades
+        # Persisting copilot position payloads in the shared state file caused
+        # closed positions to keep reappearing in the dashboard even when no
+        # active trades were open. The exchange snapshot already reports live
+        # exposure, so avoid writing these records into state to prevent stale
+        # entries from leaking into the active positions feed.
+        return record
 
     def execute_trade_proposal(self, proposal_id: str) -> Dict[str, Any]:
         proposal_key = str(proposal_id or "").strip()
