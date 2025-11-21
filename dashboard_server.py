@@ -8306,9 +8306,13 @@ async def trades() -> Dict[str, Any]:
         state = _read_state()
         env_cfg = CONFIG.get("env", {}) if isinstance(CONFIG, dict) else {}
         history_source = await _resolve_history_with_realized(state, env_cfg)
-        history_totals = _summarize_history_totals(history_source)
+        history_with_memory, position_memory = _apply_position_memory(
+            history_source, export_snapshot
+        )
+
+        history_totals = _summarize_history_totals(history_with_memory)
         run_started_at = _resolve_run_started_at(state)
-        filtered_history = _filter_history_for_run(history_source, run_started_at)
+        filtered_history = _filter_history_for_run(history_with_memory, run_started_at)
         try:
             run_exchange_metrics = await asyncio.to_thread(
                 _compute_run_realized_from_exchange,
@@ -8323,10 +8327,6 @@ async def trades() -> Dict[str, Any]:
         if isinstance(run_history_totals, dict) and run_history_totals.get("total_trades"):
             history_totals = run_history_totals
         history_window: List[Dict[str, Any]] = [dict(entry) for entry in filtered_history[-200:]]
-
-        history_window, position_memory = _apply_position_memory(
-            history_window, export_snapshot
-        )
 
         stats_history: List[Dict[str, Any]] = history_window
         display_history = _prepare_display_history(stats_history)
