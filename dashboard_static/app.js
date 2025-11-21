@@ -12980,14 +12980,6 @@ function renderHeroMetrics(
     return null;
   };
 
-  const parsePositiveInteger = (value) => {
-    if (value == null) return null;
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric)) return null;
-    if (numeric <= 0) return null;
-    return Math.round(Math.abs(numeric));
-  };
-
   const pickFirstFinite = (...candidates) => {
     for (const candidate of candidates) {
       if (candidate == null) continue;
@@ -12999,76 +12991,29 @@ function renderHeroMetrics(
     return null;
   };
 
-  const normalizeOpenPositionPayload = (payload) => {
-    if (!payload) return [];
-    if (Array.isArray(payload)) {
-      return payload.filter((entry) => entry && typeof entry === 'object');
+  const resolveClosedTradeCount = () => {
+    const historyTradeCount =
+      historyList.length > 0 ? countHistoryPositions(historyList, positionMemory) : null;
+
+    const closedCandidates = [
+      completedPositionsStatsTotals?.trades,
+      historyTradeCount,
+      summaryStats?.trades ?? summaryStats?.count,
+      resolveNumericField(serverMetrics, ['closed_positions', 'closedPositions']),
+      resolveNumericField(totals, ['closed_positions', 'closedPositions']),
+      resolveNumericField(fallback, ['closed_positions', 'closedPositions']),
+    ];
+
+    for (const candidate of closedCandidates) {
+      const numeric = Number(candidate);
+      if (Number.isFinite(numeric) && numeric >= 0) {
+        return Math.round(Math.abs(numeric));
+      }
     }
-    if (typeof payload === 'object') {
-      return Object.values(payload).filter((entry) => entry && typeof entry === 'object');
-    }
-    return [];
+    return 0;
   };
 
-  const openPayloadSources = [
-    openPositions,
-    totals?.open_positions ?? totals?.openPositions,
-    fallback?.open_positions ?? fallback?.openPositions,
-  ];
-  let normalizedOpenPositions = [];
-  for (const source of openPayloadSources) {
-    if (!source) continue;
-    const normalized = normalizeOpenPositionPayload(source);
-    if (normalized.length > 0) {
-      normalizedOpenPositions = normalized;
-      break;
-    }
-  }
-  const openPositionsCount = normalizedOpenPositions.length;
-
-  const exchangePositions = Array.isArray(exportPayload?.exchange_positions)
-    ? exportPayload.exchange_positions
-    : Array.isArray(exportPayload?.exchangePositions)
-      ? exportPayload.exchangePositions
-      : [];
-  const exchangeTradeCount = (() => {
-    if (!exchangePositions.length) return null;
-    let total = 0;
-    for (const position of exchangePositions) {
-      if (!position || typeof position !== 'object') continue;
-      const tradeCount = parsePositiveInteger(
-        position.trade_count ?? position.tradeCount ?? position.trades ?? position.count,
-      );
-      if (tradeCount != null) {
-        total += tradeCount;
-        continue;
-      }
-      const tradesList = Array.isArray(position.trades) ? position.trades.length : 0;
-      total += tradesList;
-    }
-    return total > 0 ? total : null;
-  })();
-
-  const summaryTradeCount = parsePositiveInteger(summaryStats?.trades ?? summaryStats?.count);
-  const serverTotalTrades = resolveNumericField(serverMetrics, ['total_trades', 'totalTrades']);
-  const historyTradeCount = historyList.length > 0 ? countHistoryPositions(historyList, positionMemory) : null;
-  const tradeCountCandidates = [
-    historyTradeCount,
-    summaryTradeCount,
-    exchangeTradeCount,
-    serverTotalTrades != null ? parsePositiveInteger(serverTotalTrades) : null,
-    parsePositiveInteger(fallback.count ?? fallback.total_trades ?? fallback.totalTrades),
-    parsePositiveInteger(totals.total_trades ?? totals.count),
-  ];
-  let totalTrades = tradeCountCandidates.find((value) => value != null) ?? 0;
-  const hasTradeEvidence =
-    exchangePositions.length > 0 || historyList.length > 0 || normalizedOpenPositions.length > 0;
-  if (!hasTradeEvidence) {
-    totalTrades = 0;
-  }
-  if (openPositionsCount > 0) {
-    totalTrades += openPositionsCount;
-  }
+  const totalTrades = resolveClosedTradeCount();
   heroTotalTrades.textContent = totalTrades.toLocaleString();
 
   const aiBudgetSpentRaw = pickFirstFinite(
