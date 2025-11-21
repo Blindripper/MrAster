@@ -112,7 +112,7 @@
 | `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `49` / `51`* | Umbrales RSI para entradas long/short. |
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | Obliga a alinear tendencias entre marcos. |
 | `ASTER_TREND_BIAS` | `with` | Opera con/en contra de la tendencia. |
-| `ASTER_MIN_QUOTE_VOL_USDT` | `150000` | Volumen mínimo para símbolos operables. |
+| `ASTER_MIN_QUOTE_VOL_USDT` | `800000` | Volumen mínimo para símbolos operables. |
 | `ASTER_SPREAD_BPS_MAX` | `0.0020` | Spread bid/ask máximo (bps). |
 | `ASTER_WICKINESS_MAX` | `0.97` | Filtro contra velas demasiado volátiles. |
 | `ASTER_MIN_EDGE_R` | `0.04` | Edge mínimo (en R) requerido para aprobar un trade. |

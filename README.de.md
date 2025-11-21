@@ -112,7 +112,7 @@ Neugierig auf Engines, Schutzmechanismen und Konfiguration? Klappe die folgenden
 | `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `49` / `51`* | RSI-Grenzen für Long- bzw. Short-Einstiege. |
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | Erzwingt Trend-Ausrichtung zwischen den Timeframes. |
 | `ASTER_TREND_BIAS` | `with` | Handel mit oder gegen den Trend. |
-| `ASTER_MIN_QUOTE_VOL_USDT` | `150000` | Minimales Volumen für handelbare Symbole. |
+| `ASTER_MIN_QUOTE_VOL_USDT` | `800000` | Minimales Volumen für handelbare Symbole. |
 | `ASTER_SPREAD_BPS_MAX` | `0.0020` | Maximal tolerierter Bid/Ask-Spread (bps). |
 | `ASTER_WICKINESS_MAX` | `0.97` | Filter gegen übermäßig volatile Kerzen. |
 | `ASTER_MIN_EDGE_R` | `0.04` | Mindest-Edge (in R) für Trade-Freigabe. |

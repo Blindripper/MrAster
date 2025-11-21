@@ -687,7 +687,7 @@ def _compute_trade_performance_summary(
     return summary
 
 
-MIN_QUOTE_VOL = float(os.getenv("ASTER_MIN_QUOTE_VOL_USDT", "725000"))
+MIN_QUOTE_VOL = float(os.getenv("ASTER_MIN_QUOTE_VOL_USDT", "800000"))
 SPREAD_BPS_MAX = float(os.getenv("ASTER_SPREAD_BPS_MAX", "0.00230"))  # 0.23 %
 SPREAD_BPS_SOFT_CAP = float(os.getenv("ASTER_SPREAD_BPS_SOFT_CAP", "0.00065"))
 WICKINESS_MAX = float(os.getenv("ASTER_WICKINESS_MAX", "0.985"))
@@ -1181,7 +1181,7 @@ FILTER_PENALTY_WARN = float(os.getenv("ASTER_FILTER_PENALTY_WARN", "1.05"))
 FILTER_BONUS_CAP = float(os.getenv("ASTER_FILTER_BONUS_CAP", "0.8"))
 
 _BASE_SIGNAL_TUNING: Dict[str, Any] = {
-    "MIN_QUOTE_VOL": 276_000.0,
+    "MIN_QUOTE_VOL": 800_000.0,
     "SPREAD_BPS_MAX": 0.00195,
     "WICKINESS_MAX": 0.998,
     # Keep the preset seed aligned with the environment-backed baseline so a default
@@ -1204,7 +1204,7 @@ _BASE_SIGNAL_TUNING: Dict[str, Any] = {
     "ORDERBOOK_BIAS_SELL_MAX": 0.26,
     "SL_ATR_MULT": 1.42,
     "TP_ATR_MULT": 2.65,
-    "QUOTE_VOLUME_COOLDOWN_CYCLES": 45,
+    "QUOTE_VOLUME_COOLDOWN_CYCLES": 500,
     "allow_align": True,
 }
 
