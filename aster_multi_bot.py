@@ -9168,8 +9168,14 @@ class Strategy:
         return clone
 
     def _resolve_kline_sizing_profile(self) -> Dict[str, Any]:
-        default_mode = getattr(PlaybookManager, "_KLINE_SIZING_DEFAULT", "adaptive")
+        default_raw = getattr(PlaybookManager, "_KLINE_SIZING_DEFAULT", "adaptive")
         alias_map = getattr(PlaybookManager, "_KLINE_SIZING_ALIASES", {}) or {}
+        try:
+            default_mode = alias_map.get(
+                str(default_raw).strip().lower(), str(default_raw).strip().lower()
+            )
+        except Exception:
+            default_mode = "adaptive"
         preference: Optional[str] = None
         manager = getattr(self, "playbook_manager", None)
         if manager:
