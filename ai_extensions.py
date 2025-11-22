@@ -1227,7 +1227,9 @@ class PlaybookManager:
 
     _SOFT_BLOCK_FACTOR = 0.45
 
-    _KLINE_SIZING_DEFAULT = "adaptive"
+    _KLINE_SIZING_DEFAULT = (
+        os.getenv("ASTER_KLINE_SIZING_MODE", "adaptive") or "adaptive"
+    ).strip().lower()
     _KLINE_SIZING_ALIASES = {
         "adaptive": "adaptive",
         "dynamic": "adaptive",

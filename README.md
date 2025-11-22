@@ -191,6 +191,7 @@ Curious about the engines, guardrails, and configuration surface? Expand the sec
 | Variable | Default | Description |
 | --- | --- | --- |
 | `ASTER_INTERVAL` / `ASTER_HTF_INTERVAL` | `5m` / `30m` | Timeframes for signals and confirmation. |
+| `ASTER_KLINE_SIZING_MODE` | `adaptive` | Kline window sizing profile (`adaptive`, `compact`, `expanded`, `static`); use `expanded` to retain broader history when signals are sparse. |
 | `ASTER_RSI_BUY_MIN` / `ASTER_RSI_SELL_MAX` | `32` / `68`* | RSI bounds for long and short entries. |
 | `ASTER_CONT_PULLBACK_STOCH_WARN` / `ASTER_CONT_PULLBACK_STOCH_MAX` | `70.0` / `90.0` | Soft/hard thresholds for the continuation pullback guard (set to `0` to disable, or raise to loosen the filter). |
 | `ASTER_ALLOW_TREND_ALIGN` | `false` | Enforces trend alignment between timeframes. |
