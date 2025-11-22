@@ -3481,7 +3481,7 @@ const PRESETS = {
     riskProfile: 'conservative',
     risk: 30,
     leverage: 4,
-    edgeMinR: 0.08,
+    edgeMinR: 0.015,
     slAtr: 1.1,
     tpAtr: 1.8,
     fasttp: {
@@ -3524,7 +3524,7 @@ const PRESETS = {
     riskProfile: 'balanced',
     risk: 50,
     leverage: 10,
-    edgeMinR: 0.06,
+    edgeMinR: 0.015,
     slAtr: 1.3,
     tpAtr: 2.0,
     fasttp: {
@@ -3568,7 +3568,7 @@ const PRESETS = {
     unlimitedBudget: true,
     risk: 100,
     leverage: 'max',
-    edgeMinR: 0.04,
+    edgeMinR: 0.015,
     slAtr: 1.7,
     tpAtr: 2.6,
     fasttp: {
@@ -3612,7 +3612,7 @@ const PRESETS = {
     unlimitedBudget: true,
     risk: 0.75,
     leverage: 'max',
-    edgeMinR: 0.07,
+    edgeMinR: 0.015,
     slAtr: 0.9,
     tpAtr: 1.6,
     fasttp: {
@@ -16197,7 +16197,7 @@ function buildQuickSetupPayload() {
     FAST_TP_RET3: toFixedString(preset.fasttp.ret3, 4),
     FASTTP_SNAP_ATR: toFixedString(preset.fasttp.snapAtr, 2),
     FASTTP_COOLDOWN_S: toFixedString(preset.fasttp.cooldown, 0),
-    ASTER_MIN_EDGE_R: toFixedString(preset.edgeMinR, 2),
+    ASTER_MIN_EDGE_R: toFixedString(preset.edgeMinR, 3),
     ASTER_SIZE_MULT: toFixedString(preset.sizeMult.base * ratio, 2),
     ASTER_SIZE_MULT_S: toFixedString(preset.sizeMult.s * ratio, 2),
     ASTER_SIZE_MULT_M: toFixedString(preset.sizeMult.m * ratio, 2),
