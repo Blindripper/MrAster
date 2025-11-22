@@ -10209,6 +10209,29 @@ function getPlaybookActivityTimestampMs(entry) {
   return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
 }
 
+function derivePlaybookStateFromActivity(activity) {
+  if (!Array.isArray(activity)) return null;
+  const candidates = activity
+    .filter((entry) => entry && typeof entry === 'object')
+    .slice()
+    .sort((a, b) => getPlaybookActivityTimestampMs(b) - getPlaybookActivityTimestampMs(a));
+
+  for (const entry of candidates) {
+    const hasStatePayload =
+      entry.mode !== undefined ||
+      entry.bias !== undefined ||
+      entry.strategy !== undefined ||
+      entry.size_bias !== undefined ||
+      entry.sl_bias !== undefined ||
+      entry.tp_bias !== undefined;
+
+    if (hasStatePayload) {
+      return { ...entry };
+    }
+  }
+  return null;
+}
+
 function getPlaybookProcessStatusLabel(statusKey) {
   const normalized = (statusKey || 'pending').toString().toLowerCase();
   return translate(
@@ -10620,7 +10643,10 @@ function createPlaybookSummaryContent(state, { hint } = {}) {
 }
 
 function renderPlaybookOverview(playbook, activity, process, marketOverview) {
-  lastPlaybookState = playbook && typeof playbook === 'object' ? { ...playbook } : null;
+  const resolvedPlaybook = playbook && typeof playbook === 'object' ? playbook : null;
+  const fallbackPlaybook = resolvedPlaybook ?? derivePlaybookStateFromActivity(activity);
+
+  lastPlaybookState = fallbackPlaybook ? { ...fallbackPlaybook } : null;
   lastPlaybookActivity = Array.isArray(activity) ? activity.slice() : [];
   lastPlaybookProcess = Array.isArray(process) ? process.slice() : [];
   lastPlaybookMarketOverview =

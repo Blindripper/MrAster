@@ -1110,23 +1110,23 @@ def _build_playbook_process(
     if not isinstance(activity, list):
         return []
 
-        def _resolve_stage(entry: Dict[str, Any]) -> str:
-            kind = str(entry.get("kind") or "").strip().lower()
-            headline = str(entry.get("headline") or "").strip().lower()
-            if kind == "query" or "refresh requested" in headline:
-                return "requested"
-            if kind in {"error", "alert"} or "failed" in headline:
-                return "failed"
-            if kind in {"playbook", "info", "tuning"} and (
-                entry.get("mode")
-                or entry.get("bias")
-                or entry.get("size_bias")
-                or entry.get("sl_bias")
-                or entry.get("tp_bias")
-                or entry.get("kline_sizing")
-            ):
-                return "applied"
-            return "info"
+    def _resolve_stage(entry: Dict[str, Any]) -> str:
+        kind = str(entry.get("kind") or "").strip().lower()
+        headline = str(entry.get("headline") or "").strip().lower()
+        if kind == "query" or "refresh requested" in headline:
+            return "requested"
+        if kind in {"error", "alert"} or "failed" in headline:
+            return "failed"
+        if kind in {"playbook", "info", "tuning"} and (
+            entry.get("mode")
+            or entry.get("bias")
+            or entry.get("size_bias")
+            or entry.get("sl_bias")
+            or entry.get("tp_bias")
+            or entry.get("kline_sizing")
+        ):
+            return "applied"
+        return "info"
 
     grouped: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
     anonymous_counter = 0
