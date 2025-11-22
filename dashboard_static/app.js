@@ -10384,6 +10384,12 @@ function createPlaybookSummaryContent(state, { hint } = {}) {
   if (Number.isFinite(Number(state.tp_bias))) {
     stats.push({ label: translate('playbook.tp', 'TP bias'), value: formatPlaybookMultiplier(state.tp_bias) });
   }
+  if (typeof state.kline_sizing === 'string' && state.kline_sizing.trim()) {
+    stats.push({
+      label: translate('playbook.klineSizing', 'Kline sizing'),
+      value: toTitleCase(state.kline_sizing.trim()),
+    });
+  }
   if (Number.isFinite(Number(state.confidence))) {
     stats.push({
       label: translate('playbook.confidence', 'Confidence'),

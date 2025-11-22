@@ -2788,7 +2788,8 @@ class AITradeAdvisor:
                 "which highlights the current market regime via volatility, breadth, event-risk and hype metrics, and respond "
                 "with JSON describing the updated playbook. Focus on forward-looking positioning; recent trade logs are not "
                 "included. Return the fields: request_id (echo the provided value), mode, bias, confidence (0-1), size_bias "
-                "(BUY/SELL multipliers between 0.4 and 2.5), sl_bias (0.4-2.5), tp_bias (0.6-3.0), features (object mapping "
+                "(BUY/SELL multipliers between 0.4 and 2.5), sl_bias (0.4-2.5), tp_bias (0.6-3.0), kline_sizing (one of "
+                "adaptive, compact, expanded, static), features (object mapping "
                 "focus keywords to numeric weights between -1 and 1), strategy (object with name, objective, why_active, "
                 "market_signals array, actions array of objects with title/detail/optional trigger, risk_controls array, and "
                 "two additional arrays named actions_structured and risk_controls_structured). Each element of actions_structured "
@@ -9126,6 +9127,7 @@ class Strategy:
                     "sl_bias": active_playbook.get("sl_bias"),
                     "tp_bias": active_playbook.get("tp_bias"),
                     "size_bias": active_playbook.get("size_bias"),
+                    "kline_sizing": active_playbook.get("kline_sizing"),
                     "reason": active_playbook.get("reason"),
                     "confidence": active_playbook.get("confidence"),
                 }
@@ -9162,6 +9164,79 @@ class Strategy:
                 self._kl_cache.pop(k, None)
         return clone
 
+    def _resolve_kline_sizing_profile(self) -> Dict[str, Any]:
+        default_mode = getattr(PlaybookManager, "_KLINE_SIZING_DEFAULT", "adaptive")
+        alias_map = getattr(PlaybookManager, "_KLINE_SIZING_ALIASES", {}) or {}
+        preference: Optional[str] = None
+        manager = getattr(self, "playbook_manager", None)
+        if manager:
+            try:
+                active = manager.active()
+            except Exception:
+                active = None
+            if isinstance(active, dict):
+                preference = active.get("kline_sizing")
+        normalized = default_mode
+        if preference is not None:
+            try:
+                normalized = alias_map.get(
+                    str(preference).strip().lower(), default_mode
+                )
+            except Exception:
+                normalized = default_mode
+
+        profiles = {
+            "adaptive": {
+                "key": "adaptive",
+                "adaptive": True,
+                "base_scale": 1.0,
+                "lower_scale": 1.0,
+                "upper_scale": 1.0,
+                "atr_low_bias": 1.0,
+                "atr_high_bias": 1.0,
+                "expand_factor": 1.5,
+                "contract_factor": 0.75,
+                "trend_factor": 0.9,
+                "trend_sensitivity": 1.0,
+            },
+            "compact": {
+                "key": "compact",
+                "adaptive": True,
+                "base_scale": 0.85,
+                "lower_scale": 0.9,
+                "upper_scale": 0.9,
+                "atr_low_bias": 0.9,
+                "atr_high_bias": 0.9,
+                "expand_factor": 1.35,
+                "contract_factor": 0.7,
+                "trend_factor": 0.82,
+                "trend_sensitivity": 1.05,
+            },
+            "expanded": {
+                "key": "expanded",
+                "adaptive": True,
+                "base_scale": 1.15,
+                "lower_scale": 1.0,
+                "upper_scale": 1.25,
+                "atr_low_bias": 1.1,
+                "atr_high_bias": 1.1,
+                "expand_factor": 1.65,
+                "contract_factor": 0.85,
+                "trend_factor": 0.95,
+                "trend_sensitivity": 0.9,
+            },
+            "static": {
+                "key": "static",
+                "adaptive": False,
+                "base_scale": 1.0,
+                "lower_scale": 1.0,
+                "upper_scale": 1.0,
+            },
+        }
+
+        profile = profiles.get(normalized, profiles.get(default_mode, profiles["adaptive"]))
+        return dict(profile)
+
     def _adaptive_kline_limit(
         self,
         symbol: str,
@@ -9171,9 +9246,16 @@ class Strategy:
         default_min: Optional[int] = None,
         default_max: Optional[int] = None,
     ) -> int:
-        base = int(max(1, base_limit))
-        lower = int(max(60, default_min if default_min is not None else KLINES_MIN))
-        upper = int(max(lower, default_max if default_max is not None else KLINES_MAX))
+        profile = self._resolve_kline_sizing_profile()
+        base_scale = float(profile.get("base_scale", 1.0) or 1.0)
+        lower_scale = float(profile.get("lower_scale", 1.0) or 1.0)
+        upper_scale = float(profile.get("upper_scale", 1.0) or 1.0)
+
+        base = int(max(1, base_limit * base_scale))
+        lower_bound = default_min if default_min is not None else KLINES_MIN
+        upper_bound = default_max if default_max is not None else KLINES_MAX
+        lower = int(max(60, lower_bound * lower_scale))
+        upper = int(max(lower, upper_bound * upper_scale))
 
         limit = int(clamp(base, lower, upper))
         cached: Tuple[Tuple[float, ...], ...] = ()
@@ -9184,6 +9266,9 @@ class Strategy:
 
         if not cached:
             return limit
+
+        if not profile.get("adaptive", True):
+            return int(clamp(limit, lower, upper))
 
         tail = list(cached[-120:])
         closes = [float(row[4]) for row in tail if len(row) >= 5]
@@ -9199,16 +9284,24 @@ class Strategy:
         atr_ratio = (atr / price) if price > 0 else 0.0
 
         if atr_ratio > 0:
-            if atr_ratio < KLINES_ATR_LOW:
-                limit = min(upper, max(limit, int(base * 1.5)))
-            elif atr_ratio > KLINES_ATR_HIGH:
-                limit = max(lower, min(limit, int(base * 0.75)))
+            atr_low = KLINES_ATR_LOW * float(profile.get("atr_low_bias", 1.0) or 1.0)
+            atr_high = KLINES_ATR_HIGH * float(profile.get("atr_high_bias", 1.0) or 1.0)
+            expand_factor = float(profile.get("expand_factor", 1.5) or 1.5)
+            contract_factor = float(profile.get("contract_factor", 0.75) or 0.75)
+            if atr_ratio < atr_low:
+                limit = min(upper, max(limit, int(base * expand_factor)))
+            elif atr_ratio > atr_high:
+                limit = max(lower, min(limit, int(base * contract_factor)))
 
         trend_span = min(len(closes) - 1, 48)
         if trend_span > 5:
             momentum = (closes[-1] - closes[-trend_span]) / max(closes[-trend_span], 1e-9)
-            if abs(momentum) >= KLINES_TREND_BIAS:
-                limit = max(lower, min(upper, int(limit * 0.9)))
+            trend_threshold = KLINES_TREND_BIAS * float(
+                profile.get("trend_sensitivity", 1.0) or 1.0
+            )
+            if abs(momentum) >= trend_threshold:
+                trend_factor = float(profile.get("trend_factor", 0.9) or 0.9)
+                limit = max(lower, min(upper, int(limit * trend_factor)))
 
         return int(clamp(limit, lower, upper))
 
