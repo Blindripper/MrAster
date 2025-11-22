@@ -760,6 +760,7 @@ EXPECTED_R_ALERT_MIN_EXPECTED = float(
     os.getenv("ASTER_EXPECTED_R_ALERT_MIN_EXPECTED", "0.5") or 0.5
 )
 EXPECTED_R_ALERT_COOLDOWN = float(os.getenv("ASTER_EXPECTED_R_ALERT_COOLDOWN", "900") or 900.0)
+EXPECTED_R_MIN_SAMPLES = max(3, int(os.getenv("ASTER_EXPECTED_R_MIN_SAMPLES", "5") or 5))
 
 BANDIT_FLAG = os.getenv("ASTER_BANDIT_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 BANDIT_ENABLED = BANDIT_FLAG and not AI_MODE_ENABLED
@@ -9896,7 +9897,11 @@ class Strategy:
             tracker = None
         if isinstance(tracker, dict):
             ratio_val = _coerce_float(tracker.get("ratio"))
-            if ratio_val is not None:
+            sample_count = len(tracker.get("samples", [])) if isinstance(tracker.get("samples"), list) else 0
+            total_expected = _coerce_float(tracker.get("total_expected")) or 0.0
+            has_enough_samples = sample_count >= EXPECTED_R_MIN_SAMPLES
+            has_enough_expected = total_expected >= EXPECTED_R_ALERT_MIN_EXPECTED
+            if ratio_val is not None and has_enough_samples and has_enough_expected:
                 ctx_base["expected_r_signal_ratio"] = float(ratio_val)
             window_val = _coerce_float(tracker.get("window"))
             if window_val is not None:
