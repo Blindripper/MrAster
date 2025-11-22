@@ -12871,10 +12871,14 @@ class Bot:
             rec["management"] = mgmt
         ctx = rec.get("ctx") if isinstance(rec.get("ctx"), dict) else {}
         if BREAKEVEN_REEVAL_SECONDS > 0 and elapsed >= BREAKEVEN_REEVAL_SECONDS:
-            if r_now < BREAKEVEN_R_THRESHOLD and not mgmt.get("breakeven_guard"):
-                stop_price = entry if amount > 0 else entry
+            if (
+                r_now > 0.0
+                and r_now < BREAKEVEN_R_THRESHOLD
+                and not mgmt.get("breakeven_guard")
+            ):
+                breakeven_stop = entry - tick if amount > 0 else entry + tick
                 success = False
-                if self._adjust_exit(symbol, side, qty_abs, stop_price, "breakeven"):
+                if self._adjust_exit(symbol, side, qty_abs, breakeven_stop, "breakeven"):
                     success = True
                 elif self._submit_reduce_only(symbol, side, qty_abs, "breakeven_reduce"):
                     success = True
@@ -13016,7 +13020,7 @@ class Bot:
 
         # Breakeven stop
         if r_now >= 0.20 and not mgmt.get("breakeven_set"):
-            new_stop = entry
+            new_stop = entry - tick if amount > 0 else entry + tick
             if self._adjust_exit(symbol, side, qty_abs, new_stop, "breakeven"):
                 rec["sl"] = float(new_stop)
                 mgmt["breakeven_set"] = True
