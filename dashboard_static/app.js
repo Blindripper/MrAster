@@ -408,7 +408,7 @@ let tradeSummaryOverride = null;
 const activePositionManagementCache = new Map();
 
 const PLAYBOOK_CARD_TIMESTAMP_KEYS = {
-  summary: ['requested_ts', 'requested', 'refreshed_ts', 'refreshed', 'applied_ts', 'applied'],
+  summary: ['refreshed_ts', 'refreshed', 'applied_ts', 'applied', 'requested_ts', 'requested'],
   process: ['requested_ts', 'requested', 'completed_ts', 'completed', 'failed_ts', 'failed', 'ts_epoch', 'ts'],
   activity: ['ts_epoch', 'ts', 'requested_ts', 'completed_ts', 'completed_ts_epoch'],
 };
@@ -10351,15 +10351,18 @@ function createPlaybookSummaryContent(state, { hint } = {}) {
 
   const fragment = document.createDocumentFragment();
 
+  const strategy = state.strategy && typeof state.strategy === 'object' ? state.strategy : null;
+
   const header = document.createElement('div');
   header.className = 'playbook-summary-header';
   const activeLabel = document.createElement('span');
   activeLabel.textContent = translate('playbook.active', 'Active playbook:');
   header.append(activeLabel);
   const activeValue = document.createElement('strong');
+  const strategyName = typeof strategy?.name === 'string' ? strategy.name.trim() : '';
   const modeText = toTitleCase(state.mode || 'baseline');
   const biasText = toTitleCase(state.bias || 'neutral');
-  activeValue.textContent = biasText ? `${modeText} (${biasText})` : modeText;
+  activeValue.textContent = strategyName || (biasText ? `${modeText} (${biasText})` : modeText);
   header.append(activeValue);
   const timestampInfo = formatPlaybookCardTimestamp(state, PLAYBOOK_CARD_TIMESTAMP_KEYS.summary);
   const refreshedValue = state.refreshed_ts || state.refreshed;
@@ -10455,7 +10458,6 @@ function createPlaybookSummaryContent(state, { hint } = {}) {
     fragment.append(featuresSection);
   }
 
-  const strategy = state.strategy && typeof state.strategy === 'object' ? state.strategy : null;
   if (strategy) {
     const strategySection = document.createElement('div');
     strategySection.className = 'playbook-strategy';
