@@ -4220,8 +4220,20 @@ function normalizeTradeSnapshotPayload(snapshotPayload) {
     ? payload.exchange_positions ?? payload.exchangePositions
     : [];
   payload.playbook = payload.playbook ?? null;
-  payload.playbook_activity = payload.playbook_activity ?? payload.playbookActivity ?? null;
-  payload.playbook_process = payload.playbook_process ?? payload.playbookProcess ?? null;
+  const normalizePlaybookEntries = (raw) => {
+    if (Array.isArray(raw)) return raw;
+    if (raw && typeof raw === 'object') {
+      const entries = Object.values(raw).filter((entry) => entry && typeof entry === 'object');
+      if (entries.length > 0) return entries;
+    }
+    return null;
+  };
+
+  payload.playbook_activity = normalizePlaybookEntries(
+    payload.playbook_activity ?? payload.playbookActivity,
+  );
+
+  payload.playbook_process = normalizePlaybookEntries(payload.playbook_process ?? payload.playbookProcess);
   payload.playbook_market_overview =
     payload.playbook_market_overview ?? payload.playbookMarketOverview ?? null;
   payload.ai_trade_proposals = Array.isArray(payload.ai_trade_proposals ?? payload.aiTradeProposals)
