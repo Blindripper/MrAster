@@ -158,119 +158,122 @@
               <img src="/assets/mraster-logo.png" alt="MrAster logo" />
             </figure>
           </div>
-          <div class="hero-visual">
+            <div class="hero-visual">
             <div class="hero-visual-grid">
-              <div class="hero-orbit" role="group" aria-label="Exchange credentials and system status">
-                <section class="card hero-credentials hero-orbit-card" aria-label="Exchange credentials">
-                  <div class="card-header card-header--simple">
-                    <span class="hero-credentials-title" data-i18n="credentials.title">Exchange credentials</span>
-                  </div>
-                  <div class="hero-credentials-content">
-                    <div class="hero-credentials-grid">
-                      <label class="hero-credential">
-                        <span data-i18n="credentials.apiKey.label">ASTER_API_KEY</span>
-                        <input
-                          id="input-api-key"
-                          type="text"
-                          autocomplete="off"
-                          placeholder="Enter API key"
-                          data-i18n="credentials.apiKey.placeholder"
-                          data-i18n-attr="placeholder"
-                        />
-                      </label>
-                      <label class="hero-credential">
-                        <span data-i18n="credentials.apiSecret.label">ASTER_API_SECRET</span>
-                        <input
-                          id="input-api-secret"
-                          type="password"
-                          autocomplete="off"
-                          placeholder="Enter API secret"
-                          data-i18n="credentials.apiSecret.placeholder"
-                          data-i18n-attr="placeholder"
-                        />
-                      </label>
-                      <div class="hero-credentials-actions">
-                        <button id="btn-start" class="primary" data-i18n="credentials.start">Start</button>
-                        <button id="btn-stop" class="ghost" data-i18n="credentials.stop">Stop</button>
-                        <button id="btn-save-credentials" class="primary subtle" data-i18n="credentials.save">Save</button>
-                      </div>
+              <div class="hero-orbit hero-orbit--compact" role="group" aria-label="Exchange credentials and system status">
+                <section class="card hero-console-card" aria-label="Exchange credentials and status">
+                  <div class="hero-console-header">
+                    <div class="hero-console-title-group">
+                      <span class="hero-console-kicker" data-i18n="credentials.title">Exchange credentials</span>
+                      <span class="hero-console-divider" aria-hidden="true"></span>
+                      <span class="hero-console-kicker" data-i18n="status.title">Status</span>
+                    </div>
+                    <div class="hero-console-actions">
+                      <button id="btn-start" class="primary" data-i18n="credentials.start">Start</button>
+                      <button id="btn-stop" class="ghost" data-i18n="credentials.stop">Stop</button>
+                      <button id="btn-save-credentials" class="primary subtle" data-i18n="credentials.save">Save</button>
                     </div>
                   </div>
-                </section>
-                <section class="card status hero-orbit-card" aria-label="Bot status overview">
-                  <div class="card-header card-header--simple">
-                    <h2 data-i18n="status.title">Status</h2>
-                  </div>
-                  <div class="card-section-body">
-                    <div class="status-grid">
-                      <div>
-                        <span class="label" data-i18n="status.state">State</span>
-                        <span id="status-indicator" class="pill neutral">–</span>
-                      </div>
-                      <div>
-                        <span class="label" data-i18n="status.pid">PID</span>
-                        <span id="status-pid">–</span>
-                      </div>
-                      <div>
-                        <span class="label" data-i18n="status.started">Started</span>
-                        <span id="status-started">–</span>
-                      </div>
-                      <div>
-                        <span class="label" data-i18n="status.uptime">Uptime</span>
-                        <span id="status-uptime">–</span>
-                      </div>
-                      <div class="ai-budget" id="ai-budget" data-ai-only>
-                        <div class="ai-budget-header">
-                          <span class="label" data-i18n="status.aiBudget">AI budget (daily)</span>
-                          <span class="ai-budget-mode" id="ai-budget-mode">Standard</span>
+                  <div class="hero-console-columns">
+                    <div class="hero-console-column hero-console-column--credentials">
+                      <div class="hero-credentials-content hero-credentials-content--compact">
+                        <div class="hero-credentials-grid hero-credentials-grid--compact">
+                          <label class="hero-credential">
+                            <span data-i18n="credentials.apiKey.label">ASTER_API_KEY</span>
+                            <input
+                              id="input-api-key"
+                              type="text"
+                              autocomplete="off"
+                              placeholder="Enter API key"
+                              data-i18n="credentials.apiKey.placeholder"
+                              data-i18n-attr="placeholder"
+                            />
+                          </label>
+                          <label class="hero-credential">
+                            <span data-i18n="credentials.apiSecret.label">ASTER_API_SECRET</span>
+                            <input
+                              id="input-api-secret"
+                              type="password"
+                              autocomplete="off"
+                              placeholder="Enter API secret"
+                              data-i18n="credentials.apiSecret.placeholder"
+                              data-i18n-attr="placeholder"
+                            />
+                          </label>
                         </div>
-                        <div class="ai-budget-bar">
-                          <div class="ai-budget-fill" id="ai-budget-fill" style="width: 0%"></div>
-                        </div>
-                        <div class="ai-budget-meta" id="ai-budget-meta" data-i18n="status.aiBudgetMeta">Budget not configured.</div>
                       </div>
-                      <div class="status-stats">
-                      <div class="status-stats-header">
-                        <div class="decision-summary-group">
-                          <span class="label" data-i18n="status.tradeDecisions">Trade decisions</span>
-                          <div class="decision-summary" id="decision-summary">
-                            <span class="decision-metric" data-metric="taken">
-                              <span data-i18n="status.decisions.accepted">Accepted:</span>
-                              <strong>0</strong>
-                            </span>
-                            <span class="decision-metric" data-metric="skipped">
-                              <span data-i18n="status.decisions.skipped">Skipped:</span>
-                              <strong>0</strong>
-                            </span>
+                    </div>
+                    <div class="hero-console-column hero-console-column--status">
+                      <div class="status-grid status-grid--compact">
+                        <div>
+                          <span class="label" data-i18n="status.state">State</span>
+                          <span id="status-indicator" class="pill neutral">–</span>
+                        </div>
+                        <div>
+                          <span class="label" data-i18n="status.pid">PID</span>
+                          <span id="status-pid">–</span>
+                        </div>
+                        <div>
+                          <span class="label" data-i18n="status.started">Started</span>
+                          <span id="status-started">–</span>
+                        </div>
+                        <div>
+                          <span class="label" data-i18n="status.uptime">Uptime</span>
+                          <span id="status-uptime">–</span>
+                        </div>
+                        <div class="ai-budget" id="ai-budget" data-ai-only>
+                          <div class="ai-budget-header">
+                            <span class="label" data-i18n="status.aiBudget">AI budget (daily)</span>
+                            <span class="ai-budget-mode" id="ai-budget-mode">Standard</span>
                           </div>
+                          <div class="ai-budget-bar">
+                            <div class="ai-budget-fill" id="ai-budget-fill" style="width: 0%"></div>
+                          </div>
+                          <div class="ai-budget-meta" id="ai-budget-meta" data-i18n="status.aiBudgetMeta">Budget not configured.</div>
                         </div>
-                        <div class="decision-actions">
-                          <button
-                            id="decision-reasons-download"
-                            class="ghost"
-                            type="button"
-                            data-i18n="status.decisions.download"
-                            disabled
-                          >
-                            Download
-                          </button>
-                          <button
-                            id="decision-reasons-toggle"
-                            class="ghost collapse-toggle"
-                            type="button"
-                            aria-expanded="false"
-                            aria-controls="decision-reasons-container"
-                            hidden
-                          >
-                            <span id="decision-reasons-toggle-label" data-i18n="status.decisions.showDetails">Details</span>
-                            <span class="collapse-toggle__icon" aria-hidden="true"></span>
-                          </button>
-                        </div>
-                      </div>
-                        <div class="decision-reasons-container" id="decision-reasons-container" hidden>
-                          <ul class="decision-reasons" id="decision-reasons">
-                            <li class="empty" data-i18n="status.decisions.empty">No trade decisions yet.</li>
-                          </ul>
+                        <div class="status-stats">
+                          <div class="status-stats-header">
+                            <div class="decision-summary-group">
+                              <span class="label" data-i18n="status.tradeDecisions">Trade decisions</span>
+                              <div class="decision-summary" id="decision-summary">
+                                <span class="decision-metric" data-metric="taken">
+                                  <span data-i18n="status.decisions.accepted">Accepted:</span>
+                                  <strong>0</strong>
+                                </span>
+                                <span class="decision-metric" data-metric="skipped">
+                                  <span data-i18n="status.decisions.skipped">Skipped:</span>
+                                  <strong>0</strong>
+                                </span>
+                              </div>
+                            </div>
+                            <div class="decision-actions">
+                              <button
+                                id="decision-reasons-download"
+                                class="ghost"
+                                type="button"
+                                data-i18n="status.decisions.download"
+                                disabled
+                              >
+                                Download
+                              </button>
+                              <button
+                                id="decision-reasons-toggle"
+                                class="ghost collapse-toggle"
+                                type="button"
+                                aria-expanded="false"
+                                aria-controls="decision-reasons-container"
+                                hidden
+                              >
+                                <span id="decision-reasons-toggle-label" data-i18n="status.decisions.showDetails">Details</span>
+                                <span class="collapse-toggle__icon" aria-hidden="true"></span>
+                              </button>
+                            </div>
+                          </div>
+                          <div class="decision-reasons-container" id="decision-reasons-container" hidden>
+                            <ul class="decision-reasons" id="decision-reasons">
+                              <li class="empty" data-i18n="status.decisions.empty">No trade decisions yet.</li>
+                            </ul>
+                          </div>
                         </div>
                       </div>
                     </div>

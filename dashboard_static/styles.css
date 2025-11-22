@@ -992,6 +992,10 @@ body.pro-mode [data-normal-only] {
   gap: 1.25rem;
 }
 
+.hero-orbit--compact {
+  gap: 0.9rem;
+}
+
 .hero-orbit-card {
   flex: 1 1 clamp(260px, 30%, 360px);
   min-width: min(100%, 280px);
@@ -1005,6 +1009,153 @@ body.pro-mode [data-normal-only] {
   gap: 0.8rem;
   align-self: flex-start;
 }
+
+.hero-console-card {
+  gap: 0.6rem;
+  padding: 1.05rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(245, 196, 107, 0.18);
+  box-shadow: 0 10px 30px rgba(12, 11, 22, 0.55);
+}
+
+.hero-console-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.hero-console-title-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.78rem;
+}
+
+.hero-console-kicker {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.hero-console-divider {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: radial-gradient(circle at 30% 30%, var(--accent), rgba(245, 196, 107, 0.2));
+  opacity: 0.8;
+}
+
+.hero-console-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.hero-console-actions button {
+  padding: 0.55rem 1.05rem;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.hero-console-columns {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr);
+  gap: 0.85rem;
+  align-items: start;
+}
+
+.hero-console-column {
+  background: rgba(18, 21, 35, 0.7);
+  border-radius: 1rem;
+  border: 1px solid rgba(245, 196, 107, 0.14);
+  padding: 0.8rem 0.9rem;
+  box-shadow: inset 0 0 0 1px rgba(96, 83, 237, 0.08);
+}
+
+.hero-console-column--status {
+  border: 1px solid rgba(96, 83, 237, 0.15);
+}
+
+.hero-credentials-content--compact {
+  padding: 0.2rem 0.2rem 0.1rem;
+}
+
+.hero-credentials-grid--compact {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.55rem;
+  text-align: left;
+  justify-items: stretch;
+}
+
+.hero-credentials-grid--compact .hero-credential {
+  align-items: flex-start;
+}
+
+.hero-credentials-grid--compact input {
+  width: 100%;
+  padding: 0.55rem 0.8rem;
+}
+
+.status-grid--compact {
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  gap: 0.7rem 1rem;
+  text-align: left;
+  justify-items: stretch;
+}
+
+.status-grid--compact .label {
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+}
+
+.status-grid--compact #status-indicator,
+.status-grid--compact span[id^='status-'] {
+  font-size: 0.95rem;
+}
+
+.hero-console-column .ai-budget {
+  margin-top: 0.35rem;
+}
+
+.hero-console-column .status-stats {
+  padding: 0.65rem 0.7rem;
+  border-radius: 0.85rem;
+  background: radial-gradient(circle at 20% 20%, rgba(96, 83, 237, 0.16), rgba(14, 17, 29, 0.8));
+  border: 1px solid rgba(96, 83, 237, 0.18);
+  box-shadow: 0 6px 20px rgba(4, 5, 10, 0.45);
+}
+
+.hero-console-column .status-stats-header {
+  align-items: center;
+  gap: 0.65rem;
+}
+
+@media (max-width: 980px) {
+  .hero-console-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-console-header {
+    align-items: flex-start;
+  }
+
+  .hero-console-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .hero-console-column {
+    padding: 0.7rem 0.8rem;
+  }
+}
+
 
 .hero-orbit-card .card-header,
 .hero-orbit-card .card-section-body,
