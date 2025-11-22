@@ -199,6 +199,32 @@ def test_strategy_caps_min_edge_override_to_point_zero_five():
     assert strategy.min_edge_r <= expected_edge
 
 
+def test_edge_near_miss_relief_softens_gate():
+    state: dict = {}
+    strategy = Strategy(exchange=_DummyExchange(), state=state)
+    defaults = dict(strategy._filter_defaults)
+
+    # Start from a slightly elevated edge gate to make relief visible.
+    strategy.min_edge_r = defaults["min_edge_r"] * 1.2
+    strategy._skip_pass_rate = 1.0  # deterministically allow the near-miss release
+
+    allowed = strategy._should_release_near_miss(
+        reason="edge_r",
+        symbol="XRPUSDT",
+        gate=strategy.min_edge_r,
+        value=strategy.min_edge_r * 0.97,
+        direction="below",
+        ctx={"gate_label": "Min expected R", "metric_label": "Expected R"},
+    )
+
+    assert allowed
+    assert strategy.min_edge_r < defaults["min_edge_r"] * 1.2
+    assert strategy.min_edge_r >= EXPECTED_R_MIN_FLOOR
+    assert strategy._active_playbook_filters.get("edge_r", {}).get("min_edge_r") == pytest.approx(
+        strategy.min_edge_r
+    )
+
+
 def test_playbook_rsi_window_remains_stable_under_overrides():
     state: dict = {}
     strategy = Strategy(exchange=_DummyExchange(), state=state)

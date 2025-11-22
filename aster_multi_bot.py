@@ -8176,6 +8176,13 @@ class Strategy:
             bucket["stoch_warn"] = float(self.continuation_pullback_warn)
             return
 
+        if reason == "edge_r":
+            new_gate = max(EXPECTED_R_MIN_FLOOR, gate * 0.92)
+            self.min_edge_r = new_gate
+            bucket = self._active_playbook_filters.setdefault("edge_r", {})
+            bucket["min_edge_r"] = float(new_gate)
+            return
+
     def _should_release_near_miss(
         self,
         *,
@@ -10591,14 +10598,25 @@ class Strategy:
 
         if expected_R < min_edge:
             ctx_base["min_expected_r"] = float(min_edge)
-            return self._skip(
-                "edge_r",
-                symbol,
-                {"expR": f"{expected_R:.3f}", "minR": f"{min_edge:.3f}"},
-                ctx=ctx_base,
-                price=mid,
-                atr=atr,
-            )
+            if not self._should_release_near_miss(
+                reason="edge_r",
+                symbol=symbol,
+                gate=min_edge,
+                value=expected_R,
+                direction="below",
+                ctx={
+                    "gate_label": "Min expected R",
+                    "metric_label": "Expected R",
+                },
+            ):
+                return self._skip(
+                    "edge_r",
+                    symbol,
+                    {"expR": f"{expected_R:.3f}", "minR": f"{min_edge:.3f}"},
+                    ctx=ctx_base,
+                    price=mid,
+                    atr=atr,
+                )
 
         quality_gate_pass = filter_penalty < FILTER_PENALTY_WARN
         ctx_base["quality_gate_pass"] = 1.0 if quality_gate_pass else 0.0
