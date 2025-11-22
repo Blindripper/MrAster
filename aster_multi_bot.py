@@ -751,7 +751,7 @@ PLAYBOOK_BULL_SHORT_BLOCK_ENABLED = (
 )
 PLAYBOOK_LONG_FLOOR = float(os.getenv("ASTER_PLAYBOOK_LONG_SHARE_FLOOR", "0.4") or 0.4)
 PLAYBOOK_SIDE_MIN_SAMPLE = int(os.getenv("ASTER_PLAYBOOK_SIDE_MIN_SAMPLE", "4") or 4)
-TREND_SHORT_STOCHRSI_MIN = float(os.getenv("ASTER_TREND_SHORT_STOCHRSI_MIN", "5.0") or 5.0)
+TREND_SHORT_STOCHRSI_MIN = float(os.getenv("ASTER_TREND_SHORT_STOCHRSI_MIN", "3.0") or 3.0)
 STOCH_SHORT_PENALTY_BLOCK = float(os.getenv("ASTER_STOCH_SHORT_PENALTY_BLOCK", "0.75") or 0.75)
 ATR_ADVERSE_EXIT_MULT = float(os.getenv("ASTER_ATR_ADVERSE_EXIT_MULT", "0.5") or 0.5)
 EXPECTED_R_RATIO_WINDOW = int(os.getenv("ASTER_EXPECTED_R_ALERT_WINDOW", "16") or 16)
@@ -922,9 +922,9 @@ WICKINESS_NOISE_THRESHOLD = max(0.0, float(os.getenv("ASTER_WICKINESS_NOISE_THRE
 WICKINESS_STOP_BOOST = max(0.0, float(os.getenv("ASTER_WICKINESS_STOP_BOOST", "0.55") or 0.55))
 MIN_TP_SL_RATIO = max(1.05, float(os.getenv("ASTER_MIN_TP_SL_RATIO", "1.3") or 1.3))
 
-SENTINEL_HYPE_BLOCK_THRESHOLD = max(0.0, float(os.getenv("ASTER_SENTINEL_HYPE_BLOCK_THRESHOLD", "0.65") or 0.65))
-SENTINEL_HYPE_MIN_MULT = max(0.05, float(os.getenv("ASTER_SENTINEL_HYPE_MIN_MULT", "0.25") or 0.25))
-SENTINEL_HYPE_WEIGHT = max(0.1, float(os.getenv("ASTER_SENTINEL_HYPE_WEIGHT", "1.8") or 1.8))
+SENTINEL_HYPE_BLOCK_THRESHOLD = max(0.0, float(os.getenv("ASTER_SENTINEL_HYPE_BLOCK_THRESHOLD", "0.70") or 0.70))
+SENTINEL_HYPE_MIN_MULT = max(0.05, float(os.getenv("ASTER_SENTINEL_HYPE_MIN_MULT", "0.30") or 0.30))
+SENTINEL_HYPE_WEIGHT = max(0.1, float(os.getenv("ASTER_SENTINEL_HYPE_WEIGHT", "1.5") or 1.5))
 EVENT_RISK_SIZE_SOFT_THRESHOLD = max(0.0, float(os.getenv("ASTER_EVENT_RISK_SIZE_SOFT_THRESHOLD", "0.45") or 0.45))
 EVENT_RISK_SIZE_HARD_THRESHOLD = max(EVENT_RISK_SIZE_SOFT_THRESHOLD, float(os.getenv("ASTER_EVENT_RISK_SIZE_HARD_THRESHOLD", "0.8") or 0.8))
 EVENT_RISK_MIN_MULT = max(0.05, float(os.getenv("ASTER_EVENT_RISK_MIN_MULT", "0.35") or 0.35))
@@ -1096,7 +1096,7 @@ FUNDING_MAX_SHORT = float(os.getenv("ASTER_FUNDING_MAX_SHORT", "0.0010"))  # 0.1
 
 NON_ARB_FILTER_ENABLED = os.getenv("ASTER_NON_ARB_FILTER_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 NON_ARB_CLAMP_BPS = abs(float(os.getenv("ASTER_NON_ARB_CLAMP_BPS", "0.00065"))) or 0.00065
-NON_ARB_EDGE_THRESHOLD = abs(float(os.getenv("ASTER_NON_ARB_EDGE_THRESHOLD", "0.00035")))
+NON_ARB_EDGE_THRESHOLD = abs(float(os.getenv("ASTER_NON_ARB_EDGE_THRESHOLD", "0.00045")))
 NON_ARB_SKIP_GAP = abs(
     float(os.getenv("ASTER_NON_ARB_SKIP_GAP", str(max(NON_ARB_CLAMP_BPS * 3.5, 0.003))))
 )
@@ -1163,7 +1163,7 @@ ORDERBOOK_BIAS_CONFLICT = float(os.getenv("ASTER_ORDERBOOK_BIAS_CONFLICT", "0.33
 ORDERBOOK_BIAS_BUY_MIN = float(os.getenv("ASTER_ORDERBOOK_BIAS_BUY_MIN", "-0.05"))
 ORDERBOOK_BIAS_SELL_MAX = float(os.getenv("ASTER_ORDERBOOK_BIAS_SELL_MAX", "0.05"))
 ORDERBOOK_BIAS_REQUIRED = os.getenv("ASTER_ORDERBOOK_BIAS_REQUIRED", "true").lower() in ("1", "true", "yes", "on")
-FUNDING_EDGE_MIN = float(os.getenv("ASTER_FUNDING_EDGE_MIN", "0.0"))
+FUNDING_EDGE_MIN = float(os.getenv("ASTER_FUNDING_EDGE_MIN", "-0.0002"))
 QUALITY_LEVERAGE = float(os.getenv("ASTER_QUALITY_LEVERAGE", "9.0"))
 STRUCTURED_EVENT_BLOCK_MIN = float(os.getenv("ASTER_STRUCTURED_EVENT_BLOCK_MIN", "0.4"))
 
@@ -7991,8 +7991,8 @@ class Strategy:
         self.sentinel_gate_block_risk = float(SENTINEL_SIZE_GATE_BLOCK_RISK)
         self.sentinel_gate_min_mult = float(SENTINEL_SIZE_GATE_MIN_MULT)
         self.sentinel_gate_weight = float(SENTINEL_SIZE_GATE_WEIGHT)
-        self.structured_block_event_risk_cap = 0.0
-        self.structured_block_soft_multiplier = 1.0
+        self.structured_block_event_risk_cap = 0.55
+        self.structured_block_soft_multiplier = 0.75
         self._skip_bypass_prob_map: Dict[str, float] = {}
         self._skip_bypass_excluded: Set[str] = set()
         if hasattr(self, "long_overextended_rsi_cap"):
@@ -15458,7 +15458,7 @@ class Bot:
         directive_note = ctx.get("playbook_symbol_note")
         directive_source = ctx.get("playbook_symbol_directive_source")
         directive_summary = directive_note or directive_source or directive_label_raw or "playbook directive"
-        if directive_label_raw in {"block", "avoid"} or directive_level >= 2.4:
+        if directive_label_raw in {"block", "avoid"} or directive_level >= 2.6:
             if self.decision_tracker:
                 self.decision_tracker.record_rejection("playbook_directive_block")
             ctx["playbook_symbol_veto"] = True
