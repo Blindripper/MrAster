@@ -176,6 +176,12 @@ QUOTE = os.getenv("ASTER_QUOTE", "USDT")
 INTERVAL = os.getenv("ASTER_INTERVAL", "5m")
 HTF_INTERVAL = os.getenv("ASTER_HTF_INTERVAL", "30m")
 KLINES = int(os.getenv("ASTER_KLINES", "360"))
+HTF_KLINES = int(os.getenv("ASTER_HTF_KLINES", "120"))
+KLINES_MIN = int(os.getenv("ASTER_KLINES_MIN", "120"))
+KLINES_MAX = int(os.getenv("ASTER_KLINES_MAX", "720"))
+KLINES_ATR_LOW = float(os.getenv("ASTER_KLINES_ATR_LOW", "0.004") or 0.004)
+KLINES_ATR_HIGH = float(os.getenv("ASTER_KLINES_ATR_HIGH", "0.015") or 0.015)
+KLINES_TREND_BIAS = float(os.getenv("ASTER_KLINES_TREND_BIAS", "0.02") or 0.02)
 
 DEFAULT_MARKETS_URL = os.getenv(
     "ASTER_MARKETS_URL", f"{BASE}/fapi/v1/exchangeInfo"
@@ -9156,6 +9162,56 @@ class Strategy:
                 self._kl_cache.pop(k, None)
         return clone
 
+    def _adaptive_kline_limit(
+        self,
+        symbol: str,
+        interval: str,
+        base_limit: int,
+        *,
+        default_min: Optional[int] = None,
+        default_max: Optional[int] = None,
+    ) -> int:
+        base = int(max(1, base_limit))
+        lower = int(max(60, default_min if default_min is not None else KLINES_MIN))
+        upper = int(max(lower, default_max if default_max is not None else KLINES_MAX))
+
+        limit = int(clamp(base, lower, upper))
+        cached: Tuple[Tuple[float, ...], ...] = ()
+        for (sym, iv, _), (_, data) in self._kl_cache.items():
+            if sym == symbol and iv == interval and data:
+                cached = data
+                break
+
+        if not cached:
+            return limit
+
+        tail = list(cached[-120:])
+        closes = [float(row[4]) for row in tail if len(row) >= 5]
+        if len(closes) < 20:
+            return limit
+
+        price = closes[-1]
+        atr_window = min(14, max(5, len(tail) // 4))
+        try:
+            atr = atr_abs_from_klines([list(row) for row in tail], period=atr_window)
+        except Exception:
+            atr = 0.0
+        atr_ratio = (atr / price) if price > 0 else 0.0
+
+        if atr_ratio > 0:
+            if atr_ratio < KLINES_ATR_LOW:
+                limit = min(upper, max(limit, int(base * 1.5)))
+            elif atr_ratio > KLINES_ATR_HIGH:
+                limit = max(lower, min(limit, int(base * 0.75)))
+
+        trend_span = min(len(closes) - 1, 48)
+        if trend_span > 5:
+            momentum = (closes[-1] - closes[-trend_span]) / max(closes[-trend_span], 1e-9)
+            if abs(momentum) >= KLINES_TREND_BIAS:
+                limit = max(lower, min(upper, int(limit * 0.9)))
+
+        return int(clamp(limit, lower, upper))
+
     def prime_ticker_cache(
         self, payload: Dict[str, Dict[str, Any]], *, timestamp: Optional[float] = None
     ) -> None:
@@ -9722,10 +9778,14 @@ class Strategy:
         order_book: Optional[Dict[str, Any]] = None,
     ) -> Tuple[str, float, Dict[str, float], float]:
         try:
-            kl = self._klines_cached(symbol, INTERVAL, KLINES)
+            kl_limit = self._adaptive_kline_limit(symbol, INTERVAL, KLINES)
+            kl = self._klines_cached(symbol, INTERVAL, kl_limit)
             if not kl or len(kl) < 60:
                 return self._skip("few_klines", symbol, {"k": len(kl) if kl else 0})
-            htf = self._klines_cached(symbol, HTF_INTERVAL, 120)
+            htf_limit = self._adaptive_kline_limit(
+                symbol, HTF_INTERVAL, HTF_KLINES, default_min=90, default_max=max(HTF_KLINES, 200)
+            )
+            htf = self._klines_cached(symbol, HTF_INTERVAL, htf_limit)
         except Exception as e:
             return self._skip("klines_err", symbol, {"err": str(e)[:80]})
 
