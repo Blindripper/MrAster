@@ -1125,6 +1125,7 @@ RSI_BUY_MIN = float(os.getenv("ASTER_RSI_BUY_MIN", "32"))
 RSI_SELL_MAX = float(os.getenv("ASTER_RSI_SELL_MAX", "68"))
 ALLOW_ALIGN = os.getenv("ASTER_ALLOW_TREND_ALIGN", "true").lower() in ("1", "true", "yes", "on")
 ALIGN_RSI_PAD = float(os.getenv("ASTER_ALIGN_RSI_PAD", "6.0"))
+NO_SIGNAL_RSI_RELIEF = max(0.0, float(os.getenv("ASTER_NO_SIGNAL_RSI_RELIEF", "1.5")))
 EARLY_ENTRY_MODE = os.getenv("ASTER_EARLY_ENTRY_MODE", "enabled").strip().lower()
 EARLY_ENTRY_ENABLED = EARLY_ENTRY_MODE not in {"off", "false", "disabled", "none"}
 TREND_BIAS = os.getenv("ASTER_TREND_BIAS", "with").strip().lower()
@@ -10191,6 +10192,25 @@ class Strategy:
                     sig, candidate_flag, candidate_extras = candidate
                     chosen_flag = candidate_flag
                     ctx_base.update(candidate_extras)
+            if sig == "NONE" and NO_SIGNAL_RSI_RELIEF > 0:
+                if (
+                    htf_trend_up
+                    and ema_fast[-1] >= ema_slow[-1]
+                    and rsi14[-1] > (self.rsi_buy_min - NO_SIGNAL_RSI_RELIEF)
+                ):
+                    sig = "BUY"
+                    chosen_flag = "setup_trend_follow"
+                    soft_confirmation_used = True
+                    soft_confirmation_detail = "no_signal_relief_buy"
+                elif (
+                    htf_trend_down
+                    and ema_fast[-1] <= ema_slow[-1]
+                    and rsi14[-1] < (self.rsi_sell_max + NO_SIGNAL_RSI_RELIEF)
+                ):
+                    sig = "SELL"
+                    chosen_flag = "setup_trend_follow"
+                    soft_confirmation_used = True
+                    soft_confirmation_detail = "no_signal_relief_sell"
             if sig == "NONE":
                 return self._skip("no_signal", symbol, ctx=ctx_base, price=mid, atr=atr)
 
@@ -10201,6 +10221,8 @@ class Strategy:
         ctx_base.setdefault("breakout_quality", 0.0)
         ctx_base.setdefault("range_direction", 0.0)
         ctx_base.setdefault("breakout_direction", 0.0)
+        if soft_confirmation_used:
+            ctx_base["soft_confirmation"] = soft_confirmation_detail or "no_signal_relief"
 
         def _add_penalty(key: str, value: float, detail: Optional[str] = None) -> None:
             nonlocal filter_penalty
