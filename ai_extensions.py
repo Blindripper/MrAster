@@ -28,7 +28,7 @@ def _parse_env_float(key: str) -> Optional[float]:
 def _playbook_refresh_interval_seconds() -> float:
     """Resolve the desired refresh interval for AI playbook updates."""
 
-    default_seconds = 3 * 60 * 60.0
+    default_seconds = 20 * 60.0
     seconds = _parse_env_float("ASTER_PLAYBOOK_REFRESH_INTERVAL_SECONDS")
     if seconds is None:
         seconds = _parse_env_float("ASTER_PLAYBOOK_REFRESH_SECONDS")
@@ -40,7 +40,7 @@ def _playbook_refresh_interval_seconds() -> float:
             seconds = minutes * 60.0
     if seconds is None:
         seconds = default_seconds
-    seconds = max(3 * 60 * 60.0, float(seconds))
+    seconds = max(20 * 60.0, float(seconds))
     return seconds
 
 
@@ -1227,6 +1227,23 @@ class PlaybookManager:
 
     _SOFT_BLOCK_FACTOR = 0.45
 
+    _KLINE_SIZING_DEFAULT = "adaptive"
+    _KLINE_SIZING_ALIASES = {
+        "adaptive": "adaptive",
+        "dynamic": "adaptive",
+        "auto": "adaptive",
+        "balanced": "adaptive",
+        "standard": "adaptive",
+        "compact": "compact",
+        "tight": "compact",
+        "short": "compact",
+        "wide": "expanded",
+        "expanded": "expanded",
+        "long": "expanded",
+        "static": "static",
+        "fixed": "static",
+    }
+
     STRUCTURED_EVENT_BLOCK_MIN = float(
         os.getenv("ASTER_STRUCTURED_EVENT_BLOCK_MIN", "0.4") or 0.0
     )
@@ -1276,11 +1293,14 @@ class PlaybookManager:
                     "size_bias": {"BUY": 1.0, "SELL": 1.0},
                     "sl_bias": 1.0,
                     "tp_bias": 1.0,
+                    "kline_sizing": self._KLINE_SIZING_DEFAULT,
                     "features": {},
                     "refreshed": 0.0,
                 }
             },
         )
+        if isinstance(self._state.get("active"), dict):
+            self._state["active"].setdefault("kline_sizing", self._KLINE_SIZING_DEFAULT)
         self._request_fn = request_fn
         self._refresh_interval = _PLAYBOOK_REFRESH_INTERVAL_SECONDS
         self._bootstrap_pending = True
@@ -1844,6 +1864,12 @@ class PlaybookManager:
                     ctx[pref_key] = numeric
         ctx["playbook_mode"] = active.get("mode", "baseline")
         ctx["playbook_bias"] = active.get("bias", "neutral")
+        kline_sizing = str(active.get("kline_sizing", self._KLINE_SIZING_DEFAULT) or "")
+        if kline_sizing:
+            normalized_kline = self._KLINE_SIZING_ALIASES.get(
+                kline_sizing.strip().lower(), self._KLINE_SIZING_DEFAULT
+            )
+            ctx["playbook_kline_sizing"] = normalized_kline
         size_bias_data = active.get("size_bias", {})
         size_bias = size_bias_data if isinstance(size_bias_data, dict) else {}
         try:
@@ -2287,12 +2313,33 @@ class PlaybookManager:
             payload.get("reason") or payload.get("rationale")
         )
 
+        def _normalize_kline_sizing(value: Any) -> str:
+            if value is None:
+                return self._KLINE_SIZING_DEFAULT
+            if isinstance(value, str):
+                text = value.strip().lower()
+            else:
+                try:
+                    text = str(value).strip().lower()
+                except Exception:
+                    text = ""
+            if not text:
+                return self._KLINE_SIZING_DEFAULT
+            return self._KLINE_SIZING_ALIASES.get(
+                text, self._KLINE_SIZING_DEFAULT
+            )
+
+        kline_sizing = _normalize_kline_sizing(
+            payload.get("kline_sizing") or payload.get("klines")
+        )
+
         active = {
             "mode": mode,
             "bias": bias,
             "size_bias": normalized_size,
             "sl_bias": float(max(0.4, min(2.5, float(payload.get("sl_bias", 1.0) or 1.0)))),
             "tp_bias": float(max(0.6, min(3.0, float(payload.get("tp_bias", 1.0) or 1.0)))),
+            "kline_sizing": kline_sizing,
             "features": normalized_features,
             "notes": notes if isinstance(notes, str) else "",
             "refreshed": now,

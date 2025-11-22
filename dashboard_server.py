@@ -596,6 +596,18 @@ def _normalize_playbook_state(raw: Any) -> Optional[Dict[str, Any]]:
     mode = str(active.get("mode") or "baseline")
     bias = str(active.get("bias") or "neutral")
 
+    kline_sizing_raw = active.get("kline_sizing")
+    kline_sizing = None
+    if isinstance(kline_sizing_raw, str):
+        cleaned = kline_sizing_raw.strip()
+        kline_sizing = cleaned or None
+    elif kline_sizing_raw is not None:
+        try:
+            cleaned = str(kline_sizing_raw).strip()
+            kline_sizing = cleaned or None
+        except Exception:
+            kline_sizing = None
+
     size_bias_raw = active.get("size_bias")
     size_bias: Dict[str, float] = {}
     if isinstance(size_bias_raw, dict):
@@ -666,6 +678,8 @@ def _normalize_playbook_state(raw: Any) -> Optional[Dict[str, Any]]:
         "mode": mode,
         "bias": bias,
     }
+    if kline_sizing:
+        result["kline_sizing"] = kline_sizing
     if size_bias:
         result["size_bias"] = size_bias
     if sl_bias is not None:
@@ -736,6 +750,8 @@ def _derive_playbook_state_from_activity(
             result["mode"] = mode_raw.strip()
         if isinstance(bias_raw, str) and bias_raw.strip():
             result["bias"] = bias_raw.strip()
+        if isinstance(entry.get("kline_sizing"), str) and entry["kline_sizing"].strip():
+            result["kline_sizing"] = entry["kline_sizing"].strip()
 
         if isinstance(size_bias_raw, dict):
             normalized_size: Dict[str, float] = {}
@@ -956,6 +972,7 @@ def _collect_playbook_activity(ai_activity: List[Any]) -> List[Dict[str, Any]]:
                 "tp_atr_mult",
                 "snapshot_meta",
                 "features",
+                "kline_sizing",
             }
             if any(key in data for key in playbook_keys) and not disallowed_mode:
                 relevant = True
@@ -1018,7 +1035,7 @@ def _collect_playbook_activity(ai_activity: List[Any]) -> List[Dict[str, Any]]:
                     if stripped_note:
                         record["notes"] = stripped_note
 
-            for key in ("mode", "bias"):
+            for key in ("mode", "bias", "kline_sizing"):
                 value = data.get(key)
                 if isinstance(value, str):
                     record[key] = value.strip()
@@ -1093,22 +1110,23 @@ def _build_playbook_process(
     if not isinstance(activity, list):
         return []
 
-    def _resolve_stage(entry: Dict[str, Any]) -> str:
-        kind = str(entry.get("kind") or "").strip().lower()
-        headline = str(entry.get("headline") or "").strip().lower()
-        if kind == "query" or "refresh requested" in headline:
-            return "requested"
-        if kind in {"error", "alert"} or "failed" in headline:
-            return "failed"
-        if kind in {"playbook", "info", "tuning"} and (
-            entry.get("mode")
-            or entry.get("bias")
-            or entry.get("size_bias")
-            or entry.get("sl_bias")
-            or entry.get("tp_bias")
-        ):
-            return "applied"
-        return "info"
+        def _resolve_stage(entry: Dict[str, Any]) -> str:
+            kind = str(entry.get("kind") or "").strip().lower()
+            headline = str(entry.get("headline") or "").strip().lower()
+            if kind == "query" or "refresh requested" in headline:
+                return "requested"
+            if kind in {"error", "alert"} or "failed" in headline:
+                return "failed"
+            if kind in {"playbook", "info", "tuning"} and (
+                entry.get("mode")
+                or entry.get("bias")
+                or entry.get("size_bias")
+                or entry.get("sl_bias")
+                or entry.get("tp_bias")
+                or entry.get("kline_sizing")
+            ):
+                return "applied"
+            return "info"
 
     grouped: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
     anonymous_counter = 0
@@ -1119,6 +1137,7 @@ def _build_playbook_process(
         "size_bias",
         "sl_bias",
         "tp_bias",
+        "kline_sizing",
         "snapshot_summary",
         "notes",
     )
@@ -1175,7 +1194,14 @@ def _build_playbook_process(
                 record["requested_ts"] = parsed.timestamp()
                 record["requested_ts_iso"] = parsed.isoformat()
 
-        for key_name in ("mode", "bias", "size_bias", "sl_bias", "tp_bias"):
+        for key_name in (
+            "mode",
+            "bias",
+            "size_bias",
+            "sl_bias",
+            "tp_bias",
+            "kline_sizing",
+        ):
             value = entry.get(key_name)
             if value is not None:
                 record[key_name] = value
@@ -6822,6 +6848,9 @@ class AIChatEngine:
             snippet = (
                 f"Active playbook: {mode} ({bias}) · size BUY {buy_bias:.2f}/SELL {sell_bias:.2f} · SL×{sl_bias:.2f} · TP×{tp_bias:.2f}"
             )
+            kline_sizing = resolved_playbook.get("kline_sizing")
+            if isinstance(kline_sizing, str) and kline_sizing.strip():
+                snippet += f" · klines: {kline_sizing.strip()}"
             if feature_blurbs:
                 snippet += " · " + ", ".join(feature_blurbs)
             overlay["playbook_line"] = snippet
