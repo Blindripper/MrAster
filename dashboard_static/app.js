@@ -13254,6 +13254,20 @@ function renderHeroMetrics(
   };
 
   const resolveClosedTradeCount = () => {
+    const completedPositionCards = (() => {
+      if (Array.isArray(completedPositionsHistory)) {
+        return completedPositionsHistory.length;
+      }
+      if (completedPositionsList) {
+        return completedPositionsList.querySelectorAll('.completed-position-card').length;
+      }
+      return null;
+    })();
+
+    if (Number.isFinite(completedPositionCards) && completedPositionCards >= 0) {
+      return completedPositionCards;
+    }
+
     const historyTradeCount =
       historyList.length > 0 ? countHistoryPositions(historyList, positionMemory) : null;
 
