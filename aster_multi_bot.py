@@ -8294,7 +8294,9 @@ class Strategy:
                 max(0.0, stoch_share - STOCH_RELIEF_THRESHOLD) * STOCH_RELIEF_STRENGTH,
             )
             if stoch_pad > 0:
-                self.trend_short_stochrsi_min = max(10.0, self.trend_short_stochrsi_min - stoch_pad)
+                self.trend_short_stochrsi_min = max(
+                    TREND_SHORT_STOCHRSI_MIN, self.trend_short_stochrsi_min - stoch_pad
+                )
                 adjustments["trend_stoch_min"] = round(self.trend_short_stochrsi_min, 2)
 
         if hasattr(self, "long_overextended_rsi_cap"):
@@ -8346,7 +8348,7 @@ class Strategy:
 
         self.trend_short_stochrsi_min = clamp(
             self.trend_short_stochrsi_min,
-            STOCHRSI_OVERSOLD + 1.0,
+            TREND_SHORT_STOCHRSI_MIN,
             99.0,
         )
 
