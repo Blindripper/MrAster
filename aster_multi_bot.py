@@ -12687,6 +12687,38 @@ class Bot:
 
         return _coerce_float(value, default)
 
+    @staticmethod
+    def _safe_float(value: Any) -> Optional[float]:
+        """Safely coerce a value to float without raising attribute errors."""
+
+        if value is None:
+            return None
+
+        # fast path for numerics
+        if isinstance(value, (int, float)):
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                return None
+            return numeric if math.isfinite(numeric) else None
+
+        # strings: extract the first numeric fragment (e.g., "~1,250.5 units")
+        if isinstance(value, str):
+            match = re.search(r"-?\d+(?:[.,]\d+)?", value)
+            if not match:
+                return None
+            try:
+                numeric = float(match.group(0).replace(",", ""))
+            except (TypeError, ValueError):
+                return None
+            return numeric if math.isfinite(numeric) else None
+
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return None
+        return numeric if math.isfinite(numeric) else None
+
     def _apply_policy_tunables(self) -> None:
         policy = getattr(self, "policy", None)
         if not isinstance(policy, BanditPolicy):
