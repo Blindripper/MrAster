@@ -916,6 +916,13 @@ EXPECTED_R_DRIFT_SOFT = max(0.5, float(os.getenv("ASTER_EXPECTED_R_DRIFT_SOFT", 
 EXPECTED_R_DRIFT_HALT = max(EXPECTED_R_DRIFT_SOFT, float(os.getenv("ASTER_EXPECTED_R_DRIFT_HALT", "5.0") or 5.0))
 EXPECTED_R_DRIFT_MIN_MULT = max(0.05, float(os.getenv("ASTER_EXPECTED_R_DRIFT_MIN_MULT", "0.2") or 0.2))
 EXPECTED_R_DRIFT_SIZE_WEIGHT = max(0.1, float(os.getenv("ASTER_EXPECTED_R_DRIFT_SIZE_WEIGHT", "0.65") or 0.65))
+EXPECTED_R_DRIFT_RECOVERY_MINUTES = max(
+    0.0, float(os.getenv("ASTER_EXPECTED_R_DRIFT_RECOVERY_MINUTES", "30") or 30.0)
+)
+EXPECTED_R_DRIFT_RECOVERY_MULT = max(
+    EXPECTED_R_DRIFT_MIN_MULT,
+    min(1.0, float(os.getenv("ASTER_EXPECTED_R_DRIFT_RECOVERY_MULT", "0.35") or 0.35)),
+)
 
 MIN_STOP_ATR_MULT = max(1.0, float(os.getenv("ASTER_MIN_STOP_ATR_MULT", "1.2") or 1.2))
 WICKINESS_NOISE_THRESHOLD = max(0.0, float(os.getenv("ASTER_WICKINESS_NOISE_THRESHOLD", "0.35") or 0.35))
@@ -11442,18 +11449,58 @@ class TradeManager:
 
     def _expected_r_drift_multiplier(self, ctx: Dict[str, Any]) -> Tuple[float, bool]:
         drift_val = _coerce_float(ctx.get("expected_r_signal_drift"))
+        status = self.state.setdefault("expected_r_drift_status", {}) if isinstance(self.state, dict) else {}
+        now = time.time()
+
         if drift_val is None or drift_val <= 0:
+            if isinstance(status, dict):
+                status.clear()
             return 1.0, False
+
+        blocked_at = _coerce_float(status.get("blocked_at")) or 0.0
+        cooldown = EXPECTED_R_DRIFT_RECOVERY_MINUTES * 60.0
+
         if drift_val >= EXPECTED_R_DRIFT_HALT:
+            if isinstance(status, dict):
+                if not blocked_at:
+                    blocked_at = now
+                status["blocked_at"] = blocked_at
+                status["blocked_drift"] = float(drift_val)
+                status.pop("recovering", None)
+            if cooldown > 0 and blocked_at and now - blocked_at >= cooldown:
+                probation_mult = max(
+                    EXPECTED_R_DRIFT_MIN_MULT,
+                    min(EXPECTED_R_DRIFT_RECOVERY_MULT, 1.0),
+                )
+                if isinstance(status, dict):
+                    status["recovering"] = True
+                    status["recovered_at"] = now
+                    status["probation_multiplier"] = float(probation_mult)
+                return float(probation_mult), False
             return 0.0, True
+
         if drift_val <= EXPECTED_R_DRIFT_SOFT:
+            if isinstance(status, dict):
+                status.clear()
             return 1.0, False
+
         span = max(EXPECTED_R_DRIFT_HALT - EXPECTED_R_DRIFT_SOFT, 1e-9)
         severity = min(1.0, max(0.0, drift_val - EXPECTED_R_DRIFT_SOFT) / span)
         penalty = max(
             EXPECTED_R_DRIFT_MIN_MULT,
             1.0 - severity * EXPECTED_R_DRIFT_SIZE_WEIGHT,
         )
+
+        if isinstance(status, dict) and status.get("recovering"):
+            probation_mult = max(
+                EXPECTED_R_DRIFT_MIN_MULT,
+                min(EXPECTED_R_DRIFT_RECOVERY_MULT, float(status.get("probation_multiplier", EXPECTED_R_DRIFT_MIN_MULT))),
+            )
+            recovered_at = _coerce_float(status.get("recovered_at")) or now
+            ramp_window = max(cooldown, 1.0)
+            ramp_ceiling = min(1.0, probation_mult + (now - recovered_at) / ramp_window)
+            penalty = min(penalty, ramp_ceiling)
+
         return float(penalty), False
 
     def _rebuild_cumulative_metrics(self) -> Dict[str, Any]:
