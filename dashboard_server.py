@@ -4020,10 +4020,21 @@ def _clear_live_state() -> None:
 
     state = _read_state()
     cleared = False
+    baseline_decision_stats = {
+        "taken": 0,
+        "taken_by_bucket": {},
+        "rejected": {},
+        "rejected_total": 0,
+        "last_updated": None,
+    }
     for key in ("live_trades", "live_positions", "position_memory"):
         if key in state:
             state.pop(key, None)
             cleared = True
+
+    if state.get("decision_stats") != baseline_decision_stats:
+        state["decision_stats"] = baseline_decision_stats
+        cleared = True
 
     if not cleared:
         return
